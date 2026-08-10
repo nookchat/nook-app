@@ -154,14 +154,10 @@ export class NostrTransport implements Transport {
     this.ws = ws
 
     ws.onopen = () => {
-      const since = Math.floor(Date.now() / 1000) - 30
-      ws.send(
-        JSON.stringify([
-          'REQ',
-          this.subId,
-          { kinds: [EVENT_KIND], '#t': [this.topic], since },
-        ]),
-      )
+      // No `since` filter. These events are ephemeral, so a relay never replays
+      // an old one, and a `since` built from a wrong local clock would hide
+      // every live event from a peer whose clock runs ahead of ours.
+      ws.send(JSON.stringify(['REQ', this.subId, { kinds: [EVENT_KIND], '#t': [this.topic] }]))
       this.attempt = 0
       this.rejects = 0
       this.setStatus('open')

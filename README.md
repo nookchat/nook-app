@@ -31,6 +31,9 @@ as secure while you develop.
 ```sh
 npm run test:e2e       # two real Chrome pages, real relays, real media
 npm run test:mesh 10   # one host, ten viewers, prints the per viewer plan
+npm run test:repro skew    # viewer clock five minutes ahead
+npm run test:repro delay   # viewer joins 100 s later, host tab hidden
+npm run test:repro reload  # the host is gone, so the viewer must be told
 ```
 
 The tests replace the operating system picker with a canvas stream, so they need
@@ -70,9 +73,15 @@ webserver. From the secret Beam derives:
 | `roomId`  | SHA-256 of the secret, first 128 bits | The public topic on the relay      |
 | `roomKey` | HKDF-SHA256 of the secret            | AES-GCM on every signal message    |
 
-A relay operator sees a random topic name and opaque bytes. Beam also drops any
-message whose timestamp is more than two minutes from now, and any message id it
-has already handled.
+A relay operator sees a random topic name and opaque bytes. Beam drops any
+message id it has already handled, using its own clock for the expiry.
+
+Beam never compares the clock of one machine against the clock of another. Two
+computers often disagree by minutes, and an earlier version rejected every
+message from a peer more than two minutes away. The room then failed with the
+viewer stuck on "looking for the host". The message id guard stops a replay and
+the room key stops a forgery, so the sender timestamp is information only. The
+Nostr subscription carries no `since` filter for the same reason.
 
 ### The relays
 
@@ -181,9 +190,21 @@ src/
     video-surface.ts  fit, fill, and one to one with zoom and pan
     dom.ts toast.ts   small helpers, no framework
 test/
-  e2e.mjs             host and viewer, end to end, 21 checks
+  e2e.mjs             host and viewer, end to end, 22 checks
   mesh.mjs            N viewers against one host
+  repro.mjs           named failure cases: skew, delay, reload
+  debug.mjs           prints what both pages see, for a stuck room
 ```
+
+## When a viewer is stuck
+
+The waiting screen names the cause instead of spinning:
+
+| What the viewer sees            | What it means                                   |
+| ------------------------------- | ----------------------------------------------- |
+| Beam cannot reach a relay       | This network blocks the signal relays           |
+| This link is not complete       | Traffic is arriving but the key does not fit, so the link was cut short |
+| The host is not sharing         | The relays work and nobody is streaming here    |
 
 ## Keyboard, on the video
 

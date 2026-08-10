@@ -138,13 +138,7 @@ export class ViewerView {
           void this.bus?.send({ type: 'hello' })
           if (Date.now() - this.joinedAt > HELLO_GIVE_UP_MS && this.phase !== 'waiting') {
             this.phase = 'waiting'
-            this.surface?.setOverlay(
-              this.message(
-                'The host is not sharing',
-                'Nobody is streaming on this link right now. Beam keeps trying, so leave this page open.',
-                [this.exitButton('Share my own screen')],
-              ),
-            )
+            this.surface?.setOverlay(this.stuckMessage())
           }
         }
       }, HELLO_RETRY_MS),
@@ -223,6 +217,36 @@ export class ViewerView {
       },
       onFailed: (reason) => this.fail('The connection failed', reason),
     })
+  }
+
+  /**
+   * Why nothing is happening, based on what actually arrived. Three cases look
+   * the same to a person, so name them apart.
+   */
+  private stuckMessage(): HTMLElement {
+    const openRelays = this.relayHealth.filter((r) => r.status === 'open').length
+
+    if (openRelays === 0) {
+      return this.message(
+        'Beam cannot reach a relay',
+        'This network blocks the connections Beam needs to find the host. Try another network, or a phone hotspot.',
+        [this.exitButton('Share my own screen')],
+      )
+    }
+
+    if (this.bus && this.bus.opened === 0 && this.bus.unreadable > 0) {
+      return this.message(
+        'This link is not complete',
+        'Somebody is streaming here, but the key in your link does not fit. A chat app probably cut the link short. Ask for the whole link again.',
+        [this.exitButton('Share my own screen')],
+      )
+    }
+
+    return this.message(
+      'The host is not sharing',
+      'Nobody is streaming on this link right now. Beam keeps trying, so leave this page open.',
+      [this.exitButton('Share my own screen')],
+    )
   }
 
   private fail(title: string, reason: string): void {

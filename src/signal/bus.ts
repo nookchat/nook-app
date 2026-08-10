@@ -36,6 +36,16 @@ export class SignalBus {
   private started = false
   private health = new Map<Transport, RelayHealth>()
 
+  /**
+   * Traffic counters, for the diagnostics on a stuck screen.
+   *
+   * `unreadable` above zero with `opened` at zero means somebody is talking on
+   * this room but our key does not fit. A link cut short by a chat app looks
+   * exactly like that.
+   */
+  opened = 0
+  unreadable = 0
+
   constructor(room: Room, selfId: string) {
     this.room = room
     this.selfId = selfId
@@ -82,7 +92,11 @@ export class SignalBus {
 
   private async receive(wire: string): Promise<void> {
     const env = await open(this.room.key, wire)
-    if (!env) return // Not ours, or replayed, or corrupted. Drop it quietly.
+    if (!env) {
+      this.unreadable += 1
+      return // The key does not fit, or the bytes are damaged.
+    }
+    this.opened += 1
     if (env.from === this.selfId) return // Our own message, echoed by the relay.
     if (env.to && env.to !== this.selfId) return // Addressed to a different peer.
     if (!this.guard.accept(env.id)) return // The other relay already delivered it.

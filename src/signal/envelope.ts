@@ -38,8 +38,18 @@ export interface Envelope {
 export type OutgoingEnvelope = Pick<Envelope, 'type'> &
   Partial<Pick<Envelope, 'to' | 'data'>>
 
-/** Messages older or newer than this are dropped. Two minutes covers clock drift. */
-const REPLAY_WINDOW_MS = 120_000
+/**
+ * How long a message id stays in the replay guard. This uses the clock of the
+ * machine that receives the message, never the clock of the sender.
+ *
+ * An earlier version also rejected an envelope whose `t` was more than two
+ * minutes from the local clock. That broke every room between two machines
+ * whose clocks disagreed, which is common, and the symptom was a viewer stuck
+ * on "looking for the host". The id guard below already stops a replay, and the
+ * room key already stops a forgery, so the sender clock is now information
+ * only.
+ */
+const GUARD_TTL_MS = 120_000
 
 function randomId(): string {
   const b = crypto.getRandomValues(new Uint8Array(8))
@@ -92,7 +102,8 @@ export async function open(key: CryptoKey, wire: string): Promise<Envelope | nul
     const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct)
     const env = JSON.parse(dec.decode(plain)) as Envelope
     if (env?.v !== 1 || typeof env.id !== 'string' || typeof env.from !== 'string') return null
-    if (typeof env.t !== 'number' || Math.abs(Date.now() - env.t) > REPLAY_WINDOW_MS) return null
+    if (typeof env.type !== 'string') return null
+    // Deliberately no check against env.t. See the note on GUARD_TTL_MS.
     return env
   } catch {
     return null
@@ -111,7 +122,7 @@ export class ReplayGuard {
     const now = Date.now()
     if (this.seen.size > 500) this.prune(now)
     if (this.seen.has(id)) return false
-    this.seen.set(id, now + REPLAY_WINDOW_MS)
+    this.seen.set(id, now + GUARD_TTL_MS)
     return true
   }
 

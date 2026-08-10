@@ -54,6 +54,18 @@ const DISPLAY_STUB = `(() => {
   }
 })()`
 
+/** Puts a page five minutes ahead of the host, the way two real machines drift. */
+const SKEW_STUB = `(() => {
+  const RealDate = Date
+  const real = Date.now
+  const offset = 5 * 60 * 1000
+  Date.now = () => real() + offset
+  window.Date = class extends RealDate {
+    constructor(...a) { super(...(a.length ? a : [real() + offset])) }
+    static now() { return real() + offset }
+  }
+})()`
+
 const results = []
 function check(name, ok, detail = '') {
   results.push({ name, ok, detail })
@@ -187,6 +199,25 @@ try {
     'the host viewer list to show live stats',
   )
   check('host lists the viewer with live stats', true, hostSees.slice(0, 140))
+
+  // Two machines rarely agree on the time. A room must not depend on that.
+  const skewed = await context.newPage()
+  watch(skewed, 'viewer')
+  await skewed.addInitScript(SKEW_STUB)
+  await skewed.goto(link, { waitUntil: 'domcontentloaded' })
+  await skewed.getByRole('button', { name: 'Join the stream' }).click()
+  const skewOk = await waitFor(
+    async () =>
+      skewed.evaluate(() => {
+        const v = document.querySelector('video')
+        return v && v.videoWidth > 0 && v.currentTime > 0 ? v.videoWidth : null
+      }),
+    45_000,
+    'a viewer whose clock is five minutes ahead to receive video',
+  )
+  check('a five minute clock difference still connects', skewOk > 0, `${skewOk} px wide`)
+  await skewed.close()
+  await host.waitForTimeout(1500)
 
   // The picture must fill the surface at every window size, and never stretch.
   const geometryAt = async (page, width, height) => {

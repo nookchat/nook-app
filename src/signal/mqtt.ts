@@ -24,7 +24,13 @@ const PINGREQ = 12
 const PINGRESP = 13
 const DISCONNECT = 14
 
-const KEEPALIVE_SEC = 45
+/**
+ * A hidden tab has its timers throttled to about once a minute, so a short
+ * keepalive would let the broker drop a host that is simply in the background.
+ * Four minutes of tolerance with a ping every fifty seconds survives that.
+ */
+const KEEPALIVE_SEC = 240
+const PING_EVERY_MS = 50_000
 const QUEUE_LIMIT = 60
 const QUEUE_TTL_MS = 20_000
 
@@ -270,10 +276,7 @@ export class MqttTransport implements Transport {
           return
         }
         this.setStatus('open')
-        this.pingTimer = window.setInterval(
-          () => this.sendPing(),
-          (KEEPALIVE_SEC / 2) * 1000,
-        )
+        this.pingTimer = window.setInterval(() => this.sendPing(), PING_EVERY_MS)
         this.flush()
         return
       }
