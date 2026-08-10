@@ -1,0 +1,23 @@
+{
+  "name": "beam",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Peer to peer screen share with audio. No server except the static host.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host",
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "node test/e2e.mjs",
+    "test:mesh": "node test/mesh.mjs"
+  },
+  "dependencies": {
+    "@noble/curves": "^1.9.0"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.62.1",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7"
+  }
+}

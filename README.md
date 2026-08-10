@@ -1,0 +1,199 @@
+# Beam
+
+Peer to peer screen share with audio. The only server is the static webserver
+that sends the page.
+
+One person clicks **Share my screen** and gets a link. Anybody who opens that
+link watches live. The picture and the sound travel straight from one browser to
+the other. No media server sees them, and nothing is recorded.
+
+## Run it
+
+```sh
+npm install
+npm run dev            # http://localhost:5173
+```
+
+```sh
+npm run build          # typecheck, then a static bundle in dist/
+npm run preview        # serve dist/ over the network
+```
+
+Copy `dist/` to any static host. There is no backend, no database, and no
+environment variable. The site works from a sub path, because the build uses a
+relative base.
+
+WebRTC needs a secure page. Use HTTPS in production. `http://localhost` counts
+as secure while you develop.
+
+## Test it
+
+```sh
+npm run test:e2e       # two real Chrome pages, real relays, real media
+npm run test:mesh 10   # one host, ten viewers, prints the per viewer plan
+```
+
+The tests replace the operating system picker with a canvas stream, so they need
+no screen permission and give the same result on every machine. Everything else
+is real: the public relays, the encryption, the peer connection, and the codec.
+Screenshots land in `test-output/`.
+
+Set `HEADED=1` to watch a run. Set `CHROME_PATH` if Chrome is not in the usual
+place.
+
+## How a connection happens
+
+```
+host browser                 public relay                 viewer browser
+     |  announce (encrypted) ----->|                            |
+     |                             |<---- hello (encrypted) ----|
+     |  offer + ICE  ------------->|-------------------------->  |
+     |                             |<---- answer + ICE ---------|
+     |                                                          |
+     |=========== direct WebRTC media, DTLS-SRTP ===============|
+```
+
+The relay carries the handshake only. After the peers meet, it goes quiet and
+the media never touches it.
+
+### The link
+
+```
+https://your.site/#r=<128 bit secret, base64url>
+```
+
+The secret sits in the URL fragment, so the browser never sends it to the
+webserver. From the secret Beam derives:
+
+| Value     | How                                  | Used for                          |
+| --------- | ------------------------------------ | --------------------------------- |
+| `roomId`  | SHA-256 of the secret, first 128 bits | The public topic on the relay      |
+| `roomKey` | HKDF-SHA256 of the secret            | AES-GCM on every signal message    |
+
+A relay operator sees a random topic name and opaque bytes. Beam also drops any
+message whose timestamp is more than two minutes from now, and any message id it
+has already handled.
+
+### The relays
+
+Two protocols on three ports, so one blocked port does not kill a room:
+
+| Transport | Endpoint                            | Port |
+| --------- | ----------------------------------- | ---- |
+| MQTT      | `broker.emqx.io`                    | 8084 |
+| MQTT      | `broker.hivemq.com`                 | 8884 |
+| Nostr     | `relay.damus.io`, `nos.lol`, `relay.nostr.band` | 443 |
+
+Beam publishes to all of them and de-duplicates what comes back. One working
+relay runs the room. The MQTT client is written by hand in `src/signal/mqtt.ts`,
+about 150 lines of quality-of-service 0 packet work, so the browser bundle needs
+no Node polyfill. The Nostr transport signs throwaway ephemeral events, which
+relays pass to live subscribers and never store.
+
+To use your own relay, add an entry to `MQTT_BROKERS` or `NOSTR_RELAYS`. Nothing
+else changes.
+
+## Quality
+
+The host picks one thing, **Text** or **Video**, and one upload budget. Beam
+turns that into concrete sender settings for every viewer.
+
+| Control                  | Text mode           | Video mode          |
+| ------------------------ | ------------------- | ------------------- |
+| `contentHint`            | `detail`            | `motion`            |
+| `degradationPreference`  | `maintain-resolution` | `maintain-framerate` |
+| Frame rate               | 15                  | 30                  |
+| Codec order              | VP9, AV1, H264, VP8 | VP9, H264, AV1, VP8 |
+
+Ideal bitrate by source size, before the budget divides it:
+
+| Resolution | Text     | Video     |
+| ---------- | -------- | --------- |
+| 720p       | 1.2 Mb/s | 2.0 Mb/s  |
+| 1080p      | 2.5 Mb/s | 4.0 Mb/s  |
+| 1440p      | 4.0 Mb/s | 6.0 Mb/s  |
+| 2160p      | 6.0 Mb/s | 10.0 Mb/s |
+
+### The mesh limit
+
+The host encodes and sends the picture once per viewer. Ten viewers at 2.5 Mb/s
+need 25 Mb/s of upload, which most home connections do not have. Beam therefore:
+
+- divides the upload budget across the connected viewers and caps each sender,
+- halves the sent resolution above six viewers,
+- reads `getStats` every two seconds and lowers the real budget by 20 percent
+  when the viewers report more than 3 percent packet loss for two samples,
+- walks the budget back up when the loss clears for 15 seconds,
+- enforces a viewer limit, 10 by default.
+
+Above about ten viewers a mesh stops being the right shape. The next step would
+be a viewer relay tree, where early viewers forward to later ones. Measure with
+`npm run test:mesh` before you build it.
+
+## What Beam does not do
+
+- **No TURN relay.** Beam ships public STUN only, which keeps the promise of no
+  server. About one connection in eight fails on symmetric NAT or a strict
+  firewall, and Beam says so plainly instead of spinning. To add TURN later, put
+  your credentials in `TURN_SERVERS` in `src/rtc/config.ts`. Nothing else
+  changes. Use short lived credentials: a key in a static site is a public key.
+- **No screen share on iOS.** Apple gives no browser that permission. An iPhone
+  or an iPad can watch, and Beam tells the user this on arrival.
+- **No system audio outside Chromium.** Firefox and Safari do not hand over the
+  audio of a shared screen. The microphone still works everywhere.
+- **No recording, no accounts, no history.** Nothing is stored anywhere.
+
+## Access control
+
+Anyone holding the link can watch. Two host controls make that safe:
+
+- **Approve each viewer**, under Advanced. The host confirms every arrival
+  before Beam sends an offer.
+- **New link**, which rotates the secret. Every old link goes dead at once.
+- **Remove**, which drops one viewer and tells them why.
+
+## Layout
+
+```
+src/
+  main.ts             route to host or viewer from the URL fragment
+  room.ts             secret, roomId, roomKey, link build and parse
+  diagnostics.ts      what this browser can do, in plain words
+  signal/
+    transport.ts      the transport interface and the retry backoff
+    mqtt.ts           MQTT 3.1.1 quality of service 0 over WSS, written by hand
+    nostr.ts          ephemeral Nostr events over WSS
+    envelope.ts       AES-GCM seal and open, replay guard
+    bus.ts            fan out to every transport, de-duplicate what returns
+  rtc/
+    config.ts         ICE servers and the empty TURN slot
+    host-peer.ts      one connection per viewer, host always offers
+    viewer-peer.ts    the viewer only ever answers
+    quality.ts        bitrate ladder, budget, scale, hints, codec preference
+    stats.ts          getStats reduced to numbers a person can act on
+  media/
+    capture.ts        getDisplayMedia and the microphone, with clear errors
+    mixer.ts          WebAudio mix of screen audio and microphone into one track
+  ui/
+    landing.ts        the first screen and the browser support table
+    host-view.ts      link, viewer list, quality, audio, session
+    viewer-view.ts    join, connect, watch, and every failure message
+    video-surface.ts  fit, fill, and one to one with zoom and pan
+    dom.ts toast.ts   small helpers, no framework
+test/
+  e2e.mjs             host and viewer, end to end, 21 checks
+  mesh.mjs            N viewers against one host
+```
+
+## Keyboard, on the video
+
+| Key     | Action                          |
+| ------- | ------------------------------- |
+| `F`     | Fullscreen                      |
+| `M`     | Mute                            |
+| `Z`     | Cycle fit, fill, actual size    |
+| `0`     | Reset the zoom                  |
+| `+` `-` | Zoom in and out                 |
+
+Double click switches between fit and actual size. Control plus the wheel, or a
+trackpad pinch, zooms anywhere.
