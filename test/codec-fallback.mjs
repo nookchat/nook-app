@@ -73,7 +73,8 @@ try {
   await host.addInitScript(GAME_SETTINGS)
   await host.addInitScript(STUB)
   await host.goto(APP_URL, { waitUntil: 'domcontentloaded' })
-  await host.getByRole('button', { name: 'Choose what to share' }).click()
+  await host.getByRole('button', { name: 'New space' }).click()
+  await host.getByRole('button', { name: 'Share screen' }).click()
   const link = await host.locator('.share-code').getAttribute('data-link')
 
   const viewer = await (await viewerBrowser.newContext()).newPage()

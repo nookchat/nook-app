@@ -114,7 +114,8 @@ for (const codec of CODECS) {
   // Baseline: the page is open and the canvas is animating, nothing is encoded.
   const idleCores = await coresUsed(hostCdp, 8000)
 
-  await host.getByRole('button', { name: 'Choose what to share' }).click()
+  await host.getByRole('button', { name: 'New space' }).click()
+  await host.getByRole('button', { name: 'Share screen' }).click()
   const box = host.locator('.share-code')
   await box.waitFor({ timeout: 15_000 })
   const link = await box.getAttribute('data-link')

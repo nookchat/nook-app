@@ -1471,6 +1471,136 @@ details.adv[open] > summary {
   z-index: 5;
 }
 
+/* ---------- the space: channels left, the room on the right ---------- */
+
+.space-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 6px;
+  padding: 6px;
+}
+
+.rail-hidden .space-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.rail-hidden .rail {
+  display: none;
+}
+
+.rail {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--panel-radius);
+  padding: 7px;
+}
+
+.rail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 2px 2px;
+}
+
+.rail-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.rail-item {
+  justify-content: flex-start;
+  width: 100%;
+  border: 1px solid transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--fg-dim);
+  padding: 3px 7px;
+  min-height: calc(var(--btn-h) - 2px);
+  border-radius: var(--radius-sm);
+  font-weight: 400;
+}
+
+.rail-item:hover:not(:disabled) {
+  background: var(--surface-2);
+  border-color: transparent;
+  color: var(--fg);
+}
+
+.rail-item.on {
+  background: var(--select);
+  color: var(--select-fg);
+  border-color: transparent;
+  font-weight: bold;
+}
+
+.rail-person {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 7px;
+  font-size: var(--size-small);
+  color: var(--fg-dim);
+}
+
+.rail-foot {
+  flex: 0 0 auto;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+}
+
+.rail-foot .share-code {
+  font-size: var(--size-small);
+  padding: 4px 2px;
+  letter-spacing: 0.02em;
+}
+
+.space-main {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.space-head {
+  flex: 0 0 auto;
+  padding: 2px 2px 0;
+}
+
+.stage {
+  flex: 0 0 auto;
+  height: 46%;
+  min-height: 180px;
+  display: flex;
+}
+
+.share-panel {
+  flex: 0 0 auto;
+}
+
+.space-main .chat-panel {
+  flex: 1 1 auto;
+  min-height: 120px;
+}
+
+@media (max-width: 780px) {
+  .space-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .rail {
+    max-height: 34dvh;
+  }
+}
+
 /* ---------- chat ---------- */
 
 .chat-panel {

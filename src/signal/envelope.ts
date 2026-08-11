@@ -21,6 +21,9 @@ export type MsgType =
   | 'bye' // either side leaves
   | 'deny' // host refused the viewer, or the room is full
   | 'ping' // viewer keep alive, so the host can drop dead entries
+  | 'moffer' // mesh handshake, chat links between every pair
+  | 'manswer'
+  | 'mice'
 
 export interface Envelope {
   v: 1

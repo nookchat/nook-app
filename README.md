@@ -15,395 +15,47 @@ one click on **Choose what to share** is the least that can be asked for.
 Everything around it, the quality preset and the frame rate, is already set
 before that click, and the link appears the moment the source is picked.
 
+## A space
+
+Cathode is a place now, not a broadcast. A **space** is a code. Inside it are
+**channels**, and a screen share is something that happens *in* a channel rather
+than the reason the room exists.
+
+```
+┌──────────┬────────────────────────────────┐
+│ Channels │ #general                       │
+│ # general│ ┌────────────────────────────┐ │
+│ # dev    │ │ whoever is sharing, if any │ │
+│          │ └────────────────────────────┘ │
+│ People   │ chat                           │
+│ ● Ada    │                                │
+│ ● Grace  │ [say something]                │
+│ [Share]  │                                │
+│ invite   │                                │
+└──────────┴────────────────────────────────┘
+```
+
+**There is no host.** Everybody in a space is a peer. On arrival you join a mesh:
+one data channel to every other member, and chat gossips across it. The space
+carries on whether or not anyone is sharing, which is the whole difference
+between a room and a broadcast.
+
+Two kinds of connection live side by side, deliberately kept apart:
+
+| Connection | Between            | Carries       | Negotiated                       |
+| ---------- | ------------------ | ------------- | -------------------------------- |
+| mesh       | every pair         | chat          | once, and never renegotiated     |
+| share      | sharer to watcher  | video and audio | by the sharer, always the offerer |
+
+Keeping them apart costs one extra handshake per pair while video runs, and buys
+the absence of every glare and renegotiation problem a single shared connection
+would have brought. **Who offers is decided by comparing peer ids**, which is a
+total order both sides can compute, so two peers never call each other at once.
+
+Opening the app shows the spaces you have been in, read from this device. A link
+drops you straight into one. A reload keeps you where you were.
+
 ## Watching
-
-Opening a link is the decision to watch, so there is nothing to confirm. The
-connection starts on load and the picture appears as soon as it arrives.
-
-Sound is the one thing a browser will not hand over unasked. Muted playback
-always starts, so the picture is never held up waiting for permission, and if the
-browser refuses sound a single button appears offering it. Any click anywhere on
-the page takes it too.
-
-### Chat, and why it is still there tomorrow
-
-Chat rides the same peer connection as the picture, on a WebRTC data channel, so
-it is exactly as direct and as private as the video: encrypted by DTLS and never
-seen by a server.
-
-It is not a stream of messages passing through a host. It is an **append only log
-of signed events**, and every member holds a copy:
-
-```
-your device            their device           (later, a relay archive)
-┌────────────┐        ┌────────────┐          ┌──────────────┐
-│ IndexedDB  │◄──────►│ IndexedDB  │          │ encrypted    │
-│ full log   │ gossip │ full log   │          │ blobs        │
-└────────────┘        └────────────┘          └──────────────┘
-      ▲
-      └── history renders offline, instantly, with nobody online
-```
-
-**That is the whole answer to "will it be there tomorrow".** It will, because you
-have it. Every event is written to IndexedDB on arrival and read back on the next
-visit before any peer is contacted, so a room opens with its history even with
-the host gone and nothing to connect to. `npm run test:persist` proves exactly
-that: two people talk, the host's browser is closed entirely, the viewer reloads,
-and the conversation is still on screen.
-
-Nothing is ever changed in place. An edit is an event pointing at another event,
-and so is a reaction, a reply and a retraction:
-
-| You want    | The event                          |
-| ----------- | ---------------------------------- |
-| A message   | `said`                             |
-| An edit     | `edit`, referencing the original   |
-| A reaction  | `react`, toggling on repeat        |
-| A reply     | `said` carrying `replyTo`          |
-| A deletion  | `retract`, which hides, not unsends |
-| A new name  | `profile`                          |
-
-Two logs merge by unioning them, because a set of immutable events converges by
-construction. No CRDT and no conflict resolution.
-
-Order is `(lamport, author, id)`, never wall clock, so it is identical on every
-device and no machine has to be trusted about the time.
-
-### Identity
-
-A name used to be a claim: you typed one and everybody believed it. Now each
-person holds a **key pair**, made once and kept on the device, and every event is
-signed with it. The public key is the identity; the name is a label attached to
-it that anyone can change for themselves and nobody can change for you.
-
-An arriving event is checked for shape, then rehashed, then verified against the
-signature. An event whose id does not match its own contents is a forgery
-attempt, not a mistake, and it is dropped exactly as quietly as one with a bad
-signature. `npm run test:persist` tries all three.
-
-It signs with schnorr over secp256k1, already in the bundle for the Nostr
-transport, so identity costs no new dependency.
-
-Everyone still gets a name straight away, drawn from the era the interface is
-dressed in, so nobody has to fill in a form before saying hello. **Caffeinated
-Taskbar**, **Dial-up Monitor**, **Sleepy Floppy**.
-
-### What chat cannot do yet
-
-Honest limits, so nobody is surprised:
-
-- **Messages sent while everybody was offline** are not there when you return.
-  Your own history is, and so is anything a peer still online can give you. The
-  encrypted relay archive that closes this gap is the next stage.
-- **A room only exists while somebody is sharing.** Peers meet through the host,
-  so there is no chat without a stream yet.
-- **You cannot un-share.** Retract hides a message; whoever already received it
-  still holds it.
-- **No notification when the app is closed.** Web Push needs a push service,
-  which is a server.
-
-## Run it
-
-```sh
-npm install
-npm run dev            # http://localhost:5173
-```
-
-```sh
-npm run build          # typecheck, then a static bundle in dist/
-npm run preview        # serve dist/ over the network
-```
-
-## Put it online
-
-Copy `dist/` to any static host and point **cathode.video** at it. That is the
-whole deployment. There is no backend, no database, and no environment variable.
-
-What the host has to do:
-
-| Needs                | Why                                                              |
-| -------------------- | ---------------------------------------------------------------- |
-| HTTPS                | WebRTC, screen capture and the Web Crypto API all refuse plain http |
-| Static files         | Nothing runs on the server. It only has to send the bundle       |
-| Nothing else         | No rewrite rules, no redirects, no headers to set                 |
-
-The rewrite rules are worth spelling out, because most single page apps need
-them and this one does not. Cathode has exactly one URL. The room key lives in
-the fragment, after the `#`, which a browser never sends to a server, so the
-server never sees a path it has to route. A plain static host serving
-`index.html` at the root is complete.
-
-The build uses a relative base, so the same `dist/` also works from a sub path
-if you ever want `cathode.video/beta/` alongside the root.
-
-`http://localhost` counts as a secure page, so development needs no certificate.
-
-At this domain a share link looks like:
-
-```
-https://cathode.video/#r=UAeg19hayK8wUFSO2oqEWg
-```
-
-Forty seven characters, which the QR encoder fits into a version 4 symbol, 33
-modules square. That scans from across a desk without anybody squinting.
-
-## Test it
-
-```sh
-npm run test:e2e       # two real Chrome pages, real relays, real media
-npm run test:mesh 10   # one host, ten viewers, prints the per viewer plan
-npm run test:qr        # every QR version, decoded back by Chrome
-npm run test:url       # the share code, and the address bar it lives in
-npm run test:persist   # history survives the host leaving entirely
-npm run test:themes    # a screenshot of each skin
-npm run test:uplink    # the upload estimator, against made up statistics
-npm run test:encoder   # which codec holds up, and what it costs to encode
-npm run test:cpu       # processor cost per codec: GPU or not, measured
-npm run test:fallback  # a viewer with no HEVC still gets a picture
-npm run test:relays    # which public relays really carry a handshake
-npm run test:repro skew    # viewer clock five minutes ahead
-npm run test:repro delay   # viewer joins 100 s later, host tab hidden
-npm run test:repro reload  # the host is gone, so the viewer must be told
-```
-
-The tests replace the operating system picker with a canvas stream, so they need
-no screen permission and give the same result on every machine. Everything else
-is real: the public relays, the encryption, the peer connection, and the codec.
-Screenshots land in `test-output/`.
-
-Set `HEADED=1` to watch a run. Set `CHROME_PATH` if Chrome is not in the usual
-place.
-
-## How a connection happens
-
-```
-host browser                 public relay                 viewer browser
-     |  announce (encrypted) ----->|                            |
-     |                             |<---- hello (encrypted) ----|
-     |  offer + ICE  ------------->|-------------------------->  |
-     |                             |<---- answer + ICE ---------|
-     |                                                          |
-     |=========== direct WebRTC media, DTLS-SRTP ===============|
-```
-
-The relay carries the handshake only. After the peers meet, it goes quiet and
-the media never touches it.
-
-### The link
-
-```
-https://cathode.video/#K7M2X-9QPT4-VB2WN-P8ZQ3-MHRF6
-```
-
-The code sits in the URL fragment, so the browser never sends it to the
-webserver. From the code Cathode derives:
-
-| Value     | How                                  | Used for                          |
-| --------- | ------------------------------------ | --------------------------------- |
-| `roomId`  | SHA-256 of the code, first 128 bits  | The public topic on the relay      |
-| `roomKey` | HKDF-SHA256 of the code              | AES-GCM on every signal message    |
-
-A relay operator sees a random topic name and opaque bytes. Cathode drops any
-message id it has already handled, using its own clock for the expiry.
-
-Cathode never compares the clock of one machine against the clock of another. Two
-computers often disagree by minutes, and an earlier version rejected every
-message from a peer more than two minutes away. The room then failed with the
-viewer stuck on "looking for the host". The message id guard stops a replay and
-the room key stops a forgery, so the sender timestamp is information only. The
-Nostr subscription carries no `since` filter for the same reason.
-
-### The relays
-
-Two protocols on three ports, so one blocked port does not kill a room:
-
-| Transport | Endpoint                                        | Port |
-| --------- | ----------------------------------------------- | ---- |
-| MQTT      | `broker.emqx.io`                                | 8084 |
-| MQTT      | `broker.hivemq.com`                             | 8884 |
-| Nostr     | `nos.lol`, `relay.snort.social`, `nostr.mom`    | 443  |
-
-A public relay can go bad without notice, and answering on port 443 proves
-nothing: it can refuse the event kind, demand an account, or accept an event and
-deliver it to nobody. `npm run test:relays` publishes a real event and waits to
-receive it back on a second connection, which is exactly what a host and a
-viewer do. Run it before changing the list, and keep at least three.
-
-A transport never gives up. If a relay dies mid session it keeps retrying, at
-first quickly and then once a minute, because a host and a viewer that share no
-relay would have a room that looks connected and carries nothing.
-
-Cathode publishes to all of them and de-duplicates what comes back. One working
-relay runs the room. The MQTT client is written by hand in `src/signal/mqtt.ts`,
-about 150 lines of quality-of-service 0 packet work, so the browser bundle needs
-no Node polyfill. The Nostr transport signs throwaway ephemeral events, which
-relays pass to live subscribers and never store.
-
-To use your own relay, add an entry to `MQTT_BROKERS` or `NOSTR_RELAYS`. Nothing
-else changes.
-
-## Quality
-
-The host picks a preset. Cathode turns it into concrete sender settings for every
-viewer. Each preset names the job it is for, so nobody has to guess.
-
-| Preset                  | Size   | Rate   | Use it for                                        |
-| ----------------------- | ------ | ------ | ------------------------------------------------- |
-| Code and documents      | 1080p  | 15 fps | An editor, a terminal, a spreadsheet, a PDF       |
-| Slides and walkthroughs | 1080p  | 24 fps | A presentation, a design review, a tour of an app |
-| Video and motion        | 1080p  | 30 fps | A film, an animation, a call                      |
-| **Games**               | 1080p  | 30 fps | A game, or anything where the whole picture moves |
-| Maximum detail          | source | 30 fps | Photo work, drawings, a 4K display                |
-| Slow connection         | 720p   | 10 fps | Hotel wifi, a phone hotspot, many viewers         |
-
-**Games is the default**, at about 5.2 Mb/s for a 1080p screen at 30 frames. It
-carries a third more bitrate than Video and motion, because a game leaves no part
-of the frame unchanged. Fine tuning has 60 frames for machines and uploads that
-can take it. Everything is
-adjustable while the stream runs, under Fine tuning: resolution from source size
-down to 540p, frame rate from 5 to 60, the upload budget, the viewer limit, and
-the codec. Changing any of them switches the preset to Custom.
-
-The choices are stored in this browser, so the next stream starts the same way.
-
-Under the presets:
-
-| Control                 | Text presets          | Motion presets           |
-| ----------------------- | --------------------- | ------------------------ |
-| `contentHint`           | `detail`              | `motion`                 |
-| `degradationPreference` | `maintain-resolution` | `maintain-framerate`     |
-| Codec order             | VP9, AV1, H264, VP8   | hardware first, then VP9 |
-
-Ideal bitrate by source size at 30 fps, before the preset scale, the frame rate,
-and the budget all take their cut:
-
-| Resolution | Text     | Video     |
-| ---------- | -------- | --------- |
-| 540p       | 0.7 Mb/s | 1.1 Mb/s  |
-| 720p       | 1.2 Mb/s | 2.0 Mb/s  |
-| 1080p      | 2.5 Mb/s | 4.0 Mb/s  |
-| 1440p      | 4.0 Mb/s | 6.0 Mb/s  |
-| 2160p      | 6.0 Mb/s | 10.0 Mb/s |
-
-### The upload budget
-
-Cathode runs no upload speed test, because a speed test needs a server that accepts
-an upload and Cathode has none. A static host refuses a POST, and pushing megabytes
-through the free public signal relays would get the room rate limited, which is
-a poor trade for a number that can be learned honestly. So `src/net/uplink.ts`
-does two things instead:
-
-1. **On load it reads what the browser already knows.** The Network Information
-   API reports data saver, a coarse connection class, and whether the link is
-   cellular. That sets a careful starting budget, labelled `estimated`.
-2. **Once a viewer connects it measures.** Real bytes travel the real path, and
-   the bandwidth estimator inside WebRTC reports what that path will carry.
-   Packet loss reported back by the viewers measures the same thing from the
-   other end. The budget converges on that, and the label changes to `measured`.
-
-| Hint                     | Starting budget |
-| ------------------------ | --------------- |
-| Data saver on            | 1.5 Mb/s        |
-| 2g or slower             | 0.8 Mb/s        |
-| 3g                       | 2.5 Mb/s        |
-| Cellular                 | 4.0 Mb/s        |
-| Anything else, or no API | 6.0 Mb/s        |
-
-The numeric `downlink` figure is deliberately ignored. It is built from recent
-traffic, rounded and capped, and on a freshly opened page it often reads far
-below the truth: trusting it made Cathode open at 870 kb/s on a fast link and warn
-that the budget was holding the quality down.
-
-The estimate only reaches upward while the encoders actually want more than the
-current budget. There is no point discovering a spare 20 Mb/s to carry a
-1.2 Mb/s document, so a quiet stream never probes.
-
-The budget is automatic until you touch the slider, and manual from then on. The
-label always says which mode it is in and where the figure came from.
-
-### Games, and encoding on the GPU
-
-WebRTC gives a page no way to demand a hardware encoder. The browser decides,
-from the codec, the resolution, and the platform. What a page *can* do is find
-out which codecs have a hardware encoder and ask for those first, which is what
-`src/rtc/hardware.ts` does on load, from two sources that both refuse to guess:
-
-- WebCodecs `isConfigSupported` with `hardwareAcceleration: 'prefer-hardware'`,
-  which fails outright when no hardware encoder can serve the config,
-- Media Capabilities `encodingInfo`, whose `powerEfficient` flag is the platform
-  saying the work will not land on the processor.
-
-**Do not trust `totalEncodeTime` for this.** It measures the wall clock of the
-encode call, and a hardware encoder still takes time to hand a frame back, so
-hardware and software can report the same milliseconds at very different cost.
-The honest measure is processor seconds burned per wall clock second, and
-`npm run test:cpu` measures exactly that: the host runs in its own browser, idle
-first and then sharing, and the difference is what encoding costs.
-
-Measured on an Apple M4 Pro, headed Chrome, one viewer, 1920x1080 at 60 frames:
-
-| Codec    | Held      | Rate   | Encoding costs | Where       |
-| -------- | --------- | ------ | -------------- | ----------- |
-| **H265** | 1920x1080 | 60 fps | **0.44 cores** | GPU         |
-| VP9      | 1920x1080 | 53 fps | 0.83 cores     | processor   |
-| H264     | 1280x720  | 61 fps | 0.39 cores     | processor   |
-| AV1      | 1920x1080 | 60 fps | 2.05 cores     | processor   |
-
-The same picture for less than half the processor. HEVC was the only codec on
-that machine with a hardware encoder, and note that H264 is **not** the hardware
-shortcut it is usually assumed to be here: it looks cheap only because it gave
-up 1080p and encoded 720p instead.
-
-So Cathode asks for the hardware codec first, but only on moving pictures. A
-hardware encoder is tuned for camera video and smears small text, so documents
-stay on VP9 where the screen content tools live and the bill is small anyway.
-
-A viewer that cannot decode the hardware codec loses nothing. Codec preferences
-only order the offer; the answer decides. `npm run test:fallback` proves it with
-a viewer launched without any HEVC decoder: the stream falls back to VP9, keeps
-playing, and the badge stops claiming the GPU.
-
-The viewer row names all of this: the codec, whether it is running **on GPU**,
-and milliseconds of processor time per encoded frame. Compare that last figure
-against the frame interval, 16.7 ms at 60 fps. It turns amber past 45 percent
-and red past 70, the point where the machine rather than the network is holding
-the stream back.
-
-Decoding is cheap on every codec, 0.9 to 1.4 ms per frame, and the video element
-is composited by the GPU. Watching a game was never the problem.
-
-Chrome reports neither `encoderImplementation` nor `powerEfficientEncoder` in
-these statistics, which is why Cathode reads hardware support from the probe above
-rather than from the live stream.
-
-### The mesh limit
-
-The host encodes and sends the picture once per viewer. Ten viewers at 2.5 Mb/s
-need 25 Mb/s of upload, which most home connections do not have. Cathode therefore:
-
-- divides the upload budget across the connected viewers and caps each sender,
-- halves the sent resolution above six viewers,
-- reads `getStats` every two seconds and folds it into the uplink estimate
-  above, which pulls the budget down on loss and lifts it on spare capacity,
-- enforces a viewer limit, 10 by default.
-
-Above about ten viewers a mesh stops being the right shape. The next step would
-be a viewer relay tree, where early viewers forward to later ones. Measure with
-`npm run test:mesh` before you build it.
-
-## What Cathode does not do
-
-- **No TURN relay.** Cathode ships public STUN only, which keeps the promise of no
-  server. About one connection in eight fails on symmetric NAT or a strict
-  firewall, and Cathode says so plainly instead of spinning. To add TURN later, put
-  your credentials in `TURN_SERVERS` in `src/rtc/config.ts`. Nothing else
-  changes. Use short lived credentials: a key in a static site is a public key.
-- **No screen share on iOS.** Apple gives no browser that permission. An iPhone
-  or an iPad can watch, and Cathode tells the user this on arrival.
-- **No system audio outside Chromium.** Firefox and Safari do not hand over the
-  audio of a shared screen. The microphone still works everywhere.
-- **No recording, no accounts, no history.** Nothing is stored anywhere.
-
 ## Sharing
 
 A room is a code, written the way Windows wrote a product key:

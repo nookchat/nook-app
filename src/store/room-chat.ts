@@ -10,7 +10,15 @@
 
 import { loadIdentity } from './identity'
 import { loadRoom, noteRoom, putEvents } from './db'
-import { makeEvent, openEvent, RoomLog, type LogEvent, type Message } from './log'
+import {
+  cleanChannel,
+  DEFAULT_CHANNEL,
+  makeEvent,
+  openEvent,
+  RoomLog,
+  type LogEvent,
+  type Message,
+} from './log'
 
 /** How much history to hand a peer that has just connected. */
 const BACKFILL = 250
@@ -55,8 +63,12 @@ export class RoomChat {
     this.onChange?.()
   }
 
-  messages(): Message[] {
-    const messages = this.log.messages()
+  channels(): string[] {
+    return this.log.channels()
+  }
+
+  messages(channel?: string): Message[] {
+    const messages = this.log.messages(channel)
     const names = this.log.names()
     for (const m of messages) m.name = names.get(m.author) ?? m.name ?? ''
     return messages
@@ -69,7 +81,7 @@ export class RoomChat {
   // ---- writing ----
 
   private async write(
-    kind: 'said' | 'edit' | 'react' | 'retract' | 'profile',
+    kind: 'said' | 'edit' | 'react' | 'retract' | 'profile' | 'channel',
     body: Record<string, unknown>,
   ): Promise<LogEvent> {
     const event = await makeEvent(this.log.room, this.me, this.log.nextLamport(), kind, body)
@@ -79,8 +91,14 @@ export class RoomChat {
     return event
   }
 
-  say(text: string, replyTo?: string | null): Promise<LogEvent> {
-    return this.write('said', replyTo ? { text, replyTo } : { text })
+  say(text: string, channel: string, replyTo?: string | null): Promise<LogEvent> {
+    const body: Record<string, unknown> = { text, channel: cleanChannel(channel) || DEFAULT_CHANNEL }
+    if (replyTo) body.replyTo = replyTo
+    return this.write('said', body)
+  }
+
+  makeChannel(name: string): Promise<LogEvent> {
+    return this.write('channel', { name: cleanChannel(name) })
   }
 
   edit(target: string, text: string): Promise<LogEvent> {

@@ -124,49 +124,52 @@ try {
   watch(host, 'host')
   await host.addInitScript(DISPLAY_STUB)
   await host.goto(APP_URL, { waitUntil: 'domcontentloaded' })
+  // The list is read from IndexedDB, so it arrives a beat after the page.
+  await host.getByRole('button', { name: 'New space' }).waitFor({ timeout: 10_000 })
 
-  // The app must open on the sharing page, with no welcome screen in the way.
+  // The app opens on the spaces you have been in, not on a screen picker.
   const opening = await host.evaluate(() => ({
-    picker: !!document.querySelector('.pick'),
-    quality: !!document.querySelector('.presets'),
-    text: document.body.innerText,
+    list: document.body.innerText.includes('Your spaces'),
+    make: !!Array.from(document.querySelectorAll('button')).find((b) =>
+      (b.textContent ?? '').includes('New space'),
+    ),
+  }))
+  check('the app opens on your spaces', opening.list && opening.make)
+
+  await host.getByRole('button', { name: 'New space' }).click()
+  const codeBox = host.locator('.share-code')
+  await codeBox.waitFor({ timeout: 15_000 })
+  const link = await codeBox.getAttribute('data-link')
+  check(
+    'a new space has a code and a link',
+    /#[0-9A-HJKMNP-TV-Z]{5}(-[0-9A-HJKMNP-TV-Z]{5}){4}$/.test(link),
+    link,
+  )
+
+  // Chat is the app, so it is there before anybody shares anything.
+  const room = await host.evaluate(() => ({
+    channels: Array.from(document.querySelectorAll('.rail-item')).map((b) => b.textContent?.trim()),
+    chat: !!document.querySelector('.chat-log'),
+    composer: !document.querySelector('input[aria-label="Write a message"]')?.disabled,
+    video: !!document.querySelector('video'),
   }))
   check(
-    'the app opens straight on the sharing page',
-    opening.picker && opening.quality && opening.text.includes('Choose what to share'),
-    opening.picker ? 'picker and quality panel are up' : 'no picker on load',
+    'a space opens with channels and a working chat, with no stream',
+    room.channels.some((c) => c?.includes('general')) && room.chat && room.composer && !room.video,
+    `channels: ${room.channels.join(', ')}`,
   )
-
-  await host.getByRole('button', { name: 'Choose what to share' }).click()
-  const linkInput = host.locator('.share-code')
-  await linkInput.waitFor({ timeout: 15_000 })
-  const link = await linkInput.getAttribute('data-link')
-  check('host starts and shows a link', /#[0-9A-HJKMNP-TV-Z]{5}(-[0-9A-HJKMNP-TV-Z]{5}){4}$/.test(link), link)
 
   const relayOpen = await waitFor(
-    async () => host.evaluate(() => document.querySelectorAll('.pill.relay.good').length || null),
-    25_000,
+    async () =>
+      host.evaluate(() => {
+        const text = document.querySelector('.xp-status')?.textContent ?? ''
+        const m = text.match(/(\d+) relay/)
+        return m && Number(m[1]) > 0 ? Number(m[1]) : null
+      }),
+    30_000,
     'at least one relay to report open',
   )
-  check('a signal relay came up', relayOpen > 0, `${relayOpen} good pills`)
-
-  // The upload budget must start automatic, with the source of the number named.
-  const budget = await host.evaluate(() => {
-    const auto = Array.from(document.querySelectorAll('.chip')).find(
-      (c) => c.textContent === 'Automatic',
-    )
-    return {
-      label: document.querySelector('.budget-label')?.textContent ?? '',
-      note: document.querySelector('.budget-note')?.textContent ?? '',
-      auto: auto?.classList.contains('on') ?? false,
-      sliderLocked: document.querySelector('input[aria-label="Total upload budget"]')?.disabled,
-    }
-  })
-  check(
-    'the upload budget starts automatic and says where the figure came from',
-    budget.auto && budget.sliderLocked === true && /·\s(measured|estimated|default)$/.test(budget.label),
-    `${budget.label} — ${budget.note.slice(0, 60)}`,
-  )
+  check('a signal relay came up', relayOpen > 0, `${relayOpen} relays`)
 
   // Cathode must name where encoding happens, without pretending either way.
   const gpu = await host.evaluate(async () => {
@@ -220,7 +223,23 @@ try {
   watch(viewer, 'viewer')
   await viewer.goto(link, { waitUntil: 'domcontentloaded' })
 
-  check('the viewer connects with no button to press', true, 'auto joined on open')
+  check('an invite link drops you straight into the space', true)
+
+  // The two of them find each other with nobody hosting anything.
+  const meshUp = await waitFor(
+    async () =>
+      viewer.evaluate(() => {
+        const text = document.querySelector('.chat-panel .pill')?.textContent ?? ''
+        const m = text.match(/(\d+) here/)
+        return m && Number(m[1]) >= 2 ? Number(m[1]) : null
+      }),
+    45_000,
+    'the two peers to meet on the mesh',
+  )
+  check('the peers meet on the mesh with nobody sharing', meshUp >= 2, `${meshUp} here`)
+
+  // Only now does somebody share a screen, inside the channel they are in.
+  await host.getByRole('button', { name: 'Share screen' }).click()
 
   const playing = await waitFor(
     async () =>
@@ -288,17 +307,16 @@ try {
   )
   check('viewer receives an audio track', !!audioFlowing)
 
-  const hostSees = await waitFor(
+  const sharingLine = await waitFor(
     async () =>
       host.evaluate(() => {
-        const rows = Array.from(document.querySelectorAll('.viewer-row'))
-        const text = rows.map((r) => r.textContent ?? '').join(' ')
-        return /kb\/s|Mb\/s/.test(text) ? text.replace(/\s+/g, ' ').trim() : null
+        const text = document.querySelector('.plan-box')?.textContent ?? ''
+        return /watching/.test(text) ? text.replace(/\s+/g, ' ').trim() : null
       }),
     30_000,
-    'the host viewer list to show live stats',
+    'the share panel to report a watcher',
   )
-  check('host lists the viewer with live stats', true, hostSees.slice(0, 140))
+  check('the sharer sees who is watching', /1 watching/.test(sharingLine), sharingLine.slice(0, 90))
 
   // Chat runs on the same peer connection, with the host repeating each line.
   const chatWorks = await waitFor(
@@ -312,17 +330,6 @@ try {
     () => document.querySelector('input[aria-label="Your name in the chat"]')?.value ?? '',
   )
   check('the viewer gets a name without being asked', viewerName.length > 2, viewerName)
-
-  const hostSawJoin = await waitFor(
-    async () =>
-      host.evaluate(() => {
-        const text = document.querySelector('.chat-log')?.textContent ?? ''
-        return /joined/.test(text) ? text.trim() : null
-      }),
-    20_000,
-    'the host chat to announce the arrival',
-  )
-  check('the host is told when somebody joins', /joined/.test(hostSawJoin), hostSawJoin.slice(0, 60))
 
   await viewer.fill('input[aria-label="Write a message"]', 'hello from the viewer')
   await viewer.press('input[aria-label="Write a message"]', 'Enter')
@@ -393,7 +400,9 @@ try {
       const sr = s.getBoundingClientRect()
       const vr = v.getBoundingClientRect()
       return {
-        fills: Math.abs(sr.height - vr.height) < 2 && Math.abs(sr.width - vr.width) < 2,
+        // The stage has a border now, so the video sits a pixel inside it. What
+        // matters is that it fills the box rather than being stretched or short.
+        fills: Math.abs(sr.height - vr.height) <= 4 && Math.abs(sr.width - vr.width) <= 4,
         surface: [Math.round(sr.width), Math.round(sr.height)],
         sideScroll: document.documentElement.scrollWidth > window.innerWidth + 1,
       }
@@ -427,29 +436,17 @@ try {
   await host.setViewportSize({ width: 1440, height: 900 })
 
   // ---- the host stops, the viewer must be told ----
-  await host.getByRole('button', { name: 'Stop the stream' }).click()
-  const ended = await waitFor(
-    async () => viewer.evaluate(() => document.body.innerText.includes('The stream ended')),
-    20_000,
-    'the viewer to see the end of the stream',
-  )
-  check('viewer is told when the host stops', ended)
-
-  const backToPicker = await waitFor(
+  await host.getByRole('button', { name: 'Stop sharing' }).click()
+  const stillThere = await waitFor(
     async () =>
       host.evaluate(() => {
-        // innerText is the rendered text, so the eyebrow arrives uppercased.
-        const summary = document.querySelector('.summary-card')
-        return document.querySelector('.pick') && summary ? summary.textContent ?? '' : null
+        const chat = document.querySelector('.chat-log')?.textContent ?? ''
+        return !document.querySelector('.share-panel:not(.hidden)') && chat.length > 0 ? chat : null
       }),
-    10_000,
-    'the host to land back on the picker with a summary',
+    15_000,
+    'the space to carry on after the share stops',
   )
-  check(
-    'stopping returns to the picker, not a welcome page',
-    /viewers? at the peak/.test(backToPicker),
-    backToPicker.replace(/\s+/g, ' ').slice(0, 70),
-  )
+  check('the space carries on when the sharing stops', stillThere.length > 0)
   await viewer.screenshot({ path: `${SHOTS}viewer-ended.png` })
 
   check('no console errors on the host', errors.host.length === 0, errors.host.join(' | '))

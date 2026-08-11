@@ -1,28 +1,24 @@
 /**
- * Cathode. Peer to peer screen share with audio.
+ * Cathode. A peer to peer place, with screen sharing in it.
  *
  * The only server is the one that served this page. Read the plan in README.md.
  */
 
 import './styles.css'
 import { bootTheme } from './ui/themes'
-import { clearLink, readLinkSecret } from './room'
+import { clearLink, readLinkSecret, setLinkSecret } from './room'
 import { clear } from './ui/dom'
-import { HostView } from './ui/host-view'
 import { createWindow, type WindowChrome } from './ui/shell'
+import { spaceList } from './ui/space-list'
+import { SpaceView } from './ui/space-view'
 import { toast } from './ui/toast'
-import { ViewerView } from './ui/viewer-view'
 import { checkSupport } from './diagnostics'
 
 // Before anything is drawn, so nothing flashes in the wrong skin.
 bootTheme()
 
 const app = document.getElementById('app')
-
-if (!app) {
-  throw new Error('The page could not find its mount point.')
-}
-
+if (!app) throw new Error('The page could not find its mount point.')
 const mount = app
 
 interface Screen {
@@ -41,48 +37,27 @@ function freshWindow(title: string): WindowChrome {
   return chrome
 }
 
-/**
- * The sharing page is the front door. There is no welcome screen, because the
- * only thing anybody opens Cathode to do is share a screen.
- */
-function showHost(): void {
+async function showList(): Promise<void> {
   clearLink()
-  const chrome = freshWindow('Screen share')
-  const view = new HostView(chrome.body, chrome)
-  active = view
-  view.mount()
+  const chrome = freshWindow('Cathode')
+  chrome.setStatus(['Pick a space, or make one'])
+  chrome.setActions({})
+  chrome.body.append(await spaceList({ open: (secret) => openSpace(secret) }))
 }
 
-function showViewer(secret: string): void {
-  const chrome = freshWindow('Watching a shared screen')
-  const view = new ViewerView(chrome.body, secret, showHost, chrome)
+function openSpace(secret: string): void {
+  const chrome = freshWindow('Cathode')
+  setLinkSecret(secret)
+  const view = new SpaceView(chrome.body, secret, chrome, () => void showList())
   active = view
   void view.start()
 }
 
-/*
- * The address bar carries the room once a stream starts, so the link can be
- * shared straight from there. That creates one trap: reloading the host page
- * would read that fragment back and turn the host into a viewer of a room that
- * died with the reload. This tab remembers what it was hosting, so it lands
- * back on the picker instead.
- */
-const HOSTING_KEY = 'cathode.hosting'
-
-function wasHosting(secret: string): boolean {
-  try {
-    return sessionStorage.getItem(HOSTING_KEY) === secret
-  } catch {
-    return false
-  }
-}
-
-const secret = readLinkSecret()
-if (secret && !wasHosting(secret)) showViewer(secret)
-else showHost()
+const linked = readLinkSecret()
+if (linked) openSpace(linked)
+else void showList()
 
 window.addEventListener('beforeunload', (ev) => {
-  // A reload kills the stream for everybody watching, so ask first.
   if (active?.isLive) {
     ev.preventDefault()
     ev.returnValue = ''
@@ -91,10 +66,9 @@ window.addEventListener('beforeunload', (ev) => {
 
 window.addEventListener('pagehide', () => active?.destroy())
 
-const support = checkSupport()
-if (support.isIOS && !secret) {
+if (checkSupport().isIOS && !linked) {
   toast(
-    'This device can watch a stream, but Apple gives no browser the right to share a screen.',
+    'This device can watch and chat, but Apple gives no browser the right to share a screen.',
     'info',
     8000,
   )

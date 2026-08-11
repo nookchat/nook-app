@@ -61,7 +61,8 @@ try {
   const host = await (await hostBrowser.newContext()).newPage()
   await host.addInitScript(STUB)
   await host.goto(APP_URL, { waitUntil: 'domcontentloaded' })
-  await host.getByRole('button', { name: 'Choose what to share' }).click()
+  await host.getByRole('button', { name: 'New space' }).click()
+  await host.getByRole('button', { name: 'Share screen' }).click()
   await host.locator('.share-code').waitFor({ timeout: 15_000 })
   const link = await host.locator('.share-code').getAttribute('data-link')
 

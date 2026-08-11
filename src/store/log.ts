@@ -17,7 +17,10 @@
 
 import { sign, verify } from './identity'
 
-export type EventKind = 'said' | 'edit' | 'react' | 'retract' | 'profile'
+export type EventKind = 'said' | 'edit' | 'react' | 'retract' | 'profile' | 'channel'
+
+/** Every space has this one, and it cannot be removed. */
+export const DEFAULT_CHANNEL = 'general'
 
 export interface LogEvent {
   /** SHA-256 of the canonical form. The identity of the event. */
@@ -75,7 +78,8 @@ export async function openEvent(raw: unknown, room: string): Promise<LogEvent | 
   if (e.room !== room) return null
   if (typeof e.lamport !== 'number' || !Number.isInteger(e.lamport) || e.lamport < 0) return null
   if (typeof e.at !== 'number' || !Number.isFinite(e.at)) return null
-  if (!['said', 'edit', 'react', 'retract', 'profile'].includes(String(e.kind))) return null
+  if (!['said', 'edit', 'react', 'retract', 'profile', 'channel'].includes(String(e.kind)))
+    return null
   if (!e.body || typeof e.body !== 'object' || Array.isArray(e.body)) return null
 
   const body = e.body as Record<string, unknown>
@@ -154,7 +158,22 @@ export class RoomLog {
    * rather than trusted: the signature proves who wrote the edit, so an edit
    * from anybody else is simply ignored.
    */
-  messages(): Message[] {
+  /** Every channel anybody has made here, with the default always first. */
+  channels(): string[] {
+    const names = new Set<string>([DEFAULT_CHANNEL])
+    for (const e of this.all()) {
+      if (e.kind === 'channel') {
+        const name = cleanChannel(String(e.body.name ?? ''))
+        if (name) names.add(name)
+      } else if (e.kind === 'said') {
+        names.add(channelOf(e))
+      }
+    }
+    return [...names].sort()
+  }
+
+  /** Pass a channel to see only that one, or nothing to see them all. */
+  messages(channel?: string): Message[] {
     const out: Message[] = []
     const index = new Map<string, Message>()
     const names = new Map<string, string>()
@@ -165,11 +184,14 @@ export class RoomLog {
         if (name) names.set(e.author, name)
         continue
       }
+      if (e.kind === 'channel') continue
       if (e.kind === 'said') {
+        if (channel && channelOf(e) !== channel) continue
         const message: Message = {
           id: e.id,
           author: e.author,
           at: e.at,
+          channel: channelOf(e),
           text: String(e.body.text ?? ''),
           replyTo: typeof e.body.replyTo === 'string' ? e.body.replyTo : null,
           edited: false,
@@ -219,10 +241,25 @@ export class RoomLog {
   }
 }
 
+/** A channel name: lower case, no spaces, the way every chat app does it. */
+export function cleanChannel(raw: string): string {
+  return raw
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 24)
+}
+
+function channelOf(e: LogEvent): string {
+  const raw = cleanChannel(String(e.body.channel ?? ''))
+  return raw || DEFAULT_CHANNEL
+}
+
 export interface Message {
   id: string
   author: string
   name?: string
+  channel: string
   at: number
   text: string
   replyTo: string | null
