@@ -174,6 +174,11 @@ export class VideoSurface {
     await this.video.play().catch(() => undefined)
   }
 
+  /** Hide the floating bar and the badges while there is nothing to control. */
+  setControlsVisible(visible: boolean): void {
+    this.root.classList.toggle('no-controls', !visible)
+  }
+
   setMode(mode: FitMode): void {
     this.mode = mode
     this.root.dataset.mode = mode

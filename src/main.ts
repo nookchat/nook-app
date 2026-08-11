@@ -7,8 +7,8 @@
 import './styles.css'
 import { clearLink, readLinkSecret } from './room'
 import { clear } from './ui/dom'
-import { HostView, type SessionSummary } from './ui/host-view'
-import { landing, topbar } from './ui/landing'
+import { HostView } from './ui/host-view'
+import { topbar } from './ui/shell'
 import { toast } from './ui/toast'
 import { ViewerView } from './ui/viewer-view'
 import { checkSupport } from './diagnostics'
@@ -20,61 +20,58 @@ if (!app) {
 }
 
 const mount = app
-let active: { stop: () => void } | null = null
 
-function showLanding(summary: SessionSummary | null = null): void {
-  active?.stop()
-  active = null
-  document.title = 'Beam · peer to peer screen share'
-  clearLink()
-  clear(mount)
-  mount.append(landing(() => void startHosting(), summary))
+interface Screen {
+  destroy(): void
+  readonly isLive: boolean
 }
 
-async function startHosting(): Promise<void> {
-  const shell = document.createElement('main')
-  const view = new HostView(shell, (summary) => showLanding(summary))
-  active = { stop: () => view.stop() }
+let active: Screen | null = null
 
-  // Ask for the screen first. The picker must open inside the click, so we
-  // swap the page only after the browser hands the capture over.
+/**
+ * The sharing page is the front door. There is no welcome screen, because the
+ * only thing anybody opens Beam to do is share a screen.
+ */
+function showHost(): void {
+  active?.destroy()
+  clearLink()
   clear(mount)
   mount.append(topbar())
+  const shell = document.createElement('main')
   mount.append(shell)
-  await view.start()
+  const view = new HostView(shell)
+  active = view
+  view.mount()
 }
 
 function showViewer(secret: string): void {
-  const shell = document.createElement('div')
-  shell.style.display = 'contents'
+  active?.destroy()
   clear(mount)
   mount.append(topbar())
+  const shell = document.createElement('div')
+  shell.style.display = 'contents'
   mount.append(shell)
-  const view = new ViewerView(shell, secret, () => showLanding())
-  active = { stop: () => view.stop() }
+  const view = new ViewerView(shell, secret, showHost)
+  active = view
   void view.start()
 }
 
-function route(): void {
-  const secret = readLinkSecret()
-  if (secret) showViewer(secret)
-  else showLanding()
-}
+const secret = readLinkSecret()
+if (secret) showViewer(secret)
+else showHost()
 
 window.addEventListener('beforeunload', (ev) => {
-  if (active) {
-    // A reload kills the stream for everybody watching, so ask first.
+  // A reload kills the stream for everybody watching, so ask first.
+  if (active?.isLive) {
     ev.preventDefault()
     ev.returnValue = ''
   }
 })
 
-window.addEventListener('pagehide', () => active?.stop())
-
-route()
+window.addEventListener('pagehide', () => active?.destroy())
 
 const support = checkSupport()
-if (support.isIOS && !readLinkSecret()) {
+if (support.isIOS && !secret) {
   toast(
     'This device can watch a stream, but Apple gives no browser the right to share a screen.',
     'info',

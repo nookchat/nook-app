@@ -125,7 +125,19 @@ try {
   await host.addInitScript(DISPLAY_STUB)
   await host.goto(APP_URL, { waitUntil: 'domcontentloaded' })
 
-  await host.getByRole('button', { name: 'Share my screen' }).click()
+  // The app must open on the sharing page, with no welcome screen in the way.
+  const opening = await host.evaluate(() => ({
+    picker: !!document.querySelector('.pick'),
+    quality: !!document.querySelector('.presets'),
+    text: document.body.innerText,
+  }))
+  check(
+    'the app opens straight on the sharing page',
+    opening.picker && opening.quality && opening.text.includes('Choose what to share'),
+    opening.picker ? 'picker and quality panel are up' : 'no picker on load',
+  )
+
+  await host.getByRole('button', { name: 'Choose what to share' }).click()
   const linkInput = host.locator('input[aria-label="The link to share"]')
   await linkInput.waitFor({ timeout: 15_000 })
   const link = await linkInput.inputValue()
@@ -319,6 +331,22 @@ try {
     'the viewer to see the end of the stream',
   )
   check('viewer is told when the host stops', ended)
+
+  const backToPicker = await waitFor(
+    async () =>
+      host.evaluate(() => {
+        // innerText is the rendered text, so the eyebrow arrives uppercased.
+        const summary = document.querySelector('.summary-card')
+        return document.querySelector('.pick') && summary ? summary.textContent ?? '' : null
+      }),
+    10_000,
+    'the host to land back on the picker with a summary',
+  )
+  check(
+    'stopping returns to the picker, not a welcome page',
+    /viewers? at the peak/.test(backToPicker),
+    backToPicker.replace(/\s+/g, ' ').slice(0, 70),
+  )
   await viewer.screenshot({ path: `${SHOTS}viewer-ended.png` })
 
   check('no console errors on the host', errors.host.length === 0, errors.host.join(' | '))

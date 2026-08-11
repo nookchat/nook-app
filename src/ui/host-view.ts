@@ -6,7 +6,7 @@
  * connection stands up, and after that the bus only waits for new arrivals.
  */
 
-import { hostNotes, checkSupport } from '../diagnostics'
+import { hostBlocker, hostNotes, checkSupport } from '../diagnostics'
 import { AudioMixer } from '../media/mixer'
 import { captureMicrophone, captureScreen, CaptureError, type ScreenCapture } from '../media/capture'
 import { deriveRoom, newPeerId, newSecret, roomLink, type Room } from '../room'
@@ -28,8 +28,9 @@ import {
 import { gradeOf } from '../rtc/stats'
 import { loadSettings, saveSettings, type HostSettings } from '../settings'
 import { clear, copyText, fmtDuration, fmtKbps, h, labelled } from './dom'
-import { icon } from './icons'
+import { brandMark, icon } from './icons'
 import { qrSvg } from './qr'
+import { aboutCard, summaryCard, type SessionSummary } from './shell'
 import { toast } from './toast'
 import { VideoSurface } from './video-surface'
 
@@ -40,15 +41,8 @@ const PENDING_TTL_MS = 120_000
 /** How long a broken connection stays in the list before Beam clears it away. */
 const DEAD_PEER_MS = 20_000
 
-export interface SessionSummary {
-  seconds: number
-  peakViewers: number
-  bytesSent: number
-}
-
 export class HostView {
   private readonly root: HTMLElement
-  private readonly onExit: (summary: SessionSummary | null) => void
   private readonly selfId = newPeerId()
   private settings: HostSettings = loadSettings()
 
@@ -61,18 +55,22 @@ export class HostView {
 
   private readonly peers = new Map<string, HostPeer>()
   private readonly pending = new Map<string, number>()
-  private readonly startedAt = Date.now()
+  private startedAt = 0
   private peakViewers = 0
   private bytesSent = 0
+
+  /** Idle means the page is up and waiting for a source to be picked. */
+  private phase: 'idle' | 'live' = 'idle'
+  private lastSummary: SessionSummary | null = null
 
   private effectiveBudget = 0
   private congestedTicks = 0
   private lastBudgetDrop = 0
 
   private timers: number[] = []
-  private stopped = false
 
   // Elements we update in place.
+  private sidePanel!: HTMLDivElement
   private linkInput!: HTMLInputElement
   private statusPills!: HTMLDivElement
   private viewerList!: HTMLDivElement
@@ -88,14 +86,30 @@ export class HostView {
   private relayLine!: HTMLDivElement
   private elapsed!: HTMLSpanElement
 
-  constructor(root: HTMLElement, onExit: (summary: SessionSummary | null) => void) {
+  constructor(root: HTMLElement) {
     this.root = root
-    this.onExit = onExit
     this.effectiveBudget = this.settings.budgetKbps
   }
 
-  /** Call this straight from a click handler, so the capture prompt is allowed. */
-  async start(): Promise<void> {
+  get isLive(): boolean {
+    return this.phase === 'live'
+  }
+
+  /** Draw the sharing page straight away. Beam has no welcome screen. */
+  mount(): void {
+    this.renderShell()
+    this.renderIdle()
+  }
+
+  /**
+   * Open the picker and go live.
+   *
+   * This has to run inside a click. A browser shows the screen picker for a
+   * real gesture and for nothing else, which is why the page cannot start
+   * sharing on its own the moment it loads.
+   */
+  async beginShare(): Promise<void> {
+    if (this.phase === 'live') return
     try {
       this.capture = await captureScreen({
         maxHeight: this.settings.maxHeight,
@@ -103,13 +117,20 @@ export class HostView {
         wantSystemAudio: this.settings.shareSystemAudio,
       })
     } catch (err) {
-      const message =
-        err instanceof CaptureError ? err.message : `The screen share failed: ${String(err)}`
-      toast(message, 'bad', 8000)
-      this.stopped = true
-      this.onExit(null)
+      // A cancelled picker is an ordinary answer, so say nothing and wait.
+      if (!(err instanceof CaptureError) || err.kind !== 'denied') {
+        const message =
+          err instanceof CaptureError ? err.message : `The screen share failed: ${String(err)}`
+        toast(message, 'bad', 8000)
+      }
       return
     }
+
+    this.phase = 'live'
+    this.startedAt = Date.now()
+    this.peakViewers = 0
+    this.bytesSent = 0
+    this.effectiveBudget = this.settings.budgetKbps
 
     this.mixer = new AudioMixer()
     await this.mixer.resume()
@@ -122,14 +143,33 @@ export class HostView {
 
     const secret = newSecret()
     this.room = await deriveRoom(secret)
-    this.render(secret)
+    this.renderLive(secret)
     this.openBus()
     this.startLoops()
   }
 
+  /** End the stream and return to the picker, without leaving the page. */
   stop(): void {
-    if (this.stopped) return
-    this.stopped = true
+    if (this.phase !== 'live') return
+    this.phase = 'idle'
+    this.lastSummary = {
+      seconds: Math.round((Date.now() - this.startedAt) / 1000),
+      peakViewers: this.peakViewers,
+      bytesSent: this.bytesSent,
+    }
+    this.teardownSession()
+    this.renderIdle()
+  }
+
+  /** Full teardown, for leaving the page. */
+  destroy(): void {
+    this.phase = 'idle'
+    this.teardownSession()
+    this.surface?.destroy()
+    this.surface = null
+  }
+
+  private teardownSession(): void {
     for (const t of this.timers) window.clearInterval(t)
     this.timers = []
     document.title = 'Beam · peer to peer screen share'
@@ -137,15 +177,14 @@ export class HostView {
     for (const peer of this.peers.values()) peer.close()
     this.peers.clear()
     this.pending.clear()
-    window.setTimeout(() => this.bus?.stop(), 250)
-    this.surface?.destroy()
+    const bus = this.bus
+    this.bus = null
+    if (bus) window.setTimeout(() => bus.stop(), 250)
     this.capture?.stream.getTracks().forEach((t) => t.stop())
+    this.capture = null
     this.mixer?.close()
-    this.onExit({
-      seconds: Math.round((Date.now() - this.startedAt) / 1000),
-      peakViewers: this.peakViewers,
-      bytesSent: this.bytesSent,
-    })
+    this.mixer = null
+    this.outStream = null
   }
 
   // ---- signal ----
@@ -325,7 +364,10 @@ export class HostView {
 
   private sourceSize(): { width: number; height: number } {
     const s = this.capture?.video.getSettings()
-    return { width: s?.width ?? 1920, height: s?.height ?? 1080 }
+    if (s?.width && s?.height) return { width: s.width, height: s.height }
+    // Nothing is captured yet, so preview the plan against the chosen cap.
+    const height = this.settings.maxHeight || 1080
+    return { width: Math.round((height * 16) / 9), height }
   }
 
   private currentPlan(viewerCount: number): QualityPlan {
@@ -363,6 +405,7 @@ export class HostView {
   }
 
   private tickMeters(): void {
+    if (!this.sysMeter || !this.micMeter) return
     const levels = this.mixer?.levels() ?? { system: 0, mic: 0 }
     this.sysMeter.style.width = `${Math.round(levels.system * 100)}%`
     this.micMeter.style.width = `${Math.round(levels.mic * 100)}%`
@@ -371,7 +414,7 @@ export class HostView {
   private watchCaptureEnd(track: MediaStreamTrack): void {
     // The browser puts its own "Stop sharing" bar on screen. Respect it.
     track.addEventListener('ended', () => {
-      if (this.stopped || this.capture?.video !== track) return
+      if (this.phase !== 'live' || this.capture?.video !== track) return
       toast('You stopped the screen share, so the stream ended.', 'warn')
       this.stop()
     })
@@ -379,13 +422,70 @@ export class HostView {
 
   // ---- render ----
 
-  private render(secret: string): void {
+  /** The frame that both states live in: the picture on the left, panels right. */
+  private renderShell(): void {
     clear(this.root)
+    this.surface = new VideoSurface({ muted: true, showVolume: false })
+    this.surface.setMode('fit')
+    this.sidePanel = h('div', { class: 'host-side' })
+    this.root.append(
+      h('div', { class: 'host-grid' }, [
+        h('div', { class: 'stack', style: { minHeight: '0' } }, [this.surface.root]),
+        this.sidePanel,
+      ]),
+    )
+  }
+
+  /** Waiting for a source. The quality is set here, before anything goes out. */
+  private renderIdle(): void {
+    const support = checkSupport()
+    const blocker = hostBlocker(support)
+
+    this.surface?.setStream(null)
+    this.surface?.setBadges([])
+    this.surface?.setControlsVisible(false)
+    this.surface?.setOverlay(
+      h('div', { class: 'pick' }, [
+        brandMark(46),
+        h('h2', { text: blocker ? 'Beam cannot share from this browser' : 'Choose what to share' }),
+        h('p', {
+          class: 'dim',
+          style: { margin: '0', maxWidth: '38ch' },
+          text:
+            blocker ??
+            'A window, a browser tab, or your whole screen. You get a link to send the moment you pick.',
+        }),
+        blocker
+          ? null
+          : h(
+              'button',
+              { class: 'primary big', on: { click: () => void this.beginShare() } },
+              [icon('monitor', 20), 'Choose what to share'],
+            ),
+      ]),
+    )
+
+    clear(this.sidePanel)
+    const cards: (HTMLElement | null)[] = [
+      this.lastSummary ? summaryCard(this.lastSummary) : null,
+      this.qualityCard(),
+      aboutCard(),
+    ]
+    for (const card of cards) if (card) this.sidePanel.append(card)
+
+    this.renderPresets()
+    this.renderResolutions()
+    this.renderFps()
+    this.renderPlan(this.currentPlan(1), 0)
+  }
+
+  /** Sharing. The link, the viewers, and everything that only exists live. */
+  private renderLive(secret: string): void {
     const support = checkSupport()
 
-    this.surface = new VideoSurface({ muted: true, showVolume: false })
-    this.surface.setStream(this.outStream)
-    this.surface.setMode('fit')
+    this.surface?.setOverlay(null)
+    this.surface?.setControlsVisible(true)
+    this.surface?.setStream(this.outStream)
 
     this.linkInput = h('input', {
       type: 'text',
@@ -395,30 +495,14 @@ export class HostView {
       on: { focus: (ev) => (ev.target as HTMLInputElement).select() },
     })
 
-    this.statusPills = h('div', { class: 'row wrap', style: { gap: '6px' } })
-    this.viewerList = h('div', {})
-    this.planLine = h('div', { class: 'tiny plan-line' })
-    this.uploadLine = h('div', { class: 'tiny faint' })
-    this.presetList = h('div', { class: 'presets' })
-    this.resolutionRow = h('div', { class: 'chips' })
-    this.fpsRow = h('div', { class: 'chips' })
-    this.relayLine = h('div', { class: 'row wrap', style: { gap: '6px' } })
-    this.elapsed = h('span', { class: 'mono tiny', text: '0:00' })
-
-    const side = h('div', { class: 'host-side' }, [
+    clear(this.sidePanel)
+    this.sidePanel.append(
       this.linkCard(),
       this.viewersCard(),
       this.qualityCard(),
       this.audioCard(support.systemAudio),
       this.sessionCard(),
       ...hostNotes(support).map((n) => h('div', { class: 'card tiny dim', text: n })),
-    ])
-
-    this.root.append(
-      h('div', { class: 'host-grid' }, [
-        h('div', { class: 'stack', style: { minHeight: '0' } }, [this.surface.root]),
-        side,
-      ]),
     )
 
     this.renderPresets()
@@ -525,6 +609,8 @@ export class HostView {
   }
 
   private viewersCard(): HTMLElement {
+    this.statusPills = h('div', { class: 'row wrap', style: { gap: '6px' } })
+    this.viewerList = h('div', {})
     return h('div', { class: 'card stack tight' }, [
       h('div', { class: 'row spread' }, [h('span', { class: 'eyebrow', text: 'Viewers' }), this.statusPills]),
       this.viewerList,
@@ -534,6 +620,12 @@ export class HostView {
   // ---- quality ----
 
   private qualityCard(): HTMLElement {
+    this.planLine = h('div', { class: 'tiny plan-line' })
+    this.uploadLine = h('div', { class: 'tiny faint' })
+    this.presetList = h('div', { class: 'presets' })
+    this.resolutionRow = h('div', { class: 'chips' })
+    this.fpsRow = h('div', { class: 'chips' })
+
     const budget = h('input', {
       type: 'range',
       min: '1',
@@ -738,6 +830,7 @@ export class HostView {
     this.renderFps()
     for (const peer of this.peers.values()) peer.setMode(preset.mode, this.settings.codec)
     await this.applyCaptureConstraints()
+    this.renderPlan(this.currentPlan(Math.max(1, this.peers.size)), this.peers.size)
   }
 
   private markCustom(): void {
@@ -762,7 +855,11 @@ export class HostView {
   /** Push the resolution and the frame rate onto the live capture track. */
   private async applyCaptureConstraints(): Promise<void> {
     const track = this.capture?.video
-    if (!track) return
+    if (!track) {
+      // Nothing is live yet. The next capture picks these up.
+      this.renderPlan(this.currentPlan(1), 0)
+      return
+    }
     const constraints: MediaTrackConstraints = {
       frameRate: { ideal: this.settings.fps, max: this.settings.fps },
     }
@@ -862,6 +959,8 @@ export class HostView {
   }
 
   private sessionCard(): HTMLElement {
+    this.relayLine = h('div', { class: 'row wrap', style: { gap: '6px' } })
+    this.elapsed = h('span', { class: 'mono tiny', text: '0:00' })
     return h('div', { class: 'card stack tight' }, [
       h('div', { class: 'row spread' }, [
         h('span', { class: 'tiny faint', text: 'Live for' }),
@@ -879,7 +978,7 @@ export class HostView {
   }
 
   private renderRelays(health: RelayHealth[]): void {
-    if (!this.relayLine) return
+    if (this.phase !== 'live' || !this.relayLine) return
     clear(this.relayLine)
     const open = health.filter((r) => r.status === 'open').length
     for (const r of health) {
@@ -898,7 +997,7 @@ export class HostView {
   }
 
   private renderViewers(): void {
-    if (!this.viewerList) return
+    if (this.phase !== 'live' || !this.viewerList) return
     clear(this.viewerList)
     clear(this.statusPills)
 
@@ -1021,6 +1120,7 @@ export class HostView {
 
   private renderPlan(plan: QualityPlan, viewerCount: number): void {
     if (!this.planLine) return
+    const prefix = this.phase === 'live' ? 'Each viewer gets' : 'Each viewer will get'
     const { width, height } = this.sourceSize()
     const ideal = idealBitrateKbps(
       this.settings.mode,
@@ -1032,7 +1132,7 @@ export class HostView {
     const sentHeight = Math.round(height / plan.scaleDown)
     const sentWidth = Math.round(width / plan.scaleDown)
 
-    this.planLine.textContent = `Each viewer gets ${sentWidth}x${sentHeight} at ${plan.maxFramerate} fps, about ${fmtKbps(
+    this.planLine.textContent = `${prefix} ${sentWidth}x${sentHeight} at ${plan.maxFramerate} fps, about ${fmtKbps(
       plan.maxBitrateKbps,
     )}.`
 
@@ -1052,6 +1152,7 @@ export class HostView {
   }
 
   private renderPreviewBadges(): void {
+    if (this.phase !== 'live') return
     const { width, height } = this.sourceSize()
     const first = [...this.peers.values()][0]
     const preset = presetById(this.settings.presetId)

@@ -3,9 +3,15 @@
 Peer to peer screen share with audio. The only server is the static webserver
 that sends the page.
 
-One person clicks **Share my screen** and gets a link. Anybody who opens that
-link watches live. The picture and the sound travel straight from one browser to
-the other. No media server sees them, and nothing is recorded.
+Beam opens on the sharing page. There is no welcome screen: pick a window, get a
+link, send it. Anybody who opens that link watches live. The picture and the
+sound travel straight from one browser to the other. No media server sees them,
+and nothing is recorded.
+
+A browser opens the screen picker for a real click and for nothing else, so the
+one click on **Choose what to share** is the least Beam can ask for. Everything
+around it, the quality preset and the frame rate, is already set before that
+click, and the link appears the moment the source is picked.
 
 ## Run it
 
@@ -208,9 +214,11 @@ Icons are stroked outlines on a 24 unit grid in `src/ui/icons.ts`, drawn in the
 current text colour, so one icon works on a button, on a dark video overlay, and
 in either theme.
 
-The opening screen has one job: start sharing. There is no tour and no feature
-list. The preset picker sits inline so the first stream starts correctly without
-a settings trip, and the browser check hides behind a disclosure.
+The app has one screen with two states. Idle shows the empty stage with the
+picker prompt, and the quality panel beside it, so the preset is chosen before
+anything goes out. Live swaps the stage for the preview and the panel for the
+link, the viewers, the audio, and the session. Stopping goes back to idle with a
+summary of the stream that just ended, never to a welcome page.
 
 ## Access control
 
@@ -245,7 +253,7 @@ src/
     capture.ts        getDisplayMedia and the microphone, with clear errors
     mixer.ts          WebAudio mix of screen audio and microphone into one track
   ui/
-    landing.ts        one screen, one action, with the preset picker
+    shell.ts          top bar, browser check, and the end of stream summary
     icons.ts          the stroked icon set and the brand mark
     qr.ts             a QR encoder, byte mode, level M, versions 1 to 10
     host-view.ts      link, viewer list, quality, audio, session
@@ -253,7 +261,7 @@ src/
     video-surface.ts  fit, fill, and one to one with zoom and pan
     dom.ts toast.ts   small helpers, no framework
 test/
-  e2e.mjs             host and viewer, end to end, 24 checks
+  e2e.mjs             host and viewer, end to end, 26 checks
   qr-check.mjs        every QR version, decoded back by Chrome
   mesh.mjs            N viewers against one host
   relay-probe.mjs     which public relays really carry a handshake

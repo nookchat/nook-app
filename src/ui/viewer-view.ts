@@ -77,6 +77,15 @@ export class ViewerView {
     this.showJoin()
   }
 
+  /** Watching counts as live: a reload would drop the stream. */
+  get isLive(): boolean {
+    return this.phase === 'live'
+  }
+
+  destroy(): void {
+    this.stop()
+  }
+
   stop(): void {
     if (this.stopped) return
     this.stopped = true
