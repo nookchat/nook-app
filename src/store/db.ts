@@ -97,6 +97,25 @@ export async function loadRoom(room: string): Promise<LogEvent[]> {
   })
 }
 
+/** Forget events by id, after compaction has decided they add nothing. */
+export async function deleteEvents(ids: string[]): Promise<void> {
+  if (ids.length === 0) return
+  const db = await open()
+  if (!db) return
+  await new Promise<void>((resolve) => {
+    try {
+      const transaction = db.transaction(EVENTS, 'readwrite')
+      transaction.oncomplete = () => resolve()
+      transaction.onerror = () => resolve()
+      transaction.onabort = () => resolve()
+      const store = transaction.objectStore(EVENTS)
+      for (const id of ids) store.delete(id)
+    } catch {
+      resolve()
+    }
+  })
+}
+
 export interface RoomNote {
   room: string
   /** The code, so a room can be reopened from the list without the link. */

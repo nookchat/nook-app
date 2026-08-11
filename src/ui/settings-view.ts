@@ -13,7 +13,9 @@
 
 import { cleanName } from '../chat'
 import { loadIdentity, saveDisplayName } from '../store/identity'
-import { copyText, h } from './dom'
+import { copyText, fmtBytes, h } from './dom'
+import { storagePressure } from '../store/compact'
+import { download, exportAll, importBundle } from '../store/transfer'
 import { icon } from './icons'
 import { applyTheme, loadTheme, THEMES } from './themes'
 import { toast } from './toast'
@@ -25,6 +27,50 @@ export interface SettingsActions {
 
 export function settingsView(actions: SettingsActions): HTMLElement {
   const identity = loadIdentity()
+
+  const usage = h('div', { class: 'tiny faint', text: 'Checking how much room is left...' })
+  void storagePressure().then(async (fraction) => {
+    const estimate = await navigator.storage?.estimate?.().catch(() => null)
+    usage.textContent = estimate?.usage
+      ? `Using ${fmtBytes(estimate.usage)} of the space this browser allows, about ${Math.round(fraction * 100)} percent.`
+      : 'This browser does not say how much room is left.'
+  })
+
+  const doExport = async (withIdentity: boolean): Promise<void> => {
+    download(await exportAll(withIdentity))
+    toast(
+      withIdentity
+        ? 'Exported, key included. Treat that file as a password.'
+        : 'Exported. Your key stayed on this device.',
+      'info',
+      7000,
+    )
+  }
+
+  const file = h('input', { type: 'text', ariaLabel: 'Import a file' })
+  file.type = 'file'
+  file.accept = 'application/json'
+  file.classList.add('hidden')
+  file.addEventListener('change', async () => {
+    const chosen = file.files?.[0]
+    if (!chosen) return
+    try {
+      const takeIdentity = window.confirm(
+        'Take the identity from this file as well? Only do this if it is your own export, on a new device. It replaces who you are here.',
+      )
+      const report = await importBundle(await chosen.text(), takeIdentity)
+      toast(
+        `Imported ${report.accepted} events across ${report.spaces} spaces.` +
+          (report.refused ? ` ${report.refused} were refused.` : '') +
+          (report.identity ? ' Your identity was replaced.' : ''),
+        'info',
+        9000,
+      )
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'bad', 8000)
+    }
+    file.value = ''
+  })
 
   const name = h('input', {
     type: 'text',
@@ -83,6 +129,20 @@ export function settingsView(actions: SettingsActions): HTMLElement {
           h('div', {
             class: 'tiny faint',
             text: 'This is who you are. Every message you write is signed with it, so nobody can take your name by typing it, and two people called the same thing are still two people. It never leaves this device.',
+          }),
+        ]),
+
+        h('div', { class: 'card stack tight' }, [
+          h('span', { class: 'eyebrow', text: 'Your data' }),
+          usage,
+          h('div', { class: 'row' }, [
+            h('button', { class: 'grow', text: 'Export everything', on: { click: () => void doExport(false) } }),
+            h('button', { text: 'Export with my ID', title: 'Carries your key too, so a new device is still you', on: { click: () => void doExport(true) } }),
+          ]),
+          h('div', { class: 'row' }, [file, h('button', { class: 'grow', text: 'Import a file', on: { click: () => file.click() } })]),
+          h('div', {
+            class: 'tiny faint',
+            text: 'Every event in a file is verified the same way one from a person is, so an import can only add what it can prove. Old messages, edits and reactions are compacted away as they are superseded, and history past a limit is trimmed from the oldest end.',
           }),
         ]),
 

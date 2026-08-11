@@ -73,6 +73,8 @@ export class SpaceView {
 
   private channel = DEFAULT_CHANNEL
   private drawQueued = false
+  private readonly locked: boolean
+  private readonly password: string
   private voice: Voice | null = null
   private stopped = false
   private timers: number[] = []
@@ -102,10 +104,18 @@ export class SpaceView {
   private sharePanel!: HTMLDivElement
   private channelTitle!: HTMLSpanElement
 
-  constructor(root: HTMLElement, secret: string, chrome: WindowChrome | null, onLeave: () => void) {
+  constructor(
+    root: HTMLElement,
+    secret: string,
+    chrome: WindowChrome | null,
+    onLeave: () => void,
+    lock: { locked: boolean; password: string } = { locked: false, password: '' },
+  ) {
     this.root = root
     this.secret = secret
     this.chrome = chrome
+    this.locked = lock.locked
+    this.password = lock.password
     chrome?.setActions({
       minimise: () => this.root.classList.toggle('rail-hidden'),
       maximise: () => this.surface?.requestFullscreen(),
@@ -124,7 +134,7 @@ export class SpaceView {
     this.renderShell()
 
     try {
-      this.room = await deriveRoom(this.secret)
+      this.room = await deriveRoom(this.secret, this.password)
     } catch {
       this.stage.append(h('div', { class: 'empty', text: 'That room code is not valid.' }))
       return
@@ -323,7 +333,7 @@ export class SpaceView {
     this.chatPanel.actions = {
       say: (text, replyTo) => void this.publish((c) => c.say(text, this.channel, replyTo)),
       edit: (id, text) => void this.publish((c) => c.edit(id, text)),
-      react: (id, emoji) => void this.publish((c) => c.react(id, emoji)),
+      react: (id, emoji, on) => void this.publish((c) => c.react(id, emoji, on)),
       retract: (id) => void this.publish((c) => c.retract(id)),
       rename: (name) => this.rename(name),
     }
@@ -414,11 +424,11 @@ export class SpaceView {
       class: 'share-code',
       text: formatSecret(this.secret),
       title: 'The code for this space',
-      data: { link: roomLink(this.secret) },
+      data: { link: roomLink(this.secret, this.locked) },
     })
     const copy = h('button', { class: 'grow' }, [icon('copy', 14), 'Copy invite'])
     copy.addEventListener('click', async () => {
-      const ok = await copyText(roomLink(this.secret))
+      const ok = await copyText(roomLink(this.secret, this.locked))
       toast(ok ? 'Invite link copied.' : 'Could not copy. The code is above.', ok ? 'info' : 'warn')
     })
     const qr = h('button', { class: 'icon-only', title: 'Show a QR code', ariaLabel: 'Show a QR code' })
@@ -427,7 +437,13 @@ export class SpaceView {
     return h('div', { class: 'stack tight' }, [
       h('span', { class: 'eyebrow', text: 'Invite' }),
       code,
-      h('div', { class: 'share-link truncate', text: shortLink(this.secret) }),
+      h('div', { class: 'share-link truncate', text: shortLink(this.secret, this.locked) }),
+      this.locked
+        ? h('div', {
+            class: 'tiny faint',
+            text: 'This space has a password. Send it separately from the link.',
+          })
+        : null,
       h('div', { class: 'row' }, [copy, qr]),
     ])
   }
@@ -444,7 +460,7 @@ export class SpaceView {
     window.addEventListener('keydown', onKey)
     const frame = h('div', { class: 'qr-frame' })
     try {
-      frame.append(qrSvg(roomLink(this.secret), { pixels: 240 }))
+      frame.append(qrSvg(roomLink(this.secret, this.locked), { pixels: 240 }))
     } catch {
       frame.append(h('div', { class: 'small', text: 'This link is too long for a QR code.' }))
     }

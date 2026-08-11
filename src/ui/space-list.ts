@@ -6,13 +6,13 @@
  * somebody sent you, in whatever shape they sent it.
  */
 
-import { newSecret, parseSecret } from '../room'
+import { newSecret, parseLink } from '../room'
 import { listRooms } from '../store/db'
 import { clear, h } from './dom'
 import { icon } from './icons'
 
 export interface SpaceListActions {
-  open(secret: string): void
+  open(secret: string, locked?: boolean, password?: string): void
 }
 
 export async function spaceList(actions: SpaceListActions): Promise<HTMLElement> {
@@ -25,13 +25,18 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
   })
   const go = (): void => {
     const raw = join.value.trim()
-    const code = parseSecret(raw.includes('#') ? raw.slice(raw.lastIndexOf('#') + 1) : raw)
-    if (!code) {
+    const link = parseLink(raw.includes('#') ? raw.slice(raw.lastIndexOf('#') + 1) : raw)
+    if (!link) {
       join.value = ''
       join.placeholder = 'That is not a code'
       return
     }
-    actions.open(code)
+    if (!link.locked) {
+      actions.open(link.secret)
+      return
+    }
+    const password = window.prompt('This space has a password.') ?? ''
+    if (password) actions.open(link.secret, true, password)
   }
   join.addEventListener('keydown', (ev) => {
     if ((ev as KeyboardEvent).key === 'Enter') go()
@@ -79,6 +84,17 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
             { class: 'primary big grow', on: { click: () => actions.open(newSecret()) } },
             [icon('plus', 16), 'New space'],
           ),
+          h('button', {
+            class: 'big',
+            title: 'Nobody can join with the link alone: they need the password too',
+            text: 'New locked space',
+            on: {
+              click: () => {
+                const password = window.prompt('Choose a password for this space.') ?? ''
+                if (password) actions.open(newSecret(), true, password)
+              },
+            },
+          }),
         ]),
       ]),
     ]),

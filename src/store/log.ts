@@ -142,6 +142,12 @@ export class RoomLog {
     return true
   }
 
+  /** Swap the contents for a compacted set, keeping the clock where it is. */
+  replace(events: LogEvent[]): void {
+    this.byId.clear()
+    for (const e of events) this.byId.set(e.id, e)
+  }
+
   all(): LogEvent[] {
     return [...this.byId.values()].sort(compare)
   }
@@ -224,8 +230,13 @@ export class RoomLog {
         const emoji = String(e.body.emoji ?? '').slice(0, 8)
         if (!emoji) continue
         const who = target.reactions.get(emoji) ?? new Set<string>()
-        // A reaction toggles, so sending it twice takes it back.
-        if (who.has(e.author)) who.delete(e.author)
+        /*
+         * On and off are stated rather than toggled. A toggle has to be counted
+         * from the beginning of time to know where it landed, which means the
+         * log can never forget any of them. Stated this way the newest one wins
+         * and the rest can be compacted away.
+         */
+        if (e.body.on === false) who.delete(e.author)
         else who.add(e.author)
         if (who.size) target.reactions.set(emoji, who)
         else target.reactions.delete(emoji)

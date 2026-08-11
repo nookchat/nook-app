@@ -80,16 +80,29 @@ export function newPeerId(): string {
   return hex(crypto.getRandomValues(new Uint8Array(6)))
 }
 
-export async function deriveRoom(secret: string): Promise<Room> {
+/**
+ * Turn a code, and an optional password, into a room.
+ *
+ * The code alone is already a key, so a password is a second factor rather than
+ * the only one: it means holding the link is not enough. It is mixed into both
+ * the topic and the key, so a wrong password does not produce a room you can
+ * see and fail to read. It produces a different room entirely, on a topic
+ * nobody is talking on.
+ *
+ * That also means a password cannot be changed later without changing the
+ * space, which is why it is asked for once, when the space is made.
+ */
+export async function deriveRoom(secret: string, password = ''): Promise<Room> {
   const canonical = parseSecret(secret)
   if (!canonical) throw new Error('That is not a valid room code.')
+  const salted = password ? `${canonical}|${password}` : canonical
 
-  const digest = await crypto.subtle.digest('SHA-256', enc.encode('cathode-room-id|' + canonical))
+  const digest = await crypto.subtle.digest('SHA-256', enc.encode('cathode-room-id|' + salted))
   const id = hex(new Uint8Array(digest)).slice(0, 32)
 
   const material = await crypto.subtle.importKey(
     'raw',
-    enc.encode(canonical) as BufferSource,
+    enc.encode(salted) as BufferSource,
     'HKDF',
     false,
     ['deriveKey'],
@@ -111,21 +124,40 @@ export async function deriveRoom(secret: string): Promise<Room> {
 }
 
 /** The link the host shares. The code stays after the hash, so it is client side only. */
-export function roomLink(secret: string): string {
+export function roomLink(secret: string, locked = false): string {
   const { origin, pathname } = window.location
-  return `${origin}${pathname}#${formatSecret(secret)}`
+  return `${origin}${pathname}#${formatSecret(secret)}${locked ? LOCK : ''}`
+}
+
+/**
+ * A locked space says so in its link, so whoever opens it is asked for the
+ * password rather than dropped into an empty room they cannot explain.
+ */
+const LOCK = '.P'
+
+export interface LinkInfo {
+  secret: string
+  locked: boolean
+}
+
+export function parseLink(raw: string): LinkInfo | null {
+  const trimmed = raw.trim()
+  const locked = trimmed.toUpperCase().endsWith(LOCK)
+  const secret = parseSecret(locked ? trimmed.slice(0, -LOCK.length) : trimmed)
+  return secret ? { secret, locked } : null
 }
 
 /** The link without its scheme, for showing rather than for copying. */
-export function shortLink(secret: string): string {
+export function shortLink(secret: string, locked = false): string {
   const { host, pathname } = window.location
-  return `${host}${pathname === '/' ? '' : pathname}/#${formatSecret(secret)}`.replace('//#', '/#')
+  const tail = `${formatSecret(secret)}${locked ? LOCK : ''}`
+  return `${host}${pathname === '/' ? '' : pathname}/#${tail}`.replace('//#', '/#')
 }
 
-/** Read the room code out of the current URL, or null when this is a fresh visit. */
-export function readLinkSecret(): string | null {
+/** Read the room out of the current URL, or null when this is a fresh visit. */
+export function readLink(): LinkInfo | null {
   const frag = window.location.hash.replace(/^#/, '')
-  return frag ? parseSecret(frag) : null
+  return frag ? parseLink(frag) : null
 }
 
 /**
@@ -133,8 +165,8 @@ export function readLinkSecret(): string | null {
  * there. replaceState rather than pushState: the back button should leave the
  * app, not walk backwards through rooms that no longer exist.
  */
-export function setLinkSecret(secret: string): void {
-  history.replaceState(null, '', `#${formatSecret(secret)}`)
+export function setLinkSecret(secret: string, locked = false): void {
+  history.replaceState(null, '', `#${formatSecret(secret)}${locked ? LOCK : ''}`)
 }
 
 export function clearLink(): void {

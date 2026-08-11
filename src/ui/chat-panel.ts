@@ -20,7 +20,7 @@ const QUICK = ['👍', '😂', '🔥', '❤️', '👀']
 export interface ChatActions {
   say(text: string, replyTo: string | null): void
   edit(id: string, text: string): void
-  react(id: string, emoji: string): void
+  react(id: string, emoji: string, on: boolean): void
   retract(id: string): void
   rename(name: string): void
 }
@@ -198,7 +198,7 @@ export class ChatPanel {
               class: `chat-react${who.has(this.me) ? ' on' : ''}`,
               text: `${emoji} ${who.size}`,
               title: 'Add or take back this reaction',
-              on: { click: () => this.actions?.react(m.id, emoji) },
+              on: { click: () => this.actions?.react(m.id, emoji, !who.has(this.me)) },
             }),
           )
         }
@@ -250,7 +250,7 @@ export class ChatPanel {
           text: emoji,
           on: {
             click: () => {
-              this.actions?.react(m.id, emoji)
+              this.actions?.react(m.id, emoji, true)
               row.remove()
             },
           },

@@ -6,7 +6,7 @@
 
 import './styles.css'
 import { bootTheme } from './ui/themes'
-import { clearLink, readLinkSecret, setLinkSecret } from './room'
+import { clearLink, readLink, setLinkSecret } from './room'
 import { clear } from './ui/dom'
 import { createWindow, type WindowChrome } from './ui/shell'
 import { spaceList } from './ui/space-list'
@@ -42,20 +42,34 @@ async function showList(): Promise<void> {
   const chrome = freshWindow('Cathode')
   chrome.setStatus(['Pick a space, or make one'])
   chrome.setActions({})
-  chrome.body.append(await spaceList({ open: (secret) => openSpace(secret) }))
+  chrome.body.append(
+    await spaceList({ open: (secret, locked, password) => openSpace(secret, locked, password) }),
+  )
 }
 
-function openSpace(secret: string): void {
+function openSpace(secret: string, locked = false, password = ''): void {
   const chrome = freshWindow('Cathode')
-  setLinkSecret(secret)
-  const view = new SpaceView(chrome.body, secret, chrome, () => void showList())
+  setLinkSecret(secret, locked)
+  const view = new SpaceView(chrome.body, secret, chrome, () => void showList(), {
+    locked,
+    password,
+  })
   active = view
   void view.start()
 }
 
-const linked = readLinkSecret()
-if (linked) openSpace(linked)
-else void showList()
+const linked = readLink()
+if (linked) {
+  if (linked.locked) {
+    const password = window.prompt('This space has a password.') ?? ''
+    if (password) openSpace(linked.secret, true, password)
+    else void showList()
+  } else {
+    openSpace(linked.secret)
+  }
+} else {
+  void showList()
+}
 
 window.addEventListener('beforeunload', (ev) => {
   if (active?.isLive) {

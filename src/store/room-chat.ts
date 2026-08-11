@@ -9,7 +9,8 @@
  */
 
 import { loadIdentity } from './identity'
-import { loadRoom, noteRoom, putEvents } from './db'
+import { deleteEvents, loadRoom, noteRoom, putEvents } from './db'
+import { compact, limitsForNow } from './compact'
 import {
   cleanChannel,
   DEFAULT_CHANNEL,
@@ -37,6 +38,7 @@ export class RoomChat {
 
   private readonly secret: string
   private name: string
+  private sinceCompaction = 0
 
   constructor(roomId: string, secret: string) {
     this.log = new RoomLog(roomId)
@@ -50,10 +52,12 @@ export class RoomChat {
     return this.name
   }
 
-  /** Read this device's copy before talking to anybody. */
+  /** Read this device's copy before talking to anybody, and tidy it on the way in. */
   async load(): Promise<void> {
     const stored = await loadRoom(this.log.room)
-    for (const event of stored) this.log.add(event)
+    const { keep, drop } = compact(stored, await limitsForNow())
+    if (drop.length) void deleteEvents(drop)
+    for (const event of keep) this.log.add(event)
     void noteRoom({
       room: this.log.room,
       secret: this.secret,
@@ -105,8 +109,8 @@ export class RoomChat {
     return this.write('edit', { target, text })
   }
 
-  react(target: string, emoji: string): Promise<LogEvent> {
-    return this.write('react', { target, emoji })
+  react(target: string, emoji: string, on: boolean): Promise<LogEvent> {
+    return this.write('react', { target, emoji, on })
   }
 
   retract(target: string): Promise<LogEvent> {
@@ -116,6 +120,16 @@ export class RoomChat {
   announceName(name: string): Promise<LogEvent> {
     this.name = name
     return this.write('profile', { name })
+  }
+
+  /** Throw away what the log no longer needs, in memory and on disk. */
+  async tidy(): Promise<void> {
+    this.sinceCompaction = 0
+    const { keep, drop } = compact(this.log.all(), await limitsForNow())
+    if (drop.length === 0) return
+    this.log.replace(keep)
+    await deleteEvents(drop)
+    this.onChange?.()
   }
 
   // ---- the wire ----
@@ -158,6 +172,8 @@ export class RoomChat {
     }
     if (fresh.length) {
       void putEvents(fresh)
+      this.sinceCompaction += fresh.length
+      if (this.sinceCompaction > 200) void this.tidy()
       this.onChange?.()
     }
     return fresh
