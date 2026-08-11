@@ -18,7 +18,8 @@ const CHROME =
 const BOUNDARIES = [14, 15, 26, 27, 42, 43, 62, 63, 84, 85, 106, 107, 122, 123, 152, 153, 180, 181, 213]
 
 const CASES = [
-  'https://cathode.example/#r=UAeg19hayK8wUFSO2oqEWg',
+  'https://cathode.video/#r=UAeg19hayK8wUFSO2oqEWg',
+  'https://cathode.video/#r=' + 'A'.repeat(22),
   'http://localhost:5173/#r=hnyiWMSfZ61Cj4V9uGjdlQ',
   'https://a-rather-long-project-name.pages.dev/cathode/#r=xCQwtNoYKsbeF2AfcVPVNA',
   'x',

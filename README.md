@@ -1,5 +1,7 @@
 # Cathode
 
+**[cathode.video](https://cathode.video)**
+
 Peer to peer screen share with audio. The only server is the static webserver
 that sends the page.
 
@@ -25,12 +27,38 @@ npm run build          # typecheck, then a static bundle in dist/
 npm run preview        # serve dist/ over the network
 ```
 
-Copy `dist/` to any static host. There is no backend, no database, and no
-environment variable. The site works from a sub path, because the build uses a
-relative base.
+## Put it online
 
-WebRTC needs a secure page. Use HTTPS in production. `http://localhost` counts
-as secure while you develop.
+Copy `dist/` to any static host and point **cathode.video** at it. That is the
+whole deployment. There is no backend, no database, and no environment variable.
+
+What the host has to do:
+
+| Needs                | Why                                                              |
+| -------------------- | ---------------------------------------------------------------- |
+| HTTPS                | WebRTC, screen capture and the Web Crypto API all refuse plain http |
+| Static files         | Nothing runs on the server. It only has to send the bundle       |
+| Nothing else         | No rewrite rules, no redirects, no headers to set                 |
+
+The rewrite rules are worth spelling out, because most single page apps need
+them and this one does not. Cathode has exactly one URL. The room key lives in
+the fragment, after the `#`, which a browser never sends to a server, so the
+server never sees a path it has to route. A plain static host serving
+`index.html` at the root is complete.
+
+The build uses a relative base, so the same `dist/` also works from a sub path
+if you ever want `cathode.video/beta/` alongside the root.
+
+`http://localhost` counts as a secure page, so development needs no certificate.
+
+At this domain a share link looks like:
+
+```
+https://cathode.video/#r=UAeg19hayK8wUFSO2oqEWg
+```
+
+Forty seven characters, which the QR encoder fits into a version 4 symbol, 33
+modules square. That scans from across a desk without anybody squinting.
 
 ## Test it
 
