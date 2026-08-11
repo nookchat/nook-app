@@ -84,7 +84,26 @@ try {
     45_000,
     'an inbound voice track',
   )
-  check('two people in a voice channel hear each other', heard > 0, `${heard} inbound streams`)
+  check('the answering side hears the caller', heard > 0, `${heard} inbound streams`)
+
+  /*
+   * And the other way, which is the half that used to be missing. A connection
+   * can reach "connected" while audio travels one way only, so checking both
+   * directions is the only check worth having here.
+   */
+  const heardBack = await waitFor(
+    async () =>
+      one.evaluate(() => {
+        const live = Array.from(document.querySelectorAll('audio')).filter((a) => {
+          const s = a.srcObject
+          return s && s.getAudioTracks().some((t) => t.readyState === 'live')
+        })
+        return live.length > 0 ? live.length : null
+      }),
+    30_000,
+    'the caller to hear the answering side',
+  )
+  check('and the caller hears them back', heardBack > 0, `${heardBack} inbound streams`)
 
   const seenByOne = await waitFor(
     async () =>

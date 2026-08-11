@@ -1,12 +1,6 @@
 /**
  * Voice channels.
  *
- * UNFINISHED. Presence works: joining a channel puts you in it, everybody sees
- * who is standing where, and leaving takes you out. Audio does not yet flow.
- * Offers and answers are exchanged and a call object exists on both sides, but
- * no inbound track arrives, so `npm run test:voice` fails on that check and is
- * left failing rather than quietly weakened. Do not treat this as working.
- *
  * A voice channel is somewhere you stand rather than something you send. Join
  * one and you are connected to everybody else standing in it; leave and those
  * connections go.
@@ -150,7 +144,7 @@ export class Voice {
          * an offer is itself the evidence.
          */
         this.standing.set(env.from, this.channel)
-        const call = this.call(env.from)
+        const call = this.call(env.from, false)
         await call.onOffer(data as unknown as RTCSessionDescriptionInit)
         this.onChange?.()
         return
@@ -176,7 +170,7 @@ export class Voice {
     // A call that never came up gets another go, in case an offer went missing.
     existing?.close()
     this.calls.delete(peerId)
-    void this.call(peerId).dial()
+    void this.call(peerId, true).dial()
   }
 
   /** Retry anything that has not come up. Cheap, and it recovers a lost offer. */
@@ -185,10 +179,10 @@ export class Voice {
     for (const peer of this.membersOf(this.channel)) this.considerCall(peer)
   }
 
-  private call(peerId: string): Call {
+  private call(peerId: string, weOffer: boolean): Call {
     const existing = this.calls.get(peerId)
     if (existing) return existing
-    const call = new Call(this.mic!, {
+    const call = new Call(this.mic!, weOffer, {
       send: (type, data) => void this.bus.send({ type, to: peerId, data }),
       onChange: () => this.onChange?.(),
     })
@@ -214,18 +208,33 @@ class Call {
   }
 
   private readonly pc: RTCPeerConnection
+  private readonly mic: MediaStream
   private readonly hooks: CallHooks
   private readonly sink: HTMLAudioElement
   private pending: RTCIceCandidateInit[] = []
   private hasRemote = false
   private closed = false
 
-  constructor(mic: MediaStream, hooks: CallHooks) {
+  constructor(mic: MediaStream, weOffer: boolean, hooks: CallHooks) {
     this.hooks = hooks
+    this.mic = mic
     this.pc = new RTCPeerConnection(rtcConfig())
 
-    for (const track of mic.getAudioTracks()) {
-      this.pc.addTransceiver(track, { direction: 'sendrecv', streams: [mic] })
+    /*
+     * Only the caller adds a transceiver up front.
+     *
+     * The side that answers must not, and this cost an evening. Adding one
+     * before the offer is applied creates a second, separate m-line, and an
+     * answer cannot introduce m-lines the offer did not have. The negotiation
+     * still succeeded and the connection still reached "connected", so it looked
+     * fine: audio simply travelled one way, from the caller to the answerer and
+     * never back. The answering side attaches its microphone to the transceiver
+     * the offer brought with it, in onOffer below.
+     */
+    if (weOffer) {
+      for (const track of mic.getAudioTracks()) {
+        this.pc.addTransceiver(track, { direction: 'sendrecv', streams: [mic] })
+      }
     }
 
     /*
@@ -268,6 +277,16 @@ class Call {
       await this.pc.setRemoteDescription(desc)
       this.hasRemote = true
       await this.drain()
+
+      // Put our microphone on the transceiver the offer created, rather than
+      // making one of our own that the answer could never carry.
+      const track = this.mic.getAudioTracks()[0]
+      const audio = this.pc.getTransceivers().find((t) => t.receiver.track?.kind === 'audio')
+      if (track && audio) {
+        await audio.sender.replaceTrack(track)
+        audio.direction = 'sendrecv'
+      }
+
       await this.pc.setLocalDescription(await this.pc.createAnswer())
       this.hooks.send('vanswer', { sdp: this.pc.localDescription?.sdp, type: 'answer' })
     } catch {
