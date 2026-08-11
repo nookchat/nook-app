@@ -265,6 +265,62 @@ try {
     check(`a ${kind} event is handed to the other people`, outbound.includes(kind), outbound.join(','))
   }
 
+  // --- pinning --------------------------------------------------------------
+  /*
+   * Only an admin may pin, for the same reason only an admin may make a
+   * channel: otherwise anybody can put anything at the top of the room for
+   * everybody else. And a pin is stated rather than toggled, so the newest one
+   * wins and the older ones can be thrown away.
+   */
+  const pins = await page.evaluate(async () => {
+    const { RoomLog } = await import('/src/store/log.ts')
+    const key = (n) => String(n).repeat(64).slice(0, 64)
+    const FOUNDER = key(1)
+    const MEMBER = key(2)
+    const MSG = key(7)
+    const OTHER = key(8)
+
+    let n = 0
+    const ev = (author, kind, body) => ({
+      id: `${++n}`.padStart(64, '0'),
+      room: 'r',
+      author,
+      lamport: n,
+      kind,
+      at: 1,
+      body,
+      sig: 'x'.repeat(128),
+    })
+    const build = (events) => {
+      const log = new RoomLog('r')
+      log.founder = FOUNDER
+      for (const e of events) log.add(e)
+      return log
+    }
+
+    const byAdmin = build([ev(FOUNDER, 'pin', { target: MSG, on: true })])
+    const byMember = build([ev(MEMBER, 'pin', { target: MSG, on: true })])
+    const unpinned = build([
+      ev(FOUNDER, 'pin', { target: MSG, on: true }),
+      ev(FOUNDER, 'pin', { target: MSG, on: false }),
+    ])
+    const two = build([
+      ev(FOUNDER, 'pin', { target: MSG, on: true }),
+      ev(FOUNDER, 'pin', { target: OTHER, on: true }),
+    ])
+
+    return {
+      admin: byAdmin.pinned().has(MSG),
+      member: byMember.pinned().has(MSG),
+      undone: unpinned.pinned().has(MSG),
+      several: two.pinned().size,
+    }
+  })
+  check('an admin can pin a message', pins.admin)
+  check('a member cannot', pins.member === false)
+  check('and a pin can be taken back', pins.undone === false)
+  check('a channel can hold more than one', pins.several === 2, `${pins.several}`)
+
   // --- pictures and GIFs ----------------------------------------------------
   const pics = await page.evaluate(async () => {
     const { imageLinks } = await import('/src/ui/chat-panel.ts')

@@ -18,6 +18,7 @@
 import { rtcConfig } from '../rtc/config'
 import { micConstraints, micSettings } from './mic'
 import { denoise, type Denoiser } from './denoise'
+import { Talking } from './talking'
 import type { SignalBus } from '../signal/bus'
 import type { Envelope } from '../signal/envelope'
 
@@ -36,6 +37,7 @@ export class Voice {
   private readonly bus: SignalBus
   private readonly selfId: string
   private readonly calls = new Map<string, Call>()
+  private readonly talking = new Talking()
   private mic: MediaStream | null = null
   /** The raw microphone, kept so it can be stopped when the cleaned one is. */
   private rawMic: MediaStream | null = null
@@ -50,6 +52,7 @@ export class Voice {
   constructor(bus: SignalBus, selfId: string) {
     this.bus = bus
     this.selfId = selfId
+    this.talking.onChange = () => this.onChange?.()
     this.timer = window.setInterval(() => this.retry(), 5000)
   }
 
@@ -57,6 +60,14 @@ export class Voice {
     if (this.timer !== null) window.clearInterval(this.timer)
     this.timer = null
     this.leave()
+    this.talking.dispose()
+  }
+
+  /** True while this person is making a noise we would call speech. */
+  isTalking(peerId: string): boolean {
+    // Muted is muted, whatever the meter thinks of the room.
+    if (peerId === this.selfId && this.muted) return false
+    return this.talking.is(peerId)
   }
 
   get state(): VoiceState {
@@ -102,11 +113,16 @@ export class Voice {
     }
     this.channel = channel
     this.muted = false
+    // Our own level comes off the cleaned microphone, which is what the others
+    // hear, so the light matches what they get rather than what the room does.
+    this.talking.add(this.selfId, this.mic)
     this.onChange?.()
     for (const peer of this.membersOf(channel)) this.considerCall(peer)
   }
 
   leave(): void {
+    for (const id of this.calls.keys()) this.talking.remove(id)
+    this.talking.remove(this.selfId)
     for (const call of this.calls.values()) call.close()
     this.calls.clear()
     this.cleaner?.close()
@@ -154,6 +170,7 @@ export class Voice {
       this.onArrival?.(false)
       this.calls.get(from)?.close()
       this.calls.delete(from)
+      this.talking.remove(from)
     }
     this.onChange?.()
   }
@@ -162,6 +179,7 @@ export class Voice {
     if (this.standing.delete(peerId)) this.onChange?.()
     this.calls.get(peerId)?.close()
     this.calls.delete(peerId)
+    this.talking.remove(peerId)
   }
 
   async handle(env: Envelope): Promise<void> {
@@ -218,6 +236,7 @@ export class Voice {
     const call = new Call(this.mic!, weOffer, {
       send: (type, data) => void this.bus.send({ type, to: peerId, data }),
       onChange: () => this.onChange?.(),
+      onAudio: (stream) => this.talking.add(peerId, stream),
     })
     this.calls.set(peerId, call)
     return call
@@ -227,6 +246,8 @@ export class Voice {
 interface CallHooks {
   send: (type: 'voffer' | 'vanswer' | 'vice', data: unknown) => void
   onChange: () => void
+  /** Their voice, once it starts arriving, so its level can be watched. */
+  onAudio: (stream: MediaStream) => void
 }
 
 /** One voice connection to one person: our microphone out, theirs in. */
@@ -281,8 +302,10 @@ class Call {
     document.body.append(this.sink)
 
     this.pc.ontrack = (ev) => {
-      this.sink.srcObject = ev.streams[0] ?? new MediaStream([ev.track])
+      const stream = ev.streams[0] ?? new MediaStream([ev.track])
+      this.sink.srcObject = stream
       void this.sink.play().catch(() => undefined)
+      hooks.onAudio(stream)
     }
     this.pc.onicecandidate = (ev) => {
       if (ev.candidate) hooks.send('vice', ev.candidate.toJSON())

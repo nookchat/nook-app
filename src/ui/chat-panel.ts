@@ -23,13 +23,18 @@ export interface ChatActions {
   react(id: string, emoji: string, on: boolean): void
   retract(id: string): void
   rename(name: string): void
+  /** Hold a message up at the top of the channel, or stop holding it. */
+  pin(id: string, on: boolean): void
 }
 
 export class ChatPanel {
   readonly root: HTMLElement
   actions: ChatActions | null = null
+  /** Only an admin may pin, so only an admin is offered the button. */
+  canPin = false
 
   private readonly log: HTMLDivElement
+  private readonly pins: HTMLDivElement
   private readonly nameInput: HTMLInputElement
   private readonly textInput: HTMLInputElement
   private readonly sendButton: HTMLButtonElement
@@ -85,11 +90,14 @@ export class ChatPanel {
       this.nameInput,
     ])
 
+    this.pins = h('div', { class: 'chat-pins hidden' })
+
     this.root = h('div', { class: 'card chat-panel' }, [
       h('div', { class: 'row spread chat-head' }, [
         h('span', { class: 'eyebrow', text: title }),
         this.count,
       ]),
+      this.pins,
       this.log,
       h('div', { class: 'chat-compose stack tight' }, [
         this.replyBar,
@@ -136,6 +144,7 @@ export class ChatPanel {
   render(messages: Message[], joins: { at: number; text: string }[] = []): void {
     const stuck = this.isAtBottom()
     clear(this.log)
+    this.renderPins(messages)
 
     const byId = new Map(messages.map((m) => [m.id, m]))
     const feed: ({ kind: 'msg'; m: Message } | { kind: 'note'; at: number; text: string })[] = [
@@ -161,7 +170,10 @@ export class ChatPanel {
       }
 
       const mine = m.author === this.me
-      const line = h('div', { class: `chat-line${mine ? ' mine' : ''}` })
+      const line = h('div', {
+        class: `chat-line${mine ? ' mine' : ''}${m.pinned ? ' pinned' : ''}`,
+      })
+      line.dataset.id = m.id
 
       if (m.replyTo) {
         const parent = byId.get(m.replyTo)
@@ -216,8 +228,56 @@ export class ChatPanel {
 
   // ---- internals ----
 
+  /**
+   * The messages held up at the top.
+   *
+   * A line each, not the whole message: this is a way back to something, not a
+   * second copy of the conversation. Clicking one scrolls to it and lights it
+   * up, because a pinned message is only useful if you can get to what was
+   * said around it.
+   */
+  private renderPins(messages: Message[]): void {
+    clear(this.pins)
+    const pinned = messages.filter((m) => m.pinned)
+    this.pins.classList.toggle('hidden', pinned.length === 0)
+    if (pinned.length === 0) return
+
+    this.pins.append(
+      h('span', { class: 'eyebrow', text: pinned.length === 1 ? 'Pinned' : `Pinned (${pinned.length})` }),
+    )
+    for (const m of pinned) {
+      this.pins.append(
+        h('button', {
+          class: 'chat-pin truncate',
+          title: 'Go to this message',
+          text: `${m.name || shortKey(m.author)}: ${m.text}`,
+          on: { click: () => this.jumpTo(m.id) },
+        }),
+      )
+    }
+  }
+
+  private jumpTo(id: string): void {
+    const row = this.log.querySelector(`[data-id="${id}"]`)
+    if (!(row instanceof HTMLElement)) return
+    row.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    row.classList.remove('found')
+    // Restart the highlight even when the same one is clicked twice.
+    void row.offsetWidth
+    row.classList.add('found')
+  }
+
   private rowActions(m: Message, mine: boolean): HTMLElement {
     const bar = h('div', { class: 'chat-actions' })
+    if (this.canPin) {
+      bar.append(
+        h('button', {
+          text: m.pinned ? '\u2691' : '\u2690',
+          title: m.pinned ? 'Stop holding this one up' : 'Pin this one',
+          on: { click: () => this.actions?.pin(m.id, !m.pinned) },
+        }),
+      )
+    }
     bar.append(
       h('button', {
         text: '☺',

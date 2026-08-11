@@ -1960,3 +1960,96 @@ details.adv[open] > summary {
   opacity: 0.55;
   padding-left: 18px;
 }
+
+/* The messages held up at the top of a channel. */
+.chat-pins {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 5px 7px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+  max-height: 96px;
+  overflow-y: auto;
+}
+
+.chat-pin {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--fg-dim);
+  padding: 2px 4px;
+  font-size: 11px;
+  min-height: 0;
+}
+
+.chat-pin:hover:not(:disabled) {
+  background: var(--surface);
+  color: var(--fg);
+  border-color: transparent;
+}
+
+.chat-line.pinned {
+  border-left: 2px solid var(--accent);
+  padding-left: 5px;
+}
+
+/* Where a pin just took you. Fades out on its own. */
+@keyframes found {
+  from { background: var(--select); }
+  to { background: transparent; }
+}
+
+.chat-line.found {
+  animation: found 1.6s ease-out;
+}
+
+/* Who is live in this channel, when more than one person is. */
+.stream-bar {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-bottom: none;
+  background: var(--surface-2);
+  overflow-x: auto;
+}
+
+.stream-tab {
+  min-height: 20px;
+  padding: 1px 8px;
+  font-size: 11px;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.stream-tab.on {
+  background: var(--select);
+  color: var(--select-fg);
+  border-color: transparent;
+  font-weight: bold;
+}
+
+/*
+ * Somebody talking. Green, and a ring, because a colour change alone is not
+ * much use to anybody who cannot tell these two greens apart.
+ */
+.dot.talking {
+  background: var(--good);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--good) 45%, transparent);
+}
+
+.voice-member.talking span {
+  color: var(--good);
+  font-weight: bold;
+}
+
+.pill.talking {
+  border-color: var(--good);
+  color: var(--good);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--good) 40%, transparent);
+}

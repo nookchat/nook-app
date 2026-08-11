@@ -130,6 +130,10 @@ export class RoomChat {
     return this.myRole === 'admin'
   }
 
+  roleOf(pubkey: string): string {
+    return this.log.roleOf(pubkey)
+  }
+
   roles(): Map<string, string> {
     return this.log.roles()
   }
@@ -155,7 +159,7 @@ export class RoomChat {
   // ---- writing ----
 
   private async write(
-    kind: 'said' | 'edit' | 'react' | 'retract' | 'profile' | 'channel' | 'role' | 'space',
+    kind: 'said' | 'edit' | 'react' | 'retract' | 'profile' | 'channel' | 'role' | 'space' | 'pin',
     body: Record<string, unknown>,
   ): Promise<LogEvent> {
     const event = await makeEvent(this.log.room, this.me, this.log.nextLamport(), kind, body)
@@ -186,6 +190,11 @@ export class RoomChat {
 
   retract(target: string): Promise<LogEvent> {
     return this.write('retract', { target })
+  }
+
+  /** Hold a message up at the top of its channel, or stop holding it. */
+  pin(target: string, on: boolean): Promise<LogEvent> {
+    return this.write('pin', { target, on })
   }
 
   announceName(name: string): Promise<LogEvent> {

@@ -97,6 +97,7 @@ export class SpaceView {
   private watchingWho: string | null = null
   /** Who is sharing, and in which channel. */
   private readonly sharers = new Map<string, string>()
+  private streamBar!: HTMLDivElement
 
   // Elements redrawn in place.
   private channelList!: HTMLDivElement
@@ -241,9 +242,19 @@ export class SpaceView {
         else this.sharers.delete(env.from)
         if (was !== sharing) this.draw()
         // Somebody is sharing in the channel we are looking at, so ask to watch.
-        if (sharing === this.channel && !this.watching && env.from !== this.selfId) {
+        if (
+          sharing === this.channel &&
+          !this.watching &&
+          !this.watchingWho &&
+          env.from !== this.selfId
+        ) {
           this.watchingWho = env.from
           void this.bus?.send({ type: 'hello', to: env.from })
+        }
+        // Whoever stopped, stop watching them and fall back to anybody else.
+        if (!sharing && env.from === this.watchingWho) {
+          this.stopWatching()
+          this.watchNext()
         }
         return
       }
@@ -256,6 +267,10 @@ export class SpaceView {
         return
       }
       case 'offer': {
+        // Only from whoever we asked. With two people sharing at once, the
+        // other one's offer would otherwise pull the screen out from under
+        // the one being watched.
+        if (this.watchingWho && env.from !== this.watchingWho) return
         if (!this.watching) this.startWatching(env.from)
         await this.watching?.onOffer(data as unknown as RTCSessionDescriptionInit)
         return
@@ -270,6 +285,10 @@ export class SpaceView {
         } else if (env.from === this.watchingWho) {
           await this.watching?.onIce(data as unknown as RTCIceCandidateInit)
         }
+        return
+      }
+      case 'vmove': {
+        await this.onMoved(env.from, typeof data.channel === 'string' ? data.channel : '')
         return
       }
       case 'bye': {
@@ -326,6 +345,7 @@ export class SpaceView {
 
   private drawNow(): void {
     if (this.stopped || !this.chat) return
+    if (this.chatPanel) this.chatPanel.canPin = this.chat.isAdmin
     this.chatPanel?.render(this.chat.messages(this.channel))
     this.chatPanel?.setPresence(this.mesh?.reach ?? 1)
     this.channelTitle.textContent = `#${this.channel}`
@@ -384,6 +404,15 @@ export class SpaceView {
     this.peopleList = h('div', { class: 'rail-list' })
     this.voiceBar = h('div', { class: 'voice-bar hidden' })
     this.stage = h('div', { class: 'stage hidden' })
+    /*
+     * The row of who is live in this channel.
+     *
+     * More than one person can share at once, which the wiring always allowed
+     * and nothing ever showed: a watcher attached to whoever announced first
+     * and had no way to look at anybody else. One button each, and the one you
+     * are watching is pressed in.
+     */
+    this.streamBar = h('div', { class: 'stream-bar hidden' })
     this.channelTitle = h('span', { class: 'eyebrow', text: `#${this.channel}` })
 
     this.shareButton = h('button', { class: 'primary grow' }, [icon('monitor', 15), 'Share screen'])
@@ -398,6 +427,7 @@ export class SpaceView {
       edit: (id, text) => void this.publish((c) => c.edit(id, text)),
       react: (id, emoji, on) => void this.publish((c) => c.react(id, emoji, on)),
       retract: (id) => void this.publish((c) => c.retract(id)),
+      pin: (id, on) => void this.publish((c) => c.pin(id, on)),
       rename: (name) => this.rename(name),
     }
     this.chatPanel.setEnabled(true)
@@ -463,6 +493,7 @@ export class SpaceView {
       left,
       h('div', { class: 'space-main' }, [
         h('div', { class: 'space-head row spread' }, [this.channelTitle]),
+        this.streamBar,
         this.stage,
         this.sharePanel,
         this.chatPanel.root,
@@ -620,12 +651,16 @@ export class SpaceView {
         ),
       ])
       for (const id of members) {
+        const talking = this.voice?.isTalking(id) ?? false
         const label =
           id === this.selfId
             ? `${this.chat?.displayName ?? 'You'} (you)`
             : this.mesh?.peers().find((p) => p.id === id)?.name || shortKey(id)
         row.append(
-          h('div', { class: 'voice-member' }, [h('i', { class: 'dot good' }), h('span', { text: label })]),
+          h('div', { class: `voice-member${talking ? ' talking' : ''}` }, [
+            h('i', { class: `dot ${talking ? 'talking' : 'good'}` }),
+            h('span', { text: label }),
+          ]),
         )
       }
       this.voiceList.append(row)
@@ -668,10 +703,64 @@ export class SpaceView {
     this.draw()
   }
 
+  /**
+   * Somebody with the authority to has asked us to stand somewhere else.
+   *
+   * Checked here rather than trusted, because the message came off a public
+   * relay: only somebody the log agrees is an admin can move anybody.
+   *
+   * That check is worth exactly what an announcement is worth, and an
+   * announcement is not signed. Anybody already in the space could claim
+   * somebody else's key in theirs and be believed by this, so the honest
+   * description is that it keeps out people who are not in the space at all,
+   * and keeps ordinary members from moving each other by accident. It is not
+   * proof. Nothing signed rests on it: events carry their own signatures and
+   * this moves nobody's messages, only where they are standing. Signing the
+   * announcement would close it, and is a separate piece of work.
+   *
+   * If we are already in a voice channel the microphone is already open and
+   * the move just happens. If we are not, it cannot: a browser will not open a
+   * microphone without the person asking for it, so this offers rather than
+   * does. That is a real limit, not a courtesy, and it is the honest way round
+   * anyway.
+   */
+  private async onMoved(from: string, raw: string): Promise<void> {
+    const channel = cleanChannel(raw)
+    if (!channel) return
+
+    const key = this.mesh?.peers().find((p) => p.id === from)?.key ?? ''
+    if (!key || this.chat?.roleOf(key) !== 'admin') return
+    const who = this.mesh?.peers().find((p) => p.id === from)?.name || 'An admin'
+
+    if (this.voice?.state.channel) {
+      await this.voice.join(channel).catch(() => undefined)
+      toast(`${who} moved you to ${channel}`, 'good', 5000)
+      this.announceMe()
+      this.draw()
+      return
+    }
+
+    toast(`${who} asked you to join ${channel}`, 'good', 12_000, {
+      label: 'Join',
+      run: () => void this.joinVoice(channel),
+    })
+  }
+
   private leaveVoice(): void {
     this.voice?.dispose()
     this.announceMe()
     this.draw()
+  }
+
+  /** Move somebody into a voice channel. Admins only, checked on both sides. */
+  private moveTo(key: string, channel: string): void {
+    for (const peer of this.mesh?.peers() ?? []) {
+      if (peer.key !== key) continue
+      void this.bus?.send({ type: 'vmove', to: peer.id, data: { channel } })
+      toast(`Asked them to join ${channel}`, 'good', 4000)
+      return
+    }
+    toast('They are not here right now.', 'warn', 4000)
   }
 
   /** One announcement carries the name, what we are sharing, and where we stand. */
@@ -700,6 +789,7 @@ export class SpaceView {
       name: string
       here: boolean
       ready: boolean
+      talking: boolean
       sharing: boolean
       voice: string | null
       you: boolean
@@ -718,6 +808,7 @@ export class SpaceView {
         name: '',
         here: false,
         ready: false,
+        talking: false,
         sharing: false,
         voice: null,
         you: false,
@@ -736,6 +827,7 @@ export class SpaceView {
       you: true,
       sharing: this.capture !== null,
       voice: this.voice?.state.channel ?? null,
+      talking: this.voice?.isTalking(this.selfId) ?? false,
     })
 
     /*
@@ -751,6 +843,7 @@ export class SpaceView {
         ready: peer.ready,
         sharing: this.sharers.has(peer.id),
         voice: this.voice?.whereIs(peer.id) ?? null,
+        talking: this.voice?.isTalking(peer.id) ?? false,
       })
     }
 
@@ -780,9 +873,30 @@ export class SpaceView {
             role === 'member' ? null : h('div', { class: 'tiny faint', text: role }),
           ]),
           row.voice
-            ? h('span', { class: 'pill', title: `In voice: ${row.voice}` }, [icon('volume-low', 11)])
+            ? h(
+                'span',
+                {
+                  class: `pill${row.talking ? ' talking' : ''}`,
+                  title: row.talking ? `Talking in ${row.voice}` : `In voice: ${row.voice}`,
+                },
+                [icon('volume-low', 11)],
+              )
             : null,
           row.sharing ? h('span', { class: 'pill good', text: 'live' }) : null,
+          /*
+           * Move them into the voice channel we are standing in. Only offered
+           * when we are in one, because "move them here" needs a here.
+           */
+          iAmAdmin && !row.you && row.here && this.voice?.state.channel
+            ? h('button', {
+                class: 'ghost tiny-btn',
+                text: '\u2192',
+                title: `Move them into ${this.voice.state.channel}`,
+                on: {
+                  click: () => this.moveTo(row.key, this.voice?.state.channel ?? ''),
+                },
+              })
+            : null,
           iAmAdmin && !row.you && role !== 'admin'
             ? h('button', {
                 class: 'ghost tiny-btn',
@@ -843,6 +957,7 @@ export class SpaceView {
     this.shareButton.classList.toggle('primary', !sharing)
     this.sharePanel.classList.toggle('hidden', !sharing)
     this.stage.classList.toggle('hidden', !sharing && !this.watching)
+    this.renderStreams()
   }
 
   private async toggleShare(): Promise<void> {
@@ -936,6 +1051,68 @@ export class SpaceView {
       onChat: () => undefined,
       onChatReady: () => undefined,
     })
+  }
+
+  /** Everybody sharing in the channel we are looking at, ourselves included. */
+  private liveHere(): { id: string; name: string; you: boolean }[] {
+    const out: { id: string; name: string; you: boolean }[] = []
+    if (this.capture && this.channel) {
+      out.push({ id: this.selfId, name: 'Your screen', you: true })
+    }
+    for (const [id, channel] of this.sharers) {
+      if (channel !== this.channel || id === this.selfId) continue
+      const peer = this.mesh?.peers().find((p) => p.id === id)
+      out.push({ id, name: peer?.name || shortKey(id), you: false })
+    }
+    return out
+  }
+
+  /**
+   * Watch one of the people sharing here.
+   *
+   * Switching is a full stop and start: the connection carries one screen and
+   * a different screen is a different connection. Asking is a hello, and the
+   * offer comes back the same way it does for the first one.
+   */
+  private watch(peerId: string): void {
+    if (peerId === this.watchingWho) return
+    this.stopWatching()
+    if (peerId === this.selfId) {
+      // Your own screen is already on this device. No round trip for it.
+      this.draw()
+      return
+    }
+    this.watchingWho = peerId
+    void this.bus?.send({ type: 'hello', to: peerId })
+    this.draw()
+  }
+
+  /** After whoever we were watching stops, pick up anybody else who is live. */
+  private watchNext(): void {
+    const next = this.liveHere().find((s) => !s.you)
+    if (next) this.watch(next.id)
+    else this.draw()
+  }
+
+  private renderStreams(): void {
+    const live = this.liveHere()
+    // One person sharing needs no chooser: the stage already shows them.
+    this.streamBar.classList.toggle('hidden', live.length < 2)
+    if (live.length < 2) return
+
+    clear(this.streamBar)
+    this.streamBar.append(h('span', { class: 'eyebrow', text: 'Live' }))
+    for (const one of live) {
+      const on = one.you ? this.watchingWho === null : this.watchingWho === one.id
+      this.streamBar.append(
+        h('button', {
+          class: `stream-tab${on ? ' on' : ''}`,
+          text: one.name,
+          title: one.you ? 'Your own screen' : `Watch ${one.name}`,
+          on: { click: () => this.watch(one.you ? this.selfId : one.id) },
+        }),
+      )
+    }
   }
 
   private stopWatching(): void {

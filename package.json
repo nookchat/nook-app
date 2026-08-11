@@ -23,7 +23,10 @@
     "test:themes": "node test/theme-shots.mjs",
     "test:voice": "node test/voice-check.mjs",
     "test:storage": "node test/storage-check.mjs",
-    "test:roles": "node test/roles-check.mjs"
+    "test:roles": "node test/roles-check.mjs",
+    "test:live": "node test/live-check.mjs",
+    "test:rejoin": "node test/rejoin-check.mjs",
+    "test:denoise": "node test/denoise-check.mjs"
   },
   "dependencies": {
     "@jitsi/rnnoise-wasm": "^0.2.1",

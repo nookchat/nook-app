@@ -55,6 +55,7 @@ export function compact(events: LogEvent[], limits: Limits = DEFAULT_LIMITS): Co
   const latestChannel = new Map<string, string>()
   const latestEdit = new Map<string, string>()
   const latestReact = new Map<string, string>()
+  const latestPin = new Map<string, string>()
   const messages: LogEvent[] = []
 
   for (const e of ordered) {
@@ -74,6 +75,10 @@ export function compact(events: LogEvent[], limits: Limits = DEFAULT_LIMITS): Co
         break
       case 'react':
         latestReact.set(`${e.author}|${e.body.target}|${e.body.emoji}`, e.id)
+        break
+      case 'pin':
+        // Stated on or off, so only the last word on each message matters.
+        latestPin.set(String(e.body.target ?? ''), e.id)
         break
       case 'said':
         messages.push(e)
@@ -116,8 +121,9 @@ export function compact(events: LogEvent[], limits: Limits = DEFAULT_LIMITS): Co
     liveMessages.add(m.id)
   }
 
-  // Edits and reactions only survive alongside the message they point at.
+  // Edits, reactions and pins only survive alongside the message they point at.
   for (const [target, id] of latestEdit) if (liveMessages.has(target)) keepIds.add(id)
+  for (const [target, id] of latestPin) if (liveMessages.has(target)) keepIds.add(id)
   for (const [key, id] of latestReact) {
     if (liveMessages.has(key.split('|')[1])) keepIds.add(id)
   }

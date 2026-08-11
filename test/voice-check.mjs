@@ -153,6 +153,37 @@ try {
     'and the message itself is untouched',
     renamed.includes('before the rename'),
   )
+
+  /*
+   * Talking shows. The fake microphone Chrome provides plays a tone, so both
+   * of them are making a noise the whole time and both should light up. The
+   * check that matters is the other way round: muting must put the light out,
+   * because a light that is always on says nothing at all.
+   */
+  const lit = await waitFor(
+    async () =>
+      one.evaluate(() =>
+        document.querySelectorAll('.voice-member.talking, .pill.talking').length,
+      ),
+    15_000,
+    'somebody to be shown as talking',
+  ).catch(() => 0)
+  check('somebody making a noise is shown as talking', lit > 0, `${lit} lit`)
+
+  await one.evaluate(() => {
+    const button = [...document.querySelectorAll('button')].find((b) =>
+      /mute/i.test(b.textContent ?? ''),
+    )
+    button?.click()
+  })
+  await one.waitForTimeout(1500)
+  const afterMute = await one.evaluate(() => {
+    const rows = [...document.querySelectorAll('.voice-member')]
+    const mine = rows.find((r) => (r.textContent ?? '').includes('(you)'))
+    return mine ? mine.classList.contains('talking') : null
+  })
+  check('and muting puts your own light out', afterMute === false, `${afterMute}`)
+
 } finally {
   await browser.close()
 }

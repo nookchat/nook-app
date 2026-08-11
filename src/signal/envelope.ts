@@ -27,6 +27,7 @@ export type MsgType =
   | 'voffer' // voice channel handshake, audio only
   | 'vanswer'
   | 'vice'
+  | 'vmove' // an admin moving somebody between voice channels
 
 export interface Envelope {
   v: 1

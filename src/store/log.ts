@@ -24,6 +24,7 @@ export type EventKind =
   | 'retract'
   | 'profile'
   | 'channel'
+  | 'pin'
   | 'role'
   | 'space'
 
@@ -99,7 +100,7 @@ export async function openEvent(raw: unknown, room: string): Promise<LogEvent | 
   if (typeof e.lamport !== 'number' || !Number.isInteger(e.lamport) || e.lamport < 0) return null
   if (typeof e.at !== 'number' || !Number.isFinite(e.at)) return null
   if (
-    !['said', 'edit', 'react', 'retract', 'profile', 'channel', 'role', 'space'].includes(
+    !['said', 'edit', 'react', 'retract', 'profile', 'channel', 'role', 'space', 'pin'].includes(
       String(e.kind),
     )
   )
@@ -238,6 +239,29 @@ export class RoomLog {
       roles.set(subject, role)
     }
     return roles
+  }
+
+  /**
+   * The messages held up in each channel.
+   *
+   * Stated rather than toggled, the same way reactions are: a pin says on or
+   * off rather than "the other thing", so the newest one wins and the rest can
+   * be thrown away. Only an admin may pin, for the same reason only an admin
+   * may make a channel: otherwise anybody can put anything at the top of a
+   * room for everybody else.
+   */
+  pinned(): Set<string> {
+    const roles = this.roles()
+    const out = new Set<string>()
+    for (const e of this.all()) {
+      if (e.kind !== 'pin') continue
+      if (roles.get(e.author) !== 'admin') continue
+      const target = String(e.body.target ?? '')
+      if (!/^[0-9a-f]{64}$/.test(target)) continue
+      if (e.body.on === false) out.delete(target)
+      else out.add(target)
+    }
+    return out
   }
 
   roleOf(pubkey: string): Role {
@@ -389,7 +413,11 @@ export class RoomLog {
       }
     }
 
-    for (const m of out) m.name = names.get(m.author) ?? ''
+    const pins = this.pinned()
+    for (const m of out) {
+      m.name = names.get(m.author) ?? ''
+      m.pinned = pins.has(m.id)
+    }
     return out.filter((m) => !m.retracted)
   }
 
@@ -429,5 +457,7 @@ export interface Message {
   replyTo: string | null
   edited: boolean
   retracted: boolean
+  /** Held up at the top of the channel by an admin. */
+  pinned?: boolean
   reactions: Map<string, Set<string>>
 }
