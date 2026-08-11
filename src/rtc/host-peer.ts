@@ -23,6 +23,8 @@ export interface HostPeerOptions {
   stream: MediaStream
   mode: Mode
   codec: CodecChoice
+  /** Codecs this machine can encode on the GPU, best first. */
+  hardware: string[]
   send: (type: 'offer' | 'ice', data: unknown) => void
   onChange: () => void
   onFailed: (reason: string) => void
@@ -67,7 +69,7 @@ export class HostPeer {
         streams: [opts.stream],
       })
       this.videoSender = this.videoTransceiver.sender
-      this.codec = preferCodecs(this.videoTransceiver, opts.mode, opts.codec)
+      this.codec = preferCodecs(this.videoTransceiver, opts.mode, opts.codec, opts.hardware)
     }
     if (audio) {
       this.audioSender = this.pc.addTransceiver(audio, {
@@ -140,11 +142,11 @@ export class HostPeer {
     await applyPlan(this.videoSender, plan)
   }
 
-  setMode(mode: Mode, codec: CodecChoice): void {
+  setMode(mode: Mode, codec: CodecChoice, hardware: string[] = []): void {
     const track = this.videoSender?.track ?? null
     applyContentHint(track, mode)
     if (this.videoTransceiver && this.pc.signalingState === 'stable') {
-      this.codec = preferCodecs(this.videoTransceiver, mode, codec)
+      this.codec = preferCodecs(this.videoTransceiver, mode, codec, hardware)
     }
   }
 

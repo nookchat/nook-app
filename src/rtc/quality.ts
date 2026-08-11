@@ -234,18 +234,26 @@ export function applyContentHint(track: MediaStreamTrack | null, mode: Mode): vo
   }
 }
 
-export type CodecChoice = 'auto' | 'AV1' | 'VP9' | 'VP8' | 'H264'
+export type CodecChoice = 'auto' | 'AV1' | 'VP9' | 'VP8' | 'H264' | 'H265'
 
 /**
  * VP9 and AV1 carry screen text far better per bit than VP8 or H264, because
- * they have screen content coding tools. VP9 first by default: AV1 encodes are
+ * they have screen content coding tools. VP9 first for text: AV1 encodes are
  * expensive, and a mesh host runs one encode per viewer.
+ *
+ * Moving pictures take a different route. If this machine has a hardware
+ * encoder, that comes first, because it holds the same resolution for less than
+ * half the processor and leaves the rest for the game or the video. Text stays
+ * on VP9 whatever the hardware offers, since a hardware encoder is tuned for
+ * camera video and smears small type.
  */
-function codecOrder(mode: Mode, choice: CodecChoice): string[] {
+function codecOrder(mode: Mode, choice: CodecChoice, hardware: string[] = []): string[] {
   if (choice !== 'auto') return [`video/${choice}`]
-  return mode === 'text'
-    ? ['video/VP9', 'video/AV1', 'video/H264', 'video/VP8']
-    : ['video/VP9', 'video/H264', 'video/AV1', 'video/VP8']
+  if (mode === 'text') return ['video/VP9', 'video/AV1', 'video/H264', 'video/VP8']
+
+  const accelerated = hardware.map((name) => `video/${name}`)
+  const fallback = ['video/VP9', 'video/H264', 'video/AV1', 'video/VP8']
+  return [...accelerated, ...fallback.filter((m) => !accelerated.includes(m))]
 }
 
 export function availableCodecs(): string[] {
@@ -264,12 +272,13 @@ export function preferCodecs(
   transceiver: RTCRtpTransceiver,
   mode: Mode,
   choice: CodecChoice = 'auto',
+  hardware: string[] = [],
 ): string | null {
   try {
     const caps = RTCRtpSender.getCapabilities?.('video')
     if (!caps || typeof transceiver.setCodecPreferences !== 'function') return null
 
-    const wanted = codecOrder(mode, choice).map((m) => m.toLowerCase())
+    const wanted = codecOrder(mode, choice, hardware).map((m) => m.toLowerCase())
     const rank = (mime: string): number => {
       const i = wanted.indexOf(mime.toLowerCase())
       return i === -1 ? wanted.length + 1 : i

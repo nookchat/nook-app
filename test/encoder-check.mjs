@@ -19,7 +19,7 @@ const APP_URL = process.argv[3] ?? 'http://localhost:5173/'
 const CHROME =
   process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 
-const CODECS = ['auto', 'H264', 'VP9', 'VP8', 'AV1']
+const CODECS = ['H265', 'VP9', 'H264']
 
 /** A busy 1080p source: lots of movement, so nothing can be skipped as static. */
 const displayStub = (fps) => `(() => {

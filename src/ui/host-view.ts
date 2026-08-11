@@ -27,6 +27,7 @@ import {
 } from '../rtc/quality'
 import { gradeOf } from '../rtc/stats'
 import { UplinkMeter } from '../net/uplink'
+import { NO_HARDWARE, probeHardwareEncoders, type HardwareProbe } from '../rtc/hardware'
 import { loadSettings, saveSettings, type HostSettings } from '../settings'
 import { clear, copyText, fmtDuration, fmtKbps, h, labelled } from './dom'
 import { brandMark, icon } from './icons'
@@ -66,6 +67,8 @@ export class HostView {
 
   /** What Beam believes this connection will carry upward. */
   private readonly uplink = new UplinkMeter()
+  /** Which codecs this machine can encode on the GPU. */
+  private gpu: HardwareProbe = NO_HARDWARE
 
   private timers: number[] = []
 
@@ -86,6 +89,7 @@ export class HostView {
   private relayLine!: HTMLDivElement
   private elapsed!: HTMLSpanElement
 
+  private codecNote!: HTMLDivElement
   private budgetLabel!: HTMLSpanElement
   private budgetNote!: HTMLDivElement
   private budgetInput!: HTMLInputElement
@@ -108,6 +112,12 @@ export class HostView {
   mount(): void {
     this.renderShell()
     this.renderIdle()
+    // Ask the browser what it can encode on the GPU. It takes a moment and
+    // nothing waits on it, so the answer arrives before the first viewer does.
+    void probeHardwareEncoders(availableCodecs()).then((probe) => {
+      this.gpu = probe
+      this.renderCodecNote()
+    })
   }
 
   /**
@@ -261,6 +271,7 @@ export class HostView {
       stream: this.outStream,
       mode: this.settings.mode,
       codec: this.settings.codec,
+      hardware: this.gpu.hardware,
       send: (type, data) => void this.bus?.send({ type, to: viewerId, data }),
       onChange: () => this.renderViewers(),
       onFailed: (reason) => toast(reason, 'bad', 8000),
@@ -473,6 +484,7 @@ export class HostView {
     this.renderResolutions()
     this.renderFps()
     this.renderBudget()
+    this.renderCodecNote()
     this.renderPlan(this.currentPlan(1), 0)
   }
 
@@ -506,6 +518,7 @@ export class HostView {
     this.renderResolutions()
     this.renderFps()
     this.renderBudget()
+    this.renderCodecNote()
     this.renderViewers()
     this.renderPlan(this.currentPlan(1), 0)
     this.renderPreviewBadges()
@@ -678,6 +691,7 @@ export class HostView {
     codec.append(h('option', { value: 'auto', text: 'Automatic (recommended)' }))
     for (const name of availableCodecs()) codec.append(h('option', { value: name, text: name }))
     codec.value = this.settings.codec
+    this.codecNote = h('div', { class: 'tiny faint codec-note' })
 
     const maxViewers = h('input', {
       type: 'range',
@@ -744,7 +758,7 @@ export class HostView {
             h('div', { class: 'row' }, [maxViewers, maxLabel]),
             'Every viewer costs one more encode and one more upload stream.',
           ),
-          labelled('Codec', codec, 'VP9 and AV1 carry text best.'),
+          labelled('Codec', h('div', { class: 'stack tight' }, [codec, this.codecNote])),
           approve,
         ]),
       ]),
@@ -847,7 +861,9 @@ export class HostView {
     this.renderPresets()
     this.renderResolutions()
     this.renderFps()
-    for (const peer of this.peers.values()) peer.setMode(preset.mode, this.settings.codec)
+    for (const peer of this.peers.values()) {
+      peer.setMode(preset.mode, this.settings.codec, this.gpu.hardware)
+    }
     await this.applyCaptureConstraints()
     this.renderPlan(this.currentPlan(Math.max(1, this.peers.size)), this.peers.size)
   }
@@ -1111,7 +1127,18 @@ export class HostView {
             }),
           )
         }
-        if (s.codec) badges.append(h('span', { class: 'pill', text: s.codec }))
+        if (s.codec) {
+          const onGpu = this.gpu.hardware.includes(s.codec.toUpperCase())
+          badges.append(
+            h('span', {
+              class: `pill ${onGpu ? 'good' : ''}`.trim(),
+              text: onGpu ? `${s.codec} on GPU` : s.codec,
+              title: onGpu
+                ? 'This machine encodes this codec on the GPU, which leaves the processor free.'
+                : 'This codec has no hardware encoder here, so encoding runs on the processor.',
+            }),
+          )
+        }
         if (s.encodeMsPerFrame > 0) {
           // How much of one frame interval the encoder eats. Above about half
           // and this machine is close to being the bottleneck, not the network.
@@ -1182,6 +1209,14 @@ export class HostView {
     this.uploadLine.classList.toggle('warn', total > this.budgetKbps() * 0.95)
   }
 
+  /** Say plainly whether encoding lands on the GPU or the processor. */
+  private renderCodecNote(): void {
+    if (!this.codecNote) return
+    this.codecNote.textContent = this.gpu.checked
+      ? `${this.gpu.note} VP9 and AV1 carry text best.`
+      : 'Beam is checking for a hardware encoder. VP9 and AV1 carry text best.'
+  }
+
   /** Keep the budget row honest about the number and where it came from. */
   private renderBudget(): void {
     if (!this.budgetLabel) return
@@ -1248,7 +1283,7 @@ export class HostView {
     this.surface?.setStream(this.outStream)
 
     for (const peer of this.peers.values()) {
-      peer.setMode(this.settings.mode, this.settings.codec)
+      peer.setMode(this.settings.mode, this.settings.codec, this.gpu.hardware)
       await peer.replaceVideo(next.video)
     }
 

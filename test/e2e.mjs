@@ -168,6 +168,19 @@ try {
     `${budget.label} — ${budget.note.slice(0, 60)}`,
   )
 
+  // Beam must name where encoding happens, without pretending either way.
+  const gpu = await host.evaluate(async () => {
+    const { probeHardwareEncoders } = await import('/src/rtc/hardware.ts')
+    const { availableCodecs } = await import('/src/rtc/quality.ts')
+    const probe = await probeHardwareEncoders(availableCodecs())
+    return { hardware: probe.hardware, checked: probe.checked, note: probe.note }
+  })
+  check(
+    'Beam probes for a hardware encoder and reports what it found',
+    gpu.checked === true && Array.isArray(gpu.hardware) && gpu.note.length > 20,
+    gpu.hardware.length ? `hardware: ${gpu.hardware.join(', ')}` : 'no hardware encoder here',
+  )
+
   // The QR must carry the exact link. Chrome's own decoder is the judge.
   await host.getByRole('button', { name: 'Show a QR code' }).click()
   await host.locator('.qr-frame svg').waitFor({ timeout: 5000 })

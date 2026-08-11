@@ -39,7 +39,9 @@ npm run test:e2e       # two real Chrome pages, real relays, real media
 npm run test:mesh 10   # one host, ten viewers, prints the per viewer plan
 npm run test:qr        # every QR version, decoded back by Chrome
 npm run test:uplink    # the upload estimator, against made up statistics
-npm run test:encoder   # which codec holds up, and what encoding costs
+npm run test:encoder   # which codec holds up, and what it costs to encode
+npm run test:cpu       # processor cost per codec: GPU or not, measured
+npm run test:fallback  # a viewer with no HEVC still gets a picture
 npm run test:relays    # which public relays really carry a handshake
 npm run test:repro skew    # viewer clock five minutes ahead
 npm run test:repro delay   # viewer joins 100 s later, host tab hidden
@@ -147,11 +149,11 @@ The choices are stored in this browser, so the next stream starts the same way.
 
 Under the presets:
 
-| Control                 | Text presets          | Video preset         |
-| ----------------------- | --------------------- | -------------------- |
-| `contentHint`           | `detail`              | `motion`             |
-| `degradationPreference` | `maintain-resolution` | `maintain-framerate` |
-| Codec order             | VP9, AV1, H264, VP8   | VP9, H264, AV1, VP8  |
+| Control                 | Text presets          | Motion presets           |
+| ----------------------- | --------------------- | ------------------------ |
+| `contentHint`           | `detail`              | `motion`                 |
+| `degradationPreference` | `maintain-resolution` | `maintain-framerate`     |
+| Codec order             | VP9, AV1, H264, VP8   | hardware first, then VP9 |
 
 Ideal bitrate by source size at 30 fps, before the preset scale, the frame rate,
 and the budget all take their cut:
@@ -200,39 +202,60 @@ current budget. There is no point discovering a spare 20 Mb/s to carry a
 The budget is automatic until you touch the slider, and manual from then on. The
 label always says which mode it is in and where the figure came from.
 
-### Games, and where the work happens
+### Games, and encoding on the GPU
 
-Watching a game is comfortable. Hosting one costs the machine, and the reason is
-that WebRTC encodes on the processor here, not on the GPU.
+WebRTC gives a page no way to demand a hardware encoder. The browser decides,
+from the codec, the resolution, and the platform. What a page *can* do is find
+out which codecs have a hardware encoder and ask for those first, which is what
+`src/rtc/hardware.ts` does on load, from two sources that both refuse to guess:
 
-Measured on an Apple laptop, headed Chrome on the real GPU, a busy 1920x1080
-source with every pixel changing, one viewer, about 5.7 Mb/s:
+- WebCodecs `isConfigSupported` with `hardwareAcceleration: 'prefer-hardware'`,
+  which fails outright when no hardware encoder can serve the config,
+- Media Capabilities `encodingInfo`, whose `powerEfficient` flag is the platform
+  saying the work will not land on the processor.
 
-| Codec | Held      | Rate   | Encode      | Held back by |
-| ----- | --------- | ------ | ----------- | ------------ |
-| VP9   | 1920x1080 | 44 fps | 4.6 ms/frame | nothing      |
-| AV1   | 1280x720  | 60 fps | 3.9 ms/frame | bandwidth    |
-| H264  | 1280x720  | 59 fps | 8.2 ms/frame | bandwidth    |
-| VP8   | 640x360   | 61 fps | 2.1 ms/frame | bandwidth    |
+**Do not trust `totalEncodeTime` for this.** It measures the wall clock of the
+encode call, and a hardware encoder still takes time to hand a frame back, so
+hardware and software can report the same milliseconds at very different cost.
+The honest measure is processor seconds burned per wall clock second, and
+`npm run test:cpu` measures exactly that: the host runs in its own browser, idle
+first and then sharing, and the difference is what encoding costs.
 
-Two things follow. **VP9 is the right default**: it was the only codec that held
-full 1080p at that bitrate, and it did so for half the processor time H264
-wanted. And **H264 is not the hardware shortcut here**: if VideoToolbox were
-carrying it, encode time would be a fraction of a millisecond, not eight. On a
-Windows machine with NVENC or Quick Sync the H264 picture may differ, so measure
-before you assume.
+Measured on an Apple M4 Pro, headed Chrome, one viewer, 1920x1080 at 60 frames:
 
-`npm run test:encoder` runs that table on your own machine.
+| Codec    | Held      | Rate   | Encoding costs | Where       |
+| -------- | --------- | ------ | -------------- | ----------- |
+| **H265** | 1920x1080 | 60 fps | **0.44 cores** | GPU         |
+| VP9      | 1920x1080 | 53 fps | 0.83 cores     | processor   |
+| H264     | 1280x720  | 61 fps | 0.39 cores     | processor   |
+| AV1      | 1920x1080 | 60 fps | 2.05 cores     | processor   |
+
+The same picture for less than half the processor. HEVC was the only codec on
+that machine with a hardware encoder, and note that H264 is **not** the hardware
+shortcut it is usually assumed to be here: it looks cheap only because it gave
+up 1080p and encoded 720p instead.
+
+So Beam asks for the hardware codec first, but only on moving pictures. A
+hardware encoder is tuned for camera video and smears small text, so documents
+stay on VP9 where the screen content tools live and the bill is small anyway.
+
+A viewer that cannot decode the hardware codec loses nothing. Codec preferences
+only order the offer; the answer decides. `npm run test:fallback` proves it with
+a viewer launched without any HEVC decoder: the stream falls back to VP9, keeps
+playing, and the badge stops claiming the GPU.
+
+The viewer row names all of this: the codec, whether it is running **on GPU**,
+and milliseconds of processor time per encoded frame. Compare that last figure
+against the frame interval, 16.7 ms at 60 fps. It turns amber past 45 percent
+and red past 70, the point where the machine rather than the network is holding
+the stream back.
 
 Decoding is cheap on every codec, 0.9 to 1.4 ms per frame, and the video element
-is composited by the GPU. A viewer watching a game is fine.
+is composited by the GPU. Watching a game was never the problem.
 
-Chrome does not report `encoderImplementation` or `powerEfficientEncoder` in
-these statistics, so Beam cannot honestly badge a stream "hardware". It shows
-what it can measure instead: milliseconds of processor time per encoded frame,
-next to each viewer. Compare it against the frame interval, 16.7 ms at 60 fps.
-The badge turns amber past 45 percent of that and red past 70, which is the
-point where the machine, not the network, is the thing holding the stream back.
+Chrome reports neither `encoderImplementation` nor `powerEfficientEncoder` in
+these statistics, which is why Beam reads hardware support from the probe above
+rather than from the live stream.
 
 ### The mesh limit
 
@@ -318,6 +341,7 @@ src/
     bus.ts            fan out to every transport, de-duplicate what returns
   rtc/
     config.ts         ICE servers and the empty TURN slot
+    hardware.ts       which codecs this machine can encode on the GPU
     host-peer.ts      one connection per viewer, host always offers
     viewer-peer.ts    the viewer only ever answers
     quality.ts        presets, bitrate ladder, budget, hints, codec preference
@@ -337,6 +361,8 @@ test/
   e2e.mjs             host and viewer, end to end, 27 checks
   uplink.mjs          the upload estimator, against made up statistics
   encoder-check.mjs   codec by codec: resolution held, and encode cost
+  cpu-check.mjs       processor cost per codec, the real GPU question
+  codec-fallback.mjs  a viewer without the hardware codec still sees it
   qr-check.mjs        every QR version, decoded back by Chrome
   mesh.mjs            N viewers against one host
   relay-probe.mjs     which public relays really carry a handshake
