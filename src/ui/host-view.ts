@@ -214,7 +214,6 @@ export class HostView {
   private teardownSession(): void {
     for (const t of this.timers) window.clearInterval(t)
     this.timers = []
-    document.title = 'Screen share'
     void this.bus?.send({ type: 'bye' }).catch(() => undefined)
     for (const peer of this.peers.values()) peer.close()
     this.peers.clear()
@@ -1124,7 +1123,6 @@ export class HostView {
     clear(this.statusPills)
 
     const connected = [...this.peers.values()].filter((p) => p.state === 'connected').length
-    document.title = connected > 0 ? `${connected} watching` : 'Sharing your screen'
     this.chrome?.setTitle(
       connected > 0 ? `Sharing your screen - ${connected} watching` : 'Sharing your screen',
     )

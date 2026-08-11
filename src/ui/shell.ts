@@ -11,7 +11,6 @@
 
 import { checkSupport, supportRows } from '../diagnostics'
 import { fmtBytes, fmtDuration, h } from './dom'
-import { brandMark } from './icons'
 
 export interface SessionSummary {
   seconds: number
@@ -67,14 +66,15 @@ function capGlyph(kind: 'min' | 'max' | 'close'): SVGSVGElement {
 }
 
 export function createWindow(title: string): WindowChrome {
-  // The mark stays as the window icon. The name does not appear as text: the
-  // title bar says what the window is doing, which is more use than a wordmark.
+  /*
+   * The title bar carries the caption buttons and nothing else. No icon, no
+   * wordmark, no caption text. What the window is doing is already on the status
+   * bar along the bottom, where it does not have to compete with the controls.
+   *
+   * setTitle still exists and still means something: it names the browser tab.
+   */
   let actions: WindowActions = {}
-
-  const titleText = h('span', { class: 'xp-title-text', text: title })
-
-  const mark = brandMark(16)
-  mark.classList.add('xp-title-icon')
+  document.title = title
 
   const cap = (kind: 'min' | 'max' | 'close', label: string): HTMLButtonElement => {
     const button = h('button', {
@@ -94,8 +94,7 @@ export function createWindow(title: string): WindowChrome {
   }
 
   const titlebar = h('div', { class: 'xp-titlebar' }, [
-    mark,
-    titleText,
+    h('div', { class: 'grow' }),
     h('div', { class: 'xp-title-buttons' }, [
       cap('min', 'Hide the controls'),
       cap('max', 'Fullscreen'),
@@ -123,7 +122,7 @@ export function createWindow(title: string): WindowChrome {
     root,
     body,
     setTitle: (text) => {
-      titleText.textContent = text
+      document.title = text
     },
     setStatus,
     setActions: (next) => {
