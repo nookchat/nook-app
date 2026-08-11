@@ -241,6 +241,36 @@ try {
   // Only now does somebody share a screen, inside the channel they are in.
   await host.getByRole('button', { name: 'Share screen' }).click()
 
+  /*
+   * Watching is a choice now. A screen appearing on yours because somebody
+   * else pressed a button was the old behaviour, and it spent your bandwidth
+   * on their decision, so the viewer has to ask for it.
+   */
+  const offered = await waitFor(
+    async () =>
+      viewer.evaluate(() => {
+        const bar = document.querySelector('.stream-bar')
+        if (!bar || bar.classList.contains('hidden')) return null
+        const button = [...bar.querySelectorAll('.stream-tab')].find((b) =>
+          b.textContent.startsWith('Watch'),
+        )
+        return button ? button.textContent.trim() : null
+      }),
+    30_000,
+    'the viewer to be offered the stream',
+  )
+  check('a viewer is offered the stream rather than given it', !!offered, offered ?? 'no offer')
+
+  const notYet = await viewer.evaluate(() => !document.querySelector('video'))
+  check('and nothing is on their screen until they ask', notYet)
+
+  await viewer.evaluate(() => {
+    const button = [...document.querySelectorAll('.stream-tab')].find((b) =>
+      b.textContent.startsWith('Watch'),
+    )
+    button?.click()
+  })
+
   const playing = await waitFor(
     async () =>
       viewer.evaluate(() => {
@@ -362,6 +392,20 @@ try {
   watch(skewed, 'viewer')
   await skewed.addInitScript(SKEW_STUB)
   await skewed.goto(link, { waitUntil: 'domcontentloaded' })
+  // Same as any other viewer: offered, then asked for.
+  await waitFor(
+    async () =>
+      skewed.evaluate(() => {
+        const button = [...document.querySelectorAll('.stream-tab')].find((b) =>
+          b.textContent.startsWith('Watch'),
+        )
+        if (!button) return null
+        button.click()
+        return true
+      }),
+    30_000,
+    'the skewed viewer to be offered the stream',
+  )
   const skewOk = await waitFor(
     async () =>
       skewed.evaluate(() => {

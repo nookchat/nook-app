@@ -56,6 +56,14 @@ import type { WindowChrome } from './shell'
 import { toast } from './toast'
 import { VideoSurface } from './video-surface'
 
+/**
+ * How long somebody stays in the members list after their last word.
+ *
+ * A fortnight. Long enough that the people you talk to are always there, short
+ * enough that a key used once and abandoned falls off instead of accumulating.
+ */
+const RECENT_MS = 14 * 24 * 60 * 60 * 1000
+
 const STATS_MS = 2000
 
 export class SpaceView {
@@ -98,6 +106,8 @@ export class SpaceView {
   /** Who is sharing, and in which channel. */
   private readonly sharers = new Map<string, string>()
   private streamBar!: HTMLDivElement
+  /** Whether our own screen is on our own stage. Sharing it is not watching it. */
+  private showingSelf = false
 
   // Elements redrawn in place.
   private channelList!: HTMLDivElement
@@ -242,20 +252,17 @@ export class SpaceView {
         else this.sharers.delete(env.from)
         if (was !== sharing) this.draw()
         // Somebody is sharing in the channel we are looking at, so ask to watch.
-        if (
-          sharing === this.channel &&
-          !this.watching &&
-          !this.watchingWho &&
-          env.from !== this.selfId
-        ) {
-          this.watchingWho = env.from
-          void this.bus?.send({ type: 'hello', to: env.from })
-        }
-        // Whoever stopped, stop watching them and fall back to anybody else.
-        if (!sharing && env.from === this.watchingWho) {
-          this.stopWatching()
-          this.watchNext()
-        }
+        /*
+         * Somebody starting to share does not put their screen on yours.
+         *
+         * It used to: the first announcement was answered with a hello and the
+         * picture arrived unasked. That is somebody else deciding what is on
+         * your screen, and it costs you bandwidth you did not agree to spend.
+         * The row of who is live is the offer; watching is a click.
+         */
+        if (was !== sharing) this.draw()
+        // Whoever stopped, stop watching. Nobody is put on in their place.
+        if (!sharing && env.from === this.watchingWho) this.stopWatching()
         return
       }
       case 'hello': {
@@ -817,8 +824,26 @@ export class SpaceView {
       })
     }
 
-    // Everybody the log knows about, whether or not they are here today.
-    for (const [key, name] of names) put(key, { name })
+    /*
+     * Everybody the log knows about who has been about lately.
+     *
+     * Not everybody it has ever heard of. A key is made per device and per
+     * browser profile, so somebody who joins from their phone, then their
+     * laptop, then a private window is three keys as far as the log is
+     * concerned, and all three answer to the same name. Listing the lot meant
+     * seeing the same person two or three times over, some of them with a name
+     * and some with nothing but a key, which is exactly what it looked like.
+     *
+     * So the list is of people, not of records: here now, or heard from in the
+     * last fortnight. Nothing is deleted, and an old key that says something
+     * comes straight back.
+     */
+    const seen = chat?.lastSeen() ?? new Map<string, number>()
+    const cutoff = Date.now() - RECENT_MS
+    for (const [key, name] of names) {
+      if ((seen.get(key) ?? 0) < cutoff) continue
+      put(key, { name })
+    }
 
     put(chat?.me ?? 'you', {
       name: chat?.displayName ?? 'You',
@@ -845,6 +870,19 @@ export class SpaceView {
         voice: this.voice?.whereIs(peer.id) ?? null,
         talking: this.voice?.isTalking(peer.id) ?? false,
       })
+    }
+
+    /*
+     * Two rows with the same name, one here and one not, is the same person on
+     * a second device far more often than it is two people. Drop the one that
+     * is not here: it says nothing the live row does not, and it is the thing
+     * that looked like a duplicate.
+     */
+    const hereByName = new Set(
+      [...rows.values()].filter((r) => r.here && r.name).map((r) => r.name.toLowerCase()),
+    )
+    for (const [key, row] of rows) {
+      if (!row.here && row.name && hereByName.has(row.name.toLowerCase())) rows.delete(key)
     }
 
     // You first, then whoever is here, then the rest, alphabetically within each.
@@ -921,14 +959,10 @@ export class SpaceView {
   private openChannel(name: string): void {
     if (name === this.channel) return
     this.channel = name
-    // Watching follows the channel: leave whatever was on the old one.
+    // Watching follows the channel: leave whatever was on the old one, and do
+    // not start anything new. Whoever is live here is offered, not applied.
     this.stopWatching()
     this.draw()
-    const sharer = [...this.sharers.entries()].find(([, ch]) => ch === name)
-    if (sharer) {
-      this.watchingWho = sharer[0]
-      void this.bus?.send({ type: 'hello', to: sharer[0] })
-    }
   }
 
   private async newChannel(voice: boolean): Promise<void> {
@@ -956,7 +990,8 @@ export class SpaceView {
     this.shareButton.classList.toggle('danger', sharing)
     this.shareButton.classList.toggle('primary', !sharing)
     this.sharePanel.classList.toggle('hidden', !sharing)
-    this.stage.classList.toggle('hidden', !sharing && !this.watching)
+    // The stage is only up for something you chose to put on it.
+    this.stage.classList.toggle('hidden', !(sharing && this.showingSelf) && !this.watching)
     this.renderStreams()
   }
 
@@ -1012,6 +1047,7 @@ export class SpaceView {
     this.mixer?.close()
     this.mixer = null
     this.outStream = null
+    this.showingSelf = false
     this.surface?.setStream(null)
     this.stage.classList.add('hidden')
     this.announceMe()
@@ -1075,41 +1111,71 @@ export class SpaceView {
    * offer comes back the same way it does for the first one.
    */
   private watch(peerId: string): void {
+    if (peerId === this.selfId && this.capture) {
+      this.stopWatching()
+      this.showOwnPreview()
+      this.draw()
+      return
+    }
     if (peerId === this.watchingWho) return
     this.stopWatching()
     if (peerId === this.selfId) {
       // Your own screen is already on this device. No round trip for it.
+      this.showingSelf = true
       this.draw()
       return
     }
+    this.showingSelf = false
     this.watchingWho = peerId
     void this.bus?.send({ type: 'hello', to: peerId })
     this.draw()
   }
 
-  /** After whoever we were watching stops, pick up anybody else who is live. */
-  private watchNext(): void {
-    const next = this.liveHere().find((s) => !s.you)
-    if (next) this.watch(next.id)
-    else this.draw()
-  }
-
+  /**
+   * Who is live here, as an offer rather than an instruction.
+   *
+   * This is the only way a screen gets onto yours, which is the point: one
+   * button each, nothing pressed in until you press it, and a way back off.
+   */
   private renderStreams(): void {
     const live = this.liveHere()
-    // One person sharing needs no chooser: the stage already shows them.
-    this.streamBar.classList.toggle('hidden', live.length < 2)
-    if (live.length < 2) return
-
     clear(this.streamBar)
-    this.streamBar.append(h('span', { class: 'eyebrow', text: 'Live' }))
+    this.streamBar.classList.toggle('hidden', live.length === 0)
+    if (live.length === 0) return
+
+    const watching = this.watchingWho !== null || (this.capture !== null && this.showingSelf)
+    this.streamBar.append(
+      h('span', {
+        class: 'eyebrow',
+        text: live.length === 1 ? 'Live here' : `Live here (${live.length})`,
+      }),
+    )
+
     for (const one of live) {
-      const on = one.you ? this.watchingWho === null : this.watchingWho === one.id
+      const on = one.you ? this.showingSelf : this.watchingWho === one.id
       this.streamBar.append(
         h('button', {
           class: `stream-tab${on ? ' on' : ''}`,
-          text: one.name,
-          title: one.you ? 'Your own screen' : `Watch ${one.name}`,
-          on: { click: () => this.watch(one.you ? this.selfId : one.id) },
+          text: one.you ? one.name : `Watch ${one.name}`,
+          title: one.you ? 'Show your own screen here' : `Put ${one.name} on your screen`,
+          on: { click: () => this.watch(one.id) },
+        }),
+      )
+    }
+
+    if (watching) {
+      this.streamBar.append(
+        h('button', {
+          class: 'stream-tab',
+          text: 'Stop watching',
+          title: 'Take it off your screen',
+          on: {
+            click: () => {
+              this.showingSelf = false
+              this.stopWatching()
+              this.draw()
+            },
+          },
         }),
       )
     }
@@ -1131,7 +1197,9 @@ export class SpaceView {
     this.stage.append(this.surface.root)
   }
 
+  /** Your own screen, on your own stage, so you can see what you are giving away. */
   private showOwnPreview(): void {
+    this.showingSelf = true
     this.ensureSurface()
     this.surface?.setStream(this.outStream)
     this.stage.classList.remove('hidden')

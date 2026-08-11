@@ -548,65 +548,6 @@ body {
   }
 }
 
-/* Caption buttons only. Nothing on the left. */
-.xp-titlebar {
-  flex: 0 0 auto;
-  height: var(--title-h);
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0 4px;
-  border-radius: var(--win-radius);
-  background: var(--title-bg);
-  box-shadow: var(--title-shadow);
-  user-select: none;
-}
-
-.xp-title-buttons {
-  display: flex;
-  gap: 2px;
-  flex: 0 0 auto;
-}
-
-.xp-cap {
-  width: var(--cap-size);
-  height: var(--cap-size);
-  padding: 0;
-  min-height: 0;
-  border: var(--cap-border);
-  border-radius: var(--cap-radius);
-  background: var(--cap-bg);
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-  color: var(--cap-fg);
-  box-shadow: none;
-  font-weight: 400;
-}
-
-.xp-cap:hover {
-  filter: brightness(1.2);
-  background: var(--cap-bg);
-  border: var(--cap-border);
-}
-
-.xp-cap:active {
-  filter: brightness(0.85);
-}
-
-.xp-cap.close {
-  background: var(--cap-close-bg);
-}
-
-.xp-cap.close:hover {
-  background: var(--bad);
-  color: #fff;
-}
-
-.xp-cap svg {
-  display: block;
-}
-
 .xp-body {
   flex: 1 1 auto;
   min-height: 0;

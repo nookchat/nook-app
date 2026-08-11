@@ -431,6 +431,23 @@ export class RoomLog {
     }
     return names
   }
+
+  /**
+   * When each key was last heard from.
+   *
+   * The wall clock the author wrote, which is theirs and not to be trusted for
+   * ordering, but is the only thing that answers "when". It is used to decide
+   * who is worth showing in a members list, and being an hour out either way
+   * changes nothing about that.
+   */
+  lastSeen(): Map<string, number> {
+    const out = new Map<string, number>()
+    for (const e of this.all()) {
+      const was = out.get(e.author) ?? 0
+      if (e.at > was) out.set(e.author, e.at)
+    }
+    return out
+  }
 }
 
 /** A channel name: lower case, no spaces, the way every chat app does it. */

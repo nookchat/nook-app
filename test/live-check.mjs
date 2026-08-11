@@ -123,20 +123,46 @@ try {
     tabs ? tabs.map((t) => `${t.name}${t.on ? '*' : ''}`).join(' | ') : 'no bar',
   )
 
-  const watchingFirst = await carol.evaluate(() => {
-    const el = document.querySelector('video')
-    return el ? { w: el.videoWidth, playing: !el.paused } : null
-  })
+  // Neither is on her screen. Two people sharing is two offers, not two
+  // pictures arriving unasked.
+  const quiet = await carol.evaluate(() => ({
+    video: !!document.querySelector('video'),
+    pressed: !!document.querySelector('.stream-tab.on'),
+  }))
   check(
-    'and one of them is on the screen',
-    !!watchingFirst && watchingFirst.w > 0,
-    JSON.stringify(watchingFirst),
+    'and neither is on her screen until she asks',
+    quiet.video === false && quiet.pressed === false,
+    JSON.stringify(quiet),
+  )
+
+  const first = await carol.evaluate(() => {
+    const button = [...document.querySelectorAll('.stream-tab')].find((b) =>
+      b.textContent.startsWith('Watch'),
+    )
+    if (!button) return null
+    const name = button.textContent.trim()
+    button.click()
+    return name
+  })
+  const watchingFirst = await waitFor(
+    async () =>
+      carol.evaluate(() => {
+        const el = document.querySelector('video')
+        return el && el.videoWidth > 0 && !el.paused ? el.videoWidth : null
+      }),
+    30_000,
+    'the first stream she picked',
+  )
+  check(
+    'picking one puts it on her screen',
+    !!watchingFirst,
+    `${first}, ${watchingFirst ?? 0}px wide`,
   )
 
   // Switch to the other one, and check the picture comes back.
   const switched = await carol.evaluate(() => {
     const off = [...document.querySelectorAll('.stream-tab')].find(
-      (b) => !b.classList.contains('on'),
+      (b) => b.textContent.startsWith('Watch') && !b.classList.contains('on'),
     )
     if (!off) return null
     const name = off.textContent.trim()
@@ -150,7 +176,7 @@ try {
       carol.evaluate(() => {
         const el = document.querySelector('video')
         const on = document.querySelector('.stream-tab.on')?.textContent.trim() ?? ''
-        return el && el.videoWidth > 0 && !el.paused ? { w: el.videoWidth, on } : null
+        return el && el.videoWidth > 0 && !el.paused && on ? { w: el.videoWidth, on } : null
       }),
     30_000,
     'the second stream to arrive',
@@ -159,6 +185,22 @@ try {
     'and switching to it brings a picture back',
     !!watchingSecond && watchingSecond.on === switched,
     watchingSecond ? `${watchingSecond.on}, ${watchingSecond.w}px wide` : 'no picture',
+  )
+
+  // And a way back off it again.
+  const stopped = await carol.evaluate(async () => {
+    const off = [...document.querySelectorAll('.stream-tab')].find(
+      (b) => b.textContent.trim() === 'Stop watching',
+    )
+    if (!off) return null
+    off.click()
+    await new Promise((r) => setTimeout(r, 1200))
+    return { video: !!document.querySelector('video'), pressed: !!document.querySelector('.stream-tab.on') }
+  })
+  check(
+    'and she can take it back off again',
+    stopped !== null && stopped.pressed === false,
+    JSON.stringify(stopped),
   )
 
   // ---- moving somebody between voice channels ------------------------------

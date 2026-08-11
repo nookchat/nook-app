@@ -70,6 +70,20 @@ try {
   const viewer = await viewerContext.newPage()
   await viewer.goto(link, { waitUntil: 'domcontentloaded' })
 
+  // A viewer is offered the stream and asks for it. Nothing arrives unasked.
+  await waitFor(
+    async () =>
+      viewer.evaluate(() => {
+        const button = [...document.querySelectorAll('.stream-tab')].find((b) =>
+          b.textContent.startsWith('Watch'),
+        )
+        if (!button) return null
+        button.click()
+        return true
+      }),
+    45_000,
+    'the viewer to be offered the stream',
+  )
   await waitFor(
     async () => viewer.evaluate(() => (document.querySelector('video')?.videoWidth ?? 0) > 0 || null),
     45_000,

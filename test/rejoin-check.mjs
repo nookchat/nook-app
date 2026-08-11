@@ -156,6 +156,38 @@ try {
     !!gone && gone.length === 2,
     (gone ?? (await roster(alice))).map((r) => `${r.text}${r.away ? ' (away)' : ''}`).join(' | '),
   )
+
+  /*
+   * The duplicate that survived the first fix. A key is made per device and
+   * per browser profile, so the same person joining from somewhere else is a
+   * second key with the same name on it, and the log remembers every key that
+   * ever spoke. The list is of people, so the one who is not here loses.
+   */
+  const twice = await open('Bob')
+  await twice.goto(link)
+  await twice.reload()
+  await twice.waitForTimeout(2000)
+
+  const settledAgain = await waitFor(
+    async () => {
+      const list = await roster(alice)
+      return list.length === 2 ? list : null
+    },
+    30_000,
+    'the second Bob to fold into the first',
+  )
+  const both = settledAgain ?? (await roster(alice))
+  check(
+    'the same name on a second device is not a second person',
+    both.length === 2,
+    both.map((r) => `${r.text}${r.away ? ' (away)' : ''}`).join(' | '),
+  )
+  check(
+    'and the one shown is the one who is here',
+    both.every((r) => !r.away),
+    both.map((r) => `${r.text}${r.away ? ' (away)' : ''}`).join(' | '),
+  )
+
 } finally {
   await browser.close()
 }

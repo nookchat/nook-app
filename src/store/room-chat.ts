@@ -130,6 +130,10 @@ export class RoomChat {
     return this.myRole === 'admin'
   }
 
+  lastSeen(): Map<string, number> {
+    return this.log.lastSeen()
+  }
+
   roleOf(pubkey: string): string {
     return this.log.roleOf(pubkey)
   }

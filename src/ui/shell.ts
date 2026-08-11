@@ -37,75 +37,27 @@ export interface WindowChrome {
   setActions(actions: WindowActions): void
 }
 
-const ns = 'http://www.w3.org/2000/svg'
-
-/** The caption glyphs, drawn the way XP drew them: small, square, and white. */
-function capGlyph(kind: 'min' | 'max' | 'close'): SVGSVGElement {
-  const svg = document.createElementNS(ns, 'svg')
-  svg.setAttribute('viewBox', '0 0 10 10')
-  svg.setAttribute('width', '10')
-  svg.setAttribute('height', '10')
-  svg.setAttribute('aria-hidden', 'true')
-
-  const add = (d: string, stroke: number): void => {
-    const p = document.createElementNS(ns, 'path')
-    p.setAttribute('d', d)
-    p.setAttribute('stroke', '#fff')
-    p.setAttribute('stroke-width', String(stroke))
-    p.setAttribute('fill', 'none')
-    p.setAttribute('shape-rendering', 'crispEdges')
-    svg.append(p)
-  }
-
-  if (kind === 'min') add('M2 8h6', 2)
-  if (kind === 'max') {
-    add('M1.5 2.5h7v6h-7z', 1.4)
-    add('M1.5 4h7', 1.4)
-  }
-  if (kind === 'close') add('M2 2l6 6M8 2l-6 6', 1.6)
-  return svg
-}
-
 export function createWindow(title: string): WindowChrome {
   /*
-   * The title bar carries the caption buttons and nothing else. No icon, no
-   * wordmark, no caption text. What the window is doing is already on the status
-   * bar along the bottom, where it does not have to compete with the controls.
+   * No title bar.
    *
-   * setTitle still exists and still means something: it names the browser tab.
+   * It carried three buttons that a browser already provides: the tab closes
+   * the thing, the window resizes it, and the operating system hides it. A
+   * strip of chrome that repeats what the chrome above it already does is a
+   * strip of wasted height, and on a phone it was a tenth of the screen.
+   *
+   * What is left is the window itself and the status bar along the bottom,
+   * which says what is actually happening. The actions the caption buttons
+   * stood for are still reachable: fullscreen and leaving both live where they
+   * belong, next to the thing they act on.
+   *
+   * setTitle still means something: it names the browser tab.
    */
-  let actions: WindowActions = {}
   document.title = title
-
-  const cap = (kind: 'min' | 'max' | 'close', label: string): HTMLButtonElement => {
-    const button = h('button', {
-      class: `xp-cap${kind === 'close' ? ' close' : ''}`,
-      ariaLabel: label,
-      title: label,
-      on: {
-        click: () => {
-          if (kind === 'min') actions.minimise?.()
-          if (kind === 'max') actions.maximise?.()
-          if (kind === 'close') actions.close?.()
-        },
-      },
-    })
-    button.append(capGlyph(kind))
-    return button
-  }
-
-  const titlebar = h('div', { class: 'xp-titlebar' }, [
-    h('div', { class: 'grow' }),
-    h('div', { class: 'xp-title-buttons' }, [
-      cap('min', 'Hide the controls'),
-      cap('max', 'Fullscreen'),
-      cap('close', 'Stop and go back'),
-    ]),
-  ])
 
   const body = h('div', { class: 'xp-body' })
   const status = h('div', { class: 'xp-status' })
-  const win = h('div', { class: 'xp-window' }, [titlebar, body, status])
+  const win = h('div', { class: 'xp-window' }, [body, status])
   const root = h('div', { class: 'xp-desktop' }, [win])
 
   // The skin picker lives on the status bar, where it is always reachable and
@@ -140,9 +92,12 @@ export function createWindow(title: string): WindowChrome {
       document.title = text
     },
     setStatus,
-    setActions: (next) => {
-      actions = next
-    },
+    /*
+     * Kept as a no-op rather than deleted. The screens still say what they can
+     * do, and something later may want somewhere to put it; taking the method
+     * away would only mean editing every caller to say nothing instead.
+     */
+    setActions: () => undefined,
   }
 }
 
