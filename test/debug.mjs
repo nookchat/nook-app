@@ -52,7 +52,6 @@ const viewer = await ctx.newPage()
 viewer.on('console', log('viewer'))
 viewer.on('pageerror', (e) => console.log('[viewer:pageerror]', String(e)))
 await viewer.goto(link)
-await viewer.getByRole('button', { name: 'Join the stream' }).click()
 
 for (let i = 0; i < 8; i++) {
   await viewer.waitForTimeout(3000)

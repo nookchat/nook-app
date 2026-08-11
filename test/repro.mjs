@@ -69,7 +69,6 @@ if (CASE === 'delay') {
 
 await viewer.goto(link)
 await viewer.bringToFront()
-await viewer.getByRole('button', { name: 'Join the stream' }).click()
 
 for (let i = 1; i <= 10; i++) {
   await viewer.waitForTimeout(3000)

@@ -56,7 +56,6 @@ const viewers = []
 for (let i = 0; i < COUNT; i++) {
   const page = await ctx.newPage()
   await page.goto(link)
-  await page.getByRole('button', { name: 'Join the stream' }).click()
   viewers.push(page)
   console.log(`viewer ${i + 1} joined`)
   await page.waitForTimeout(1500)

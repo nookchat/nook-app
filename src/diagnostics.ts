@@ -60,10 +60,10 @@ export function checkSupport(): Support {
 /** A blocking problem for a host, or null when the host can start. */
 export function hostBlocker(s: Support): string | null {
   if (!s.secureContext) {
-    return 'Cathode needs HTTPS. Open the site over https, or use http://localhost while you develop.'
+    return 'This page needs HTTPS. Open the site over https, or use http://localhost while you develop.'
   }
   if (!s.webrtc) {
-    return `${s.browser} has no WebRTC, so it cannot run Cathode.`
+    return `${s.browser} has no WebRTC, so it cannot run this.`
   }
   if (s.isIOS) {
     return 'An iPhone or an iPad cannot share a screen from any browser. Apple gives no browser that permission. You can still watch a stream on this device.'
@@ -76,8 +76,8 @@ export function hostBlocker(s: Support): string | null {
 
 /** A blocking problem for a viewer, or null when the viewer can watch. */
 export function viewerBlocker(s: Support): string | null {
-  if (!s.secureContext) return 'Cathode needs HTTPS to watch a stream.'
-  if (!s.webrtc) return `${s.browser} has no WebRTC, so it cannot watch a Cathode stream.`
+  if (!s.secureContext) return 'Watching a stream needs HTTPS.'
+  if (!s.webrtc) return `${s.browser} has no WebRTC, so it cannot watch a stream.`
   return null
 }
 
@@ -96,7 +96,7 @@ export function hostNotes(s: Support): string[] {
   }
   if (!hasTurn()) {
     notes.push(
-      'Cathode runs with no relay server. About one viewer in eight on a strict network will fail to connect.',
+      'This runs with no relay server. About one viewer in eight on a strict network will fail to connect.',
     )
   }
   return notes

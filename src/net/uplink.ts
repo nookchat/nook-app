@@ -69,7 +69,7 @@ export function initialUplink(): UplinkEstimate {
     return {
       kbps: DEFAULT_KBPS,
       source: 'default',
-      note: 'This browser reports nothing about the connection, so Cathode starts at a safe figure and measures the real one once a viewer joins.',
+      note: 'This browser reports nothing about the connection, so It starts at a safe figure and measures the real one once a viewer joins.',
     }
   }
 
@@ -77,7 +77,7 @@ export function initialUplink(): UplinkEstimate {
     return {
       kbps: 1500,
       source: 'browser-hint',
-      note: 'Data saver is on in this browser, so Cathode starts small.',
+      note: 'Data saver is on in this browser, so it starts small.',
     }
   }
 
@@ -86,14 +86,14 @@ export function initialUplink(): UplinkEstimate {
     return {
       kbps: MIN_KBPS,
       source: 'browser-hint',
-      note: 'The browser reports a very slow connection, so Cathode starts at the lowest budget.',
+      note: 'The browser reports a very slow connection, so it starts at the lowest budget.',
     }
   }
   if (type === '3g') {
     return {
       kbps: 2500,
       source: 'browser-hint',
-      note: 'The browser reports a 3g connection, so Cathode starts low.',
+      note: 'The browser reports a 3g connection, so it starts low.',
     }
   }
 
@@ -111,14 +111,14 @@ export function initialUplink(): UplinkEstimate {
     return {
       kbps: 4000,
       source: 'browser-hint',
-      note: 'This looks like a mobile connection, so Cathode starts below the usual figure.',
+      note: 'This looks like a mobile connection, so it starts below the usual figure.',
     }
   }
 
   return {
     kbps: DEFAULT_KBPS,
     source: 'browser-hint',
-    note: 'Cathode starts at a safe figure and measures the real uplink once a viewer joins.',
+    note: 'It starts at a safe figure and measures the real uplink once a viewer joins.',
   }
 }
 
@@ -186,7 +186,7 @@ export class UplinkMeter {
           this.kbps = next
           this.src = 'measured'
           this.measuredSamples += 1
-          this.noteText = `Cathode measured the upload at about ${fmt(next)} after the viewers reported packet loss.`
+          this.noteText = `Measured the upload at about ${fmt(next)} after the viewers reported packet loss.`
           this.lastChange = now
           return true
         }
@@ -205,7 +205,7 @@ export class UplinkMeter {
     this.kbps = clamp(Math.min(o.availableKbps, this.kbps * 1.25))
     this.src = 'measured'
     this.measuredSamples += 1
-    this.noteText = `Cathode measured the upload at about ${fmt(this.kbps)} on the live connection.`
+    this.noteText = `Measured the upload at about ${fmt(this.kbps)} on the live connection.`
     this.lastChange = now
     return true
   }

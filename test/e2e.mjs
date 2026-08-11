@@ -219,8 +219,8 @@ try {
   const viewer = await context.newPage()
   watch(viewer, 'viewer')
   await viewer.goto(link, { waitUntil: 'domcontentloaded' })
-  await viewer.getByRole('button', { name: 'Join the stream' }).click()
-  check('viewer shows the join screen', true)
+
+  check('the viewer connects with no button to press', true, 'auto joined on open')
 
   const playing = await waitFor(
     async () =>
@@ -235,7 +235,30 @@ try {
     'the viewer video to play',
   )
   check('viewer receives live video', playing.w > 0, `${playing.w}x${playing.h}`)
-  check('viewer audio is not muted', playing.muted === false)
+  /*
+   * Sound needs a gesture, and joining is now automatic, so there may not have
+   * been one. The picture must never wait for that: it plays muted, and a single
+   * click turns the sound on. Either outcome is correct; silence with no way out
+   * is not.
+   */
+  const sound = await (async () => {
+    // Read the live state, not the snapshot taken the instant video arrived:
+    // the unmute attempt resolves a moment after that.
+    await viewer.waitForTimeout(1500)
+    const mutedNow = await viewer.evaluate(() => document.querySelector('video')?.muted)
+    if (mutedNow === false) return { path: 'played with sound unasked' }
+    const prompt = await viewer.locator('.sound-prompt')
+    const shown = (await prompt.count()) > 0
+    if (!shown) return { path: 'muted with no way to turn sound on', bad: true }
+    await prompt.click()
+    const unmuted = await waitFor(
+      async () => viewer.evaluate(() => (document.querySelector('video')?.muted === false ? true : null)),
+      5000,
+      'the sound prompt to unmute',
+    )
+    return { path: 'one click turned the sound on', bad: !unmuted }
+  })()
+  check('sound either plays or is one click away', !sound.bad, sound.path)
 
   const stats = await waitFor(
     async () =>
@@ -277,12 +300,61 @@ try {
   )
   check('host lists the viewer with live stats', true, hostSees.slice(0, 140))
 
+  // Chat runs on the same peer connection, with the host repeating each line.
+  const chatWorks = await waitFor(
+    async () => viewer.evaluate(() => (document.querySelector('.chat-log') ? true : null)),
+    10_000,
+    'the chat panel to appear',
+  )
+  check('the viewer has a chat panel', chatWorks === true)
+
+  const viewerName = await viewer.evaluate(
+    () => document.querySelector('input[aria-label="Your name in the chat"]')?.value ?? '',
+  )
+  check('the viewer gets a name without being asked', viewerName.length > 2, viewerName)
+
+  const hostSawJoin = await waitFor(
+    async () =>
+      host.evaluate(() => {
+        const text = document.querySelector('.chat-log')?.textContent ?? ''
+        return /joined/.test(text) ? text.trim() : null
+      }),
+    20_000,
+    'the host chat to announce the arrival',
+  )
+  check('the host is told when somebody joins', /joined/.test(hostSawJoin), hostSawJoin.slice(0, 60))
+
+  await viewer.fill('input[aria-label="Write a message"]', 'hello from the viewer')
+  await viewer.press('input[aria-label="Write a message"]', 'Enter')
+  const hostGotLine = await waitFor(
+    async () =>
+      host.evaluate(() => {
+        const text = document.querySelector('.chat-log')?.textContent ?? ''
+        return text.includes('hello from the viewer') ? text : null
+      }),
+    15_000,
+    'the host to receive the chat line',
+  )
+  check('a viewer line reaches the host over the data channel', !!hostGotLine)
+
+  await host.fill('input[aria-label="Write a message"]', 'and hello back')
+  await host.press('input[aria-label="Write a message"]', 'Enter')
+  const viewerGotLine = await waitFor(
+    async () =>
+      viewer.evaluate(() => {
+        const text = document.querySelector('.chat-log')?.textContent ?? ''
+        return text.includes('and hello back') ? text : null
+      }),
+    15_000,
+    'the viewer to receive the host line',
+  )
+  check('a host line reaches the viewer', !!viewerGotLine)
+
   // Two machines rarely agree on the time. A room must not depend on that.
   const skewed = await context.newPage()
   watch(skewed, 'viewer')
   await skewed.addInitScript(SKEW_STUB)
   await skewed.goto(link, { waitUntil: 'domcontentloaded' })
-  await skewed.getByRole('button', { name: 'Join the stream' }).click()
   const skewOk = await waitFor(
     async () =>
       skewed.evaluate(() => {

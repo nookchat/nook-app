@@ -11,6 +11,10 @@ export interface ViewerPeerOptions {
   onStream: (stream: MediaStream) => void
   onChange: () => void
   onFailed: (reason: string) => void
+  /** A line of chat arrived from the host. */
+  onChat: (raw: string) => void
+  /** The chat channel opened, so anything queued can go now. */
+  onChatReady: () => void
 }
 
 export class ViewerPeer {
@@ -21,6 +25,7 @@ export class ViewerPeer {
   private readonly opts: ViewerPeerOptions
   private readonly tracker: StatsTracker
   private readonly stream = new MediaStream()
+  private chat: RTCDataChannel | null = null
   private pendingCandidates: RTCIceCandidateInit[] = []
   private hasRemote = false
   private restarted = false
@@ -39,6 +44,17 @@ export class ViewerPeer {
       }
       this.stream.addTrack(ev.track)
       this.opts.onStream(this.stream)
+    }
+
+    // The host opens the chat channel, so we only have to catch it.
+    this.pc.ondatachannel = (ev) => {
+      if (ev.channel.label !== 'chat') return
+      this.chat = ev.channel
+      this.chat.onmessage = (m) => {
+        if (typeof m.data === 'string') opts.onChat(m.data)
+      }
+      this.chat.onopen = () => opts.onChatReady()
+      if (this.chat.readyState === 'open') opts.onChatReady()
     }
 
     this.pc.onicecandidate = (ev) => {
@@ -68,7 +84,7 @@ export class ViewerPeer {
       await this.pc.setLocalDescription(answer)
       this.opts.send('answer', { sdp: this.pc.localDescription?.sdp, type: 'answer' })
     } catch (err) {
-      this.opts.onFailed(`Cathode could not answer the host: ${String(err)}`)
+      this.opts.onFailed(`Could not answer the host: ${String(err)}`)
     }
   }
 
@@ -81,6 +97,19 @@ export class ViewerPeer {
     await this.pc.addIceCandidate(candidate).catch(() => undefined)
   }
 
+  get chatReady(): boolean {
+    return this.chat?.readyState === 'open'
+  }
+
+  sendChat(raw: string): void {
+    if (this.chat?.readyState !== 'open') return
+    try {
+      this.chat.send(raw)
+    } catch {
+      // The channel closed between the check and the send.
+    }
+  }
+
   async sample(): Promise<StatsSnapshot> {
     this.stats = await this.tracker.sample()
     return this.stats
@@ -90,6 +119,11 @@ export class ViewerPeer {
     if (this.closed) return
     this.closed = true
     this.pc.ontrack = null
+    this.pc.ondatachannel = null
+    if (this.chat) {
+      this.chat.onmessage = null
+      this.chat.onopen = null
+    }
     this.pc.onicecandidate = null
     this.pc.onconnectionstatechange = null
     this.pc.oniceconnectionstatechange = null

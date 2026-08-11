@@ -86,10 +86,10 @@ export const PRESETS: Preset[] = [
     id: 'game',
     name: 'Games',
     useWhen:
-      'Use for a fast game at 60 frames. Every frame is new, so this needs a strong processor and a fast upload. Watch the encode figure while you play.',
+      'The default. Use for a game, a video, or anything where the whole picture moves. Fine tuning has 60 frames if your machine and your upload can carry it.',
     mode: 'motion',
     maxHeight: 1080,
-    fps: 60,
+    fps: 30,
     bitrateScale: 1.3,
   },
   {
@@ -114,7 +114,7 @@ export const PRESETS: Preset[] = [
   },
 ]
 
-export const DEFAULT_PRESET: PresetId = 'docs'
+export const DEFAULT_PRESET: PresetId = 'game'
 
 export function presetById(id: PresetId): Preset | null {
   return PRESETS.find((p) => p.id === id) ?? null

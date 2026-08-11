@@ -117,7 +117,7 @@ function chooseVersion(byteLength: number): number {
     const countBits = version < 10 ? 8 : 16
     if (4 + countBits + byteLength * 8 <= dataCodewords(spec) * 8) return version
   }
-  throw new Error('This text is too long for a Cathode QR code.')
+  throw new Error('This text is too long for a QR code.')
 }
 
 function buildCodewords(bytes: Uint8Array, version: number): number[] {

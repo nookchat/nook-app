@@ -51,7 +51,7 @@ export interface HardwareProbe {
 export const NO_HARDWARE: HardwareProbe = {
   hardware: [],
   checked: false,
-  note: 'Cathode has not checked for a hardware encoder yet.',
+  note: 'The hardware encoder check has not run yet.',
 }
 
 async function webCodecsHardware(name: string, width: number, height: number, fps: number): Promise<boolean> {
@@ -125,7 +125,7 @@ export async function probeHardwareEncoders(
     hardware: found,
     checked: true,
     note: found.length
-      ? `This machine can encode ${reasons.join(' and ')} on the GPU. Cathode asks for that first on moving pictures.`
+      ? `This machine can encode ${reasons.join(' and ')} on the GPU. That is asked for first on moving pictures.`
       : 'No codec on this machine has a hardware encoder that WebRTC can offer, so encoding runs on the processor.',
   }
 }

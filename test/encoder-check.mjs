@@ -103,7 +103,6 @@ for (const codec of CODECS) {
   const viewer = await context.newPage()
   await viewer.addInitScript(PC_SPY)
   await viewer.goto(link, { waitUntil: 'domcontentloaded' })
-  await viewer.getByRole('button', { name: 'Join the stream' }).click()
 
   // Let the encoder settle and the bandwidth estimate open up.
   await host.waitForTimeout(22_000)

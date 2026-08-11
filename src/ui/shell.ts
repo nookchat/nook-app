@@ -67,6 +67,8 @@ function capGlyph(kind: 'min' | 'max' | 'close'): SVGSVGElement {
 }
 
 export function createWindow(title: string): WindowChrome {
+  // The mark stays as the window icon. The name does not appear as text: the
+  // title bar says what the window is doing, which is more use than a wordmark.
   let actions: WindowActions = {}
 
   const titleText = h('span', { class: 'xp-title-text', text: title })
@@ -156,7 +158,7 @@ export function aboutCard(): HTMLElement {
           text: 'Your screen goes out once per viewer, so your upload speed sets the viewer limit.',
         }),
         h('li', {
-          text: 'There is no relay for the media itself. On a strict network a connection can fail, and Cathode says so.',
+          text: 'There is no relay for the media itself. On a strict network a connection can fail, and you are told when it does.',
         }),
       ]),
     ]),
@@ -177,6 +179,6 @@ export function summaryCard(s: SessionSummary): HTMLElement {
       }),
       h('span', { class: 'pill', text: `${fmtBytes(s.bytesSent)} sent` }),
     ]),
-    h('div', { class: 'tiny faint', text: 'Cathode kept no copy of the picture or the sound.' }),
+    h('div', { class: 'tiny faint', text: 'No copy of the picture or the sound was kept.' }),
   ])
 }

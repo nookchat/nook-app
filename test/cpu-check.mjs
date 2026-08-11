@@ -121,7 +121,6 @@ for (const codec of CODECS) {
 
   const viewer = await (await viewerBrowser.newContext()).newPage()
   await viewer.goto(link, { waitUntil: 'domcontentloaded' })
-  await viewer.getByRole('button', { name: 'Join the stream' }).click()
 
   await sleep(SETTLE_MS)
   const liveCores = await coresUsed(hostCdp, SAMPLE_MS)

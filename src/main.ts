@@ -16,7 +16,7 @@ import { checkSupport } from './diagnostics'
 const app = document.getElementById('app')
 
 if (!app) {
-  throw new Error('Cathode could not find its mount point.')
+  throw new Error('The page could not find its mount point.')
 }
 
 const mount = app
@@ -43,14 +43,14 @@ function freshWindow(title: string): WindowChrome {
  */
 function showHost(): void {
   clearLink()
-  const chrome = freshWindow('Cathode')
+  const chrome = freshWindow('Screen share')
   const view = new HostView(chrome.body, chrome)
   active = view
   view.mount()
 }
 
 function showViewer(secret: string): void {
-  const chrome = freshWindow('Cathode - watching')
+  const chrome = freshWindow('Watching a shared screen')
   const view = new ViewerView(chrome.body, secret, showHost, chrome)
   active = view
   void view.start()

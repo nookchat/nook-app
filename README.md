@@ -5,15 +5,45 @@
 Peer to peer screen share with audio. The only server is the static webserver
 that sends the page.
 
-Cathode opens on the sharing page. There is no welcome screen: pick a window, get a
-link, send it. Anybody who opens that link watches live. The picture and the
-sound travel straight from one browser to the other. No media server sees them,
-and nothing is recorded.
+Cathode opens on the sharing page. There is no welcome screen: pick a window, get
+a link, send it. Anybody who opens that link is watching within seconds, with no
+button to press. The picture, the sound and the chat all travel straight from one
+browser to the other. No media server sees them, and nothing is recorded.
 
 A browser opens the screen picker for a real click and for nothing else, so the
-one click on **Choose what to share** is the least Cathode can ask for. Everything
-around it, the quality preset and the frame rate, is already set before that
-click, and the link appears the moment the source is picked.
+one click on **Choose what to share** is the least that can be asked for.
+Everything around it, the quality preset and the frame rate, is already set
+before that click, and the link appears the moment the source is picked.
+
+## Watching
+
+Opening a link is the decision to watch, so there is nothing to confirm. The
+connection starts on load and the picture appears as soon as it arrives.
+
+Sound is the one thing a browser will not hand over unasked. Muted playback
+always starts, so the picture is never held up waiting for permission, and if the
+browser refuses sound a single button appears offering it. Any click anywhere on
+the page takes it too.
+
+### Chat
+
+Chat rides the same peer connection as the picture, on a WebRTC data channel, so
+it is exactly as direct and as private as the video: encrypted by DTLS and never
+seen by a server. The host is the hub, because viewers only ever connect to the
+host, so the host repeats each line to everybody else.
+
+Everyone gets a name straight away, drawn from the era the interface is dressed
+in, so nobody has to fill in a form before saying hello. **Caffeinated Taskbar**,
+**Dial-up Monitor**, **Sleepy Floppy**. Change it in the box and it is kept in
+this browser for next time.
+
+Arrivals and departures appear in the chat, and the host gets a notification.
+
+A line is stamped with the clock of whoever displays it, never whoever sent it.
+Two machines rarely agree on the time, and a chat log that jumps backwards
+because someone's laptop is fast is a poor way to learn that. Every message is
+also checked for shape, type and length on arrival, because anybody on the room
+can put anything on the channel.
 
 ## Run it
 
@@ -159,16 +189,17 @@ viewer. Each preset names the job it is for, so nobody has to guess.
 
 | Preset                  | Size   | Rate   | Use it for                                        |
 | ----------------------- | ------ | ------ | ------------------------------------------------- |
-| **Code and documents**  | 1080p  | 15 fps | An editor, a terminal, a spreadsheet, a PDF       |
+| Code and documents      | 1080p  | 15 fps | An editor, a terminal, a spreadsheet, a PDF       |
 | Slides and walkthroughs | 1080p  | 24 fps | A presentation, a design review, a tour of an app |
 | Video and motion        | 1080p  | 30 fps | A film, an animation, a call                      |
-| Games                   | 1080p  | 60 fps | A fast game, where every frame is new             |
+| **Games**               | 1080p  | 30 fps | A game, or anything where the whole picture moves |
 | Maximum detail          | source | 30 fps | Photo work, drawings, a 4K display                |
 | Slow connection         | 720p   | 10 fps | Hotel wifi, a phone hotspot, many viewers         |
 
-**Code and documents is the default**, at about 1.2 Mb/s for a 1080p screen. A
-screen share is read, not admired. A smaller, more compressed picture starts
-faster, stays sharp on text, and leaves room for more viewers. Everything is
+**Games is the default**, at about 5.2 Mb/s for a 1080p screen at 30 frames. It
+carries a third more bitrate than Video and motion, because a game leaves no part
+of the frame unchanged. Fine tuning has 60 frames for machines and uploads that
+can take it. Everything is
 adjustable while the stream runs, under Fine tuning: resolution from source size
 down to 540p, frame rate from 5 to 60, the upload budget, the viewer limit, and
 the codec. Changing any of them switches the preset to Custom.

@@ -30,9 +30,11 @@ import { UplinkMeter } from '../net/uplink'
 import { NO_HARDWARE, probeHardwareEncoders, type HardwareProbe } from '../rtc/hardware'
 import { loadSettings, saveSettings, type HostSettings } from '../settings'
 import { clear, copyText, fmtDuration, fmtKbps, h, labelled } from './dom'
-import { brandMark, icon } from './icons'
+import { icon } from './icons'
 import { qrSvg } from './qr'
 import { aboutCard, summaryCard, type SessionSummary, type WindowChrome } from './shell'
+import { ChatPanel } from './chat-panel'
+import { cleanName, newMessageId, parseWire, toLine, type ChatWire } from '../chat'
 import { toast } from './toast'
 import { VideoSurface } from './video-surface'
 
@@ -58,6 +60,8 @@ export class HostView {
 
   private readonly peers = new Map<string, HostPeer>()
   private readonly pending = new Map<string, number>()
+  /** Viewers already announced in chat, so a reconnect does not announce twice. */
+  private readonly announced = new Set<string>()
   private startedAt = 0
   private peakViewers = 0
   private bytesSent = 0
@@ -97,6 +101,10 @@ export class HostView {
   private autoButton!: HTMLButtonElement
 
   private grid!: HTMLDivElement
+  private controlsColumn!: HTMLDivElement
+  private chatPanel: ChatPanel | null = null
+  /** Names viewers gave for themselves, so the list is not a wall of hex. */
+  private readonly names = new Map<string, string>()
   private wide = false
 
   constructor(root: HTMLElement, chrome: WindowChrome | null = null) {
@@ -206,7 +214,7 @@ export class HostView {
   private teardownSession(): void {
     for (const t of this.timers) window.clearInterval(t)
     this.timers = []
-    document.title = 'Cathode'
+    document.title = 'Screen share'
     void this.bus?.send({ type: 'bye' }).catch(() => undefined)
     for (const peer of this.peers.values()) peer.close()
     this.peers.clear()
@@ -247,6 +255,10 @@ export class HostView {
           })
           return
         }
+        const said = (env.data as { name?: string } | undefined)?.name
+        const name = cleanName(typeof said === 'string' ? said : '')
+        if (name) this.names.set(env.from, name)
+
         // A viewer that reloads sends hello again. Rebuild from scratch.
         this.peers.get(env.from)?.close()
         this.peers.delete(env.from)
@@ -289,13 +301,64 @@ export class HostView {
       codec: this.settings.codec,
       hardware: this.gpu.hardware,
       send: (type, data) => void this.bus?.send({ type, to: viewerId, data }),
-      onChange: () => this.renderViewers(),
+      onChange: () => this.onPeerStateChange(viewerId),
       onFailed: (reason) => toast(reason, 'bad', 8000),
+      onChat: (raw) => this.onChatFromViewer(viewerId, raw),
     })
     this.peers.set(viewerId, peer)
     this.peakViewers = Math.max(this.peakViewers, this.peers.size)
     void peer.setPlan(this.currentPlan(this.peers.size))
     this.renderViewers()
+  }
+
+  private label(viewerId: string): string {
+    return this.names.get(viewerId) ?? `viewer ${viewerId.slice(0, 6)}`
+  }
+
+  /**
+   * Announce an arrival once, when the connection is actually up. Doing it on
+   * hello would announce viewers who never manage to connect.
+   */
+  private onPeerStateChange(viewerId: string): void {
+    const peer = this.peers.get(viewerId)
+    if (peer?.state === 'connected' && !this.announced.has(viewerId)) {
+      this.announced.add(viewerId)
+      const name = this.label(viewerId)
+      this.broadcastChat({ v: 1, id: newMessageId(), kind: 'joined', name }, null)
+      toast(`${name} joined.`, 'info', 4000)
+    }
+    this.renderViewers()
+  }
+
+  private onChatFromViewer(viewerId: string, raw: string): void {
+    const wire = parseWire(raw)
+    if (!wire) return
+    // A viewer names itself on the channel. Keep that for the viewer list too.
+    if (wire.kind === 'said') this.names.set(viewerId, wire.name)
+    this.broadcastChat(wire, viewerId)
+  }
+
+  /** Show a line here, then repeat it to every viewer except where it came from. */
+  private broadcastChat(wire: ChatWire, from: string | null): void {
+    this.chatPanel?.append(toLine(wire, false))
+    const raw = JSON.stringify(wire)
+    for (const [id, peer] of this.peers) {
+      if (id === from) continue
+      peer.sendChat(raw)
+    }
+  }
+
+  private saySomething(text: string): void {
+    const wire: ChatWire = {
+      v: 1,
+      id: newMessageId(),
+      kind: 'said',
+      name: this.chatPanel?.currentName ?? 'Host',
+      text,
+    }
+    this.chatPanel?.append(toLine(wire, true))
+    const raw = JSON.stringify(wire)
+    for (const peer of this.peers.values()) peer.sendChat(raw)
   }
 
   private drop(viewerId: string, tellThem = false): void {
@@ -304,6 +367,13 @@ export class HostView {
       peer.close()
       this.peers.delete(viewerId)
     }
+    if (this.announced.delete(viewerId)) {
+      this.broadcastChat(
+        { v: 1, id: newMessageId(), kind: 'left', name: this.label(viewerId) },
+        viewerId,
+      )
+    }
+    this.names.delete(viewerId)
     this.pending.delete(viewerId)
     if (tellThem) {
       void this.bus?.send({
@@ -450,10 +520,19 @@ export class HostView {
     clear(this.root)
     this.surface = new VideoSurface({ muted: true, showVolume: false })
     this.surface.setMode('fit')
-    this.sidePanel = h('div', { class: 'host-side' })
+    this.sidePanel = h('div', { class: 'host-controls' })
+    this.chatPanel = new ChatPanel('Chat')
+    this.chatPanel.onSay = (text) => this.saySomething(text)
+    this.chatPanel.onRename = () => this.renderViewers()
+    this.chatPanel.setEnabled(false, 'Nobody is here yet')
+
+    this.controlsColumn = h('div', { class: 'host-side' }, [
+      this.sidePanel,
+      this.chatPanel.root,
+    ])
     this.grid = h('div', { class: `host-grid${this.wide ? ' wide' : ''}` }, [
       h('div', { class: 'stack', style: { minHeight: '0' } }, [this.surface.root]),
-      this.sidePanel,
+      this.controlsColumn,
     ])
     this.root.append(this.grid)
   }
@@ -468,21 +547,12 @@ export class HostView {
     this.surface?.setControlsVisible(false)
     this.surface?.setOverlay(
       h('div', { class: 'pick' }, [
-        brandMark(46),
-        h('h2', { text: blocker ? 'Cathode cannot share from this browser' : 'Choose what to share' }),
-        h('p', {
-          class: 'dim',
-          style: { margin: '0', maxWidth: '38ch' },
-          text:
-            blocker ??
-            'A window, a browser tab, or your whole screen. You get a link to send the moment you pick.',
-        }),
         blocker
-          ? null
+          ? h('p', { class: 'dim', style: { margin: '0', maxWidth: '38ch' }, text: blocker })
           : h(
               'button',
               { class: 'primary big', on: { click: () => void this.beginShare() } },
-              [icon('monitor', 20), 'Choose what to share'],
+              [icon('monitor', 18), 'Choose what to share'],
             ),
       ]),
     )
@@ -501,7 +571,7 @@ export class HostView {
     this.renderBudget()
     this.renderCodecNote()
     this.renderPlan(this.currentPlan(1), 0)
-    this.chrome?.setTitle('Cathode')
+    this.chrome?.setTitle('Screen share')
     this.renderStatus(0)
   }
 
@@ -683,7 +753,7 @@ export class HostView {
     this.autoButton = h('button', {
       class: 'chip',
       text: 'Automatic',
-      title: 'Let Cathode set the budget from what it measures on the live connection.',
+      title: 'Set the budget from what the live connection measures.',
       on: {
         click: () => {
           this.settings.budgetAuto = !this.settings.budgetAuto
@@ -760,7 +830,7 @@ export class HostView {
       h('details', { class: 'adv' }, [
         h('summary', { text: 'Fine tuning' }),
         h('div', { class: 'stack tight' }, [
-          labelled('Resolution', this.resolutionRow, 'The height Cathode sends. Lower starts faster.'),
+          labelled('Resolution', this.resolutionRow, 'The height sent out. Lower starts faster.'),
           labelled('Frame rate', this.fpsRow, 'Fewer frames leave more bits for detail.'),
           labelled(
             'Upload budget',
@@ -924,7 +994,7 @@ export class HostView {
     } catch {
       // Some sources refuse a change once they are live. The sender side caps
       // the frame rate and the resolution anyway, so the stream still obeys.
-      toast('This source kept its own size. Cathode caps the stream on the way out.', 'info', 5000)
+      toast('This source kept its own size. The stream is capped on the way out.', 'info', 5000)
     }
     void this.tickStats()
   }
@@ -1054,11 +1124,9 @@ export class HostView {
     clear(this.statusPills)
 
     const connected = [...this.peers.values()].filter((p) => p.state === 'connected').length
-    document.title = connected > 0 ? `${connected} watching - Cathode` : 'Sharing - Cathode'
+    document.title = connected > 0 ? `${connected} watching` : 'Sharing your screen'
     this.chrome?.setTitle(
-      connected > 0
-        ? `Cathode - sharing your screen - ${connected} watching`
-        : 'Cathode - sharing your screen',
+      connected > 0 ? `Sharing your screen - ${connected} watching` : 'Sharing your screen',
     )
     this.renderStatus(connected)
 
@@ -1068,12 +1136,14 @@ export class HostView {
         text: `${connected} of ${this.settings.maxViewers}`,
       }),
     )
+    this.chatPanel?.setPresence(connected + 1)
+    this.chatPanel?.setEnabled(connected > 0, 'Nobody is here yet')
     if (this.peers.size > 6) {
       this.statusPills.append(
         h('span', {
           class: 'pill warn',
           text: 'wide mesh',
-          title: 'Above six viewers Cathode halves the picture it sends, to keep the upload sane.',
+          title: 'Above six viewers the picture is halved, to keep the upload sane.',
         }),
       )
     }
@@ -1082,7 +1152,7 @@ export class HostView {
       this.viewerList.append(
         h('div', { class: 'viewer-row' }, [
           h('div', { class: 'stack tight' }, [
-            h('div', { class: 'mono small', text: `viewer ${id.slice(0, 6)}` }),
+            h('div', { class: 'small', text: this.label(id) }),
             h('div', {
               class: 'tiny warn',
               text: `waiting ${Math.round((Date.now() - at) / 1000)} s for your approval`,
@@ -1188,7 +1258,7 @@ export class HostView {
         h('div', { class: 'viewer-row' }, [
           h('div', { class: 'row', style: { gap: '8px' } }, [
             h('i', { class: `dot ${tone}`.trim() }),
-            h('span', { class: 'mono small truncate', text: `viewer ${id.slice(0, 6)}` }),
+            h('span', { class: 'small truncate', text: this.label(id) }),
             h('span', { class: 'tiny faint', text: fmtDuration(Date.now() - peer.joinedAt) }),
           ]),
           h('button', {
@@ -1254,7 +1324,7 @@ export class HostView {
     if (!this.codecNote) return
     this.codecNote.textContent = this.gpu.checked
       ? `${this.gpu.note} VP9 and AV1 carry text best.`
-      : 'Cathode is checking for a hardware encoder. VP9 and AV1 carry text best.'
+      : 'Checking for a hardware encoder. VP9 and AV1 carry text best.'
   }
 
   /** Keep the budget row honest about the number and where it came from. */
@@ -1269,7 +1339,7 @@ export class HostView {
     this.budgetInput.disabled = auto
     this.budgetNote.textContent = auto
       ? this.uplink.note
-      : 'You set this by hand. Cathode keeps to it, and still drops quality if the viewers report loss.'
+      : 'You set this by hand. It is kept to, and quality still drops if the viewers report loss.'
   }
 
   private renderPreviewBadges(): void {

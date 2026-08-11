@@ -27,7 +27,6 @@ console.log('HOST relays  :', await host.evaluate(relayState))
 const viewer = await ctx.newPage()
 viewer.on('console', (m) => { if (m.type() === 'error' && !/WebSocket connection/.test(m.text())) console.log('[viewer]', m.text()) })
 await viewer.goto(link)
-await viewer.getByRole('button', { name: 'Join the stream' }).click()
 await viewer.waitForTimeout(9000)
 console.log('VIEWER relays:', await viewer.evaluate(() =>
   Array.from(document.querySelectorAll('.surface-overlay .pill')).map((p) => `${p.textContent}:${p.classList.contains('good') ? 'open' : p.classList.contains('bad') ? 'FAILED' : 'trying'}`)))

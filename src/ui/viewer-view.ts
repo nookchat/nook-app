@@ -13,6 +13,8 @@ import type { Envelope } from '../signal/envelope'
 import { ViewerPeer } from '../rtc/viewer-peer'
 import { gradeOf } from '../rtc/stats'
 import { clear, fmtKbps, h } from './dom'
+import { ChatPanel } from './chat-panel'
+import { newMessageId, parseWire, toLine, type ChatWire } from '../chat'
 import type { WindowChrome } from './shell'
 import { toast } from './toast'
 import { VideoSurface } from './video-surface'
@@ -34,6 +36,8 @@ export class ViewerView {
   private bus: SignalBus | null = null
   private peer: ViewerPeer | null = null
   private surface: VideoSurface | null = null
+  private chatPanel: ChatPanel | null = null
+  private soundHandled = false
 
   private phase: Phase = 'ready'
   private hostId: string | null = null
@@ -68,6 +72,32 @@ export class ViewerView {
     })
   }
 
+  /**
+   * Play with sound if the browser allows it unasked, and ask for a single
+   * click if it does not. Muted playback always starts, so the picture is never
+   * held up waiting for permission that may never come.
+   */
+  private async tryForSound(): Promise<void> {
+    if (this.soundHandled) return
+    this.soundHandled = true
+    const got = await this.surface?.tryUnmute()
+    if (got) return
+    this.surface?.setSoundPrompt(() => void this.surface?.tryUnmute())
+  }
+
+  private saySomething(text: string): void {
+    if (!this.peer?.chatReady) return
+    const wire: ChatWire = {
+      v: 1,
+      id: newMessageId(),
+      kind: 'said',
+      name: this.chatPanel?.currentName ?? 'Visitor',
+      text,
+    }
+    this.chatPanel?.append(toLine(wire, true))
+    this.peer.sendChat(JSON.stringify(wire))
+  }
+
   private say(status: string): void {
     this.chrome?.setStatus([status])
   }
@@ -77,10 +107,18 @@ export class ViewerView {
     const blocker = viewerBlocker(support)
 
     this.surface = new VideoSurface({ muted: true, showVolume: true, fullBleed: true })
-    this.root.append(h('main', { class: 'pad', style: { padding: '0' } }, [this.surface.root]))
+    this.chatPanel = new ChatPanel('Chat')
+    this.chatPanel.onSay = (text) => this.saySomething(text)
+    this.chatPanel.setEnabled(false, 'Connecting...')
+
+    this.root.append(
+      h('main', {}, [
+        h('div', { class: 'viewer-grid' }, [this.surface.root, this.chatPanel.root]),
+      ]),
+    )
 
     if (blocker) {
-      this.surface.setOverlay(this.message('Cathode cannot run here', blocker, []))
+      this.surface.setOverlay(this.message('This browser cannot watch', blocker, []))
       return
     }
 
@@ -95,7 +133,8 @@ export class ViewerView {
       return
     }
 
-    this.showJoin()
+    // No button to press. Opening the link is the decision to watch.
+    await this.join()
   }
 
   /** Watching counts as live: a reload would drop the stream. */
@@ -121,44 +160,12 @@ export class ViewerView {
 
   // ---- phases ----
 
-  private showJoin(): void {
-    const card = this.message(
-      'Someone shared their screen with you',
-      'The picture and the sound travel straight from their computer to yours. No server holds a copy.',
-      [
-        h('button', {
-          class: 'primary big',
-          text: 'Join the stream',
-          on: { click: () => void this.join() },
-        }),
-      ],
-    )
-    card.append(
-      h('div', { class: 'shortcuts', style: { justifyContent: 'center', marginTop: '4px' } }, [
-        h('kbd', { text: 'F' }),
-        h('span', { text: 'Fullscreen' }),
-        h('kbd', { text: 'M' }),
-        h('span', { text: 'Mute' }),
-        h('kbd', { text: 'Z' }),
-        h('span', { text: 'Fit, fill, or actual size' }),
-        h('kbd', { text: 'Scroll' }),
-        h('span', { text: 'Zoom, with control held' }),
-      ]),
-    )
-    this.surface?.setOverlay(card)
-    this.say('Ready to join.')
-  }
-
   private async join(): Promise<void> {
     if (!this.room || this.phase !== 'ready') return
     this.phase = 'connecting'
     this.joinedAt = Date.now()
 
-    // The click gave us permission to play sound. Take it now, without waiting,
-    // because there is no stream to play yet.
-    void this.surface?.playWithSound()
-
-    this.surface?.setOverlay(this.message('Connecting', 'Cathode is looking for the host.', []))
+    this.surface?.setOverlay(this.message('Connecting', 'Looking for the host.', []))
     this.say('Connecting to the host...')
 
     const bus = new SignalBus(this.room, this.selfId)
@@ -168,7 +175,7 @@ export class ViewerView {
       if (this.phase === 'connecting' && health.every((r) => r.status === 'failed')) {
         this.fail(
           'No relay reachable',
-          'Cathode could not reach any of its signal relays. A firewall on this network is blocking them.',
+          'No signal relay could be reached. A firewall on this network is blocking them.',
         )
       }
     }
@@ -176,11 +183,11 @@ export class ViewerView {
     this.bus = bus
     window.addEventListener('pagehide', this.onPageHide)
 
-    void bus.send({ type: 'hello' })
+    void bus.send({ type: 'hello', data: { name: this.chatPanel?.currentName } })
     this.timers.push(
       window.setInterval(() => {
         if (this.phase === 'connecting' || this.phase === 'waiting') {
-          void this.bus?.send({ type: 'hello' })
+          void this.bus?.send({ type: 'hello', data: { name: this.chatPanel?.currentName } })
           if (Date.now() - this.joinedAt > HELLO_GIVE_UP_MS && this.phase !== 'waiting') {
             this.phase = 'waiting'
             this.surface?.setOverlay(this.stuckMessage())
@@ -255,19 +262,24 @@ export class ViewerView {
       },
       onStream: (stream) => {
         this.surface?.setStream(stream)
-        void this.surface?.playWithSound().catch(() => undefined)
+        void this.tryForSound()
       },
       onChange: () => {
         const state = this.peer?.state
         if (state === 'connected' && this.phase !== 'live') {
           this.phase = 'live'
-          this.chrome?.setTitle('Cathode - watching a shared screen')
+          this.chrome?.setTitle('Watching a shared screen')
           this.surface?.setOverlay(null)
         } else if (state === 'disconnected' && this.phase === 'live') {
           this.surface?.setBadges([{ text: 'reconnecting', tone: 'warn' }])
         }
       },
       onFailed: (reason) => this.fail('The connection failed', reason),
+      onChat: (raw) => {
+        const wire = parseWire(raw)
+        if (wire) this.chatPanel?.append(toLine(wire, false))
+      },
+      onChatReady: () => this.chatPanel?.setEnabled(true),
     })
   }
 
@@ -280,8 +292,8 @@ export class ViewerView {
 
     if (openRelays === 0) {
       return this.message(
-        'Cathode cannot reach a relay',
-        'This network blocks the connections Cathode needs to find the host. Try another network, or a phone hotspot.',
+        'Cannot reach a relay',
+        'This network blocks the connections needed to find the host. Try another network, or a phone hotspot.',
         [this.exitButton('Share my own screen')],
       )
     }
@@ -296,7 +308,7 @@ export class ViewerView {
 
     return this.message(
       'The host is not sharing',
-      'Nobody is streaming on this link right now. Cathode keeps trying, so leave this page open.',
+      'Nobody is streaming on this link right now. It keeps trying, so leave this page open.',
       [this.exitButton('Share my own screen')],
     )
   }

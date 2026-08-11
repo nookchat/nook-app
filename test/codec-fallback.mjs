@@ -88,7 +88,6 @@ try {
     receives.filter((m) => !/rtx|red|ulpfec|flexfec/i.test(m)).join(', '),
   )
 
-  await viewer.getByRole('button', { name: 'Join the stream' }).click()
   await host.waitForTimeout(14_000)
 
   const playing = await viewer.evaluate(() => {

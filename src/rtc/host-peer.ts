@@ -28,6 +28,8 @@ export interface HostPeerOptions {
   send: (type: 'offer' | 'ice', data: unknown) => void
   onChange: () => void
   onFailed: (reason: string) => void
+  /** A line of chat arrived from this viewer. */
+  onChat: (raw: string) => void
 }
 
 export class HostPeer {
@@ -47,6 +49,7 @@ export class HostPeer {
   private videoSender: RTCRtpSender | null = null
   private audioSender: RTCRtpSender | null = null
   private videoTransceiver: RTCRtpTransceiver | null = null
+  private chat: RTCDataChannel | null = null
   private pendingCandidates: RTCIceCandidateInit[] = []
   private makingOffer = false
   private hasRemote = false
@@ -78,6 +81,13 @@ export class HostPeer {
       }).sender
     }
 
+    // Chat rides the same connection. Created before the first offer, so it is
+    // in the very first negotiation and needs no second one.
+    this.chat = this.pc.createDataChannel('chat', { ordered: true })
+    this.chat.onmessage = (ev) => {
+      if (typeof ev.data === 'string') opts.onChat(ev.data)
+    }
+
     this.pc.onicecandidate = (ev) => {
       if (ev.candidate) opts.send('ice', ev.candidate.toJSON())
     }
@@ -107,7 +117,7 @@ export class HostPeer {
       await this.pc.setLocalDescription(offer)
       this.opts.send('offer', { sdp: this.pc.localDescription?.sdp, type: 'offer' })
     } catch (err) {
-      this.opts.onFailed(`Cathode could not make an offer: ${String(err)}`)
+      this.opts.onFailed(`Could not make an offer: ${String(err)}`)
     } finally {
       this.makingOffer = false
     }
@@ -123,7 +133,7 @@ export class HostPeer {
         await this.pc.addIceCandidate(c).catch(() => undefined)
       }
     } catch (err) {
-      this.opts.onFailed(`Cathode could not read the answer: ${String(err)}`)
+      this.opts.onFailed(`Could not read the answer: ${String(err)}`)
     }
   }
 
@@ -161,6 +171,20 @@ export class HostPeer {
     await this.audioSender.replaceTrack(track).catch(() => undefined)
   }
 
+  /** True once chat can actually carry a line to this viewer. */
+  get chatReady(): boolean {
+    return this.chat?.readyState === 'open'
+  }
+
+  sendChat(raw: string): void {
+    if (this.chat?.readyState !== 'open') return
+    try {
+      this.chat.send(raw)
+    } catch {
+      // The channel closed between the check and the send. Nothing to salvage.
+    }
+  }
+
   async sample(): Promise<StatsSnapshot> {
     this.stats = await this.tracker.sample()
     return this.stats
@@ -173,6 +197,7 @@ export class HostPeer {
     this.pc.onnegotiationneeded = null
     this.pc.onconnectionstatechange = null
     this.pc.oniceconnectionstatechange = null
+    if (this.chat) this.chat.onmessage = null
     try {
       this.pc.close()
     } catch {

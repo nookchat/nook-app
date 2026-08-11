@@ -117,7 +117,7 @@ function toCaptureError(err: unknown, what: string): CaptureError {
     return new CaptureError('denied', `You did not allow the ${what} share.`)
   }
   if (name === 'NotFoundError' || name === 'NotReadableError') {
-    return new CaptureError('none', `Cathode found no ${what} to use.`)
+    return new CaptureError('none', `Found no ${what} to use.`)
   }
   if (name === 'AbortError') {
     return new CaptureError('denied', `The ${what} share stopped before it started.`)

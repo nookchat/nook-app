@@ -70,6 +70,8 @@ export class VideoSurface {
   private lastY = 0
   private hideTimer: number | null = null
   private resizeObserver: ResizeObserver | null = null
+  private soundPrompt: HTMLButtonElement | null = null
+  private unmuting: Promise<boolean> | null = null
   private destroyed = false
 
   constructor(options: SurfaceOptions) {
@@ -172,6 +174,68 @@ export class VideoSurface {
     this.syncVolumeUi()
     if (!this.video.srcObject) return
     await this.video.play().catch(() => undefined)
+  }
+
+  /**
+   * Try to play with sound. Returns false when the browser refuses, which it
+   * does until the page has been clicked at least once.
+   */
+  async tryUnmute(): Promise<boolean> {
+    if (!this.video.srcObject) return false
+    /*
+     * Single flight. ontrack fires once per track, so two attempts used to
+     * overlap: one succeeded and cleared the prompt, the other had its play()
+     * interrupted and put the mute back, leaving the picture silent with no way
+     * to turn the sound on.
+     */
+    if (this.unmuting) return this.unmuting
+    this.unmuting = (async () => {
+      this.video.muted = false
+      try {
+        await this.video.play()
+        this.clearSoundPrompt()
+        this.syncVolumeUi()
+        return true
+      } catch {
+        // Autoplay policy said no. Go back to muted so the picture keeps running.
+        this.video.muted = true
+        void this.video.play().catch(() => undefined)
+        this.syncVolumeUi()
+        return false
+      } finally {
+        this.unmuting = null
+      }
+    })()
+    return this.unmuting
+  }
+
+  clearSoundPrompt(): void {
+    this.soundPrompt?.remove()
+    this.soundPrompt = null
+  }
+
+  /** A small nudge, shown only when the browser insists on a click for sound. */
+  setSoundPrompt(onClick: () => void): void {
+    if (this.soundPrompt) return
+    const button = h('button', {
+      class: 'sound-prompt primary',
+      text: 'Sound is off. Click for sound',
+      on: {
+        click: () => {
+          onClick()
+          this.clearSoundPrompt()
+        },
+      },
+    })
+    this.soundPrompt = button
+    this.root.append(button)
+
+    // Any click anywhere counts as the gesture, so take it silently too.
+    const once = (): void => {
+      document.removeEventListener('pointerdown', once)
+      if (this.soundPrompt) onClick()
+    }
+    document.addEventListener('pointerdown', once, { once: true })
   }
 
   /** The window's maximise button asks for this. */

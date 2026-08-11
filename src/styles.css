@@ -614,11 +614,116 @@ hr {
 }
 
 .host-side {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* The controls scroll. The chat below them stays put. */
+.host-controls {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding-right: 2px;
+}
+
+/* ---------- chat ---------- */
+
+.viewer-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 6px;
+  padding: 6px;
+}
+
+.chat-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 6px;
+  padding: 7px 8px 8px;
+}
+
+.host-side .chat-panel {
+  flex: 0 0 auto;
+  height: 40%;
+  min-height: 170px;
+}
+
+.chat-head {
+  flex: 0 0 auto;
+}
+
+.chat-log {
+  flex: 1 1 auto;
+  min-height: 60px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--field);
+  border: 1px solid;
+  border-color: var(--field-border) #fff #fff var(--field-border);
+  outline: 1px solid var(--face-shadow);
+  outline-offset: -2px;
+  padding: 4px 5px;
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.chat-line {
+  margin: 1px 0;
+}
+
+.chat-name {
+  font-weight: bold;
+  color: #0b3c8c;
+}
+
+.chat-line.mine .chat-name {
+  color: #8c3c0b;
+}
+
+.chat-line.system {
+  color: var(--fg-faint);
+  font-style: italic;
+}
+
+.chat-compose {
+  flex: 0 0 auto;
+}
+
+.chat-compose input[type="text"] {
+  font-size: 11px;
+}
+
+@media (max-width: 900px) {
+  .viewer-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(180px, 50dvh) minmax(160px, auto);
+  }
+
+  .host-controls {
+    overflow: visible;
+  }
+
+  .host-side .chat-panel {
+    height: auto;
+    min-height: 200px;
+  }
+}
+
+/* A nudge shown only when the browser insists on a click before sound. */
+.sound-prompt {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  z-index: 5;
 }
 
 @media (max-width: 900px) {
