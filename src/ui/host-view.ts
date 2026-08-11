@@ -1112,6 +1112,21 @@ export class HostView {
           )
         }
         if (s.codec) badges.append(h('span', { class: 'pill', text: s.codec }))
+        if (s.encodeMsPerFrame > 0) {
+          // How much of one frame interval the encoder eats. Above about half
+          // and this machine is close to being the bottleneck, not the network.
+          const frameMs = 1000 / Math.max(1, this.settings.fps)
+          const share = s.encodeMsPerFrame / frameMs
+          badges.append(
+            h('span', {
+              class: `pill ${share > 0.7 ? 'bad' : share > 0.45 ? 'warn' : ''}`.trim(),
+              text: `${s.encodeMsPerFrame.toFixed(1)} ms/frame`,
+              title: `Encoding uses ${Math.round(share * 100)} percent of the ${Math.round(frameMs)} ms available per frame${
+                s.encoderImpl ? ` on ${s.encoderImpl}` : ''
+              }. A high figure costs the machine, not the network.`,
+            }),
+          )
+        }
         if (s.path) badges.append(h('span', { class: 'pill', text: s.path }))
       } else {
         const stateTone =

@@ -32,7 +32,7 @@ export interface QualityInput {
 // Presets
 // ---------------------------------------------------------------------------
 
-export type PresetId = 'docs' | 'slides' | 'video' | 'detail' | 'light' | 'custom'
+export type PresetId = 'docs' | 'slides' | 'video' | 'game' | 'detail' | 'light' | 'custom'
 
 export interface Preset {
   id: PresetId
@@ -81,6 +81,16 @@ export const PRESETS: Preset[] = [
     maxHeight: 1080,
     fps: 30,
     bitrateScale: 1,
+  },
+  {
+    id: 'game',
+    name: 'Games',
+    useWhen:
+      'Use for a fast game at 60 frames. Every frame is new, so this needs a strong processor and a fast upload. Watch the encode figure while you play.',
+    mode: 'motion',
+    maxHeight: 1080,
+    fps: 60,
+    bitrateScale: 1.3,
   },
   {
     id: 'detail',

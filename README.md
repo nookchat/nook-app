@@ -39,6 +39,7 @@ npm run test:e2e       # two real Chrome pages, real relays, real media
 npm run test:mesh 10   # one host, ten viewers, prints the per viewer plan
 npm run test:qr        # every QR version, decoded back by Chrome
 npm run test:uplink    # the upload estimator, against made up statistics
+npm run test:encoder   # which codec holds up, and what encoding costs
 npm run test:relays    # which public relays really carry a handshake
 npm run test:repro skew    # viewer clock five minutes ahead
 npm run test:repro delay   # viewer joins 100 s later, host tab hidden
@@ -126,13 +127,14 @@ else changes.
 The host picks a preset. Beam turns it into concrete sender settings for every
 viewer. Each preset names the job it is for, so nobody has to guess.
 
-| Preset                  | Size   | Rate   | Use it for                                            |
-| ----------------------- | ------ | ------ | ----------------------------------------------------- |
-| **Code and documents**  | 1080p  | 15 fps | An editor, a terminal, a spreadsheet, a PDF           |
-| Slides and walkthroughs | 1080p  | 24 fps | A presentation, a design review, a tour of an app     |
-| Video and motion        | 1080p  | 30 fps | A film, a game, an animation, a call                  |
-| Maximum detail          | source | 30 fps | Photo work, drawings, a 4K display                    |
-| Slow connection         | 720p   | 10 fps | Hotel wifi, a phone hotspot, many viewers             |
+| Preset                  | Size   | Rate   | Use it for                                        |
+| ----------------------- | ------ | ------ | ------------------------------------------------- |
+| **Code and documents**  | 1080p  | 15 fps | An editor, a terminal, a spreadsheet, a PDF       |
+| Slides and walkthroughs | 1080p  | 24 fps | A presentation, a design review, a tour of an app |
+| Video and motion        | 1080p  | 30 fps | A film, an animation, a call                      |
+| Games                   | 1080p  | 60 fps | A fast game, where every frame is new             |
+| Maximum detail          | source | 30 fps | Photo work, drawings, a 4K display                |
+| Slow connection         | 720p   | 10 fps | Hotel wifi, a phone hotspot, many viewers         |
 
 **Code and documents is the default**, at about 1.2 Mb/s for a 1080p screen. A
 screen share is read, not admired. A smaller, more compressed picture starts
@@ -197,6 +199,40 @@ current budget. There is no point discovering a spare 20 Mb/s to carry a
 
 The budget is automatic until you touch the slider, and manual from then on. The
 label always says which mode it is in and where the figure came from.
+
+### Games, and where the work happens
+
+Watching a game is comfortable. Hosting one costs the machine, and the reason is
+that WebRTC encodes on the processor here, not on the GPU.
+
+Measured on an Apple laptop, headed Chrome on the real GPU, a busy 1920x1080
+source with every pixel changing, one viewer, about 5.7 Mb/s:
+
+| Codec | Held      | Rate   | Encode      | Held back by |
+| ----- | --------- | ------ | ----------- | ------------ |
+| VP9   | 1920x1080 | 44 fps | 4.6 ms/frame | nothing      |
+| AV1   | 1280x720  | 60 fps | 3.9 ms/frame | bandwidth    |
+| H264  | 1280x720  | 59 fps | 8.2 ms/frame | bandwidth    |
+| VP8   | 640x360   | 61 fps | 2.1 ms/frame | bandwidth    |
+
+Two things follow. **VP9 is the right default**: it was the only codec that held
+full 1080p at that bitrate, and it did so for half the processor time H264
+wanted. And **H264 is not the hardware shortcut here**: if VideoToolbox were
+carrying it, encode time would be a fraction of a millisecond, not eight. On a
+Windows machine with NVENC or Quick Sync the H264 picture may differ, so measure
+before you assume.
+
+`npm run test:encoder` runs that table on your own machine.
+
+Decoding is cheap on every codec, 0.9 to 1.4 ms per frame, and the video element
+is composited by the GPU. A viewer watching a game is fine.
+
+Chrome does not report `encoderImplementation` or `powerEfficientEncoder` in
+these statistics, so Beam cannot honestly badge a stream "hardware". It shows
+what it can measure instead: milliseconds of processor time per encoded frame,
+next to each viewer. Compare it against the frame interval, 16.7 ms at 60 fps.
+The badge turns amber past 45 percent of that and red past 70, which is the
+point where the machine, not the network, is the thing holding the stream back.
 
 ### The mesh limit
 
@@ -300,6 +336,7 @@ src/
 test/
   e2e.mjs             host and viewer, end to end, 27 checks
   uplink.mjs          the upload estimator, against made up statistics
+  encoder-check.mjs   codec by codec: resolution held, and encode cost
   qr-check.mjs        every QR version, decoded back by Chrome
   mesh.mjs            N viewers against one host
   relay-probe.mjs     which public relays really carry a handshake

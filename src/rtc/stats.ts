@@ -17,6 +17,14 @@ export interface StatsSnapshot {
   /** Chrome tells us why it dropped quality: 'cpu', 'bandwidth', 'none'. */
   limitation: string
   codec: string
+  /**
+   * Milliseconds of processor time per encoded frame. Chrome does not report
+   * whether the encoder is on the GPU, so this is the honest proxy: compare it
+   * against the frame interval to see how much of the budget encoding eats.
+   */
+  encodeMsPerFrame: number
+  /** The encoder name, when the browser names it. Many do not. */
+  encoderImpl: string
   /** 'host' is same network, 'srflx' is through NAT, 'relay' is through TURN. */
   path: string
   audioKbps: number
@@ -33,6 +41,8 @@ export const EMPTY_STATS: StatsSnapshot = {
   availableOutKbps: 0,
   limitation: 'none',
   codec: '',
+  encodeMsPerFrame: 0,
+  encoderImpl: '',
   path: '',
   audioKbps: 0,
 }
@@ -56,6 +66,9 @@ export class StatsTracker {
   private lastAudioBytes = 0
   private lastPacketsLost = 0
   private lastPacketsTotal = 0
+  private lastEncodeTime = 0
+  private lastFramesEncoded = 0
+  private encodeMs = 0
 
   constructor(pc: RTCPeerConnection, direction: 'out' | 'in') {
     this.pc = pc
@@ -129,6 +142,17 @@ export class StatsTracker {
     this.lastPacketsLost = packetsLost
     this.lastPacketsTotal = packetsTotal
 
+    // Encoder cost, measured over this interval rather than the whole session.
+    if (this.direction === 'out') {
+      const encodeTime = num(v?.totalEncodeTime)
+      const framesEncoded = num(v?.framesEncoded)
+      const dFrames = framesEncoded - this.lastFramesEncoded
+      const dTime = encodeTime - this.lastEncodeTime
+      if (dFrames > 0 && dTime >= 0) this.encodeMs = (dTime / dFrames) * 1000
+      this.lastEncodeTime = encodeTime
+      this.lastFramesEncoded = framesEncoded
+    }
+
     const rttSec = this.direction === 'out' ? num(r?.roundTripTime) : num(p?.currentRoundTripTime)
     const codecEntry = v?.codecId ? byId.get(str(v.codecId)) : undefined
     const local = p?.localCandidateId ? byId.get(str(p.localCandidateId)) : undefined
@@ -150,6 +174,8 @@ export class StatsTracker {
       availableOutKbps: Math.round(num(p?.availableOutgoingBitrate) / 1000),
       limitation: str(v?.qualityLimitationReason) || 'none',
       codec: str(codecEntry?.mimeType).split('/')[1] ?? '',
+      encodeMsPerFrame: Math.round(this.encodeMs * 100) / 100,
+      encoderImpl: str(v?.encoderImplementation),
       path,
     }
   }
