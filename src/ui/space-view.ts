@@ -46,7 +46,7 @@ import { getRoom, noteRoom } from '../store/db'
 import { loadIdentity, shortKey } from '../store/identity'
 import { settingsView } from './settings-view'
 import { chirpJoin, chirpLeave, chirpMessage, isNews } from './sounds'
-import { DEFAULT_CHANNEL, DEFAULT_VOICE, cleanChannel, type LogEvent } from '../store/log'
+import { DEFAULT_CHANNEL, DEFAULT_VOICE, cleanChannel } from '../store/log'
 import { RoomChat } from '../store/room-chat'
 import { ChatPanel } from './chat-panel'
 import { clear, copyText, fmtKbps, h, labelled } from './dom'
@@ -61,7 +61,7 @@ const STATS_MS = 2000
 export class SpaceView {
   private readonly root: HTMLElement
   private readonly chrome: WindowChrome | null
-  private readonly secret: string
+  readonly secret: string
   private readonly selfId = newPeerId()
   private settings: HostSettings = loadSettings()
 
@@ -179,6 +179,10 @@ export class SpaceView {
     this.bus = bus
     this.mesh = mesh
 
+    chat.onLocal = (event) => {
+      for (const raw of chat.encode([event])) mesh.broadcast(raw)
+    }
+
     // Whoever made the space claims it, once, and becomes its first admin.
     if (this.fresh && !chat.founder) {
       await chat.claimFounder()
@@ -283,10 +287,15 @@ export class SpaceView {
 
   // ---- chat ----
 
-  private async publish(make: (chat: RoomChat) => Promise<LogEvent>): Promise<void> {
+  /**
+   * Write something. The sending is the log's job, not this one's.
+   *
+   * See RoomChat.onLocal: every event written anywhere goes out through one
+   * hook, so a new kind of event cannot be added and quietly not shared.
+   */
+  private async publish(make: (chat: RoomChat) => Promise<unknown>): Promise<void> {
     if (!this.chat) return
-    const event = await make(this.chat)
-    for (const raw of this.chat.encode([event])) this.mesh?.broadcast(raw)
+    await make(this.chat)
   }
 
   /**

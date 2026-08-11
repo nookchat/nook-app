@@ -143,7 +143,23 @@ export class Mesh {
         return
       }
       case 'moffer': {
-        // They offered, so we answer. This only happens when their id is smaller.
+        /*
+         * They offered, so we answer. This only happens when their id is
+         * smaller, because the smaller id is the one that calls.
+         *
+         * A fresh offer replaces whatever we were holding. Only the calling
+         * side gives up on a link that will not come up and tries again, so
+         * this side used to sit on the dead one for ever, and every retry they
+         * made was handed to a connection that could no longer answer: their
+         * side kept dialling, our side kept dropping it on the floor, and the
+         * two of them never spoke again. An offer is the caller starting over,
+         * so we start over with them.
+         */
+        const held = this.links.get(env.from)
+        if (held && !held.canAnswer()) {
+          held.close()
+          this.links.delete(env.from)
+        }
         const link = this.link(env.from, false)
         await link.onOffer(data as unknown as RTCSessionDescriptionInit)
         return
@@ -167,7 +183,21 @@ export class Mesh {
     if (this.selfId >= peerId) return
     const existing = this.links.get(peerId)
     if (existing && !existing.stale()) return
-    existing?.close()
+    /*
+     * Take the dead one out of the map, not just out of service.
+     *
+     * Closing it was not enough: link() below returns whatever is already
+     * filed under this peer, so a closed link was handed straight back and
+     * dial() returned at once because it knew it was closed. One failed
+     * attempt therefore ended the relationship permanently. Every announce
+     * after it looked like a retry and was a no-op, which is why two people
+     * who missed each other the first time never connected again however long
+     * they waited.
+     */
+    if (existing) {
+      existing.close()
+      this.links.delete(peerId)
+    }
     const link = this.link(peerId, true)
     void link.dial()
   }
@@ -195,9 +225,13 @@ export class Mesh {
         changed = true
       }
     }
-    // A link that never came up gets another go, in case an offer went missing.
+    /*
+     * A link that never came up gets another go, in case an offer went missing.
+     * Both sides drop it now. The caller redials, and the answering side simply
+     * stops holding a corpse that would swallow the next offer.
+     */
     for (const [id, link] of this.links) {
-      if (link.stale() && this.selfId < id) {
+      if (link.stale()) {
         link.close()
         this.links.delete(id)
         changed = true
@@ -249,6 +283,18 @@ class Link {
   /** True when this link has had long enough and still is not carrying anything. */
   stale(): boolean {
     return !this.ready && Date.now() - this.startedAt > REDIAL_MS
+  }
+
+  /**
+   * Whether a newly arrived offer can still be applied to this connection.
+   *
+   * Only a connection that has not been given a remote description yet, and is
+   * not already carrying anything, can take one. Anything else is a leftover
+   * from an attempt that failed and has to be thrown away first.
+   */
+  canAnswer(): boolean {
+    if (this.closed || this.ready) return false
+    return this.pc.signalingState === 'stable' && !this.hasRemote
   }
 
   async dial(): Promise<void> {

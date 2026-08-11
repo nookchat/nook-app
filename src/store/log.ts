@@ -143,9 +143,26 @@ export class RoomLog {
     return this.byId.has(id)
   }
 
-  /** The next clock value to stamp on something written here. */
+  /**
+   * The next clock value to stamp on something written here.
+   *
+   * A plain counter is enough to keep cause before effect and is a poor way to
+   * sort a conversation. Two people who have not synced both start at one, so
+   * whoever joins later writes low numbers, and their first message sorts above
+   * an hour of somebody else's history. The times printed next to the messages
+   * then disagree with the order they are printed in, which is what "the
+   * ordering is terrible" looks like from the outside.
+   *
+   * So the counter starts from the wall clock instead of from zero. It still
+   * only ever goes up, and still jumps past anything it receives, so causality
+   * holds exactly as before. But two people who have never met now produce
+   * numbers a few milliseconds apart rather than a few hundred, and the order
+   * matches the clock without trusting it. A device with a wrong clock skews
+   * its own messages and nobody else's, and cannot drag the room backwards,
+   * because the value only ever climbs.
+   */
   nextLamport(): number {
-    return this.clock + 1
+    return Math.max(this.clock + 1, Date.now())
   }
 
   /** Returns true when the event was new, so callers know whether to redraw. */

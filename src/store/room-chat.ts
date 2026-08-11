@@ -35,6 +35,20 @@ export class RoomChat {
   readonly log: RoomLog
   readonly me: string
   onChange: (() => void) | null = null
+  /**
+   * Everything written here, on its way out to everybody else.
+   *
+   * This used to be the caller's job, and the caller forgot. Saying something
+   * went through a publish helper that broadcast it; claiming the space, naming
+   * it and announcing your own name called write directly and went no further
+   * than this device. The symptom was that everybody else saw a key where your
+   * name should be, because the profile event proving the name was yours never
+   * left the room it was written in.
+   *
+   * So the send lives with the write. There is now one way out and no way to
+   * write an event that nobody hears about.
+   */
+  onLocal: ((event: LogEvent) => void) | null = null
 
   private readonly secret: string
   private name: string
@@ -146,6 +160,7 @@ export class RoomChat {
     const event = await makeEvent(this.log.room, this.me, this.log.nextLamport(), kind, body)
     this.log.add(event)
     void putEvents([event])
+    this.onLocal?.(event)
     this.onChange?.()
     return event
   }

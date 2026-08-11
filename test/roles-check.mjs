@@ -193,6 +193,78 @@ try {
   check('an admin makes a channel', roles.adminChannel)
   check('a member does not', roles.memberChannel)
 
+  // --- the order a conversation is read in ----------------------------------
+  /*
+   * Two people who have never synced, writing at known real times. A plain
+   * counter gives them both low numbers and interleaves them by author, so the
+   * later arrival lands at the top of somebody else's history. The clock this
+   * log stamps has to put them in the order they were actually written.
+   */
+  const order = await page.evaluate(async () => {
+    const { RoomLog, makeEvent } = await import('/src/store/log.ts')
+    const wait = () => new Promise((r) => setTimeout(r, 20))
+    const write = async (log, who, text) => {
+      const e = await makeEvent('r', who, log.nextLamport(), 'said', { text })
+      log.add(e)
+      return e
+    }
+    const alice = new RoomLog('r')
+    const bob = new RoomLog('r')
+    const A = 'a'.repeat(64)
+    const B = 'b'.repeat(64)
+
+    const a1 = await write(alice, A, 'alice 1')
+    await wait()
+    const a2 = await write(alice, A, 'alice 2')
+    await wait()
+    const b1 = await write(bob, B, 'bob 1') // bob only turns up now, log empty
+    await wait()
+    const a3 = await write(alice, A, 'alice 3')
+
+    const merged = new RoomLog('r')
+    for (const e of [a1, a2, b1, a3]) merged.add(e)
+
+    // And a reply must never sort above the thing it replies to, whatever the
+    // clocks say, which is what the counter half of it is for.
+    const late = new RoomLog('r')
+    late.add(a3)
+    const reply = await write(late, B, 'bob replies')
+
+    return {
+      merged: merged.messages().map((m) => m.text),
+      causal: reply.lamport > a3.lamport,
+    }
+  })
+  check(
+    'a late arrival does not land at the top of the history',
+    JSON.stringify(order.merged) === JSON.stringify(['alice 1', 'alice 2', 'bob 1', 'alice 3']),
+    order.merged.join(' | '),
+  )
+  check('and a reply still sorts after what it replies to', order.causal)
+
+  // --- everything written goes out ------------------------------------------
+  /*
+   * The bug this guards: naming yourself wrote a profile event to this device
+   * and sent it nowhere, so everybody else saw a key instead of a name. Every
+   * kind of event has to leave through the same hook, including the ones added
+   * next year.
+   */
+  const outbound = await page.evaluate(async () => {
+    const { RoomChat } = await import('/src/store/room-chat.ts')
+    const chat = new RoomChat('outbound-test-room', 'K7M29QPTVB2W')
+    const sent = []
+    chat.onLocal = (e) => sent.push(e.kind)
+    await chat.announceName('Alice')
+    await chat.say('hello', 'general')
+    await chat.makeChannel('plans')
+    await chat.setSpaceName('Book club')
+    await chat.claimFounder()
+    return sent
+  })
+  for (const kind of ['profile', 'said', 'channel', 'space', 'role']) {
+    check(`a ${kind} event is handed to the other people`, outbound.includes(kind), outbound.join(','))
+  }
+
   // --- sounds --------------------------------------------------------------
   const sounds = await page.evaluate(async () => {
     const { isNews, soundsOn, setSounds } = await import('/src/ui/sounds.ts')

@@ -24,6 +24,8 @@ const mount = app
 interface Screen {
   destroy(): void
   readonly isLive: boolean
+  /** Which space this is, so a link to the same one is left alone. */
+  readonly secret?: string
 }
 
 let active: Screen | null = null
@@ -83,6 +85,30 @@ if (linked) {
 } else {
   void showList()
 }
+
+/*
+ * A link that arrives while the app is already open.
+ *
+ * The code lives in the fragment, so opening one from a page you already have
+ * open changes the hash and reloads nothing. Without this the address bar said
+ * one space and the screen showed another, which is worse than doing nothing at
+ * all. Rewrites we make ourselves are skipped: those already opened the space.
+ */
+window.addEventListener('hashchange', () => {
+  const next = readLink()
+  if (!next) {
+    if (active) void showList()
+    return
+  }
+  if (active?.secret === next.secret) return
+  if (next.locked) {
+    const password = window.prompt('This space has a password.') ?? ''
+    if (!password) return
+    openSpace(next.secret, true, password)
+    return
+  }
+  openSpace(next.secret)
+})
 
 window.addEventListener('beforeunload', (ev) => {
   if (active?.isLive) {
