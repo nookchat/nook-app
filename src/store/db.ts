@@ -124,6 +124,17 @@ export interface RoomNote {
   title: string
   /** Whether the code alone is enough to open it. */
   locked?: boolean
+  /**
+   * The password for a locked space, so you are asked once rather than every
+   * time you come back.
+   *
+   * Kept in the clear, which is worth being plain about: it is no safer here
+   * than the space code sitting beside it, or the whole message history, or the
+   * private key that signs everything you write. Anybody who can read this
+   * database is already inside. The password is a second factor against people
+   * who have your link, not against people who have your laptop.
+   */
+  password?: string
   /** Pinned the first time this device saw the space, and never moved after. */
   founder?: string
 }
@@ -151,6 +162,18 @@ export async function noteRoom(note: RoomNote): Promise<void> {
   } catch {
     /* nothing to do */
   }
+}
+
+/**
+ * Find a space by its code rather than by its id.
+ *
+ * The id is derived from the code and the password together, so it cannot be
+ * worked out before the password is known, which is exactly when the stored
+ * password is wanted. The code is the only handle available at that point.
+ */
+export async function findBySecret(secret: string): Promise<RoomNote | null> {
+  const all = await listRooms()
+  return all.find((r) => r.secret === secret) ?? null
 }
 
 export async function listRooms(): Promise<RoomNote[]> {

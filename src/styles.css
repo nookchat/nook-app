@@ -1954,3 +1954,9 @@ details.adv[open] > summary {
   border-radius: var(--radius-sm);
   background: var(--surface-2);
 }
+
+/* Somebody who belongs here but is not here now. */
+.rail-person.away {
+  opacity: 0.55;
+  padding-left: 18px;
+}

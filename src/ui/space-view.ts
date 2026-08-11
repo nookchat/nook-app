@@ -167,11 +167,21 @@ export class SpaceView {
     this.voice = voice
     const mesh = new Mesh(bus, this.selfId, identity.name)
     mesh.extra = () => ({
+      // Who this is, so the roster is a list of people rather than of tabs.
+      key: identity.pubkey,
       sharing: this.capture ? this.channel : undefined,
       voice: this.voice?.state.channel ?? undefined,
     })
     mesh.onData = (from, raw) => void this.onMeshData(from, raw)
     mesh.onPeers = () => this.draw()
+    /*
+     * A new link gets our history at once, and sends us theirs for the same
+     * reason. Both sides do it, so whoever has been away catches up without
+     * anybody deciding who is in charge of remembering.
+     */
+    mesh.onReady = (peerId) => {
+      for (const raw of chat.backfill()) mesh.sendTo(peerId, raw)
+    }
     bus.onMessage = (env) => void this.onSignal(env)
     bus.onHealth = () => this.status()
     bus.start()
@@ -341,6 +351,8 @@ export class SpaceView {
       lastSeen: Date.now(),
       title: patch.name ?? this.chat?.spaceName() ?? existing?.title ?? '',
       locked: this.locked,
+      // Kept so a locked space asks for its password once, not every visit.
+      password: this.password || existing?.password || undefined,
       founder: patch.founder ?? existing?.founder ?? this.chat?.founder ?? '',
     })
   }
@@ -667,87 +679,124 @@ export class SpaceView {
     this.mesh?.announce()
   }
 
+  /**
+   * One row per person, not one per connection.
+   *
+   * A person is their key. A session is a tab, and a tab that closes and opens
+   * again is a new one, so a list keyed by session showed somebody who stepped
+   * out and came back as two people: the row they left behind still had their
+   * name on it, and the new one had said nothing yet, so it had nothing to show
+   * but a key. Both were the same person all along.
+   *
+   * So everybody the log has heard of gets a row, live or not, and whoever is
+   * here right now lights their own row up. That also gives the offline half of
+   * the space somewhere to live, instead of a second list underneath the first.
+   */
   private renderPeople(): void {
     clear(this.peopleList)
-    const person = (
-      name: string,
-      id: string,
-      ready: boolean,
-      sharing: boolean,
-      voice: string | null,
-      you: boolean,
-    ): HTMLElement =>
-      h('div', { class: 'rail-person', title: `ID ${id}` }, [
-        h('i', { class: `dot ${ready ? 'good' : 'warn'}` }),
-        /*
-         * Just the name. The identity behind it is what actually matters, but a
-         * key under every row is a column of noise nobody reads: it sits in the
-         * title instead, and stands in for the name when there is not one.
-         */
-        h('div', { class: 'grow truncate', text: you ? `${name} (you)` : name }),
-        voice ? h('span', { class: 'pill', title: `In voice: ${voice}` }, [icon('volume-low', 11)]) : null,
-        sharing ? h('span', { class: 'pill good', text: 'live' }) : null,
-      ])
 
-    const roles = this.chat?.roles() ?? new Map<string, string>()
-    const iAmAdmin = this.chat?.isAdmin === true
+    interface Row {
+      key: string
+      name: string
+      here: boolean
+      ready: boolean
+      sharing: boolean
+      voice: string | null
+      you: boolean
+    }
 
-    this.peopleList.append(
-      person(
-        this.chat?.displayName ?? 'You',
-        this.chat?.me ?? '',
-        true,
-        this.capture !== null,
-        this.voice?.state.channel ?? null,
-        true,
-      ),
-    )
+    const chat = this.chat
+    const names = chat?.log.names() ?? new Map<string, string>()
+    const roles = chat?.roles() ?? new Map<string, string>()
+    const iAmAdmin = chat?.isAdmin === true
+    const rows = new Map<string, Row>()
+
+    const put = (key: string, patch: Partial<Row>): void => {
+      const was = rows.get(key)
+      rows.set(key, {
+        key,
+        name: '',
+        here: false,
+        ready: false,
+        sharing: false,
+        voice: null,
+        you: false,
+        ...was,
+        ...patch,
+      })
+    }
+
+    // Everybody the log knows about, whether or not they are here today.
+    for (const [key, name] of names) put(key, { name })
+
+    put(chat?.me ?? 'you', {
+      name: chat?.displayName ?? 'You',
+      here: true,
+      ready: true,
+      you: true,
+      sharing: this.capture !== null,
+      voice: this.voice?.state.channel ?? null,
+    })
+
     /*
-     * The roster is keyed by mesh id, which is per session, while roles are
-     * keyed by the identity that signs events. They are matched by name, which
-     * is loose, so the role controls sit under the people the log knows about
-     * rather than under the connections.
+     * Whoever is connected right now. Their announcement carries their key, so
+     * this lands on the row the log already has. A peer old enough not to send
+     * one still gets a row of its own rather than disappearing.
      */
     for (const peer of this.mesh?.peers() ?? []) {
-      this.peopleList.append(
-        person(
-          peer.name || shortKey(peer.id),
-          peer.id,
-          peer.ready,
-          this.sharers.has(peer.id),
-          this.voice?.whereIs(peer.id) ?? null,
-          false,
-        ),
-      )
+      const key = peer.key || peer.id
+      put(key, {
+        name: peer.name || rows.get(key)?.name || '',
+        here: true,
+        ready: peer.ready,
+        sharing: this.sharers.has(peer.id),
+        voice: this.voice?.whereIs(peer.id) ?? null,
+      })
     }
 
-    const names = this.chat?.log.names() ?? new Map<string, string>()
-    const others = [...names.keys()].filter((k) => k !== this.chat?.me)
-    if (others.length) {
-      this.peopleList.append(h('div', { class: 'rail-head' }, [h('span', { class: 'eyebrow', text: 'Known' })]))
-    }
-    for (const key of others) {
-      const role = roles.get(key) ?? 'member'
+    // You first, then whoever is here, then the rest, alphabetically within each.
+    const order = [...rows.values()].sort((a, b) => {
+      if (a.you !== b.you) return a.you ? -1 : 1
+      if (a.here !== b.here) return a.here ? -1 : 1
+      return (a.name || a.key).localeCompare(b.name || b.key)
+    })
+
+    let drawnOffline = false
+    for (const row of order) {
+      if (!row.here && !drawnOffline) {
+        drawnOffline = true
+        this.peopleList.append(
+          h('div', { class: 'rail-head' }, [h('span', { class: 'eyebrow', text: 'Not here' })]),
+        )
+      }
+
+      const role = roles.get(row.key) ?? 'member'
+      const label = row.name || shortKey(row.key)
       this.peopleList.append(
-        h('div', { class: 'rail-person', title: `ID ${key}` }, [
+        h('div', { class: `rail-person${row.here ? '' : ' away'}`, title: `ID ${row.key}` }, [
+          row.here ? h('i', { class: `dot ${row.ready ? 'good' : 'warn'}` }) : null,
           h('div', { class: 'grow', style: { minWidth: '0' } }, [
-            h('div', { class: 'truncate', text: names.get(key) || shortKey(key) }),
+            h('div', { class: 'truncate', text: row.you ? `${label} (you)` : label }),
             role === 'member' ? null : h('div', { class: 'tiny faint', text: role }),
           ]),
-          iAmAdmin && role !== 'admin'
+          row.voice
+            ? h('span', { class: 'pill', title: `In voice: ${row.voice}` }, [icon('volume-low', 11)])
+            : null,
+          row.sharing ? h('span', { class: 'pill good', text: 'live' }) : null,
+          iAmAdmin && !row.you && role !== 'admin'
             ? h('button', {
                 class: 'ghost tiny-btn',
-                text: '↑',
+                text: '\u2191',
                 title: 'Make an admin',
-                on: { click: () => void this.setRole(key, 'admin') },
+                on: { click: () => void this.setRole(row.key, 'admin') },
               })
             : null,
-          iAmAdmin && role !== 'kicked' && key !== this.chat?.founder
+          iAmAdmin && !row.you && role !== 'kicked' && row.key !== chat?.founder
             ? h('button', {
                 class: 'ghost tiny-btn',
-                text: '✕',
+                text: '\u2715',
                 title: 'Remove from this space',
-                on: { click: () => void this.setRole(key, 'kicked') },
+                on: { click: () => void this.setRole(row.key, 'kicked') },
               })
             : null,
         ]),

@@ -30,7 +30,16 @@ const PRESENCE_TTL_MS = 16_000
 const REDIAL_MS = 12_000
 
 export interface MeshPeer {
+  /** This session's id. Random, and gone the moment the tab closes. */
   id: string
+  /**
+   * Who this actually is: the public key that signs their messages.
+   *
+   * The session id is not a person. Leave and come back and you are a new one,
+   * which is why the same person used to appear twice in the list, and why the
+   * copy that had not said anything yet had nothing to show but a key.
+   */
+  key: string
   name: string
   /** True once the data channel is open and can carry a line. */
   ready: boolean
@@ -42,6 +51,15 @@ export class Mesh {
   onData: ((from: string, raw: string) => void) | null = null
   /** Called whenever the roster changes. */
   onPeers: (() => void) | null = null
+  /**
+   * Called the moment a link can carry something, with who is on the far end.
+   *
+   * This is when history is exchanged. Without it a space only ever carries
+   * what is said while everybody is already looking at it: your name, the name
+   * of the space, who runs it and every message written before the channel
+   * opened all stayed on the device that wrote them.
+   */
+  onReady: ((peerId: string) => void) | null = null
   /**
    * Anything else to say in every announcement, such as what this person is
    * sharing and which voice channel they are standing in.
@@ -57,7 +75,7 @@ export class Mesh {
   private myName: string
 
   private readonly links = new Map<string, Link>()
-  private readonly seen = new Map<string, { name: string; at: number }>()
+  private readonly seen = new Map<string, { name: string; key: string; at: number }>()
   private timers: number[] = []
   private stopped = false
 
@@ -84,6 +102,7 @@ export class Mesh {
       .filter(([, v]) => now - v.at < PRESENCE_TTL_MS)
       .map(([id, v]) => ({
         id,
+        key: v.key,
         name: v.name,
         ready: this.links.get(id)?.ready === true,
         lastSeen: v.at,
@@ -129,8 +148,27 @@ export class Mesh {
     switch (env.type) {
       case 'announce': {
         const name = typeof data.name === 'string' ? data.name.slice(0, 24) : ''
+        const key = typeof data.key === 'string' && /^[0-9a-f]{64}$/.test(data.key) ? data.key : ''
         const known = this.seen.get(env.from)
-        this.seen.set(env.from, { name: name || known?.name || '', at: Date.now() })
+        this.seen.set(env.from, {
+          name: name || known?.name || '',
+          key: key || known?.key || '',
+          at: Date.now(),
+        })
+        /*
+         * Somebody who has just come back has a new session id and the same
+         * key. Drop the session they left behind rather than waiting for it to
+         * time out, or they stand in the list twice for a quarter of a minute.
+         */
+        if (key) {
+          for (const [id, entry] of this.seen) {
+            if (id !== env.from && entry.key === key) {
+              this.seen.delete(id)
+              this.links.get(id)?.close()
+              this.links.delete(id)
+            }
+          }
+        }
         if (!known) this.onPeers?.()
         else if (known.name !== name && name) this.onPeers?.()
         this.considerDial(env.from)
@@ -209,6 +247,7 @@ export class Mesh {
       send: (type, data) => void this.bus.send({ type, to: peerId, data }),
       onData: (raw) => this.onData?.(peerId, raw),
       onChange: () => this.onPeers?.(),
+      onReady: () => this.onReady?.(peerId),
     })
     this.links.set(peerId, link)
     return link
@@ -245,6 +284,8 @@ interface LinkHooks {
   send: (type: 'moffer' | 'manswer' | 'mice', data: unknown) => void
   onData: (raw: string) => void
   onChange: () => void
+  /** Fired once, when this link first becomes able to carry something. */
+  onReady: () => void
 }
 
 /** One connection to one peer, carrying chat and nothing else. */
@@ -370,18 +411,19 @@ class Link {
     channel.onmessage = (ev) => {
       if (typeof ev.data === 'string') this.hooks.onData(ev.data)
     }
-    channel.onopen = () => {
+    // Announced once, however many ways the channel reports itself open.
+    const opened = (): void => {
+      if (this.ready) return
       this.ready = true
       this.hooks.onChange()
+      this.hooks.onReady()
     }
+    channel.onopen = opened
     channel.onclose = () => {
       this.ready = false
       this.hooks.onChange()
     }
-    if (channel.readyState === 'open') {
-      this.ready = true
-      this.hooks.onChange()
-    }
+    if (channel.readyState === 'open') opened()
   }
 
   private async drain(): Promise<void> {

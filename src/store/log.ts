@@ -82,11 +82,20 @@ export async function makeEvent(
  */
 export async function openEvent(raw: unknown, room: string): Promise<LogEvent | null> {
   if (!raw || typeof raw !== 'object') return null
-  const e = raw as Partial<LogEvent>
-  if (typeof e.id !== 'string' || !/^[0-9a-f]{64}$/.test(e.id)) return null
+  const e = { ...(raw as Partial<LogEvent>) }
+  /*
+   * The room is not carried, it is supplied. Both sides already know which
+   * room they are talking about, and it stays in what gets hashed, so an event
+   * still cannot be lifted out of one space and replayed into another: do that
+   * and the hash no longer matches and the signature no longer checks.
+   */
+  e.room = room
+  // The id is not carried either. It is the hash of everything else, so it is
+  // worked out below and compared, which is what used to happen to the copy
+  // that arrived anyway. Sending it only ever gave a forger something to lie
+  // about.
   if (typeof e.sig !== 'string' || !/^[0-9a-f]{128}$/.test(e.sig)) return null
   if (typeof e.author !== 'string' || !/^[0-9a-f]{64}$/.test(e.author)) return null
-  if (e.room !== room) return null
   if (typeof e.lamport !== 'number' || !Number.isInteger(e.lamport) || e.lamport < 0) return null
   if (typeof e.at !== 'number' || !Number.isFinite(e.at)) return null
   if (
@@ -108,9 +117,29 @@ export async function openEvent(raw: unknown, room: string): Promise<LogEvent | 
     at: e.at,
     body,
   }
-  if ((await hash(canonical(base))) !== e.id) return null
-  if (!verify(e.id, e.sig, e.author)) return null
-  return { ...base, id: e.id, sig: e.sig }
+  const id = await hash(canonical(base))
+  if (!verify(id, e.sig, e.author)) return null
+  return { ...base, id, sig: e.sig }
+}
+
+/**
+ * An event, ready to be sent.
+ *
+ * Two of the eight fields never needed to travel. The id is the hash of the
+ * other six, so the far side works it out rather than being told it, and the
+ * room is the thing both sides are already talking about. Between them they
+ * were a quarter of every message.
+ *
+ * What is left cannot be trimmed. The signature is sixty four bytes because
+ * that is what a signature is, and it is what stops anybody writing under your
+ * name; the author key is thirty two because that is what the signature is
+ * checked against. They are the price of the whole idea, not padding.
+ */
+export type WireEvent = Omit<LogEvent, 'id' | 'room'>
+
+export function packEvent(e: LogEvent): WireEvent {
+  const { id: _id, room: _room, ...rest } = e
+  return rest
 }
 
 /** Deterministic on every device, with no clock involved. */

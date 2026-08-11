@@ -11,6 +11,7 @@ import { clear } from './ui/dom'
 import { createWindow, type WindowChrome } from './ui/shell'
 import { spaceList } from './ui/space-list'
 import { SpaceView } from './ui/space-view'
+import { findBySecret } from './store/db'
 import { toast } from './ui/toast'
 import { checkSupport } from './diagnostics'
 
@@ -49,7 +50,7 @@ async function showList(): Promise<void> {
       // A name means this space is being made rather than joined, so whoever
       // typed it is the one who claims the founder's key.
       open: (secret, locked, password, name) =>
-        openSpace(secret, locked, password, name !== undefined, name),
+        void enter(secret, locked, password, name !== undefined, name),
     }),
   )
 }
@@ -73,15 +74,37 @@ function openSpace(
   void view.start()
 }
 
+/**
+ * Open a space, asking for the password only when we do not already have it.
+ *
+ * A locked space used to ask every single time, including for the space you
+ * made yourself an hour ago. The password is kept with the space, so this only
+ * has to ask the first time, or after somebody clears their data.
+ */
+async function enter(
+  secret: string,
+  locked = false,
+  password = '',
+  fresh = false,
+  name = '',
+): Promise<void> {
+  let pass = password
+  if (locked && !pass) {
+    pass = (await findBySecret(secret))?.password ?? ''
+  }
+  if (locked && !pass) {
+    pass = window.prompt('This space has a password.') ?? ''
+    if (!pass) {
+      void showList()
+      return
+    }
+  }
+  openSpace(secret, locked, pass, fresh, name)
+}
+
 const linked = readLink()
 if (linked) {
-  if (linked.locked) {
-    const password = window.prompt('This space has a password.') ?? ''
-    if (password) openSpace(linked.secret, true, password)
-    else void showList()
-  } else {
-    openSpace(linked.secret)
-  }
+  void enter(linked.secret, linked.locked)
 } else {
   void showList()
 }
@@ -101,13 +124,7 @@ window.addEventListener('hashchange', () => {
     return
   }
   if (active?.secret === next.secret) return
-  if (next.locked) {
-    const password = window.prompt('This space has a password.') ?? ''
-    if (!password) return
-    openSpace(next.secret, true, password)
-    return
-  }
-  openSpace(next.secret)
+  void enter(next.secret, next.locked)
 })
 
 window.addEventListener('beforeunload', (ev) => {

@@ -16,6 +16,7 @@ import {
   DEFAULT_CHANNEL,
   makeEvent,
   openEvent,
+  packEvent,
   RoomLog,
   type LogEvent,
   type Message,
@@ -207,7 +208,7 @@ export class RoomChat {
   encode(events: LogEvent[]): string[] {
     const out: string[] = []
     for (let i = 0; i < events.length; i += BATCH) {
-      const wire: Wire = { t: 'ev', e: events.slice(i, i + BATCH) }
+      const wire: Wire = { t: 'ev', e: events.slice(i, i + BATCH).map(packEvent) }
       out.push(JSON.stringify(wire))
     }
     return out
