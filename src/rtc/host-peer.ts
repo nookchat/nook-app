@@ -107,7 +107,7 @@ export class HostPeer {
       await this.pc.setLocalDescription(offer)
       this.opts.send('offer', { sdp: this.pc.localDescription?.sdp, type: 'offer' })
     } catch (err) {
-      this.opts.onFailed(`Beam could not make an offer: ${String(err)}`)
+      this.opts.onFailed(`Cathode could not make an offer: ${String(err)}`)
     } finally {
       this.makingOffer = false
     }
@@ -123,7 +123,7 @@ export class HostPeer {
         await this.pc.addIceCandidate(c).catch(() => undefined)
       }
     } catch (err) {
-      this.opts.onFailed(`Beam could not read the answer: ${String(err)}`)
+      this.opts.onFailed(`Cathode could not read the answer: ${String(err)}`)
     }
   }
 

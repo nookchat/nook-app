@@ -1,9 +1,9 @@
 /**
  * A QR encoder, byte mode, error correction level M, versions 1 to 10.
  *
- * Beam needs one QR code, for one short link, and a library would cost more
+ * Cathode needs one QR code, for one short link, and a library would cost more
  * than the code below. Ten versions carry 213 bytes, which is far more than any
- * Beam link.
+ * Cathode link.
  *
  * Correctness here is not a matter of opinion: the end to end test renders the
  * output and reads it back with the QR decoder built into Chrome. Look for
@@ -117,7 +117,7 @@ function chooseVersion(byteLength: number): number {
     const countBits = version < 10 ? 8 : 16
     if (4 + countBits + byteLength * 8 <= dataCodewords(spec) * 8) return version
   }
-  throw new Error('This text is too long for a Beam QR code.')
+  throw new Error('This text is too long for a Cathode QR code.')
 }
 
 function buildCodewords(bytes: Uint8Array, version: number): number[] {

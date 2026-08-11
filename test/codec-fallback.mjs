@@ -1,7 +1,7 @@
 /**
  * A viewer without the hardware codec must still get a picture.
  *
- * Beam asks for a hardware codec first on moving pictures, and on an Apple
+ * Cathode asks for a hardware codec first on moving pictures, and on an Apple
  * machine that is HEVC. Plenty of viewers cannot decode HEVC: older Chrome,
  * most Linux machines, Firefox. Codec preferences only order the offer, so the
  * answer decides, and this proves that path rather than trusting it.
@@ -34,7 +34,7 @@ const STUB = `(() => {
   navigator.mediaDevices.getDisplayMedia = async () => new MediaStream(s.getVideoTracks())
 })()`
 
-const GAME_SETTINGS = `localStorage.setItem('beam.settings.v1', ${JSON.stringify(
+const GAME_SETTINGS = `localStorage.setItem('cathode.settings.v1', ${JSON.stringify(
   JSON.stringify({
     presetId: 'game',
     mode: 'motion',
@@ -103,7 +103,7 @@ try {
       .join(' '),
   )
   check('the stream falls back to a codec the viewer can decode', /VP9|VP8|H264|AV1/.test(row), row.trim())
-  check('Beam does not claim the GPU when it fell back', !/on GPU/.test(row))
+  check('Cathode does not claim the GPU when it fell back', !/on GPU/.test(row))
 } finally {
   await hostBrowser.close()
   await viewerBrowser.close()

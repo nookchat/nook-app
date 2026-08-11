@@ -1,12 +1,12 @@
 /**
- * How much upload Beam may use.
+ * How much upload Cathode may use.
  *
  * There is no upload speed test here, because a speed test needs a server that
- * accepts an upload and Beam has none. A static host refuses a POST, and pushing
+ * accepts an upload and Cathode has none. A static host refuses a POST, and pushing
  * megabytes through the free public signal relays would get the room rate
  * limited, which is a poor trade for a number we can learn honestly.
  *
- * So Beam does this instead:
+ * So Cathode does this instead:
  *
  *   1. On load, it reads what the browser already knows. The Network
  *      Information API reports data saver, a rough connection class, and
@@ -14,7 +14,7 @@
  *      a measurement, and it is labelled as such.
  *   2. Once a viewer connects, real bytes flow over the real path, and the
  *      bandwidth estimator inside WebRTC reports what that path will carry.
- *      That is a true measurement of the uplink, and Beam converges on it.
+ *      That is a true measurement of the uplink, and Cathode converges on it.
  *
  * The estimator only reaches upward when the encoders actually want more than
  * the current budget. There is no point discovering a spare 20 Mb/s to carry a
@@ -69,7 +69,7 @@ export function initialUplink(): UplinkEstimate {
     return {
       kbps: DEFAULT_KBPS,
       source: 'default',
-      note: 'This browser reports nothing about the connection, so Beam starts at a safe figure and measures the real one once a viewer joins.',
+      note: 'This browser reports nothing about the connection, so Cathode starts at a safe figure and measures the real one once a viewer joins.',
     }
   }
 
@@ -77,7 +77,7 @@ export function initialUplink(): UplinkEstimate {
     return {
       kbps: 1500,
       source: 'browser-hint',
-      note: 'Data saver is on in this browser, so Beam starts small.',
+      note: 'Data saver is on in this browser, so Cathode starts small.',
     }
   }
 
@@ -86,14 +86,14 @@ export function initialUplink(): UplinkEstimate {
     return {
       kbps: MIN_KBPS,
       source: 'browser-hint',
-      note: 'The browser reports a very slow connection, so Beam starts at the lowest budget.',
+      note: 'The browser reports a very slow connection, so Cathode starts at the lowest budget.',
     }
   }
   if (type === '3g') {
     return {
       kbps: 2500,
       source: 'browser-hint',
-      note: 'The browser reports a 3g connection, so Beam starts low.',
+      note: 'The browser reports a 3g connection, so Cathode starts low.',
     }
   }
 
@@ -102,7 +102,7 @@ export function initialUplink(): UplinkEstimate {
    *
    * It is an estimate built from recent traffic, rounded and capped, and on a
    * freshly opened page it often reads far below the truth. Trusting it made
-   * Beam open at 870 kb/s on a fast link and warn that the budget was holding
+   * Cathode open at 870 kb/s on a fast link and warn that the budget was holding
    * the quality down. The coarse class above is stable enough to act on; the
    * exact figure is worth waiting for real bytes to learn.
    */
@@ -111,14 +111,14 @@ export function initialUplink(): UplinkEstimate {
     return {
       kbps: 4000,
       source: 'browser-hint',
-      note: 'This looks like a mobile connection, so Beam starts below the usual figure.',
+      note: 'This looks like a mobile connection, so Cathode starts below the usual figure.',
     }
   }
 
   return {
     kbps: DEFAULT_KBPS,
     source: 'browser-hint',
-    note: 'Beam starts at a safe figure and measures the real uplink once a viewer joins.',
+    note: 'Cathode starts at a safe figure and measures the real uplink once a viewer joins.',
   }
 }
 
@@ -135,7 +135,7 @@ export interface Observation {
 
 /** How long to hold still after a change, so one reading does not chase itself. */
 const SETTLE_MS = 4000
-/** Consecutive lossy samples before Beam accepts that the path is too small. */
+/** Consecutive lossy samples before Cathode accepts that the path is too small. */
 const CONGESTED_SAMPLES = 2
 
 export class UplinkMeter {
@@ -186,7 +186,7 @@ export class UplinkMeter {
           this.kbps = next
           this.src = 'measured'
           this.measuredSamples += 1
-          this.noteText = `Beam measured the upload at about ${fmt(next)} after the viewers reported packet loss.`
+          this.noteText = `Cathode measured the upload at about ${fmt(next)} after the viewers reported packet loss.`
           this.lastChange = now
           return true
         }
@@ -205,7 +205,7 @@ export class UplinkMeter {
     this.kbps = clamp(Math.min(o.availableKbps, this.kbps * 1.25))
     this.src = 'measured'
     this.measuredSamples += 1
-    this.noteText = `Beam measured the upload at about ${fmt(this.kbps)} on the live connection.`
+    this.noteText = `Cathode measured the upload at about ${fmt(this.kbps)} on the live connection.`
     this.lastChange = now
     return true
   }

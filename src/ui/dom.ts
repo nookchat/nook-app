@@ -1,4 +1,4 @@
-/** Tiny DOM helpers. Beam has no UI framework, because it does not need one. */
+/** Tiny DOM helpers. Cathode has no UI framework, because it does not need one. */
 
 type Child = Node | string | number | null | undefined | false
 

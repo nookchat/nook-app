@@ -1,7 +1,7 @@
 /**
  * A very small MQTT 3.1.1 client over WebSocket.
  *
- * Beam needs publish and subscribe on one topic, at quality of service 0, with
+ * Cathode needs publish and subscribe on one topic, at quality of service 0, with
  * no retained messages and no authentication. That is about 150 lines of packet
  * work, so we write it here instead of pulling in a library that needs Node
  * polyfills in the browser.
@@ -114,7 +114,7 @@ export class MqttTransport implements Transport {
   }
 
   connect(topic: string, events: TransportEvents): void {
-    this.topic = `beam/v1/${topic}`
+    this.topic = `cathode/v1/${topic}`
     this.events = events
     this.closedByUser = false
     this.dial()
@@ -187,7 +187,7 @@ export class MqttTransport implements Transport {
       w.u8(4) // protocol level 3.1.1
       w.u8(0x02) // clean session, no will, no auth
       w.u16(KEEPALIVE_SEC)
-      w.str('beam-' + Math.random().toString(36).slice(2, 12)) // stay under 23 characters
+      w.str('cathode-' + Math.random().toString(36).slice(2, 12)) // stay under 23 characters
       ws.send(frame(CONNECT, 0, w.done()))
     }
 

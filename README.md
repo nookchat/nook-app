@@ -1,15 +1,15 @@
-# Beam
+# Cathode
 
 Peer to peer screen share with audio. The only server is the static webserver
 that sends the page.
 
-Beam opens on the sharing page. There is no welcome screen: pick a window, get a
+Cathode opens on the sharing page. There is no welcome screen: pick a window, get a
 link, send it. Anybody who opens that link watches live. The picture and the
 sound travel straight from one browser to the other. No media server sees them,
 and nothing is recorded.
 
 A browser opens the screen picker for a real click and for nothing else, so the
-one click on **Choose what to share** is the least Beam can ask for. Everything
+one click on **Choose what to share** is the least Cathode can ask for. Everything
 around it, the quality preset and the frame rate, is already set before that
 click, and the link appears the moment the source is picked.
 
@@ -78,17 +78,17 @@ https://your.site/#r=<128 bit secret, base64url>
 ```
 
 The secret sits in the URL fragment, so the browser never sends it to the
-webserver. From the secret Beam derives:
+webserver. From the secret Cathode derives:
 
 | Value     | How                                  | Used for                          |
 | --------- | ------------------------------------ | --------------------------------- |
 | `roomId`  | SHA-256 of the secret, first 128 bits | The public topic on the relay      |
 | `roomKey` | HKDF-SHA256 of the secret            | AES-GCM on every signal message    |
 
-A relay operator sees a random topic name and opaque bytes. Beam drops any
+A relay operator sees a random topic name and opaque bytes. Cathode drops any
 message id it has already handled, using its own clock for the expiry.
 
-Beam never compares the clock of one machine against the clock of another. Two
+Cathode never compares the clock of one machine against the clock of another. Two
 computers often disagree by minutes, and an earlier version rejected every
 message from a peer more than two minutes away. The room then failed with the
 viewer stuck on "looking for the host". The message id guard stops a replay and
@@ -115,7 +115,7 @@ A transport never gives up. If a relay dies mid session it keeps retrying, at
 first quickly and then once a minute, because a host and a viewer that share no
 relay would have a room that looks connected and carries nothing.
 
-Beam publishes to all of them and de-duplicates what comes back. One working
+Cathode publishes to all of them and de-duplicates what comes back. One working
 relay runs the room. The MQTT client is written by hand in `src/signal/mqtt.ts`,
 about 150 lines of quality-of-service 0 packet work, so the browser bundle needs
 no Node polyfill. The Nostr transport signs throwaway ephemeral events, which
@@ -126,7 +126,7 @@ else changes.
 
 ## Quality
 
-The host picks a preset. Beam turns it into concrete sender settings for every
+The host picks a preset. Cathode turns it into concrete sender settings for every
 viewer. Each preset names the job it is for, so nobody has to guess.
 
 | Preset                  | Size   | Rate   | Use it for                                        |
@@ -168,8 +168,8 @@ and the budget all take their cut:
 
 ### The upload budget
 
-Beam runs no upload speed test, because a speed test needs a server that accepts
-an upload and Beam has none. A static host refuses a POST, and pushing megabytes
+Cathode runs no upload speed test, because a speed test needs a server that accepts
+an upload and Cathode has none. A static host refuses a POST, and pushing megabytes
 through the free public signal relays would get the room rate limited, which is
 a poor trade for a number that can be learned honestly. So `src/net/uplink.ts`
 does two things instead:
@@ -192,7 +192,7 @@ does two things instead:
 
 The numeric `downlink` figure is deliberately ignored. It is built from recent
 traffic, rounded and capped, and on a freshly opened page it often reads far
-below the truth: trusting it made Beam open at 870 kb/s on a fast link and warn
+below the truth: trusting it made Cathode open at 870 kb/s on a fast link and warn
 that the budget was holding the quality down.
 
 The estimate only reaches upward while the encoders actually want more than the
@@ -235,7 +235,7 @@ that machine with a hardware encoder, and note that H264 is **not** the hardware
 shortcut it is usually assumed to be here: it looks cheap only because it gave
 up 1080p and encoded 720p instead.
 
-So Beam asks for the hardware codec first, but only on moving pictures. A
+So Cathode asks for the hardware codec first, but only on moving pictures. A
 hardware encoder is tuned for camera video and smears small text, so documents
 stay on VP9 where the screen content tools live and the bill is small anyway.
 
@@ -254,13 +254,13 @@ Decoding is cheap on every codec, 0.9 to 1.4 ms per frame, and the video element
 is composited by the GPU. Watching a game was never the problem.
 
 Chrome reports neither `encoderImplementation` nor `powerEfficientEncoder` in
-these statistics, which is why Beam reads hardware support from the probe above
+these statistics, which is why Cathode reads hardware support from the probe above
 rather than from the live stream.
 
 ### The mesh limit
 
 The host encodes and sends the picture once per viewer. Ten viewers at 2.5 Mb/s
-need 25 Mb/s of upload, which most home connections do not have. Beam therefore:
+need 25 Mb/s of upload, which most home connections do not have. Cathode therefore:
 
 - divides the upload budget across the connected viewers and caps each sender,
 - halves the sent resolution above six viewers,
@@ -272,15 +272,15 @@ Above about ten viewers a mesh stops being the right shape. The next step would
 be a viewer relay tree, where early viewers forward to later ones. Measure with
 `npm run test:mesh` before you build it.
 
-## What Beam does not do
+## What Cathode does not do
 
-- **No TURN relay.** Beam ships public STUN only, which keeps the promise of no
+- **No TURN relay.** Cathode ships public STUN only, which keeps the promise of no
   server. About one connection in eight fails on symmetric NAT or a strict
-  firewall, and Beam says so plainly instead of spinning. To add TURN later, put
+  firewall, and Cathode says so plainly instead of spinning. To add TURN later, put
   your credentials in `TURN_SERVERS` in `src/rtc/config.ts`. Nothing else
   changes. Use short lived credentials: a key in a static site is a public key.
 - **No screen share on iOS.** Apple gives no browser that permission. An iPhone
-  or an iPad can watch, and Beam tells the user this on arrival.
+  or an iPad can watch, and Cathode tells the user this on arrival.
 - **No system audio outside Chromium.** Firefox and Safari do not hand over the
   audio of a shared screen. The microphone still works everywhere.
 - **No recording, no accounts, no history.** Nothing is stored anywhere.
@@ -289,7 +289,7 @@ be a viewer relay tree, where early viewers forward to later ones. Measure with
 
 Copy it, or press the QR button and let somebody point a phone camera at the
 code. The QR encoder is in `src/ui/qr.ts`: byte mode, error correction level M,
-versions 1 to 10, which carries 213 bytes and therefore any Beam link.
+versions 1 to 10, which carries 213 bytes and therefore any Cathode link.
 
 Correctness there is not a matter of taste, so `npm run test:qr` renders every
 version and reads it back with the QR decoder built into Chrome, including both
@@ -298,7 +298,7 @@ link on screen.
 
 ## Look
 
-Beam is dressed as **Windows XP**, Luna blue. Not a page with a header on it: a
+Cathode is dressed as **Windows XP**, Luna blue. Not a page with a header on it: a
 window on a desktop, because that is what software looked like before everything
 became a website.
 
@@ -327,7 +327,7 @@ nothing is worse than no control at all:
 | Maximise  | Takes the picture fullscreen                   | Same                   |
 | Close     | Stops the stream, back to the picker           | Leaves, back to the picker |
 
-This commits to one look. Windows XP had no dark mode, so neither does Beam, and
+This commits to one look. Windows XP had no dark mode, so neither does Cathode, and
 every colour is painted explicitly rather than inherited from the host. The old
 top bar is gone: the title bar carries the name and the live state, and the
 status bar carries what is happening, the relay count, and the clock.
@@ -346,7 +346,7 @@ summary of the stream that just ended, never to a welcome page.
 Anyone holding the link can watch. Two host controls make that safe:
 
 - **Approve each viewer**, under Advanced. The host confirms every arrival
-  before Beam sends an offer.
+  before Cathode sends an offer.
 - **New link**, which rotates the secret. Every old link goes dead at once.
 - **Remove**, which drops one viewer and tells them why.
 
@@ -355,7 +355,7 @@ Anyone holding the link can watch. Two host controls make that safe:
 ```
 src/
   main.ts             route to host or viewer from the URL fragment
-  net/uplink.ts       how much upload Beam may use, guessed then measured
+  net/uplink.ts       how much upload Cathode may use, guessed then measured
   room.ts             secret, roomId, roomKey, link build and parse
   settings.ts         host preferences, kept in localStorage
   diagnostics.ts      what this browser can do, in plain words
@@ -404,7 +404,7 @@ The waiting screen names the cause instead of spinning:
 
 | What the viewer sees            | What it means                                   |
 | ------------------------------- | ----------------------------------------------- |
-| Beam cannot reach a relay       | This network blocks the signal relays           |
+| Cathode cannot reach a relay       | This network blocks the signal relays           |
 | This link is not complete       | Traffic is arriving but the key does not fit, so the link was cut short |
 | The host is not sharing         | The relays work and nobody is streaming here    |
 

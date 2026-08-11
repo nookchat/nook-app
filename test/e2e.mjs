@@ -34,7 +34,7 @@ const DISPLAY_STUB = `(() => {
     ctx.fillRect((frame * 9) % 1180, 260, 100, 100)
     ctx.fillStyle = '#e8ecf1'
     ctx.font = '40px monospace'
-    ctx.fillText('BEAM TEST FRAME ' + frame, 40, 90)
+    ctx.fillText('CATHODE TEST FRAME ' + frame, 40, 90)
     ctx.font = '20px monospace'
     ctx.fillText('the quick brown fox jumps over the lazy dog 0123456789', 40, 620)
   }, 33)
@@ -87,7 +87,7 @@ const errors = { host: [], viewer: [] }
 const relayNoise = { host: 0, viewer: 0 }
 
 /**
- * A public relay that refuses a connection is normal, and Beam is built to ride
+ * A public relay that refuses a connection is normal, and Cathode is built to ride
  * it out on another relay. The browser still logs it, so we count it apart from
  * a real application error.
  */
@@ -168,7 +168,7 @@ try {
     `${budget.label} — ${budget.note.slice(0, 60)}`,
   )
 
-  // Beam must name where encoding happens, without pretending either way.
+  // Cathode must name where encoding happens, without pretending either way.
   const gpu = await host.evaluate(async () => {
     const { probeHardwareEncoders } = await import('/src/rtc/hardware.ts')
     const { availableCodecs } = await import('/src/rtc/quality.ts')
@@ -176,7 +176,7 @@ try {
     return { hardware: probe.hardware, checked: probe.checked, note: probe.note }
   })
   check(
-    'Beam probes for a hardware encoder and reports what it found',
+    'Cathode probes for a hardware encoder and reports what it found',
     gpu.checked === true && Array.isArray(gpu.hardware) && gpu.note.length > 20,
     gpu.hardware.length ? `hardware: ${gpu.hardware.join(', ')}` : 'no hardware encoder here',
   )

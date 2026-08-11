@@ -80,7 +80,7 @@ export class ViewerView {
     this.root.append(h('main', { class: 'pad', style: { padding: '0' } }, [this.surface.root]))
 
     if (blocker) {
-      this.surface.setOverlay(this.message('Beam cannot run here', blocker, []))
+      this.surface.setOverlay(this.message('Cathode cannot run here', blocker, []))
       return
     }
 
@@ -158,7 +158,7 @@ export class ViewerView {
     // because there is no stream to play yet.
     void this.surface?.playWithSound()
 
-    this.surface?.setOverlay(this.message('Connecting', 'Beam is looking for the host.', []))
+    this.surface?.setOverlay(this.message('Connecting', 'Cathode is looking for the host.', []))
     this.say('Connecting to the host...')
 
     const bus = new SignalBus(this.room, this.selfId)
@@ -168,7 +168,7 @@ export class ViewerView {
       if (this.phase === 'connecting' && health.every((r) => r.status === 'failed')) {
         this.fail(
           'No relay reachable',
-          'Beam could not reach any of its signal relays. A firewall on this network is blocking them.',
+          'Cathode could not reach any of its signal relays. A firewall on this network is blocking them.',
         )
       }
     }
@@ -261,7 +261,7 @@ export class ViewerView {
         const state = this.peer?.state
         if (state === 'connected' && this.phase !== 'live') {
           this.phase = 'live'
-          this.chrome?.setTitle('Beam - watching a shared screen')
+          this.chrome?.setTitle('Cathode - watching a shared screen')
           this.surface?.setOverlay(null)
         } else if (state === 'disconnected' && this.phase === 'live') {
           this.surface?.setBadges([{ text: 'reconnecting', tone: 'warn' }])
@@ -280,8 +280,8 @@ export class ViewerView {
 
     if (openRelays === 0) {
       return this.message(
-        'Beam cannot reach a relay',
-        'This network blocks the connections Beam needs to find the host. Try another network, or a phone hotspot.',
+        'Cathode cannot reach a relay',
+        'This network blocks the connections Cathode needs to find the host. Try another network, or a phone hotspot.',
         [this.exitButton('Share my own screen')],
       )
     }
@@ -296,7 +296,7 @@ export class ViewerView {
 
     return this.message(
       'The host is not sharing',
-      'Nobody is streaming on this link right now. Beam keeps trying, so leave this page open.',
+      'Nobody is streaming on this link right now. Cathode keeps trying, so leave this page open.',
       [this.exitButton('Share my own screen')],
     )
   }

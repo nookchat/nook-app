@@ -88,7 +88,14 @@ export function icon(name: IconName, size = 18): SVGSVGElement {
   return svg
 }
 
-/** The Beam mark: a rounded hexagon holding a beam of light. */
+/**
+ * The mark: a cathode ray tube, which is what the name means.
+ *
+ * A monitor shell in Luna blue, a dark screen, and a single bright trace with a
+ * blip in it, the way an electron beam draws a line across phosphor. Fixed
+ * colours, not palette tokens: this sits on a blue title bar at 16 px and has to
+ * stay legible whatever the rest of the interface is wearing.
+ */
 export function brandMark(size = 26): SVGSVGElement {
   const ns = 'http://www.w3.org/2000/svg'
   const svg = document.createElementNS(ns, 'svg')
@@ -98,19 +105,17 @@ export function brandMark(size = 26): SVGSVGElement {
   svg.setAttribute('fill', 'none')
   svg.setAttribute('aria-hidden', 'true')
 
+  const id = `cathode-mark-${Math.random().toString(36).slice(2, 8)}`
   const gradient = document.createElementNS(ns, 'linearGradient')
-  const id = `beam-mark-${Math.random().toString(36).slice(2, 8)}`
   gradient.setAttribute('id', id)
   gradient.setAttribute('x1', '0')
   gradient.setAttribute('y1', '0')
-  gradient.setAttribute('x2', '1')
+  gradient.setAttribute('x2', '0')
   gradient.setAttribute('y2', '1')
-  // Fixed colours, not palette tokens: this mark sits on a blue title bar and
-  // has to stay legible whatever the rest of the interface is wearing.
   for (const [offset, color] of [
-    ['0%', '#8fd3ff'],
-    ['55%', '#2f86e8'],
-    ['100%', '#12459b'],
+    ['0%', '#cfe6ff'],
+    ['45%', '#5aa0ea'],
+    ['100%', '#14509f'],
   ]) {
     const stop = document.createElementNS(ns, 'stop')
     stop.setAttribute('offset', offset)
@@ -121,34 +126,37 @@ export function brandMark(size = 26): SVGSVGElement {
   defs.append(gradient)
   svg.append(defs)
 
-  // A hexagon, the way the Zorin mark sits. A thick round join softens the
-  // corners without the arc maths.
-  const body = document.createElementNS(ns, 'path')
-  body.setAttribute('d', 'M16 3.6 27.2 10v12L16 28.4 4.8 22V10z')
-  body.setAttribute('fill', `url(#${id})`)
-  body.setAttribute('stroke', `url(#${id})`)
-  body.setAttribute('stroke-width', '3.4')
-  body.setAttribute('stroke-linejoin', 'round')
-  svg.append(body)
+  const add = (d: string, attrs: Record<string, string>): void => {
+    const path = document.createElementNS(ns, 'path')
+    path.setAttribute('d', d)
+    for (const [k, v] of Object.entries(attrs)) path.setAttribute(k, v)
+    svg.append(path)
+  }
 
-  // A beam widening as it leaves the mark.
-  const beam = document.createElementNS(ns, 'path')
-  beam.setAttribute('d', 'M11.5 11.5h9M11.5 16h6.5M11.5 20.5h4')
-  beam.setAttribute('stroke', '#fff')
-  beam.setAttribute('stroke-width', '2.1')
-  beam.setAttribute('stroke-linecap', 'round')
-  beam.setAttribute('opacity', '0.96')
-  svg.append(beam)
+  // The stand, drawn first so the shell sits over it.
+  add('M16 22.5v5M10.5 28.5h11', {
+    stroke: '#0d3a72',
+    'stroke-width': '2.6',
+    'stroke-linecap': 'round',
+  })
 
-  // A hairline of white so the mark separates from a dark title bar.
-  const rim = document.createElementNS(ns, 'path')
-  rim.setAttribute('d', 'M16 3.6 27.2 10v12L16 28.4 4.8 22V10z')
-  rim.setAttribute('fill', 'none')
-  rim.setAttribute('stroke', '#ffffff')
-  rim.setAttribute('stroke-width', '1.4')
-  rim.setAttribute('stroke-linejoin', 'round')
-  rim.setAttribute('opacity', '0.75')
-  svg.append(rim)
+  // The shell.
+  add('M4.5 4.5h23a2.5 2.5 0 0 1 2.5 2.5v14a2.5 2.5 0 0 1-2.5 2.5h-23A2.5 2.5 0 0 1 2 21V7a2.5 2.5 0 0 1 2.5-2.5z', {
+    fill: `url(#${id})`,
+    stroke: '#ffffff',
+    'stroke-width': '1.3',
+  })
+
+  // The screen.
+  add('M6.5 8h19v11h-19z', { fill: '#06121f' })
+
+  // The trace, with its blip.
+  add('M8 16.5h4l2-5.5 2 5.5h6', {
+    stroke: '#6dfb7d',
+    'stroke-width': '2',
+    'stroke-linecap': 'round',
+    'stroke-linejoin': 'round',
+  })
 
   return svg
 }

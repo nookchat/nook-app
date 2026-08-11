@@ -1,7 +1,7 @@
 /**
  * ICE configuration.
  *
- * Beam ships with public STUN only, which keeps the promise of no server. STUN
+ * Cathode ships with public STUN only, which keeps the promise of no server. STUN
  * tells a peer its public address. It never carries media.
  *
  * About one connection in eight fails with STUN alone, because of symmetric NAT

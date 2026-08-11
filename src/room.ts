@@ -55,7 +55,7 @@ export async function deriveRoom(secret: string): Promise<Room> {
   const raw = b64urlDecode(secret)
   if (raw.length < 8) throw new Error('The room key in this link is too short.')
 
-  const digest = await crypto.subtle.digest('SHA-256', enc.encode('beam-room-id|' + secret))
+  const digest = await crypto.subtle.digest('SHA-256', enc.encode('cathode-room-id|' + secret))
   const id = hex(new Uint8Array(digest)).slice(0, 32)
 
   const material = await crypto.subtle.importKey('raw', raw as BufferSource, 'HKDF', false, ['deriveKey'])
@@ -63,8 +63,8 @@ export async function deriveRoom(secret: string): Promise<Room> {
     {
       name: 'HKDF',
       hash: 'SHA-256',
-      salt: enc.encode('beam-signal-salt-v1'),
-      info: enc.encode('beam-signal-key-v1'),
+      salt: enc.encode('cathode-signal-salt-v1'),
+      info: enc.encode('cathode-signal-key-v1'),
     },
     material,
     { name: 'AES-GCM', length: 256 },

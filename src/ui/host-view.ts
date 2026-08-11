@@ -40,7 +40,7 @@ const ANNOUNCE_MS = 4000
 const STATS_MS = 2000
 const REAP_MS = 10_000
 const PENDING_TTL_MS = 120_000
-/** How long a broken connection stays in the list before Beam clears it away. */
+/** How long a broken connection stays in the list before Cathode clears it away. */
 const DEAD_PEER_MS = 20_000
 
 export class HostView {
@@ -66,7 +66,7 @@ export class HostView {
   private phase: 'idle' | 'live' = 'idle'
   private lastSummary: SessionSummary | null = null
 
-  /** What Beam believes this connection will carry upward. */
+  /** What Cathode believes this connection will carry upward. */
   private readonly uplink = new UplinkMeter()
   /** Which codecs this machine can encode on the GPU. */
   private gpu: HardwareProbe = NO_HARDWARE
@@ -124,7 +124,7 @@ export class HostView {
     return this.phase === 'live'
   }
 
-  /** Draw the sharing page straight away. Beam has no welcome screen. */
+  /** Draw the sharing page straight away. Cathode has no welcome screen. */
   mount(): void {
     this.renderShell()
     this.renderIdle()
@@ -206,7 +206,7 @@ export class HostView {
   private teardownSession(): void {
     for (const t of this.timers) window.clearInterval(t)
     this.timers = []
-    document.title = 'Beam'
+    document.title = 'Cathode'
     void this.bus?.send({ type: 'bye' }).catch(() => undefined)
     for (const peer of this.peers.values()) peer.close()
     this.peers.clear()
@@ -469,7 +469,7 @@ export class HostView {
     this.surface?.setOverlay(
       h('div', { class: 'pick' }, [
         brandMark(46),
-        h('h2', { text: blocker ? 'Beam cannot share from this browser' : 'Choose what to share' }),
+        h('h2', { text: blocker ? 'Cathode cannot share from this browser' : 'Choose what to share' }),
         h('p', {
           class: 'dim',
           style: { margin: '0', maxWidth: '38ch' },
@@ -501,7 +501,7 @@ export class HostView {
     this.renderBudget()
     this.renderCodecNote()
     this.renderPlan(this.currentPlan(1), 0)
-    this.chrome?.setTitle('Beam')
+    this.chrome?.setTitle('Cathode')
     this.renderStatus(0)
   }
 
@@ -683,7 +683,7 @@ export class HostView {
     this.autoButton = h('button', {
       class: 'chip',
       text: 'Automatic',
-      title: 'Let Beam set the budget from what it measures on the live connection.',
+      title: 'Let Cathode set the budget from what it measures on the live connection.',
       on: {
         click: () => {
           this.settings.budgetAuto = !this.settings.budgetAuto
@@ -760,7 +760,7 @@ export class HostView {
       h('details', { class: 'adv' }, [
         h('summary', { text: 'Fine tuning' }),
         h('div', { class: 'stack tight' }, [
-          labelled('Resolution', this.resolutionRow, 'The height Beam sends. Lower starts faster.'),
+          labelled('Resolution', this.resolutionRow, 'The height Cathode sends. Lower starts faster.'),
           labelled('Frame rate', this.fpsRow, 'Fewer frames leave more bits for detail.'),
           labelled(
             'Upload budget',
@@ -924,7 +924,7 @@ export class HostView {
     } catch {
       // Some sources refuse a change once they are live. The sender side caps
       // the frame rate and the resolution anyway, so the stream still obeys.
-      toast('This source kept its own size. Beam caps the stream on the way out.', 'info', 5000)
+      toast('This source kept its own size. Cathode caps the stream on the way out.', 'info', 5000)
     }
     void this.tickStats()
   }
@@ -1054,11 +1054,11 @@ export class HostView {
     clear(this.statusPills)
 
     const connected = [...this.peers.values()].filter((p) => p.state === 'connected').length
-    document.title = connected > 0 ? `${connected} watching - Beam` : 'Sharing - Beam'
+    document.title = connected > 0 ? `${connected} watching - Cathode` : 'Sharing - Cathode'
     this.chrome?.setTitle(
       connected > 0
-        ? `Beam - sharing your screen - ${connected} watching`
-        : 'Beam - sharing your screen',
+        ? `Cathode - sharing your screen - ${connected} watching`
+        : 'Cathode - sharing your screen',
     )
     this.renderStatus(connected)
 
@@ -1073,7 +1073,7 @@ export class HostView {
         h('span', {
           class: 'pill warn',
           text: 'wide mesh',
-          title: 'Above six viewers Beam halves the picture it sends, to keep the upload sane.',
+          title: 'Above six viewers Cathode halves the picture it sends, to keep the upload sane.',
         }),
       )
     }
@@ -1254,7 +1254,7 @@ export class HostView {
     if (!this.codecNote) return
     this.codecNote.textContent = this.gpu.checked
       ? `${this.gpu.note} VP9 and AV1 carry text best.`
-      : 'Beam is checking for a hardware encoder. VP9 and AV1 carry text best.'
+      : 'Cathode is checking for a hardware encoder. VP9 and AV1 carry text best.'
   }
 
   /** Keep the budget row honest about the number and where it came from. */
@@ -1269,7 +1269,7 @@ export class HostView {
     this.budgetInput.disabled = auto
     this.budgetNote.textContent = auto
       ? this.uplink.note
-      : 'You set this by hand. Beam keeps to it, and still drops quality if the viewers report loss.'
+      : 'You set this by hand. Cathode keeps to it, and still drops quality if the viewers report loss.'
   }
 
   private renderPreviewBadges(): void {

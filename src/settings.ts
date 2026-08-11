@@ -13,7 +13,9 @@ import {
   type PresetId,
 } from './rtc/quality'
 
-const KEY = 'beam.settings.v1'
+const KEY = 'cathode.settings.v1'
+/** What the same settings were filed under before the app was renamed. */
+const LEGACY_KEY = 'beam.settings.v1'
 
 export interface HostSettings {
   presetId: PresetId
@@ -22,7 +24,7 @@ export interface HostSettings {
   fps: number
   bitrateScale: number
   budgetKbps: number
-  /** True while Beam sets the budget from what it measures. */
+  /** True while Cathode sets the budget from what it measures. */
   budgetAuto: boolean
   maxViewers: number
   approve: boolean
@@ -50,7 +52,7 @@ export function defaultSettings(): HostSettings {
 export function loadSettings(): HostSettings {
   const base = defaultSettings()
   try {
-    const raw = localStorage.getItem(KEY)
+    const raw = localStorage.getItem(KEY) ?? localStorage.getItem(LEGACY_KEY)
     if (!raw) return base
     const saved = JSON.parse(raw) as Partial<HostSettings>
     const merged: HostSettings = { ...base, ...saved }

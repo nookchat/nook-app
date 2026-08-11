@@ -88,7 +88,7 @@ export class NostrTransport implements Transport {
   }
 
   connect(topic: string, events: TransportEvents): void {
-    this.topic = `beam-${topic}`
+    this.topic = `cathode-${topic}`
     this.subId = 'b' + Math.random().toString(36).slice(2, 10)
     this.events = events
     this.closedByUser = false

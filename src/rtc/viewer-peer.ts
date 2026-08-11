@@ -68,7 +68,7 @@ export class ViewerPeer {
       await this.pc.setLocalDescription(answer)
       this.opts.send('answer', { sdp: this.pc.localDescription?.sdp, type: 'answer' })
     } catch (err) {
-      this.opts.onFailed(`Beam could not answer the host: ${String(err)}`)
+      this.opts.onFailed(`Cathode could not answer the host: ${String(err)}`)
     }
   }
 

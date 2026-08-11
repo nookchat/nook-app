@@ -1,5 +1,5 @@
 /**
- * Checks which Nostr relays really carry a Beam handshake.
+ * Checks which Nostr relays really carry a Cathode handshake.
  *
  * A TCP connection proves nothing. A relay has to accept our ephemeral event
  * kind and hand it straight to a live subscriber. This publishes one event and
@@ -43,7 +43,7 @@ function signEvent(topic, content) {
 
 function probe(url) {
   return new Promise((resolve) => {
-    const topic = 'beam-probe-' + Math.random().toString(36).slice(2, 10)
+    const topic = 'cathode-probe-' + Math.random().toString(36).slice(2, 10)
     const payload = 'hello-' + Math.random().toString(36).slice(2, 10)
     const started = Date.now()
     let settled = false
@@ -122,7 +122,7 @@ function probe(url) {
 const results = await Promise.all(CANDIDATES.map(probe))
 results.sort((a, b) => Number(b.ok) - Number(a.ok) || a.ms - b.ms)
 
-console.log('Relays that carry a Beam handshake:\n')
+console.log('Relays that carry a Cathode handshake:\n')
 for (const r of results) {
   console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.url.padEnd(30)} ${String(r.ms).padStart(5)} ms  ${r.detail}`)
 }

@@ -1,5 +1,5 @@
 /**
- * Beam. Peer to peer screen share with audio.
+ * Cathode. Peer to peer screen share with audio.
  *
  * The only server is the one that served this page. Read the plan in README.md.
  */
@@ -16,7 +16,7 @@ import { checkSupport } from './diagnostics'
 const app = document.getElementById('app')
 
 if (!app) {
-  throw new Error('Beam could not find its mount point.')
+  throw new Error('Cathode could not find its mount point.')
 }
 
 const mount = app
@@ -39,18 +39,18 @@ function freshWindow(title: string): WindowChrome {
 
 /**
  * The sharing page is the front door. There is no welcome screen, because the
- * only thing anybody opens Beam to do is share a screen.
+ * only thing anybody opens Cathode to do is share a screen.
  */
 function showHost(): void {
   clearLink()
-  const chrome = freshWindow('Beam')
+  const chrome = freshWindow('Cathode')
   const view = new HostView(chrome.body, chrome)
   active = view
   view.mount()
 }
 
 function showViewer(secret: string): void {
-  const chrome = freshWindow('Beam — watching')
+  const chrome = freshWindow('Cathode - watching')
   const view = new ViewerView(chrome.body, secret, showHost, chrome)
   active = view
   void view.start()

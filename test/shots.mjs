@@ -7,7 +7,7 @@ const STUB = `(() => {
   const c = document.createElement('canvas'); c.width=1920; c.height=1080
   const x = c.getContext('2d'); let f=0
   setInterval(() => { f++; x.fillStyle='#0d1117'; x.fillRect(0,0,1920,1080)
-    x.fillStyle='#e8ecf1'; x.font='40px monospace'; x.fillText('function beam() { return frame '+f+' }', 60, 120)
+    x.fillStyle='#e8ecf1'; x.font='40px monospace'; x.fillText('function cathode() { return frame '+f+' }', 60, 120)
     x.fillStyle='#00c2a8'; x.fillRect(60, 200, 700, 4) }, 33)
   const s = c.captureStream(30)
   navigator.mediaDevices.getDisplayMedia = async () => new MediaStream(s.getVideoTracks())

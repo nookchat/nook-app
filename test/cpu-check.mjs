@@ -54,7 +54,7 @@ const displayStub = (fps) => `(() => {
 })()`
 
 const settingsFor = (codec, fps) =>
-  `localStorage.setItem('beam.settings.v1', ${JSON.stringify(
+  `localStorage.setItem('cathode.settings.v1', ${JSON.stringify(
     JSON.stringify({
       presetId: 'custom',
       mode: 'motion',

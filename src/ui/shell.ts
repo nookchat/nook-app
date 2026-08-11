@@ -1,7 +1,7 @@
 /**
  * The window.
  *
- * Beam is not a page with a header on it. It is a window on a desktop, with a
+ * Cathode is not a page with a header on it. It is a window on a desktop, with a
  * title bar, caption buttons, and a status bar, the way software looked before
  * everything became a website.
  *
@@ -130,7 +130,7 @@ export function createWindow(title: string): WindowChrome {
   }
 }
 
-/** Browser support and the short version of how Beam works, behind a disclosure. */
+/** Browser support and the short version of how Cathode works, behind a disclosure. */
 export function aboutCard(): HTMLElement {
   const support = checkSupport()
   return h('details', { class: 'adv' }, [
@@ -156,7 +156,7 @@ export function aboutCard(): HTMLElement {
           text: 'Your screen goes out once per viewer, so your upload speed sets the viewer limit.',
         }),
         h('li', {
-          text: 'There is no relay for the media itself. On a strict network a connection can fail, and Beam says so.',
+          text: 'There is no relay for the media itself. On a strict network a connection can fail, and Cathode says so.',
         }),
       ]),
     ]),
@@ -177,6 +177,6 @@ export function summaryCard(s: SessionSummary): HTMLElement {
       }),
       h('span', { class: 'pill', text: `${fmtBytes(s.bytesSent)} sent` }),
     ]),
-    h('div', { class: 'tiny faint', text: 'Beam kept no copy of the picture or the sound.' }),
+    h('div', { class: 'tiny faint', text: 'Cathode kept no copy of the picture or the sound.' }),
   ])
 }
