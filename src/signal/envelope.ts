@@ -24,6 +24,9 @@ export type MsgType =
   | 'moffer' // mesh handshake, chat links between every pair
   | 'manswer'
   | 'mice'
+  | 'voffer' // voice channel handshake, audio only
+  | 'vanswer'
+  | 'vice'
 
 export interface Envelope {
   v: 1

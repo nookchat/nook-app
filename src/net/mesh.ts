@@ -42,6 +42,15 @@ export class Mesh {
   onData: ((from: string, raw: string) => void) | null = null
   /** Called whenever the roster changes. */
   onPeers: (() => void) | null = null
+  /**
+   * Anything else to say in every announcement, such as what this person is
+   * sharing and which voice channel they are standing in.
+   *
+   * It has to ride the same message. When these were sent separately, the
+   * periodic announcement carried only the name and quietly overwrote the
+   * presence the other one had just set.
+   */
+  extra: (() => Record<string, unknown>) | null = null
 
   private readonly bus: SignalBus
   private readonly selfId: string
@@ -107,8 +116,9 @@ export class Mesh {
 
   // ---- internals ----
 
-  private announce(): void {
-    void this.bus.send({ type: 'announce', data: { name: this.myName } })
+  /** Say we are here, now. */
+  announce(): void {
+    void this.bus.send({ type: 'announce', data: { name: this.myName, ...(this.extra?.() ?? {}) } })
   }
 
   /** The space owns the bus and hands us what is ours. */

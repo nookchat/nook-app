@@ -35,6 +35,7 @@ export class ChatPanel {
   private readonly sendButton: HTMLButtonElement
   private readonly count: HTMLSpanElement
   private readonly replyBar: HTMLDivElement
+  private readonly nameRow: HTMLDivElement
   private name: string
   private me = ''
   private replyTo: Message | null = null
@@ -79,6 +80,11 @@ export class ChatPanel {
 
     this.sendButton = h('button', { text: 'Send', on: { click: () => this.submit() } })
 
+    this.nameRow = h('div', { class: 'row' }, [
+      h('span', { class: 'tiny faint', text: 'You', style: { width: '26px' } }),
+      this.nameInput,
+    ])
+
     this.root = h('div', { class: 'card chat-panel' }, [
       h('div', { class: 'row spread chat-head' }, [
         h('span', { class: 'eyebrow', text: title }),
@@ -87,10 +93,7 @@ export class ChatPanel {
       this.log,
       h('div', { class: 'chat-compose stack tight' }, [
         this.replyBar,
-        h('div', { class: 'row' }, [
-          h('span', { class: 'tiny faint', text: 'You', style: { width: '26px' } }),
-          this.nameInput,
-        ]),
+        this.nameRow,
         h('div', { class: 'row' }, [this.textInput, this.sendButton]),
       ]),
     ])
@@ -102,6 +105,11 @@ export class ChatPanel {
 
   setMe(pubkey: string): void {
     this.me = pubkey
+  }
+
+  /** The name moved to settings, so the compose box does not need to carry it. */
+  showNameField(show: boolean): void {
+    this.nameRow.classList.toggle('hidden', !show)
   }
 
   /** The panel is built before the identity is loaded, so it is told later. */

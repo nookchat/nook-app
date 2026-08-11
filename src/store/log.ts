@@ -19,8 +19,9 @@ import { sign, verify } from './identity'
 
 export type EventKind = 'said' | 'edit' | 'react' | 'retract' | 'profile' | 'channel'
 
-/** Every space has this one, and it cannot be removed. */
+/** Every space has these, and they cannot be removed. */
 export const DEFAULT_CHANNEL = 'general'
+export const DEFAULT_VOICE = 'lounge'
 
 export interface LogEvent {
   /** SHA-256 of the canonical form. The identity of the event. */
@@ -158,14 +159,20 @@ export class RoomLog {
    * rather than trusted: the signature proves who wrote the edit, so an edit
    * from anybody else is simply ignored.
    */
-  /** Every channel anybody has made here, with the default always first. */
-  channels(): string[] {
-    const names = new Set<string>([DEFAULT_CHANNEL])
+  /**
+   * Every channel anybody has made here, text and voice kept apart. Both are
+   * events on this log, so a channel somebody else made turns up the same way a
+   * message does.
+   */
+  channels(voice = false): string[] {
+    const names = new Set<string>(voice ? [DEFAULT_VOICE] : [DEFAULT_CHANNEL])
     for (const e of this.all()) {
       if (e.kind === 'channel') {
+        const isVoice = e.body.voice === true
+        if (isVoice !== voice) continue
         const name = cleanChannel(String(e.body.name ?? ''))
         if (name) names.add(name)
-      } else if (e.kind === 'said') {
+      } else if (!voice && e.kind === 'said') {
         names.add(channelOf(e))
       }
     }

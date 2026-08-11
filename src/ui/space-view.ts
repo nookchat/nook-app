@@ -22,6 +22,7 @@ import { checkSupport, hostBlocker } from '../diagnostics'
 import { captureMicrophone, captureScreen, CaptureError, type ScreenCapture } from '../media/capture'
 import { AudioMixer } from '../media/mixer'
 import { Mesh } from '../net/mesh'
+import { Voice } from '../net/voice'
 import { UplinkMeter } from '../net/uplink'
 import { deriveRoom, formatSecret, newPeerId, roomLink, shortLink, type Room } from '../room'
 import { HostPeer } from '../rtc/host-peer'
@@ -43,7 +44,8 @@ import type { Envelope } from '../signal/envelope'
 import { loadSettings, saveSettings, type HostSettings } from '../settings'
 import { noteRoom } from '../store/db'
 import { loadIdentity, shortKey } from '../store/identity'
-import { DEFAULT_CHANNEL, cleanChannel, type LogEvent } from '../store/log'
+import { settingsView } from './settings-view'
+import { DEFAULT_CHANNEL, DEFAULT_VOICE, cleanChannel, type LogEvent } from '../store/log'
 import { RoomChat } from '../store/room-chat'
 import { ChatPanel } from './chat-panel'
 import { clear, copyText, fmtKbps, h, labelled } from './dom'
@@ -71,6 +73,7 @@ export class SpaceView {
 
   private channel = DEFAULT_CHANNEL
   private drawQueued = false
+  private voice: Voice | null = null
   private stopped = false
   private timers: number[] = []
 
@@ -90,7 +93,10 @@ export class SpaceView {
 
   // Elements redrawn in place.
   private channelList!: HTMLDivElement
+  private voiceList!: HTMLDivElement
   private peopleList!: HTMLDivElement
+  private voiceBar!: HTMLDivElement
+  private shell!: HTMLElement
   private stage!: HTMLDivElement
   private shareButton!: HTMLButtonElement
   private sharePanel!: HTMLDivElement
@@ -133,7 +139,14 @@ export class SpaceView {
     this.chatPanel?.setName(chat.displayName)
 
     const bus = new SignalBus(this.room, this.selfId)
+    const voice = new Voice(bus, this.selfId)
+    voice.onChange = () => this.draw()
+    this.voice = voice
     const mesh = new Mesh(bus, this.selfId, identity.name)
+    mesh.extra = () => ({
+      sharing: this.capture ? this.channel : undefined,
+      voice: this.voice?.state.channel ?? undefined,
+    })
     mesh.onData = (from, raw) => void this.onMeshData(from, raw)
     mesh.onPeers = () => this.draw()
     bus.onMessage = (env) => void this.onSignal(env)
@@ -157,6 +170,7 @@ export class SpaceView {
     for (const t of this.timers) window.clearInterval(t)
     this.timers = []
     this.stopSharing()
+    this.voice?.dispose()
     this.watching?.close()
     this.watching = null
     this.mesh?.stop()
@@ -171,10 +185,13 @@ export class SpaceView {
 
   private async onSignal(env: Envelope): Promise<void> {
     await this.mesh?.handle(env)
+    await this.voice?.handle(env)
 
     const data = (env.data ?? {}) as Record<string, unknown>
     switch (env.type) {
       case 'announce': {
+        const standing = typeof data.voice === 'string' ? cleanChannel(data.voice) : ''
+        this.voice?.noteAnnounce(env.from, standing || null)
         const sharing = typeof data.sharing === 'string' ? cleanChannel(data.sharing) : ''
         const was = this.sharers.get(env.from)
         if (sharing) this.sharers.set(env.from, sharing)
@@ -213,6 +230,7 @@ export class SpaceView {
         return
       }
       case 'bye': {
+        this.voice?.forget(env.from)
         this.watchers.get(env.from)?.close()
         this.watchers.delete(env.from)
         if (env.from === this.watchingWho) this.stopWatching()
@@ -260,6 +278,7 @@ export class SpaceView {
     this.chatPanel?.setPresence(this.mesh?.reach ?? 1)
     this.channelTitle.textContent = `#${this.channel}`
     this.renderChannels()
+    this.renderVoice()
     this.renderPeople()
     this.renderShareButton()
     this.status()
@@ -288,7 +307,9 @@ export class SpaceView {
     clear(this.root)
 
     this.channelList = h('div', { class: 'rail-list' })
+    this.voiceList = h('div', { class: 'rail-list' })
     this.peopleList = h('div', { class: 'rail-list' })
+    this.voiceBar = h('div', { class: 'voice-bar hidden' })
     this.stage = h('div', { class: 'stage hidden' })
     this.channelTitle = h('span', { class: 'eyebrow', text: `#${this.channel}` })
 
@@ -298,51 +319,94 @@ export class SpaceView {
     this.sharePanel = h('div', { class: 'share-panel hidden' })
 
     this.chatPanel = new ChatPanel(loadIdentity().name, 'Chat')
+    this.chatPanel.showNameField(false)
     this.chatPanel.actions = {
       say: (text, replyTo) => void this.publish((c) => c.say(text, this.channel, replyTo)),
       edit: (id, text) => void this.publish((c) => c.edit(id, text)),
       react: (id, emoji) => void this.publish((c) => c.react(id, emoji)),
       retract: (id) => void this.publish((c) => c.retract(id)),
-      rename: (name) => {
-        this.mesh?.setName(name)
-        void this.publish((c) => c.announceName(name))
-      },
+      rename: (name) => this.rename(name),
     }
     this.chatPanel.setEnabled(true)
 
-    const rail = h('div', { class: 'rail' }, [
+    const left = h('div', { class: 'rail rail-left' }, [
       h('div', { class: 'rail-head' }, [
-        h('span', { class: 'eyebrow', text: 'Channels' }),
+        h('span', { class: 'eyebrow', text: 'Text channels' }),
         h('button', {
           class: 'ghost tiny-btn',
           text: '+',
-          title: 'Make a channel',
-          on: { click: () => void this.newChannel() },
+          title: 'Make a text channel',
+          on: { click: () => void this.newChannel(false) },
         }),
       ]),
       this.channelList,
-      h('div', { class: 'rail-head' }, [h('span', { class: 'eyebrow', text: 'People' })]),
-      this.peopleList,
+      h('div', { class: 'rail-head' }, [
+        h('span', {
+          class: 'eyebrow',
+          text: 'Voice channels',
+          title: 'Presence works. Audio between people does not yet.',
+        }),
+        h('button', {
+          class: 'ghost tiny-btn',
+          text: '+',
+          title: 'Make a voice channel',
+          on: { click: () => void this.newChannel(true) },
+        }),
+      ]),
+      this.voiceList,
       h('div', { class: 'grow' }),
+      this.voiceBar,
       h('div', { class: 'rail-foot stack tight' }, [
         h('div', { class: 'row' }, [this.shareButton]),
-        this.inviteBox(),
+        h('div', { class: 'row' }, [
+          h(
+            'button',
+            { class: 'grow', title: 'Your name, your ID, and the look', on: { click: () => this.openSettings() } },
+            [icon('shield', 14), 'Settings'],
+          ),
+        ]),
       ]),
     ])
 
-    this.root.append(
-      h('main', {}, [
-        h('div', { class: 'space-grid' }, [
-          rail,
-          h('div', { class: 'space-main' }, [
-            h('div', { class: 'space-head row spread' }, [this.channelTitle]),
-            this.stage,
-            this.sharePanel,
-            this.chatPanel.root,
-          ]),
-        ]),
+    const right = h('div', { class: 'rail rail-right' }, [
+      h('div', { class: 'rail-head' }, [h('span', { class: 'eyebrow', text: 'Members' })]),
+      this.peopleList,
+      h('div', { class: 'grow' }),
+      this.inviteBox(),
+    ])
+
+    this.shell = h('div', { class: 'space-grid' }, [
+      left,
+      h('div', { class: 'space-main' }, [
+        h('div', { class: 'space-head row spread' }, [this.channelTitle]),
+        this.stage,
+        this.sharePanel,
+        this.chatPanel.root,
       ]),
+      right,
+    ])
+
+    this.root.append(h('main', {}, [this.shell]))
+  }
+
+  private openSettings(): void {
+    clear(this.root)
+    this.root.append(
+      settingsView({
+        rename: (name) => this.rename(name),
+        back: () => {
+          clear(this.root)
+          this.root.append(h('main', {}, [this.shell]))
+          this.drawNow()
+        },
+      }),
     )
+  }
+
+  private rename(name: string): void {
+    this.mesh?.setName(name)
+    this.chatPanel?.setName(name)
+    void this.publish((c) => c.announceName(name))
   }
 
   private inviteBox(): HTMLElement {
@@ -422,22 +486,131 @@ export class SpaceView {
     }
   }
 
+  private renderVoice(): void {
+    clear(this.voiceList)
+    const here = this.voice?.state.channel ?? null
+    for (const name of this.chat?.channels(true) ?? [DEFAULT_VOICE]) {
+      const members = this.voice?.membersOf(name) ?? []
+      const row = h('div', { class: 'voice-channel' }, [
+        h(
+          'button',
+          {
+            class: `rail-item${here === name ? ' on' : ''}`,
+            title:
+              here === name
+                ? 'You are in here. Audio does not carry yet, only presence.'
+                : 'Join this voice channel. Presence only for now: audio does not carry yet.',
+            on: { click: () => void this.joinVoice(name) },
+          },
+          [
+            icon('volume-low', 13),
+            h('span', { class: 'truncate grow', text: name }),
+            members.length ? h('span', { class: 'pill', text: String(members.length) }) : null,
+          ],
+        ),
+      ])
+      for (const id of members) {
+        const label =
+          id === this.selfId
+            ? `${this.chat?.displayName ?? 'You'} (you)`
+            : this.mesh?.peers().find((p) => p.id === id)?.name || shortKey(id)
+        row.append(
+          h('div', { class: 'voice-member' }, [h('i', { class: 'dot good' }), h('span', { text: label })]),
+        )
+      }
+      this.voiceList.append(row)
+    }
+
+    const state = this.voice?.state
+    this.voiceBar.classList.toggle('hidden', !state?.channel)
+    if (state?.channel) {
+      clear(this.voiceBar)
+      this.voiceBar.append(
+        h('div', { class: 'row spread' }, [
+          h('span', { class: 'tiny good truncate' }, [icon('volume-low', 12), ` ${state.channel}`]),
+          h('span', { class: 'tiny faint', text: `${(this.voice?.connected ?? 0) + 1} in` }),
+        ]),
+        h('div', { class: 'row' }, [
+          h('button', {
+            class: `grow small${state.muted ? ' on' : ''}`,
+            text: state.muted ? 'Unmute' : 'Mute',
+            on: { click: () => this.voice?.setMuted(!state.muted) },
+          }),
+          h('button', {
+            class: 'small danger',
+            text: 'Leave',
+            on: { click: () => this.leaveVoice() },
+          }),
+        ]),
+      )
+    }
+  }
+
+  private async joinVoice(name: string): Promise<void> {
+    if (this.voice?.state.channel === name) return
+    try {
+      await this.voice?.join(name)
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), 'bad')
+      return
+    }
+    this.announceMe()
+    this.draw()
+  }
+
+  private leaveVoice(): void {
+    this.voice?.dispose()
+    this.announceMe()
+    this.draw()
+  }
+
+  /** One announcement carries the name, what we are sharing, and where we stand. */
+  private announceMe(): void {
+    this.mesh?.announce()
+  }
+
   private renderPeople(): void {
     clear(this.peopleList)
-    const me = this.chat?.displayName ?? 'You'
+    const person = (
+      name: string,
+      id: string,
+      ready: boolean,
+      sharing: boolean,
+      voice: string | null,
+      you: boolean,
+    ): HTMLElement =>
+      h('div', { class: 'rail-person', title: `ID ${id}` }, [
+        h('i', { class: `dot ${ready ? 'good' : 'warn'}` }),
+        h('div', { class: 'grow', style: { minWidth: '0' } }, [
+          h('div', { class: 'truncate', text: you ? `${name} (you)` : name }),
+          // The short ID under the name: two people called the same thing are
+          // still two people, and the name is only a label on the key.
+          h('div', { class: 'tiny faint mono', text: shortKey(id) }),
+        ]),
+        voice ? h('span', { class: 'pill', title: `In voice: ${voice}` }, [icon('volume-low', 11)]) : null,
+        sharing ? h('span', { class: 'pill good', text: 'live' }) : null,
+      ])
+
     this.peopleList.append(
-      h('div', { class: 'rail-person' }, [
-        h('i', { class: 'dot good' }),
-        h('span', { class: 'truncate', text: `${me} (you)` }),
-      ]),
+      person(
+        this.chat?.displayName ?? 'You',
+        this.chat?.me ?? '',
+        true,
+        this.capture !== null,
+        this.voice?.state.channel ?? null,
+        true,
+      ),
     )
     for (const peer of this.mesh?.peers() ?? []) {
       this.peopleList.append(
-        h('div', { class: 'rail-person' }, [
-          h('i', { class: `dot ${peer.ready ? 'good' : 'warn'}` }),
-          h('span', { class: 'truncate', text: peer.name || shortKey(peer.id) }),
-          this.sharers.has(peer.id) ? h('span', { class: 'pill good', text: 'live' }) : null,
-        ]),
+        person(
+          peer.name || shortKey(peer.id),
+          peer.id,
+          peer.ready,
+          this.sharers.has(peer.id),
+          this.voice?.whereIs(peer.id) ?? null,
+          false,
+        ),
       )
     }
   }
@@ -455,16 +628,17 @@ export class SpaceView {
     }
   }
 
-  private async newChannel(): Promise<void> {
-    const raw = window.prompt('Name the channel')
+  private async newChannel(voice: boolean): Promise<void> {
+    const raw = window.prompt(voice ? 'Name the voice channel' : 'Name the channel')
     if (raw === null) return
     const name = cleanChannel(raw)
     if (!name) {
       toast('A channel name needs a letter or a number in it.', 'warn')
       return
     }
-    await this.publish((c) => c.makeChannel(name))
-    this.openChannel(name)
+    await this.publish((c) => c.makeChannel(name, voice))
+    if (!voice) this.openChannel(name)
+    else this.draw()
   }
 
   // ---- sharing ----
@@ -521,7 +695,7 @@ export class SpaceView {
 
     this.showOwnPreview()
     this.buildSharePanel()
-    void this.bus?.send({ type: 'announce', data: { name: this.chat?.displayName, sharing: this.channel } })
+    this.announceMe()
     void this.publish((c) => c.say(`started sharing in #${this.channel}`, this.channel))
     this.draw()
   }
@@ -536,7 +710,7 @@ export class SpaceView {
     this.outStream = null
     this.surface?.setStream(null)
     this.stage.classList.add('hidden')
-    void this.bus?.send({ type: 'announce', data: { name: this.chat?.displayName } })
+    this.announceMe()
   }
 
   private admitWatcher(peerId: string): void {

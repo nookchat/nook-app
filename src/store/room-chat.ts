@@ -63,8 +63,8 @@ export class RoomChat {
     this.onChange?.()
   }
 
-  channels(): string[] {
-    return this.log.channels()
+  channels(voice = false): string[] {
+    return this.log.channels(voice)
   }
 
   messages(channel?: string): Message[] {
@@ -97,8 +97,8 @@ export class RoomChat {
     return this.write('said', body)
   }
 
-  makeChannel(name: string): Promise<LogEvent> {
-    return this.write('channel', { name: cleanChannel(name) })
+  makeChannel(name: string, voice = false): Promise<LogEvent> {
+    return this.write('channel', voice ? { name: cleanChannel(name), voice: true } : { name: cleanChannel(name) })
   }
 
   edit(target: string, text: string): Promise<LogEvent> {

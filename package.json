@@ -20,7 +20,8 @@
     "test:fallback": "node test/codec-fallback.mjs",
     "test:url": "node test/url-check.mjs",
     "test:persist": "node test/persist-check.mjs",
-    "test:themes": "node test/theme-shots.mjs"
+    "test:themes": "node test/theme-shots.mjs",
+    "test:voice": "node test/voice-check.mjs"
   },
   "dependencies": {
     "@noble/curves": "^1.9.0"

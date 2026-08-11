@@ -1477,13 +1477,57 @@ details.adv[open] > summary {
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
-  grid-template-columns: 190px minmax(0, 1fr);
+  grid-template-columns: 190px minmax(0, 1fr) 180px;
   gap: 6px;
   padding: 6px;
 }
 
+@media (max-width: 1080px) {
+  .space-grid {
+    grid-template-columns: 170px minmax(0, 1fr);
+  }
+
+  .rail-right {
+    display: none;
+  }
+}
+
 .rail-hidden .space-grid {
   grid-template-columns: minmax(0, 1fr);
+}
+
+.voice-channel {
+  display: flex;
+  flex-direction: column;
+}
+
+.voice-member {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 7px 1px 22px;
+  font-size: calc(var(--size-small) - 1px);
+  color: var(--fg-faint);
+}
+
+.voice-sink {
+  display: none;
+}
+
+.voice-bar {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  margin-bottom: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.rail-person {
+  align-items: flex-start;
 }
 
 .rail-hidden .rail {
@@ -1598,6 +1642,10 @@ details.adv[open] > summary {
 
   .rail {
     max-height: 34dvh;
+  }
+
+  .rail-right {
+    display: none;
   }
 }
 
