@@ -670,6 +670,144 @@ main {
   font-size: 12.5px;
 }
 
+/* ---------- quality presets ---------- */
+
+.presets {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.preset {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  min-height: 0;
+  background: var(--bg-sunken);
+  border: 1px solid var(--line-soft);
+  white-space: normal;
+}
+
+.preset:hover:not(.custom) {
+  border-color: var(--fg-faint);
+}
+
+.preset.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-sunken));
+}
+
+.preset.custom {
+  cursor: default;
+}
+
+.preset-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.preset.on .preset-name {
+  color: var(--accent);
+}
+
+.preset-why {
+  line-height: 1.4;
+}
+
+/* ---------- chip rows ---------- */
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  padding: 6px 11px;
+  min-height: 34px;
+  font-size: 13px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--line-soft);
+}
+
+.chip.on {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-sunken));
+  font-weight: 600;
+}
+
+.tiny-btn {
+  min-height: 28px;
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+/* ---------- readouts ---------- */
+
+.plan-box {
+  background: var(--bg-sunken);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+
+.plan-line {
+  color: var(--fg);
+  line-height: 1.45;
+}
+
+.plan-box .warn {
+  color: var(--warn);
+}
+
+.empty {
+  padding: 14px 12px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-sm);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.summary-card {
+  border-color: var(--accent);
+}
+
+.preset-hint {
+  padding: 8px 0;
+  border-top: 1px solid var(--line-soft);
+}
+
+.preset-hint:first-of-type {
+  border-top: 0;
+  padding-top: 2px;
+}
+
+.shortcuts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  font-size: 12.5px;
+  color: var(--fg-dim);
+}
+
+.shortcuts kbd {
+  font-family: var(--mono);
+  font-size: 11px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 1px 6px;
+  justify-self: start;
+}
+
 details.adv summary {
   cursor: pointer;
   font-size: 13px;

@@ -78,6 +78,18 @@ export function fmtKbps(kbps: number): string {
   return kbps >= 1000 ? `${(kbps / 1000).toFixed(1)} Mb/s` : `${Math.round(kbps)} kb/s`
 }
 
+export function fmtBytes(bytes: number): string {
+  if (bytes < 1024) return `${Math.round(bytes)} B`
+  const units = ['kB', 'MB', 'GB', 'TB']
+  let value = bytes / 1024
+  let unit = 0
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024
+    unit += 1
+  }
+  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`
+}
+
 export function fmtDuration(ms: number): string {
   const total = Math.floor(ms / 1000)
   const h2 = Math.floor(total / 3600)

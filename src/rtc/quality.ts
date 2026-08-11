@@ -1,10 +1,9 @@
 /**
  * Quality control.
  *
- * A mesh host encodes and sends the picture once per viewer. Upload and CPU are
- * therefore the two hard limits. This module turns one simple choice by the
- * host, Text mode or Video mode, plus one upload budget, into concrete sender
- * settings for every viewer.
+ * A mesh host encodes and sends the picture once per viewer. Upload and
+ * processor time are therefore the two hard limits. This module turns one
+ * choice by the host, a preset, into concrete sender settings for every viewer.
  */
 
 export type Mode = 'text' | 'motion'
@@ -24,10 +23,117 @@ export interface QualityInput {
   viewerCount: number
   width: number
   height: number
+  fps: number
+  /** Multiplier on the ladder below. Under one means more compression. */
+  bitrateScale: number
 }
+
+// ---------------------------------------------------------------------------
+// Presets
+// ---------------------------------------------------------------------------
+
+export type PresetId = 'docs' | 'slides' | 'video' | 'detail' | 'light' | 'custom'
+
+export interface Preset {
+  id: PresetId
+  name: string
+  /** A concrete example, so the host does not have to guess. */
+  useWhen: string
+  mode: Mode
+  /** Source height cap. 0 keeps whatever the display gives. */
+  maxHeight: number
+  fps: number
+  bitrateScale: number
+}
+
+/**
+ * The default is deliberately not the highest setting. A screen share is read,
+ * not admired, and a smaller picture starts faster, stays sharp on text, and
+ * leaves room for more viewers.
+ */
+export const PRESETS: Preset[] = [
+  {
+    id: 'docs',
+    name: 'Code and documents',
+    useWhen:
+      'Use for an editor, a terminal, a spreadsheet, or a PDF. Text stays sharp and the picture starts fast.',
+    mode: 'text',
+    maxHeight: 1080,
+    fps: 15,
+    bitrateScale: 0.7,
+  },
+  {
+    id: 'slides',
+    name: 'Slides and walkthroughs',
+    useWhen:
+      'Use for a presentation, a design review, or a tour of an app. Sharp text, and smooth enough to follow a cursor.',
+    mode: 'text',
+    maxHeight: 1080,
+    fps: 24,
+    bitrateScale: 0.9,
+  },
+  {
+    id: 'video',
+    name: 'Video and motion',
+    useWhen:
+      'Use for a film, a game, an animation, or a call. Movement stays smooth, and fine detail gives way first.',
+    mode: 'motion',
+    maxHeight: 1080,
+    fps: 30,
+    bitrateScale: 1,
+  },
+  {
+    id: 'detail',
+    name: 'Maximum detail',
+    useWhen:
+      'Use for photo work, drawings, or a 4K display where every pixel counts. Needs a fast upload and a strong processor.',
+    mode: 'text',
+    maxHeight: 0,
+    fps: 30,
+    bitrateScale: 1.4,
+  },
+  {
+    id: 'light',
+    name: 'Slow connection',
+    useWhen:
+      'Use on hotel wifi, a phone hotspot, or with many viewers. The picture is smaller, and it keeps moving.',
+    mode: 'text',
+    maxHeight: 720,
+    fps: 10,
+    bitrateScale: 0.5,
+  },
+]
+
+export const DEFAULT_PRESET: PresetId = 'docs'
+
+export function presetById(id: PresetId): Preset | null {
+  return PRESETS.find((p) => p.id === id) ?? null
+}
+
+export const RESOLUTION_CHOICES: { label: string; height: number; note: string }[] = [
+  { label: 'Original', height: 0, note: 'Whatever the display gives, up to 4K' },
+  { label: '1440p', height: 1440, note: 'Sharp on a large monitor' },
+  { label: '1080p', height: 1080, note: 'Sharp text, quick to start' },
+  { label: '720p', height: 720, note: 'Kind to a slow upload' },
+  { label: '540p', height: 540, note: 'Last resort, or a wide mesh' },
+]
+
+export const FPS_CHOICES: { label: string; fps: number; note: string }[] = [
+  { label: '5 fps', fps: 5, note: 'Still pages only' },
+  { label: '10 fps', fps: 10, note: 'Reading, very low bandwidth' },
+  { label: '15 fps', fps: 15, note: 'Documents and code' },
+  { label: '24 fps', fps: 24, note: 'Slides and scrolling' },
+  { label: '30 fps', fps: 30, note: 'Video and games' },
+  { label: '60 fps', fps: 60, note: 'Fast games, costs a lot' },
+]
+
+// ---------------------------------------------------------------------------
+// The bitrate ladder
+// ---------------------------------------------------------------------------
 
 /** What one stream wants when bandwidth is free. Kilobits per second. */
 const LADDER: { maxPixels: number; text: number; motion: number }[] = [
+  { maxPixels: 960 * 540, text: 700, motion: 1100 },
   { maxPixels: 1280 * 720, text: 1200, motion: 2000 },
   { maxPixels: 1920 * 1080, text: 2500, motion: 4000 },
   { maxPixels: 2560 * 1440, text: 4000, motion: 6000 },
@@ -35,22 +141,27 @@ const LADDER: { maxPixels: number; text: number; motion: number }[] = [
 ]
 
 /** Below this a screen share stops being readable, so we never go under it. */
-const FLOOR_KBPS = 350
+const FLOOR_KBPS = 300
 
-export function idealBitrateKbps(mode: Mode, width: number, height: number): number {
+export function idealBitrateKbps(
+  mode: Mode,
+  width: number,
+  height: number,
+  bitrateScale = 1,
+  fps = 30,
+): number {
   const pixels = Math.max(1, width * height)
   const step = LADDER.find((s) => pixels <= s.maxPixels) ?? LADDER[LADDER.length - 1]
-  return mode === 'text' ? step.text : step.motion
-}
-
-export function defaultFramerate(mode: Mode): number {
-  // Text stays readable at a low frame rate, and the saved bits go into detail.
-  return mode === 'text' ? 15 : 30
+  const base = mode === 'text' ? step.text : step.motion
+  // Frame rate moves the bill, but not in a straight line. Half the frames cost
+  // well over half the bits, because each frame still carries new detail.
+  const fpsFactor = Math.min(1.35, Math.max(0.55, (fps / 30) ** 0.5))
+  return Math.round(base * bitrateScale * fpsFactor)
 }
 
 export function planFor(input: QualityInput): QualityPlan {
-  const { mode, budgetKbps, viewerCount, width, height } = input
-  const ideal = idealBitrateKbps(mode, width, height)
+  const { mode, budgetKbps, viewerCount, width, height, fps, bitrateScale } = input
+  const ideal = idealBitrateKbps(mode, width, height, bitrateScale, fps)
   const share = Math.floor(budgetKbps / Math.max(1, viewerCount))
   const maxBitrateKbps = Math.max(FLOOR_KBPS, Math.min(ideal, share))
 
@@ -64,7 +175,7 @@ export function planFor(input: QualityInput): QualityPlan {
   return {
     maxBitrateKbps,
     scaleDown,
-    maxFramerate: defaultFramerate(mode),
+    maxFramerate: fps,
     degradation: mode === 'text' ? 'maintain-resolution' : 'maintain-framerate',
   }
 }

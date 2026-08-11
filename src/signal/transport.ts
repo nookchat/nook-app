@@ -28,8 +28,17 @@ export interface Transport {
   close(): void
 }
 
-/** Backoff with jitter, so many viewers do not retry in lockstep. */
+/**
+ * Backoff with jitter, so many viewers do not retry in lockstep.
+ *
+ * A transport never gives up. A relay that dies during a session must be able
+ * to come back, otherwise a host and a viewer can end up with no relay in
+ * common and a room that looks connected but carries nothing. After a long
+ * outage the interval widens to a minute, which is kind to a dead endpoint and
+ * still fast enough to recover.
+ */
 export function backoffDelay(attempt: number): number {
-  const base = Math.min(15_000, 600 * 2 ** Math.min(attempt, 5))
+  const ceiling = attempt > 8 ? 60_000 : 15_000
+  const base = Math.min(ceiling, 600 * 2 ** Math.min(attempt, 7))
   return Math.round(base * (0.7 + Math.random() * 0.6))
 }

@@ -38,6 +38,8 @@ export class ViewerView {
   private joinedAt = 0
   private timers: number[] = []
   private relayHealth: RelayHealth[] = []
+  private poorTicks = 0
+  private lastQualityWarning = 0
   private stopped = false
   private readonly onPageHide = (): void => {
     void this.bus?.send({ type: 'bye' })
@@ -90,19 +92,30 @@ export class ViewerView {
   // ---- phases ----
 
   private showJoin(): void {
-    this.surface?.setOverlay(
-      this.message(
-        'Someone shared their screen with you',
-        'The picture and the sound travel straight from their computer to yours. No server holds a copy.',
-        [
-          h('button', {
-            class: 'primary big',
-            text: 'Join the stream',
-            on: { click: () => void this.join() },
-          }),
-        ],
-      ),
+    const card = this.message(
+      'Someone shared their screen with you',
+      'The picture and the sound travel straight from their computer to yours. No server holds a copy.',
+      [
+        h('button', {
+          class: 'primary big',
+          text: 'Join the stream',
+          on: { click: () => void this.join() },
+        }),
+      ],
     )
+    card.append(
+      h('div', { class: 'shortcuts', style: { justifyContent: 'center', marginTop: '4px' } }, [
+        h('kbd', { text: 'F' }),
+        h('span', { text: 'Fullscreen' }),
+        h('kbd', { text: 'M' }),
+        h('span', { text: 'Mute' }),
+        h('kbd', { text: 'Z' }),
+        h('span', { text: 'Fit, fill, or actual size' }),
+        h('kbd', { text: 'Scroll' }),
+        h('span', { text: 'Zoom, with control held' }),
+      ]),
+    )
+    this.surface?.setOverlay(card)
   }
 
   private async join(): Promise<void> {
@@ -268,6 +281,22 @@ export class ViewerView {
     if (!this.peer || this.phase !== 'live') return
     const s = await this.peer.sample()
     const grade = gradeOf(s)
+
+    // Say it once, in plain words, rather than leaving a person to read numbers.
+    if (grade === 'poor') {
+      this.poorTicks += 1
+      if (this.poorTicks === 3 && Date.now() - this.lastQualityWarning > 60_000) {
+        this.lastQualityWarning = Date.now()
+        toast(
+          'The connection between you and the host is weak. The picture may stutter, and the host can lower the quality to help.',
+          'warn',
+          8000,
+        )
+      }
+    } else {
+      this.poorTicks = 0
+    }
+
     const tone = grade === 'good' ? 'good' : grade === 'ok' ? 'warn' : grade === 'poor' ? 'bad' : undefined
     const badges: { text: string; tone?: 'good' | 'warn' | 'bad' }[] = [
       { text: fmtKbps(s.kbps), tone },

@@ -34,6 +34,8 @@ export class HostPeer {
   readonly joinedAt = Date.now()
 
   state: RTCPeerConnectionState = 'new'
+  /** When the state last changed. The host uses it to clear away dead viewers. */
+  stateSince = Date.now()
   stats: StatsSnapshot = { ...EMPTY_STATS }
   plan: QualityPlan | null = null
   codec: string | null = null
@@ -83,6 +85,7 @@ export class HostPeer {
     }
 
     this.pc.onconnectionstatechange = () => {
+      if (this.pc.connectionState !== this.state) this.stateSince = Date.now()
       this.state = this.pc.connectionState
       if (this.state === 'failed') this.onFailure()
       opts.onChange()

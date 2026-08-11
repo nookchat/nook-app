@@ -254,9 +254,16 @@ export class NostrTransport implements Transport {
   }
 }
 
-/** Open relays that accept anonymous ephemeral events. */
+/**
+ * Open relays that accept anonymous ephemeral events.
+ *
+ * A relay that answers on port 443 is not necessarily usable: it can refuse the
+ * event kind, demand an account, or accept an event and deliver it to nobody.
+ * Check the list with `npm run test:relays` before you change it, and keep at
+ * least three, because a public relay can go bad without notice.
+ */
 export const NOSTR_RELAYS: { url: string; name: string }[] = [
-  { url: 'wss://relay.damus.io', name: 'damus' },
   { url: 'wss://nos.lol', name: 'nos.lol' },
-  { url: 'wss://relay.nostr.band', name: 'nostr.band' },
+  { url: 'wss://relay.snort.social', name: 'snort' },
+  { url: 'wss://nostr.mom', name: 'nostr.mom' },
 ]

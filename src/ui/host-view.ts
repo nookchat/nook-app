@@ -14,14 +14,19 @@ import { SignalBus, type RelayHealth } from '../signal/bus'
 import type { Envelope } from '../signal/envelope'
 import { HostPeer } from '../rtc/host-peer'
 import {
+  FPS_CHOICES,
+  PRESETS,
+  RESOLUTION_CHOICES,
   availableCodecs,
   idealBitrateKbps,
   planFor,
+  presetById,
   type CodecChoice,
-  type Mode,
+  type PresetId,
   type QualityPlan,
 } from '../rtc/quality'
 import { gradeOf } from '../rtc/stats'
+import { loadSettings, saveSettings, type HostSettings } from '../settings'
 import { clear, copyText, fmtDuration, fmtKbps, h, labelled } from './dom'
 import { toast } from './toast'
 import { VideoSurface } from './video-surface'
@@ -30,32 +35,20 @@ const ANNOUNCE_MS = 4000
 const STATS_MS = 2000
 const REAP_MS = 10_000
 const PENDING_TTL_MS = 120_000
+/** How long a broken connection stays in the list before Beam clears it away. */
+const DEAD_PEER_MS = 20_000
 
-interface Settings {
-  mode: Mode
-  codec: CodecChoice
-  budgetKbps: number
-  maxViewers: number
-  approve: boolean
-  maxHeight: number
-  fps: number
-}
-
-const DEFAULTS: Settings = {
-  mode: 'text',
-  codec: 'auto',
-  budgetKbps: 8000,
-  maxViewers: 10,
-  approve: false,
-  maxHeight: 0,
-  fps: 30,
+export interface SessionSummary {
+  seconds: number
+  peakViewers: number
+  bytesSent: number
 }
 
 export class HostView {
   private readonly root: HTMLElement
-  private readonly onExit: () => void
+  private readonly onExit: (summary: SessionSummary | null) => void
   private readonly selfId = newPeerId()
-  private readonly settings: Settings = { ...DEFAULTS }
+  private settings: HostSettings = loadSettings()
 
   private room: Room | null = null
   private bus: SignalBus | null = null
@@ -67,12 +60,14 @@ export class HostView {
   private readonly peers = new Map<string, HostPeer>()
   private readonly pending = new Map<string, number>()
   private readonly startedAt = Date.now()
+  private peakViewers = 0
+  private bytesSent = 0
 
-  private effectiveBudget = DEFAULTS.budgetKbps
+  private effectiveBudget = 0
   private congestedTicks = 0
   private lastBudgetDrop = 0
 
-  private timers: number[] = [];
+  private timers: number[] = []
   private stopped = false
 
   // Elements we update in place.
@@ -80,6 +75,10 @@ export class HostView {
   private statusPills!: HTMLDivElement
   private viewerList!: HTMLDivElement
   private planLine!: HTMLDivElement
+  private uploadLine!: HTMLDivElement
+  private presetList!: HTMLDivElement
+  private resolutionRow!: HTMLDivElement
+  private fpsRow!: HTMLDivElement
   private sysMeter!: HTMLElement
   private micMeter!: HTMLElement
   private micButton!: HTMLButtonElement
@@ -87,9 +86,10 @@ export class HostView {
   private relayLine!: HTMLDivElement
   private elapsed!: HTMLSpanElement
 
-  constructor(root: HTMLElement, onExit: () => void) {
+  constructor(root: HTMLElement, onExit: (summary: SessionSummary | null) => void) {
     this.root = root
     this.onExit = onExit
+    this.effectiveBudget = this.settings.budgetKbps
   }
 
   /** Call this straight from a click handler, so the capture prompt is allowed. */
@@ -98,15 +98,14 @@ export class HostView {
       this.capture = await captureScreen({
         maxHeight: this.settings.maxHeight,
         fps: this.settings.fps,
-        wantSystemAudio: true,
+        wantSystemAudio: this.settings.shareSystemAudio,
       })
     } catch (err) {
       const message =
         err instanceof CaptureError ? err.message : `The screen share failed: ${String(err)}`
       toast(message, 'bad', 8000)
-      // Nothing was opened, so mark the view finished before we hand back.
       this.stopped = true
-      this.onExit()
+      this.onExit(null)
       return
     }
 
@@ -117,12 +116,7 @@ export class HostView {
     )
 
     this.outStream = new MediaStream([this.capture.video, this.mixer.track])
-
-    // The browser puts its own "Stop sharing" bar on screen. Respect it.
-    this.capture.video.addEventListener('ended', () => {
-      toast('You stopped the screen share, so the stream ended.', 'warn')
-      this.stop()
-    })
+    this.watchCaptureEnd(this.capture.video)
 
     const secret = newSecret()
     this.room = await deriveRoom(secret)
@@ -136,6 +130,7 @@ export class HostView {
     this.stopped = true
     for (const t of this.timers) window.clearInterval(t)
     this.timers = []
+    document.title = 'Beam · peer to peer screen share'
     void this.bus?.send({ type: 'bye' }).catch(() => undefined)
     for (const peer of this.peers.values()) peer.close()
     this.peers.clear()
@@ -144,7 +139,11 @@ export class HostView {
     this.surface?.destroy()
     this.capture?.stream.getTracks().forEach((t) => t.stop())
     this.mixer?.close()
-    this.onExit()
+    this.onExit({
+      seconds: Math.round((Date.now() - this.startedAt) / 1000),
+      peakViewers: this.peakViewers,
+      bytesSent: this.bytesSent,
+    })
   }
 
   // ---- signal ----
@@ -167,7 +166,9 @@ export class HostView {
           void this.bus?.send({
             type: 'deny',
             to: env.from,
-            data: { reason: `This stream is full. The host allows ${this.settings.maxViewers} viewers.` },
+            data: {
+              reason: `This stream is full. The host allows ${this.settings.maxViewers} viewers.`,
+            },
           })
           return
         }
@@ -216,6 +217,7 @@ export class HostView {
       onFailed: (reason) => toast(reason, 'bad', 8000),
     })
     this.peers.set(viewerId, peer)
+    this.peakViewers = Math.max(this.peakViewers, this.peers.size)
     void peer.setPlan(this.currentPlan(this.peers.size))
     this.renderViewers()
   }
@@ -263,6 +265,10 @@ export class HostView {
   private async tickStats(): Promise<void> {
     const peers = [...this.peers.values()]
     await Promise.all(peers.map((p) => p.sample()))
+
+    for (const peer of peers) {
+      this.bytesSent += ((peer.stats.kbps + peer.stats.audioKbps) * 1000 * (STATS_MS / 1000)) / 8
+    }
 
     this.adaptBudget(peers)
 
@@ -315,14 +321,21 @@ export class HostView {
     }
   }
 
-  private currentPlan(viewerCount: number): QualityPlan {
+  private sourceSize(): { width: number; height: number } {
     const s = this.capture?.video.getSettings()
+    return { width: s?.width ?? 1920, height: s?.height ?? 1080 }
+  }
+
+  private currentPlan(viewerCount: number): QualityPlan {
+    const { width, height } = this.sourceSize()
     return planFor({
       mode: this.settings.mode,
       budgetKbps: Math.min(this.effectiveBudget, this.settings.budgetKbps),
       viewerCount,
-      width: s?.width ?? 1920,
-      height: s?.height ?? 1080,
+      width,
+      height,
+      fps: this.settings.fps,
+      bitrateScale: this.settings.bitrateScale,
     })
   }
 
@@ -332,7 +345,17 @@ export class HostView {
       if (now - at > PENDING_TTL_MS) this.pending.delete(id)
     }
     for (const [id, peer] of this.peers) {
-      if (peer.state === 'closed') this.peers.delete(id)
+      if (peer.state === 'closed') {
+        this.peers.delete(id)
+        continue
+      }
+      // A viewer that shut the tab without a goodbye leaves a stuck row. Give
+      // the connection time to come back on its own, then clear it away.
+      const dead = peer.state === 'failed' || peer.state === 'disconnected'
+      if (dead && now - peer.stateSince > DEAD_PEER_MS) {
+        peer.close()
+        this.peers.delete(id)
+      }
     }
     this.renderViewers()
   }
@@ -341,6 +364,15 @@ export class HostView {
     const levels = this.mixer?.levels() ?? { system: 0, mic: 0 }
     this.sysMeter.style.width = `${Math.round(levels.system * 100)}%`
     this.micMeter.style.width = `${Math.round(levels.mic * 100)}%`
+  }
+
+  private watchCaptureEnd(track: MediaStreamTrack): void {
+    // The browser puts its own "Stop sharing" bar on screen. Respect it.
+    track.addEventListener('ended', () => {
+      if (this.stopped || this.capture?.video !== track) return
+      toast('You stopped the screen share, so the stream ended.', 'warn')
+      this.stop()
+    })
   }
 
   // ---- render ----
@@ -363,7 +395,11 @@ export class HostView {
 
     this.statusPills = h('div', { class: 'row wrap', style: { gap: '6px' } })
     this.viewerList = h('div', {})
-    this.planLine = h('div', { class: 'tiny faint plan-line' })
+    this.planLine = h('div', { class: 'tiny plan-line' })
+    this.uploadLine = h('div', { class: 'tiny faint' })
+    this.presetList = h('div', { class: 'presets' })
+    this.resolutionRow = h('div', { class: 'chips' })
+    this.fpsRow = h('div', { class: 'chips' })
     this.relayLine = h('div', { class: 'row wrap', style: { gap: '6px' } })
     this.elapsed = h('span', { class: 'mono tiny', text: '0:00' })
 
@@ -383,20 +419,29 @@ export class HostView {
       ]),
     )
 
+    this.renderPresets()
+    this.renderResolutions()
+    this.renderFps()
     this.renderViewers()
     this.renderPlan(this.currentPlan(1), 0)
+    this.renderPreviewBadges()
   }
 
   private linkCard(): HTMLElement {
     const copyButton = h('button', {
       class: 'primary',
-      text: 'Copy',
+      text: 'Copy link',
       on: {
         click: async () => {
           const ok = await copyText(this.linkInput.value)
           copyButton.textContent = ok ? 'Copied' : 'Copy failed'
-          window.setTimeout(() => (copyButton.textContent = 'Copy'), 1600)
-          if (!ok) this.linkInput.select()
+          copyButton.classList.toggle('on', ok)
+          window.setTimeout(() => {
+            copyButton.textContent = 'Copy link'
+            copyButton.classList.remove('on')
+          }, 1800)
+          if (ok) toast('Link copied. Send the whole link, or the key will not fit.', 'info', 5000)
+          else this.linkInput.select()
         },
       },
     })
@@ -409,7 +454,7 @@ export class HostView {
       h('div', { class: 'linkbox' }, [this.linkInput, copyButton]),
       h('div', {
         class: 'tiny faint',
-        text: 'The key after the # never reaches the webserver. Anyone who holds this link can watch.',
+        text: 'The key after the # never reaches the webserver. Anyone who holds the whole link can watch.',
       }),
       h('div', { class: 'row', style: { marginTop: '4px' } }, [
         h('button', {
@@ -435,78 +480,45 @@ export class HostView {
     ])
   }
 
-  private qualityCard(): HTMLElement {
-    const modeButtons = (['text', 'motion'] as Mode[]).map((m) =>
-      h('button', {
-        class: `grow${this.settings.mode === m ? ' on' : ''}`,
-        text: m === 'text' ? 'Text' : 'Video',
-        title:
-          m === 'text'
-            ? 'Sharp text. Keeps resolution, drops frame rate.'
-            : 'Smooth motion. Keeps frame rate, drops resolution.',
-        on: {
-          click: (ev) => {
-            this.settings.mode = m
-            const bar = (ev.currentTarget as HTMLElement).parentElement!
-            for (const b of Array.from(bar.children)) b.classList.remove('on')
-            ;(ev.currentTarget as HTMLElement).classList.add('on')
-            for (const peer of this.peers.values()) peer.setMode(m, this.settings.codec)
-            void this.tickStats()
-          },
-        },
-      }),
-    )
+  // ---- quality ----
 
+  private qualityCard(): HTMLElement {
     const budget = h('input', {
       type: 'range',
       min: '1',
       max: '50',
       step: '1',
-      value: String(this.settings.budgetKbps / 1000),
+      value: String(Math.round(this.settings.budgetKbps / 1000)),
       ariaLabel: 'Total upload budget',
       on: {
         input: () => {
           this.settings.budgetKbps = Number(budget.value) * 1000
           this.effectiveBudget = this.settings.budgetKbps
-          budgetLabel.textContent = `${budget.value} Mb/s total`
+          budgetLabel.textContent = `${budget.value} Mb/s`
+          this.persist()
           void this.tickStats()
         },
       },
     })
     const budgetLabel = h('span', {
       class: 'tiny mono',
-      text: `${this.settings.budgetKbps / 1000} Mb/s total`,
+      style: { minWidth: '58px', textAlign: 'right' },
+      text: `${Math.round(this.settings.budgetKbps / 1000)} Mb/s`,
     })
-
-    const cap = h('select', {
-      ariaLabel: 'Source resolution cap',
-      on: {
-        change: () => {
-          this.settings.maxHeight = Number(cap.value)
-          void this.applySourceCap()
-        },
-      },
-    })
-    for (const [label, value] of [
-      ['Original', '0'],
-      ['1440p', '1440'],
-      ['1080p', '1080'],
-      ['720p', '720'],
-    ]) {
-      cap.append(h('option', { value, text: label }))
-    }
 
     const codec = h('select', {
       ariaLabel: 'Video codec',
       on: {
         change: () => {
           this.settings.codec = codec.value as CodecChoice
+          this.persist()
           toast('The codec applies to the next viewer who joins.', 'info')
         },
       },
     })
-    codec.append(h('option', { value: 'auto', text: 'Automatic' }))
+    codec.append(h('option', { value: 'auto', text: 'Automatic (recommended)' }))
     for (const name of availableCodecs()) codec.append(h('option', { value: name, text: name }))
+    codec.value = this.settings.codec
 
     const maxViewers = h('input', {
       type: 'range',
@@ -518,41 +530,206 @@ export class HostView {
       on: {
         input: () => {
           this.settings.maxViewers = Number(maxViewers.value)
-          maxLabel.textContent = `${maxViewers.value} viewers`
+          maxLabel.textContent = maxViewers.value
+          this.persist()
           this.renderViewers()
         },
       },
     })
-    const maxLabel = h('span', { class: 'tiny mono', text: `${this.settings.maxViewers} viewers` })
+    const maxLabel = h('span', {
+      class: 'tiny mono',
+      style: { minWidth: '58px', textAlign: 'right' },
+      text: String(this.settings.maxViewers),
+    })
 
     const approve = h('button', {
-      class: 'grow',
-      text: 'Approve each viewer: off',
+      class: `grow${this.settings.approve ? ' on' : ''}`,
+      text: `Approve each viewer: ${this.settings.approve ? 'on' : 'off'}`,
       on: {
         click: () => {
           this.settings.approve = !this.settings.approve
           approve.textContent = `Approve each viewer: ${this.settings.approve ? 'on' : 'off'}`
           approve.classList.toggle('on', this.settings.approve)
+          this.persist()
         },
       },
     })
 
     return h('div', { class: 'card stack tight' }, [
-      h('strong', { text: 'Quality' }),
-      h('div', { class: 'row', style: { gap: '6px' } }, modeButtons),
-      labelled('Upload budget', h('div', { class: 'row' }, [budget, budgetLabel])),
-      this.planLine,
+      h('div', { class: 'row spread' }, [
+        h('strong', { text: 'Quality' }),
+        h('button', {
+          class: 'ghost tiny-btn',
+          text: 'Reset',
+          title: 'Go back to Code and documents at 1080p',
+          on: { click: () => void this.applyPreset('docs') },
+        }),
+      ]),
+      this.presetList,
+      h('div', { class: 'plan-box stack tight' }, [this.planLine, this.uploadLine]),
       h('details', { class: 'adv' }, [
-        h('summary', { text: 'Advanced' }),
+        h('summary', { text: 'Fine tuning' }),
         h('div', { class: 'stack tight' }, [
-          labelled('Source resolution', cap, 'Cap a 4K display to save your processor.'),
+          labelled('Resolution', this.resolutionRow, 'The height Beam sends. Lower starts faster.'),
+          labelled('Frame rate', this.fpsRow, 'Fewer frames leave more bits for detail.'),
+          labelled(
+            'Upload budget',
+            h('div', { class: 'row' }, [budget, budgetLabel]),
+            'All viewers share this. Beam lowers it on its own when it sees packet loss.',
+          ),
+          labelled(
+            'Viewer limit',
+            h('div', { class: 'row' }, [maxViewers, maxLabel]),
+            'Every viewer costs one more encode and one more upload stream.',
+          ),
           labelled('Codec', codec, 'VP9 and AV1 carry text best.'),
-          labelled('Viewer limit', h('div', { class: 'row' }, [maxViewers, maxLabel])),
           approve,
         ]),
       ]),
     ])
   }
+
+  private renderPresets(): void {
+    clear(this.presetList)
+    for (const preset of PRESETS) {
+      const selected = this.settings.presetId === preset.id
+      const row = h(
+        'button',
+        {
+          class: `preset${selected ? ' on' : ''}`,
+          title: preset.useWhen,
+          on: { click: () => void this.applyPreset(preset.id) },
+        },
+        [
+          h('div', { class: 'row spread', style: { width: '100%' } }, [
+            h('span', { class: 'preset-name', text: preset.name }),
+            h('span', {
+              class: 'tiny mono faint',
+              text: `${preset.maxHeight === 0 ? 'source' : `${preset.maxHeight}p`} · ${preset.fps} fps`,
+            }),
+          ]),
+          selected ? h('div', { class: 'tiny dim preset-why', text: preset.useWhen }) : null,
+        ],
+      )
+      this.presetList.append(row)
+    }
+
+    if (this.settings.presetId === 'custom') {
+      this.presetList.append(
+        h('div', { class: 'preset on custom' }, [
+          h('div', { class: 'row spread', style: { width: '100%' } }, [
+            h('span', { class: 'preset-name', text: 'Custom' }),
+            h('span', {
+              class: 'tiny mono faint',
+              text: `${this.settings.maxHeight === 0 ? 'source' : `${this.settings.maxHeight}p`} · ${this.settings.fps} fps`,
+            }),
+          ]),
+          h('div', {
+            class: 'tiny dim preset-why',
+            text: 'Your own settings, from the fine tuning below.',
+          }),
+        ]),
+      )
+    }
+  }
+
+  private renderResolutions(): void {
+    clear(this.resolutionRow)
+    for (const choice of RESOLUTION_CHOICES) {
+      this.resolutionRow.append(
+        h('button', {
+          class: `chip${this.settings.maxHeight === choice.height ? ' on' : ''}`,
+          text: choice.label,
+          title: choice.note,
+          on: {
+            click: () => {
+              this.settings.maxHeight = choice.height
+              this.markCustom()
+              void this.applyCaptureConstraints()
+            },
+          },
+        }),
+      )
+    }
+  }
+
+  private renderFps(): void {
+    clear(this.fpsRow)
+    for (const choice of FPS_CHOICES) {
+      this.fpsRow.append(
+        h('button', {
+          class: `chip${this.settings.fps === choice.fps ? ' on' : ''}`,
+          text: choice.label,
+          title: choice.note,
+          on: {
+            click: () => {
+              this.settings.fps = choice.fps
+              this.markCustom()
+              void this.applyCaptureConstraints()
+            },
+          },
+        }),
+      )
+    }
+  }
+
+  private async applyPreset(id: PresetId): Promise<void> {
+    const preset = presetById(id)
+    if (!preset) return
+    this.settings.presetId = preset.id
+    this.settings.mode = preset.mode
+    this.settings.maxHeight = preset.maxHeight
+    this.settings.fps = preset.fps
+    this.settings.bitrateScale = preset.bitrateScale
+    this.persist()
+    this.renderPresets()
+    this.renderResolutions()
+    this.renderFps()
+    for (const peer of this.peers.values()) peer.setMode(preset.mode, this.settings.codec)
+    await this.applyCaptureConstraints()
+  }
+
+  private markCustom(): void {
+    const match = PRESETS.find(
+      (p) =>
+        p.maxHeight === this.settings.maxHeight &&
+        p.fps === this.settings.fps &&
+        p.mode === this.settings.mode &&
+        p.bitrateScale === this.settings.bitrateScale,
+    )
+    this.settings.presetId = match ? match.id : 'custom'
+    this.persist()
+    this.renderPresets()
+    this.renderResolutions()
+    this.renderFps()
+  }
+
+  private persist(): void {
+    saveSettings(this.settings)
+  }
+
+  /** Push the resolution and the frame rate onto the live capture track. */
+  private async applyCaptureConstraints(): Promise<void> {
+    const track = this.capture?.video
+    if (!track) return
+    const constraints: MediaTrackConstraints = {
+      frameRate: { ideal: this.settings.fps, max: this.settings.fps },
+    }
+    if (this.settings.maxHeight > 0) {
+      constraints.height = { max: this.settings.maxHeight }
+      constraints.width = { max: Math.round((this.settings.maxHeight * 16) / 9) }
+    }
+    try {
+      await track.applyConstraints(constraints)
+    } catch {
+      // Some sources refuse a change once they are live. The sender side caps
+      // the frame rate and the resolution anyway, so the stream still obeys.
+      toast('This source kept its own size. Beam caps the stream on the way out.', 'info', 5000)
+    }
+    void this.tickStats()
+  }
+
+  // ---- audio ----
 
   private audioCard(systemAudioLikely: boolean): HTMLElement {
     this.sysMeter = h('i')
@@ -597,6 +774,7 @@ export class HostView {
             this.micButton.textContent = 'Microphone is on'
             this.micButton.classList.add('on')
             micGain.disabled = false
+            toast('Your microphone is live for every viewer.', 'info')
           } catch (err) {
             toast(err instanceof CaptureError ? err.message : String(err), 'bad')
           }
@@ -610,7 +788,7 @@ export class HostView {
       text: hasSystem
         ? 'The audio of the shared screen is going out.'
         : systemAudioLikely
-          ? 'No screen audio arrived. Share a tab, or tick "Share tab audio" in the picker, then use Change screen.'
+          ? 'No screen audio arrived. Share a tab, tick "Also share tab audio" in the picker, then use Change screen.'
           : 'This browser does not hand over screen audio. Your microphone still works.',
     })
 
@@ -675,6 +853,8 @@ export class HostView {
     clear(this.statusPills)
 
     const connected = [...this.peers.values()].filter((p) => p.state === 'connected').length
+    document.title = connected > 0 ? `● ${connected} watching · Beam` : 'Sharing · Beam'
+
     this.statusPills.append(
       h('span', {
         class: `pill ${connected > 0 ? 'good' : ''}`.trim(),
@@ -682,7 +862,13 @@ export class HostView {
       }),
     )
     if (this.peers.size > 6) {
-      this.statusPills.append(h('span', { class: 'pill warn', text: 'wide mesh' }))
+      this.statusPills.append(
+        h('span', {
+          class: 'pill warn',
+          text: 'wide mesh',
+          title: 'Above six viewers Beam halves the picture it sends, to keep the upload sane.',
+        }),
+      )
     }
 
     for (const [id, at] of this.pending) {
@@ -691,7 +877,7 @@ export class HostView {
           h('div', { class: 'stack tight' }, [
             h('div', { class: 'mono small', text: `viewer ${id.slice(0, 6)}` }),
             h('div', {
-              class: 'tiny warn faint',
+              class: 'tiny warn',
               text: `waiting ${Math.round((Date.now() - at) / 1000)} s for your approval`,
             }),
           ]),
@@ -713,11 +899,10 @@ export class HostView {
 
     if (this.peers.size === 0 && this.pending.size === 0) {
       this.viewerList.append(
-        h('div', {
-          class: 'tiny faint',
-          text: 'Nobody has joined yet. Send the link above.',
-          style: { paddingTop: '8px' },
-        }),
+        h('div', { class: 'empty' }, [
+          h('div', { class: 'small', text: 'Nobody has joined yet.' }),
+          h('div', { class: 'tiny faint', text: 'Send the link above. Viewers appear here.' }),
+        ]),
       )
       return
     }
@@ -727,10 +912,10 @@ export class HostView {
       const grade = gradeOf(s)
       const tone = grade === 'good' ? 'good' : grade === 'ok' ? 'warn' : grade === 'poor' ? 'bad' : ''
       const stateText =
-        peer.state === 'connected'
-          ? 'connected'
-          : peer.state === 'failed'
-            ? 'failed'
+        peer.state === 'failed'
+          ? 'connection failed'
+          : peer.state === 'disconnected'
+            ? 'reconnecting'
             : peer.state === 'new' || peer.state === 'connecting'
               ? 'connecting'
               : peer.state
@@ -747,23 +932,31 @@ export class HostView {
           badges.append(h('span', { class: 'pill warn', text: `${s.lossPct}% loss` }))
         }
         if (s.limitation !== 'none' && s.limitation !== '') {
-          badges.append(h('span', { class: 'pill warn', text: `limited: ${s.limitation}` }))
+          badges.append(
+            h('span', {
+              class: 'pill warn',
+              text: s.limitation === 'cpu' ? 'processor limited' : `${s.limitation} limited`,
+              title:
+                s.limitation === 'cpu'
+                  ? 'This machine cannot encode fast enough. Lower the resolution or the frame rate.'
+                  : 'The upload cannot carry this. Lower the budget or the resolution.',
+            }),
+          )
         }
         if (s.codec) badges.append(h('span', { class: 'pill', text: s.codec }))
         if (s.path) badges.append(h('span', { class: 'pill', text: s.path }))
       } else {
-        badges.append(h('span', { class: 'pill', text: stateText }))
+        const stateTone =
+          peer.state === 'failed' ? 'bad' : peer.state === 'disconnected' ? 'warn' : ''
+        badges.append(h('span', { class: `pill ${stateTone}`.trim(), text: stateText }))
       }
 
       this.viewerList.append(
         h('div', { class: 'viewer-row' }, [
           h('div', { class: 'row', style: { gap: '8px' } }, [
-            h('i', { class: `dot ${tone}`.trim(), style: { color: 'currentColor' } }),
+            h('i', { class: `dot ${tone}`.trim() }),
             h('span', { class: 'mono small truncate', text: `viewer ${id.slice(0, 6)}` }),
-            h('span', {
-              class: 'tiny faint',
-              text: fmtDuration(Date.now() - peer.joinedAt),
-            }),
+            h('span', { class: 'tiny faint', text: fmtDuration(Date.now() - peer.joinedAt) }),
           ]),
           h('button', {
             class: 'ghost small',
@@ -778,26 +971,44 @@ export class HostView {
 
   private renderPlan(plan: QualityPlan, viewerCount: number): void {
     if (!this.planLine) return
-    const s = this.capture?.video.getSettings()
-    const ideal = idealBitrateKbps(this.settings.mode, s?.width ?? 1920, s?.height ?? 1080)
-    const scaleText = plan.scaleDown > 1 ? `, scaled to 1/${plan.scaleDown}` : ''
-    const capped = plan.maxBitrateKbps < ideal ? ' (budget limited)' : ''
-    const adapted =
-      this.effectiveBudget < this.settings.budgetKbps
-        ? ` Beam lowered the budget to ${fmtKbps(this.effectiveBudget)} because of packet loss.`
-        : ''
-    this.planLine.textContent = `Each of ${Math.max(1, viewerCount)} viewers gets ${fmtKbps(
+    const { width, height } = this.sourceSize()
+    const ideal = idealBitrateKbps(
+      this.settings.mode,
+      width,
+      height,
+      this.settings.bitrateScale,
+      this.settings.fps,
+    )
+    const sentHeight = Math.round(height / plan.scaleDown)
+    const sentWidth = Math.round(width / plan.scaleDown)
+
+    this.planLine.textContent = `Each viewer gets ${sentWidth}x${sentHeight} at ${plan.maxFramerate} fps, about ${fmtKbps(
       plan.maxBitrateKbps,
-    )} at ${plan.maxFramerate} fps${scaleText}${capped}.${adapted}`
+    )}.`
+
+    const count = Math.max(1, viewerCount)
+    const total = plan.maxBitrateKbps * count
+    const parts: string[] = [
+      `Total upload about ${fmtKbps(total)} for ${count} viewer${count === 1 ? '' : 's'}.`,
+    ]
+    if (plan.maxBitrateKbps < ideal * 0.95) {
+      parts.push('The budget is holding the quality down.')
+    }
+    if (this.effectiveBudget < this.settings.budgetKbps) {
+      parts.push(`Beam lowered the budget to ${fmtKbps(this.effectiveBudget)} after packet loss.`)
+    }
+    this.uploadLine.textContent = parts.join(' ')
+    this.uploadLine.classList.toggle('warn', total > this.settings.budgetKbps * 0.95)
   }
 
   private renderPreviewBadges(): void {
-    const s = this.capture?.video.getSettings()
+    const { width, height } = this.sourceSize()
     const first = [...this.peers.values()][0]
+    const preset = presetById(this.settings.presetId)
     const items: { text: string; tone?: 'good' | 'warn' | 'bad' }[] = [
-      { text: `${s?.width ?? 0}x${s?.height ?? 0} source` },
-      { text: `${Math.round(s?.frameRate ?? 0)} fps capture` },
-      { text: this.settings.mode === 'text' ? 'Text mode' : 'Video mode' },
+      { text: `${width}x${height}` },
+      { text: `${this.settings.fps} fps` },
+      { text: preset ? preset.name : 'Custom' },
     ]
     if (first?.codec) items.push({ text: first.codec })
     this.surface?.setBadges(items)
@@ -823,7 +1034,7 @@ export class HostView {
       next = await captureScreen({
         maxHeight: this.settings.maxHeight,
         fps: this.settings.fps,
-        wantSystemAudio: true,
+        wantSystemAudio: this.settings.shareSystemAudio,
       })
     } catch (err) {
       if (err instanceof CaptureError && err.kind === 'denied') return
@@ -833,10 +1044,7 @@ export class HostView {
 
     const old = this.capture
     this.capture = next
-    next.video.addEventListener('ended', () => {
-      toast('You stopped the screen share, so the stream ended.', 'warn')
-      this.stop()
-    })
+    this.watchCaptureEnd(next.video)
 
     this.mixer?.attachSystem(next.systemAudio ? new MediaStream([next.systemAudio]) : null)
     this.outStream = new MediaStream([next.video, this.mixer!.track])
@@ -852,24 +1060,5 @@ export class HostView {
       ? 'The audio of the shared screen is going out.'
       : 'No screen audio arrived from this source. Your microphone still works.'
     void this.tickStats()
-  }
-
-  private async applySourceCap(): Promise<void> {
-    const track = this.capture?.video
-    if (!track) return
-    try {
-      if (this.settings.maxHeight === 0) {
-        await track.applyConstraints({ frameRate: { ideal: this.settings.fps, max: 60 } })
-      } else {
-        await track.applyConstraints({
-          height: { max: this.settings.maxHeight },
-          width: { max: Math.round((this.settings.maxHeight * 16) / 9) },
-          frameRate: { ideal: this.settings.fps, max: 60 },
-        })
-      }
-      void this.tickStats()
-    } catch {
-      toast('This browser refused the resolution cap for the current source.', 'warn')
-    }
   }
 }

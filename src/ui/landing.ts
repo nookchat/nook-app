@@ -1,5 +1,8 @@
 import { checkSupport, hostBlocker, supportRows } from '../diagnostics'
-import { h } from './dom'
+import { PRESETS } from '../rtc/quality'
+import { loadSettings } from '../settings'
+import { fmtBytes, fmtDuration, h } from './dom'
+import type { SessionSummary } from './host-view'
 
 export function topbar(right?: HTMLElement): HTMLElement {
   return h('div', { class: 'topbar' }, [
@@ -9,9 +12,11 @@ export function topbar(right?: HTMLElement): HTMLElement {
   ])
 }
 
-export function landing(onStart: () => void): HTMLElement {
+export function landing(onStart: () => void, summary: SessionSummary | null = null): HTMLElement {
   const support = checkSupport()
   const blocker = hostBlocker(support)
+  const settings = loadSettings()
+  const current = PRESETS.find((p) => p.id === settings.presetId)
 
   const startButton = h('button', {
     class: 'primary big',
@@ -20,28 +25,21 @@ export function landing(onStart: () => void): HTMLElement {
     on: { click: onStart },
   })
 
-  const rows = h(
-    'div',
-    { class: 'stack tight', style: { marginTop: '4px' } },
-    supportRows(support).map((r) =>
-      h('div', { class: 'row spread' }, [
-        h('span', { class: 'small', text: r.label }),
-        h('span', { class: `pill ${r.ok ? 'good' : 'warn'}`, text: r.note }),
-      ]),
-    ),
-  )
-
   return h('main', {}, [
     topbar(),
     h('div', { class: 'center-page' }, [
       h('div', { class: 'sheet stack' }, [
+        summary ? summaryCard(summary) : null,
+
         h('div', { class: 'stack tight' }, [
-          h('h1', { text: 'Share your screen, peer to peer', style: { margin: '0', fontSize: '28px', letterSpacing: '-0.02em' } }),
+          h('h1', {
+            text: 'Share your screen, peer to peer',
+            style: { margin: '0', fontSize: '28px', letterSpacing: '-0.02em' },
+          }),
           h('p', {
             class: 'dim',
             style: { margin: '0' },
-            text:
-              'Start a stream, then send the link to anybody. The picture and the sound go straight from your computer to theirs. No media server sees them, and nothing is recorded.',
+            text: 'Start a stream, then send the link to anybody. The picture and the sound go straight from your computer to theirs. No media server sees them, and nothing is recorded.',
           }),
         ]),
 
@@ -51,15 +49,52 @@ export function landing(onStart: () => void): HTMLElement {
             ])
           : null,
 
-        h('div', { class: 'row' }, [startButton]),
-
-        h('div', { class: 'card stack tight' }, [
-          h('strong', { class: 'small', text: 'This browser' }),
-          rows,
+        h('div', { class: 'stack tight' }, [
+          h('div', { class: 'row' }, [startButton]),
+          current
+            ? h('div', {
+                class: 'tiny faint',
+                text: `Starts on ${current.name}: ${current.maxHeight === 0 ? 'source size' : `${current.maxHeight}p`} at ${current.fps} fps. You can change it while you stream.`,
+              })
+            : null,
         ]),
 
         h('div', { class: 'card stack tight' }, [
-          h('strong', { class: 'small', text: 'How it works' }),
+          h('strong', { class: 'small', text: 'Which setting for which job' }),
+          h(
+            'div',
+            { class: 'stack tight' },
+            PRESETS.map((p) =>
+              h('div', { class: 'preset-hint' }, [
+                h('div', { class: 'row spread' }, [
+                  h('span', { class: 'small', style: { fontWeight: '600' }, text: p.name }),
+                  h('span', {
+                    class: 'tiny mono faint',
+                    text: `${p.maxHeight === 0 ? 'source' : `${p.maxHeight}p`} · ${p.fps} fps`,
+                  }),
+                ]),
+                h('div', { class: 'tiny faint', text: p.useWhen }),
+              ]),
+            ),
+          ),
+        ]),
+
+        h('div', { class: 'card stack tight' }, [
+          h('strong', { class: 'small', text: 'This browser' }),
+          h(
+            'div',
+            { class: 'stack tight', style: { marginTop: '4px' } },
+            supportRows(support).map((r) =>
+              h('div', { class: 'row spread' }, [
+                h('span', { class: 'small', text: r.label }),
+                h('span', { class: `pill ${r.ok ? 'good' : 'warn'}`, text: r.note }),
+              ]),
+            ),
+          ),
+        ]),
+
+        h('details', { class: 'card adv' }, [
+          h('summary', { text: 'How it works' }),
           h('ul', { class: 'support-list' }, [
             h('li', {
               text: 'Beam uses free public relays for the first handshake only. Every message on them is encrypted with the key in your link.',
@@ -77,5 +112,26 @@ export function landing(onStart: () => void): HTMLElement {
         ]),
       ]),
     ]),
+  ])
+}
+
+function summaryCard(s: SessionSummary): HTMLElement {
+  return h('div', { class: 'card summary-card stack tight' }, [
+    h('div', { class: 'row spread' }, [
+      h('strong', { class: 'small', text: 'Your last stream' }),
+      h('span', { class: 'pill', text: 'ended' }),
+    ]),
+    h('div', { class: 'row wrap', style: { gap: '8px' } }, [
+      h('span', { class: 'pill', text: fmtDuration(s.seconds * 1000) }),
+      h('span', {
+        class: 'pill',
+        text: `${s.peakViewers} viewer${s.peakViewers === 1 ? '' : 's'} at the peak`,
+      }),
+      h('span', { class: 'pill', text: `${fmtBytes(s.bytesSent)} sent` }),
+    ]),
+    h('div', {
+      class: 'tiny faint',
+      text: 'Nothing was stored. Beam kept no copy of the picture or the sound.',
+    }),
   ])
 }

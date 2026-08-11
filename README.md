@@ -31,6 +31,7 @@ as secure while you develop.
 ```sh
 npm run test:e2e       # two real Chrome pages, real relays, real media
 npm run test:mesh 10   # one host, ten viewers, prints the per viewer plan
+npm run test:relays    # which public relays really carry a handshake
 npm run test:repro skew    # viewer clock five minutes ahead
 npm run test:repro delay   # viewer joins 100 s later, host tab hidden
 npm run test:repro reload  # the host is gone, so the viewer must be told
@@ -87,11 +88,21 @@ Nostr subscription carries no `since` filter for the same reason.
 
 Two protocols on three ports, so one blocked port does not kill a room:
 
-| Transport | Endpoint                            | Port |
-| --------- | ----------------------------------- | ---- |
-| MQTT      | `broker.emqx.io`                    | 8084 |
-| MQTT      | `broker.hivemq.com`                 | 8884 |
-| Nostr     | `relay.damus.io`, `nos.lol`, `relay.nostr.band` | 443 |
+| Transport | Endpoint                                        | Port |
+| --------- | ----------------------------------------------- | ---- |
+| MQTT      | `broker.emqx.io`                                | 8084 |
+| MQTT      | `broker.hivemq.com`                             | 8884 |
+| Nostr     | `nos.lol`, `relay.snort.social`, `nostr.mom`    | 443  |
+
+A public relay can go bad without notice, and answering on port 443 proves
+nothing: it can refuse the event kind, demand an account, or accept an event and
+deliver it to nobody. `npm run test:relays` publishes a real event and waits to
+receive it back on a second connection, which is exactly what a host and a
+viewer do. Run it before changing the list, and keep at least three.
+
+A transport never gives up. If a relay dies mid session it keeps retrying, at
+first quickly and then once a minute, because a host and a viewer that share no
+relay would have a room that looks connected and carries nothing.
 
 Beam publishes to all of them and de-duplicates what comes back. One working
 relay runs the room. The MQTT client is written by hand in `src/signal/mqtt.ts`,
@@ -104,20 +115,40 @@ else changes.
 
 ## Quality
 
-The host picks one thing, **Text** or **Video**, and one upload budget. Beam
-turns that into concrete sender settings for every viewer.
+The host picks a preset. Beam turns it into concrete sender settings for every
+viewer. Each preset names the job it is for, so nobody has to guess.
 
-| Control                  | Text mode           | Video mode          |
-| ------------------------ | ------------------- | ------------------- |
-| `contentHint`            | `detail`            | `motion`            |
-| `degradationPreference`  | `maintain-resolution` | `maintain-framerate` |
-| Frame rate               | 15                  | 30                  |
-| Codec order              | VP9, AV1, H264, VP8 | VP9, H264, AV1, VP8 |
+| Preset                  | Size   | Rate   | Use it for                                            |
+| ----------------------- | ------ | ------ | ----------------------------------------------------- |
+| **Code and documents**  | 1080p  | 15 fps | An editor, a terminal, a spreadsheet, a PDF           |
+| Slides and walkthroughs | 1080p  | 24 fps | A presentation, a design review, a tour of an app     |
+| Video and motion        | 1080p  | 30 fps | A film, a game, an animation, a call                  |
+| Maximum detail          | source | 30 fps | Photo work, drawings, a 4K display                    |
+| Slow connection         | 720p   | 10 fps | Hotel wifi, a phone hotspot, many viewers             |
 
-Ideal bitrate by source size, before the budget divides it:
+**Code and documents is the default**, at about 1.2 Mb/s for a 1080p screen. A
+screen share is read, not admired. A smaller, more compressed picture starts
+faster, stays sharp on text, and leaves room for more viewers. Everything is
+adjustable while the stream runs, under Fine tuning: resolution from source size
+down to 540p, frame rate from 5 to 60, the upload budget, the viewer limit, and
+the codec. Changing any of them switches the preset to Custom.
+
+The choices are stored in this browser, so the next stream starts the same way.
+
+Under the presets:
+
+| Control                 | Text presets          | Video preset         |
+| ----------------------- | --------------------- | -------------------- |
+| `contentHint`           | `detail`              | `motion`             |
+| `degradationPreference` | `maintain-resolution` | `maintain-framerate` |
+| Codec order             | VP9, AV1, H264, VP8   | VP9, H264, AV1, VP8  |
+
+Ideal bitrate by source size at 30 fps, before the preset scale, the frame rate,
+and the budget all take their cut:
 
 | Resolution | Text     | Video     |
 | ---------- | -------- | --------- |
+| 540p       | 0.7 Mb/s | 1.1 Mb/s  |
 | 720p       | 1.2 Mb/s | 2.0 Mb/s  |
 | 1080p      | 2.5 Mb/s | 4.0 Mb/s  |
 | 1440p      | 4.0 Mb/s | 6.0 Mb/s  |
@@ -167,6 +198,7 @@ Anyone holding the link can watch. Two host controls make that safe:
 src/
   main.ts             route to host or viewer from the URL fragment
   room.ts             secret, roomId, roomKey, link build and parse
+  settings.ts         host preferences, kept in localStorage
   diagnostics.ts      what this browser can do, in plain words
   signal/
     transport.ts      the transport interface and the retry backoff
@@ -178,7 +210,7 @@ src/
     config.ts         ICE servers and the empty TURN slot
     host-peer.ts      one connection per viewer, host always offers
     viewer-peer.ts    the viewer only ever answers
-    quality.ts        bitrate ladder, budget, scale, hints, codec preference
+    quality.ts        presets, bitrate ladder, budget, hints, codec preference
     stats.ts          getStats reduced to numbers a person can act on
   media/
     capture.ts        getDisplayMedia and the microphone, with clear errors
@@ -192,8 +224,11 @@ src/
 test/
   e2e.mjs             host and viewer, end to end, 22 checks
   mesh.mjs            N viewers against one host
+  relay-probe.mjs     which public relays really carry a handshake
   repro.mjs           named failure cases: skew, delay, reload
   debug.mjs           prints what both pages see, for a stuck room
+  relaycheck.mjs      the relays each side actually has open
+  shots.mjs           screenshots of both themes
 ```
 
 ## When a viewer is stuck
