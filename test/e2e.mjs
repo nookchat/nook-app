@@ -138,6 +138,40 @@ try {
   )
   check('a signal relay came up', relayOpen > 0, `${relayOpen} good pills`)
 
+  // The QR must carry the exact link. Chrome's own decoder is the judge.
+  await host.getByRole('button', { name: 'Show a QR code' }).click()
+  await host.locator('.qr-frame svg').waitFor({ timeout: 5000 })
+  const scanned = await host.evaluate(async () => {
+    const svg = document.querySelector('.qr-frame svg')
+    if (!svg) return { error: 'no QR was drawn' }
+    const blob = new Blob([new XMLSerializer().serializeToString(svg)], { type: 'image/svg+xml' })
+    const url = URL.createObjectURL(blob)
+    try {
+      const img = new Image()
+      img.width = 520
+      img.height = 520
+      await new Promise((ok, fail) => {
+        img.onload = ok
+        img.onerror = () => fail(new Error('the QR image would not load'))
+        img.src = url
+      })
+      const canvas = document.createElement('canvas')
+      canvas.width = canvas.height = 520
+      const ctx = canvas.getContext('2d')
+      ctx.fillStyle = '#fff'
+      ctx.fillRect(0, 0, 520, 520)
+      ctx.drawImage(img, 0, 0, 520, 520)
+      const found = await new window.BarcodeDetector({ formats: ['qr_code'] }).detect(canvas)
+      return { value: found[0]?.rawValue ?? null }
+    } catch (err) {
+      return { error: String(err) }
+    } finally {
+      URL.revokeObjectURL(url)
+    }
+  })
+  check('the QR code decodes back to the link', scanned.value === link, scanned.error ?? scanned.value ?? 'nothing')
+  await host.keyboard.press('Escape')
+
   // ---- viewer ----
   const viewer = await context.newPage()
   watch(viewer, 'viewer')
@@ -216,8 +250,22 @@ try {
     'a viewer whose clock is five minutes ahead to receive video',
   )
   check('a five minute clock difference still connects', skewOk > 0, `${skewOk} px wide`)
+
+  // One viewer leaving must not end the stream for anybody else.
   await skewed.close()
-  await host.waitForTimeout(1500)
+  await host.waitForTimeout(2500)
+  const survived = await viewer.evaluate(() => {
+    const v = document.querySelector('video')
+    return {
+      playing: !!v && v.videoWidth > 0 && !v.paused,
+      overlay: document.querySelector('.surface-overlay')?.textContent ?? '',
+    }
+  })
+  check(
+    'a second viewer leaving does not end the stream',
+    survived.playing && !survived.overlay.includes('ended'),
+    survived.overlay.slice(0, 60),
+  )
 
   // The picture must fill the surface at every window size, and never stretch.
   const geometryAt = async (page, width, height) => {

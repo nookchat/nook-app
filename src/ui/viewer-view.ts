@@ -177,6 +177,8 @@ export class ViewerView {
         return
       }
       case 'deny': {
+        // Only the host may turn us away. Anything else on this room is noise.
+        if (this.hostId && env.from !== this.hostId) return
         const reason =
           (env.data as { reason?: string } | undefined)?.reason ?? 'The host did not let you in.'
         this.phase = 'denied'
@@ -191,6 +193,9 @@ export class ViewerView {
         return
       }
       case 'bye': {
+        // Every viewer says goodbye to the whole room when it leaves. Only the
+        // goodbye from the host means the stream is over.
+        if (env.from !== this.hostId) return
         if (this.phase === 'live' || this.phase === 'connecting') {
           this.phase = 'ended'
           this.peer?.close()

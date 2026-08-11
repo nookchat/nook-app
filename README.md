@@ -31,6 +31,7 @@ as secure while you develop.
 ```sh
 npm run test:e2e       # two real Chrome pages, real relays, real media
 npm run test:mesh 10   # one host, ten viewers, prints the per viewer plan
+npm run test:qr        # every QR version, decoded back by Chrome
 npm run test:relays    # which public relays really carry a handshake
 npm run test:repro skew    # viewer clock five minutes ahead
 npm run test:repro delay   # viewer joins 100 s later, host tab hidden
@@ -183,6 +184,34 @@ be a viewer relay tree, where early viewers forward to later ones. Measure with
   audio of a shared screen. The microphone still works everywhere.
 - **No recording, no accounts, no history.** Nothing is stored anywhere.
 
+## Sharing the link
+
+Copy it, or press the QR button and let somebody point a phone camera at the
+code. The QR encoder is in `src/ui/qr.ts`: byte mode, error correction level M,
+versions 1 to 10, which carries 213 bytes and therefore any Beam link.
+
+Correctness there is not a matter of taste, so `npm run test:qr` renders every
+version and reads it back with the QR decoder built into Chrome, including both
+sides of every version boundary. The end to end run does the same for the real
+link on screen.
+
+## Look
+
+The interface follows the Zorin OS desktop: an azure accent that runs as a
+gradient across anything primary, frosted panels that let the layer beneath show
+through, generous corner radii, and soft depth in place of hard borders. The
+video controls sit in a floating rounded bar, the way a Zorin panel sits over
+the desktop.
+
+Colour lives in tokens only, so the light and the dark theme never drift apart.
+Icons are stroked outlines on a 24 unit grid in `src/ui/icons.ts`, drawn in the
+current text colour, so one icon works on a button, on a dark video overlay, and
+in either theme.
+
+The opening screen has one job: start sharing. There is no tour and no feature
+list. The preset picker sits inline so the first stream starts correctly without
+a settings trip, and the browser check hides behind a disclosure.
+
 ## Access control
 
 Anyone holding the link can watch. Two host controls make that safe:
@@ -216,13 +245,16 @@ src/
     capture.ts        getDisplayMedia and the microphone, with clear errors
     mixer.ts          WebAudio mix of screen audio and microphone into one track
   ui/
-    landing.ts        the first screen and the browser support table
+    landing.ts        one screen, one action, with the preset picker
+    icons.ts          the stroked icon set and the brand mark
+    qr.ts             a QR encoder, byte mode, level M, versions 1 to 10
     host-view.ts      link, viewer list, quality, audio, session
     viewer-view.ts    join, connect, watch, and every failure message
     video-surface.ts  fit, fill, and one to one with zoom and pan
     dom.ts toast.ts   small helpers, no framework
 test/
-  e2e.mjs             host and viewer, end to end, 22 checks
+  e2e.mjs             host and viewer, end to end, 24 checks
+  qr-check.mjs        every QR version, decoded back by Chrome
   mesh.mjs            N viewers against one host
   relay-probe.mjs     which public relays really carry a handshake
   repro.mjs           named failure cases: skew, delay, reload

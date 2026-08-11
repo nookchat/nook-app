@@ -28,6 +28,8 @@ import {
 import { gradeOf } from '../rtc/stats'
 import { loadSettings, saveSettings, type HostSettings } from '../settings'
 import { clear, copyText, fmtDuration, fmtKbps, h, labelled } from './dom'
+import { icon } from './icons'
+import { qrSvg } from './qr'
 import { toast } from './toast'
 import { VideoSurface } from './video-surface'
 
@@ -428,54 +430,103 @@ export class HostView {
   }
 
   private linkCard(): HTMLElement {
-    const copyButton = h('button', {
-      class: 'primary',
-      text: 'Copy link',
-      on: {
-        click: async () => {
-          const ok = await copyText(this.linkInput.value)
-          copyButton.textContent = ok ? 'Copied' : 'Copy failed'
-          copyButton.classList.toggle('on', ok)
-          window.setTimeout(() => {
-            copyButton.textContent = 'Copy link'
-            copyButton.classList.remove('on')
-          }, 1800)
-          if (ok) toast('Link copied. Send the whole link, or the key will not fit.', 'info', 5000)
-          else this.linkInput.select()
-        },
-      },
+    const copyLabel = h('span', { text: 'Copy link' })
+    const copyButton = h('button', { class: 'primary grow' }, [icon('copy'), copyLabel])
+    copyButton.addEventListener('click', async () => {
+      const ok = await copyText(this.linkInput.value)
+      copyLabel.textContent = ok ? 'Copied' : 'Copy failed'
+      clear(copyButton)
+      copyButton.append(icon(ok ? 'check' : 'copy'), copyLabel)
+      window.setTimeout(() => {
+        copyLabel.textContent = 'Copy link'
+        clear(copyButton)
+        copyButton.append(icon('copy'), copyLabel)
+      }, 1800)
+      if (!ok) this.linkInput.select()
     })
+
+    const qrButton = h('button', {
+      class: 'icon-only',
+      title: 'Show a QR code, so a phone can join by camera',
+      ariaLabel: 'Show a QR code',
+      on: { click: () => this.showQr() },
+    })
+    qrButton.append(icon('qr'))
 
     return h('div', { class: 'card stack tight' }, [
       h('div', { class: 'row spread' }, [
-        h('strong', { text: 'Share this link' }),
+        h('span', { class: 'eyebrow', text: 'Share this link' }),
         h('span', { class: 'pill good' }, [h('i', { class: 'dot live' }), 'live']),
       ]),
-      h('div', { class: 'linkbox' }, [this.linkInput, copyButton]),
+      this.linkInput,
+      h('div', { class: 'row' }, [copyButton, qrButton]),
       h('div', {
         class: 'tiny faint',
         text: 'The key after the # never reaches the webserver. Anyone who holds the whole link can watch.',
       }),
-      h('div', { class: 'row', style: { marginTop: '4px' } }, [
-        h('button', {
-          class: 'ghost small',
-          text: 'New link',
-          title: 'Rotate the key. Every old link stops working.',
-          on: { click: () => void this.rotateLink() },
-        }),
-        h('button', {
-          class: 'ghost small',
-          text: 'Change screen',
-          title: 'Share a different window, tab, or display.',
-          on: { click: () => void this.changeScreen() },
-        }),
+      h('div', { class: 'row', style: { marginTop: '2px' } }, [
+        h('button', { class: 'ghost small', title: 'Rotate the key. Every old link stops working.', on: { click: () => void this.rotateLink() } }, [
+          icon('refresh', 15),
+          'New link',
+        ]),
+        h('button', { class: 'ghost small', title: 'Share a different window, tab, or display.', on: { click: () => void this.changeScreen() } }, [
+          icon('monitor', 15),
+          'Change screen',
+        ]),
       ]),
     ])
   }
 
+  /** A QR code big enough to scan from across a desk. */
+  private showQr(): void {
+    const link = this.linkInput.value
+    const close = (): void => scrim.remove()
+
+    const frame = h('div', { class: 'qr-frame' })
+    try {
+      frame.append(qrSvg(link, { pixels: 260 }))
+    } catch {
+      frame.append(h('div', { class: 'small', text: 'This link is too long for a QR code.' }))
+    }
+
+    const modal = h('div', { class: 'modal' }, [
+      h('div', { class: 'row spread' }, [
+        h('span', { class: 'eyebrow', text: 'Scan to watch' }),
+        h('button', { class: 'ghost icon-only', ariaLabel: 'Close', on: { click: close } }, [
+          icon('close'),
+        ]),
+      ]),
+      frame,
+      h('div', {
+        class: 'tiny faint',
+        style: { textAlign: 'center' },
+        text: 'Point a phone camera at this. The phone opens the stream straight away.',
+      }),
+    ])
+
+    const scrim = h('div', {
+      class: 'scrim',
+      on: {
+        click: (ev) => {
+          if (ev.target === scrim) close()
+        },
+      },
+    })
+    scrim.append(modal)
+    document.body.append(scrim)
+
+    const onKey = (ev: KeyboardEvent): void => {
+      if (ev.key === 'Escape') {
+        close()
+        window.removeEventListener('keydown', onKey)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+  }
+
   private viewersCard(): HTMLElement {
     return h('div', { class: 'card stack tight' }, [
-      h('div', { class: 'row spread' }, [h('strong', { text: 'Viewers' }), this.statusPills]),
+      h('div', { class: 'row spread' }, [h('span', { class: 'eyebrow', text: 'Viewers' }), this.statusPills]),
       this.viewerList,
     ])
   }
@@ -557,7 +608,7 @@ export class HostView {
 
     return h('div', { class: 'card stack tight' }, [
       h('div', { class: 'row spread' }, [
-        h('strong', { text: 'Quality' }),
+        h('span', { class: 'eyebrow', text: 'Quality' }),
         h('button', {
           class: 'ghost tiny-btn',
           text: 'Reset',
@@ -793,7 +844,7 @@ export class HostView {
     })
 
     return h('div', { class: 'card stack tight' }, [
-      h('strong', { text: 'Audio' }),
+      h('span', { class: 'eyebrow', text: 'Audio' }),
       h('div', { class: 'row' }, [
         h('span', { class: 'tiny', text: 'Screen', style: { width: '54px' } }),
         h('div', { class: 'meter' }, [this.sysMeter]),
@@ -820,11 +871,10 @@ export class HostView {
         h('span', { class: 'tiny faint', text: 'Relays' }),
         this.relayLine,
       ]),
-      h('button', {
-        class: 'danger',
-        text: 'Stop the stream',
-        on: { click: () => this.stop() },
-      }),
+      h('button', { class: 'danger', on: { click: () => this.stop() } }, [
+        icon('stop', 16),
+        'Stop the stream',
+      ]),
     ])
   }
 

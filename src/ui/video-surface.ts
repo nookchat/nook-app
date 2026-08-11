@@ -13,6 +13,7 @@
  */
 
 import { clear, h } from './dom'
+import { icon, type IconName } from './icons'
 
 export type FitMode = 'fit' | 'fill' | 'actual'
 
@@ -21,6 +22,22 @@ export interface SurfaceOptions {
   muted: boolean
   showVolume: boolean
   fullBleed?: boolean
+}
+
+function iconButton(name: IconName, title: string, onClick: () => void): HTMLButtonElement {
+  const button = h('button', {
+    class: 'icon-only',
+    title,
+    ariaLabel: title,
+    on: { click: onClick },
+  })
+  button.append(icon(name))
+  return button
+}
+
+function setIcon(button: HTMLButtonElement, name: IconName): void {
+  clear(button)
+  button.append(icon(name))
 }
 
 const MIN_SCALE = 0.05
@@ -38,6 +55,7 @@ export class VideoSurface {
   private readonly overlayHost: HTMLDivElement
   private readonly zoomLabel: HTMLSpanElement
   private readonly modeButton: HTMLButtonElement
+  private readonly fullscreenButton: HTMLButtonElement
   private readonly muteButton: HTMLButtonElement | null = null
   private readonly volumeInput: HTMLInputElement | null = null
   private readonly zoomGroup: HTMLDivElement
@@ -68,32 +86,15 @@ export class VideoSurface {
     this.badges = h('div', { class: 'surface-badges' })
     this.overlayHost = h('div', { class: 'hidden' })
 
-    this.modeButton = h('button', {
-      class: 'icon',
-      title: 'Change how the picture fits (F)',
-      ariaLabel: 'Change fit mode',
-      text: '⛶',
-      on: { click: () => this.cycleMode() },
-    })
+    this.modeButton = iconButton('fit', 'Change how the picture fits (Z)', () => this.cycleMode())
 
-    this.zoomLabel = h('span', { class: 'tiny', text: '100%' })
-    this.zoomGroup = h('div', { class: 'row hidden', style: { gap: '4px' } }, [
-      h('button', {
-        class: 'icon',
-        text: '−',
-        title: 'Zoom out',
-        ariaLabel: 'Zoom out',
-        on: { click: () => this.zoomBy(1 / 1.25) },
-      }),
+    this.zoomLabel = h('span', { class: 'zoom-label', text: '100%' })
+    this.zoomGroup = h('div', { class: 'row hidden', style: { gap: '2px' } }, [
+      iconButton('zoom-out', 'Zoom out', () => this.zoomBy(1 / 1.25)),
       this.zoomLabel,
+      iconButton('zoom-in', 'Zoom in', () => this.zoomBy(1.25)),
       h('button', {
-        class: 'icon',
-        text: '+',
-        title: 'Zoom in',
-        ariaLabel: 'Zoom in',
-        on: { click: () => this.zoomBy(1.25) },
-      }),
-      h('button', {
+        class: 'small',
         text: 'Reset',
         title: 'Reset the zoom (0)',
         on: { click: () => this.resetView() },
@@ -103,13 +104,7 @@ export class VideoSurface {
     const controls: HTMLElement[] = []
 
     if (options.showVolume) {
-      this.muteButton = h('button', {
-        class: 'icon',
-        text: '🔊',
-        title: 'Mute (M)',
-        ariaLabel: 'Mute',
-        on: { click: () => this.toggleMute() },
-      })
+      this.muteButton = iconButton('volume', 'Mute (M)', () => this.toggleMute())
       this.volumeInput = h('input', {
         type: 'range',
         min: '0',
@@ -130,31 +125,16 @@ export class VideoSurface {
       controls.push(h('div', { class: 'vol' }, [this.muteButton, this.volumeInput]))
     }
 
-    controls.push(h('div', { class: 'grow' }))
+    if (options.showVolume) controls.push(h('div', { class: 'divider' }))
     controls.push(this.zoomGroup)
     controls.push(this.modeButton)
 
     if ('pictureInPictureEnabled' in document && document.pictureInPictureEnabled) {
-      controls.push(
-        h('button', {
-          class: 'icon',
-          text: '⧉',
-          title: 'Picture in picture',
-          ariaLabel: 'Picture in picture',
-          on: { click: () => void this.togglePip() },
-        }),
-      )
+      controls.push(iconButton('pip', 'Picture in picture', () => void this.togglePip()))
     }
 
-    controls.push(
-      h('button', {
-        class: 'icon',
-        text: '⤢',
-        title: 'Fullscreen (F11 or F)',
-        ariaLabel: 'Fullscreen',
-        on: { click: () => void this.toggleFullscreen() },
-      }),
-    )
+    this.fullscreenButton = iconButton('expand', 'Fullscreen (F)', () => void this.toggleFullscreen())
+    controls.push(this.fullscreenButton)
 
     this.bar = h('div', { class: 'surface-bar' }, controls)
 
@@ -362,7 +342,7 @@ export class VideoSurface {
   private syncVolumeUi(): void {
     if (!this.muteButton || !this.volumeInput) return
     const muted = this.video.muted || this.video.volume === 0
-    this.muteButton.textContent = muted ? '🔇' : this.video.volume < 0.5 ? '🔉' : '🔊'
+    setIcon(this.muteButton, muted ? 'mute' : this.video.volume < 0.5 ? 'volume-low' : 'volume')
     this.muteButton.title = muted ? 'Unmute (M)' : 'Mute (M)'
     if (document.activeElement !== this.volumeInput) {
       this.volumeInput.value = String(Math.round((muted ? 0 : this.video.volume) * 100))
@@ -376,6 +356,9 @@ export class VideoSurface {
     } catch {
       /* the browser refused, nothing else to do */
     }
+    const full = document.fullscreenElement === this.root
+    setIcon(this.fullscreenButton, full ? 'collapse' : 'expand')
+    this.fullscreenButton.title = full ? 'Leave fullscreen (F)' : 'Fullscreen (F)'
   }
 
   private async togglePip(): Promise<void> {

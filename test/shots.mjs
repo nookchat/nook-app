@@ -24,7 +24,12 @@ for (const scheme of ['light', 'dark']) {
   await p.locator('input[aria-label="The link to share"]').waitFor({ timeout: 15000 })
   await p.locator('summary', { hasText: 'Fine tuning' }).click()
   await p.waitForTimeout(1200)
+  await p.mouse.move(500, 400)
   await p.screenshot({ path: `${OUT}host-tuning-${scheme}.png`, fullPage: true })
+  await p.getByRole('button', { name: 'Show a QR code' }).click()
+  await p.waitForTimeout(500)
+  await p.screenshot({ path: `${OUT}qr-${scheme}.png` })
+  await p.keyboard.press('Escape')
   await ctx.close()
 }
 await browser.close()
