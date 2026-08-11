@@ -32,7 +32,7 @@ import { loadSettings, saveSettings, type HostSettings } from '../settings'
 import { clear, copyText, fmtDuration, fmtKbps, h, labelled } from './dom'
 import { brandMark, icon } from './icons'
 import { qrSvg } from './qr'
-import { aboutCard, summaryCard, type SessionSummary } from './shell'
+import { aboutCard, summaryCard, type SessionSummary, type WindowChrome } from './shell'
 import { toast } from './toast'
 import { VideoSurface } from './video-surface'
 
@@ -45,6 +45,7 @@ const DEAD_PEER_MS = 20_000
 
 export class HostView {
   private readonly root: HTMLElement
+  private readonly chrome: WindowChrome | null
   private readonly selfId = newPeerId()
   private settings: HostSettings = loadSettings()
 
@@ -95,8 +96,23 @@ export class HostView {
   private budgetInput!: HTMLInputElement
   private autoButton!: HTMLButtonElement
 
-  constructor(root: HTMLElement) {
+  private grid!: HTMLDivElement
+  private wide = false
+
+  constructor(root: HTMLElement, chrome: WindowChrome | null = null) {
     this.root = root
+    this.chrome = chrome
+    chrome?.setActions({
+      minimise: () => this.toggleWide(),
+      maximise: () => this.surface?.requestFullscreen(),
+      close: () => (this.phase === 'live' ? this.stop() : undefined),
+    })
+  }
+
+  /** Give the whole window to the picture, or hand the controls back. */
+  private toggleWide(): void {
+    this.wide = !this.wide
+    this.grid?.classList.toggle('wide', this.wide)
   }
 
   /** The budget in force: measured while automatic, otherwise the slider. */
@@ -190,7 +206,7 @@ export class HostView {
   private teardownSession(): void {
     for (const t of this.timers) window.clearInterval(t)
     this.timers = []
-    document.title = 'Beam · peer to peer screen share'
+    document.title = 'Beam'
     void this.bus?.send({ type: 'bye' }).catch(() => undefined)
     for (const peer of this.peers.values()) peer.close()
     this.peers.clear()
@@ -435,12 +451,11 @@ export class HostView {
     this.surface = new VideoSurface({ muted: true, showVolume: false })
     this.surface.setMode('fit')
     this.sidePanel = h('div', { class: 'host-side' })
-    this.root.append(
-      h('div', { class: 'host-grid' }, [
-        h('div', { class: 'stack', style: { minHeight: '0' } }, [this.surface.root]),
-        this.sidePanel,
-      ]),
-    )
+    this.grid = h('div', { class: `host-grid${this.wide ? ' wide' : ''}` }, [
+      h('div', { class: 'stack', style: { minHeight: '0' } }, [this.surface.root]),
+      this.sidePanel,
+    ])
+    this.root.append(this.grid)
   }
 
   /** Waiting for a source. The quality is set here, before anything goes out. */
@@ -486,6 +501,8 @@ export class HostView {
     this.renderBudget()
     this.renderCodecNote()
     this.renderPlan(this.currentPlan(1), 0)
+    this.chrome?.setTitle('Beam')
+    this.renderStatus(0)
   }
 
   /** Sharing. The link, the viewers, and everything that only exists live. */
@@ -1037,7 +1054,13 @@ export class HostView {
     clear(this.statusPills)
 
     const connected = [...this.peers.values()].filter((p) => p.state === 'connected').length
-    document.title = connected > 0 ? `● ${connected} watching · Beam` : 'Sharing · Beam'
+    document.title = connected > 0 ? `${connected} watching - Beam` : 'Sharing - Beam'
+    this.chrome?.setTitle(
+      connected > 0
+        ? `Beam - sharing your screen - ${connected} watching`
+        : 'Beam - sharing your screen',
+    )
+    this.renderStatus(connected)
 
     this.statusPills.append(
       h('span', {
@@ -1177,6 +1200,23 @@ export class HostView {
         ]),
       )
     }
+  }
+
+  /** The status bar: what is happening, then the relays, then the clock. */
+  private renderStatus(connected: number): void {
+    if (!this.chrome) return
+    if (this.phase !== 'live') {
+      this.chrome.setStatus(['Ready. Choose what to share.'])
+      return
+    }
+    const relays = this.bus?.healthList.filter((r) => r.status === 'open').length ?? 0
+    this.chrome.setStatus([
+      connected > 0
+        ? `Sharing to ${connected} viewer${connected === 1 ? '' : 's'}`
+        : 'Sharing. Waiting for someone to join.',
+      `${relays} relay${relays === 1 ? '' : 's'}`,
+      this.elapsed,
+    ])
   }
 
   private renderPlan(plan: QualityPlan, viewerCount: number): void {

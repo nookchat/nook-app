@@ -298,16 +298,42 @@ link on screen.
 
 ## Look
 
-The interface follows the Zorin OS desktop: an azure accent that runs as a
-gradient across anything primary, frosted panels that let the layer beneath show
-through, generous corner radii, and soft depth in place of hard borders. The
-video controls sit in a floating rounded bar, the way a Zorin panel sits over
-the desktop.
+Beam is dressed as **Windows XP**, Luna blue. Not a page with a header on it: a
+window on a desktop, because that is what software looked like before everything
+became a website.
 
-Colour lives in tokens only, so the light and the dark theme never drift apart.
+| Piece            | How                                                                  |
+| ---------------- | -------------------------------------------------------------------- |
+| Title bar        | The Luna gradient, rounded top corners, bold white text with a shadow |
+| Caption buttons  | Blue minimise and maximise, red close, all three doing real work      |
+| Window body      | `#ece9d8`, the face colour of every XP dialog, inside a blue frame    |
+| Buttons          | Beveled, 3 px corners, and they glow amber under the pointer          |
+| Fields           | Sunken white with the `#7f9db9` inner line                            |
+| Group boxes      | One grey line with a white line etched under it                       |
+| Preset list      | A list box, selection in `#316ac5` with white text                    |
+| The plan readout | Tooltip yellow, `#ffffe1`, with a hairline black border               |
+| Level meters     | The segmented green progress bar, the most XP thing there is          |
+| Status bar       | Sunken panels along the bottom of the window                          |
+| Notifications    | Balloon tips in the bottom corner                                     |
+| Desktop          | Bliss, near enough: sky, two clouds, and a green hill in CSS          |
+| Type             | Tahoma, falling back to Verdana                                       |
+
+**All three caption buttons do something.** A decorative control that does
+nothing is worse than no control at all:
+
+| Button    | On the host                                    | On a viewer            |
+| --------- | ---------------------------------------------- | ---------------------- |
+| Minimise  | Hides the panel, gives the window to the picture | Cycles fit, fill, 1:1 |
+| Maximise  | Takes the picture fullscreen                   | Same                   |
+| Close     | Stops the stream, back to the picker           | Leaves, back to the picker |
+
+This commits to one look. Windows XP had no dark mode, so neither does Beam, and
+every colour is painted explicitly rather than inherited from the host. The old
+top bar is gone: the title bar carries the name and the live state, and the
+status bar carries what is happening, the relay count, and the clock.
+
 Icons are stroked outlines on a 24 unit grid in `src/ui/icons.ts`, drawn in the
-current text colour, so one icon works on a button, on a dark video overlay, and
-in either theme.
+current text colour so one icon works on a button and on a dark video overlay.
 
 The app has one screen with two states. Idle shows the empty stage with the
 picker prompt, and the quality panel beside it, so the preset is chosen before
@@ -350,7 +376,7 @@ src/
     capture.ts        getDisplayMedia and the microphone, with clear errors
     mixer.ts          WebAudio mix of screen audio and microphone into one track
   ui/
-    shell.ts          top bar, browser check, and the end of stream summary
+    shell.ts          the XP window: title bar, caption buttons, status bar
     icons.ts          the stroked icon set and the brand mark
     qr.ts             a QR encoder, byte mode, level M, versions 1 to 10
     host-view.ts      link, viewer list, quality, audio, session

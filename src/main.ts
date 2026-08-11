@@ -8,7 +8,7 @@ import './styles.css'
 import { clearLink, readLinkSecret } from './room'
 import { clear } from './ui/dom'
 import { HostView } from './ui/host-view'
-import { topbar } from './ui/shell'
+import { createWindow, type WindowChrome } from './ui/shell'
 import { toast } from './ui/toast'
 import { ViewerView } from './ui/viewer-view'
 import { checkSupport } from './diagnostics'
@@ -28,30 +28,30 @@ interface Screen {
 
 let active: Screen | null = null
 
+function freshWindow(title: string): WindowChrome {
+  active?.destroy()
+  active = null
+  clear(mount)
+  const chrome = createWindow(title)
+  mount.append(chrome.root)
+  return chrome
+}
+
 /**
  * The sharing page is the front door. There is no welcome screen, because the
  * only thing anybody opens Beam to do is share a screen.
  */
 function showHost(): void {
-  active?.destroy()
   clearLink()
-  clear(mount)
-  mount.append(topbar())
-  const shell = document.createElement('main')
-  mount.append(shell)
-  const view = new HostView(shell)
+  const chrome = freshWindow('Beam')
+  const view = new HostView(chrome.body, chrome)
   active = view
   view.mount()
 }
 
 function showViewer(secret: string): void {
-  active?.destroy()
-  clear(mount)
-  mount.append(topbar())
-  const shell = document.createElement('div')
-  shell.style.display = 'contents'
-  mount.append(shell)
-  const view = new ViewerView(shell, secret, showHost)
+  const chrome = freshWindow('Beam — watching')
+  const view = new ViewerView(chrome.body, secret, showHost, chrome)
   active = view
   void view.start()
 }

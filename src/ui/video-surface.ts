@@ -174,6 +174,11 @@ export class VideoSurface {
     await this.video.play().catch(() => undefined)
   }
 
+  /** The window's maximise button asks for this. */
+  requestFullscreen(): void {
+    void this.toggleFullscreen()
+  }
+
   /** Hide the floating bar and the badges while there is nothing to control. */
   setControlsVisible(visible: boolean): void {
     this.root.classList.toggle('no-controls', !visible)

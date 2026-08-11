@@ -1,84 +1,51 @@
 /*
- * Beam, styled after the Zorin OS desktop.
+ * Beam, dressed as Windows XP.
  *
- * The pieces that make that look: an azure accent that runs as a gradient on
- * anything primary, frosted panels that let the layer beneath show through,
- * generous corner radii, and soft depth instead of hard borders. Colour is
- * carried by tokens only, so the two themes never drift apart.
+ * The Luna blue theme, as faithfully as CSS allows: a gradient title bar with
+ * rounded top corners, the #ece9d8 face colour, beveled buttons, sunken white
+ * fields, etched group boxes, segmented green progress, and a status bar with
+ * sunken panels. Tahoma throughout, because that is the whole voice of it.
+ *
+ * This commits to one look. Windows XP had no dark mode, so neither does this,
+ * and every colour is painted explicitly rather than inherited from the host.
  */
 
 :root {
-  /* Zorin azure, light to deep, used as a pair for every gradient. */
-  --accent-2: #35b6ff;
-  --accent: #1477e6;
-  --accent-deep: #0b5ec2;
-  --accent-fg: #ffffff;
+  /* Luna blue */
+  --title-1: #0a58e8;
+  --title-2: #3f8cf3;
+  --title-3: #1c6ae8;
+  --title-4: #0a4bd0;
+  --frame: #0831d9;
+  --frame-dark: #003c74;
 
-  --bg: #eef1f6;
-  --bg-tint: #dce6f5;
-  --surface: #ffffff;
-  --surface-2: #f4f7fb;
-  --surface-3: #e9eef5;
-  --glass: rgb(255 255 255 / 72%);
-  --line: #dbe2ec;
-  --line-soft: #e8edf4;
+  /* The face colour of every window and dialog in XP */
+  --face: #ece9d8;
+  --face-light: #f5f4ea;
+  --face-dark: #d4d0c0;
+  --face-shadow: #aca899;
 
-  --fg: #101620;
-  --fg-dim: #4a5666;
-  --fg-faint: #78859a;
+  --field: #ffffff;
+  --field-border: #7f9db9;
 
-  --good: #17a673;
-  --warn: #d98a0b;
-  --bad: #e0483d;
+  --fg: #000000;
+  --fg-dim: #3a3a2f;
+  --fg-faint: #6b6b5c;
+  --fg-disabled: #a0a0a0;
 
-  --radius-lg: 16px;
-  --radius: 12px;
-  --radius-sm: 9px;
-  --pad: 16px;
+  --select: #316ac5;
+  --select-fg: #ffffff;
 
-  --shadow-sm: 0 1px 2px rgb(16 22 32 / 7%);
-  --shadow: 0 2px 6px rgb(16 22 32 / 7%), 0 12px 28px rgb(16 22 32 / 8%);
-  --shadow-lg: 0 4px 12px rgb(16 22 32 / 10%), 0 28px 60px rgb(16 22 32 / 16%);
-  --ring: 0 0 0 3px rgb(20 119 230 / 30%);
+  --good: #157e15;
+  --warn: #9a6400;
+  --bad: #b81a1a;
 
-  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", sans-serif;
-  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --progress: #2ac428;
+
+  --mono: "Lucida Console", Consolas, Monaco, monospace;
+  --sans: Tahoma, "Segoe UI", Verdana, Geneva, sans-serif;
 
   color-scheme: light;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --accent-2: #56c4ff;
-    --accent: #2f95f5;
-    --accent-deep: #1a6fd0;
-    --accent-fg: #04121f;
-
-    --bg: #12151b;
-    --bg-tint: #171c26;
-    --surface: #1a1f28;
-    --surface-2: #202632;
-    --surface-3: #272e3c;
-    --glass: rgb(26 31 40 / 74%);
-    --line: #2c3442;
-    --line-soft: #232a36;
-
-    --fg: #e9edf4;
-    --fg-dim: #a3aebe;
-    --fg-faint: #737f90;
-
-    --good: #35c48d;
-    --warn: #e5a53a;
-    --bad: #f0655a;
-
-    --shadow-sm: 0 1px 2px rgb(0 0 0 / 30%);
-    --shadow: 0 2px 8px rgb(0 0 0 / 34%), 0 14px 34px rgb(0 0 0 / 34%);
-    --shadow-lg: 0 6px 16px rgb(0 0 0 / 40%), 0 32px 70px rgb(0 0 0 / 50%);
-    --ring: 0 0 0 3px rgb(47 149 245 / 36%);
-
-    color-scheme: dark;
-  }
 }
 
 * {
@@ -93,31 +60,165 @@ body {
 }
 
 body {
-  background: var(--bg);
-  /* A faint wash of the accent, the way a Zorin wallpaper sits behind panels. */
-  background-image:
-    radial-gradient(120ch 60ch at 12% -10%, var(--bg-tint), transparent 60%),
-    radial-gradient(90ch 50ch at 92% 8%, color-mix(in srgb, var(--accent) 11%, transparent), transparent 62%);
-  background-attachment: fixed;
   color: var(--fg);
   font-family: var(--sans);
-  font-size: 15px;
-  line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
+  font-size: 12px;
+  line-height: 1.35;
   overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased;
 }
 
-/*
- * A definite height, not a minimum. A percentage height inside a flex chain
- * only resolves when every ancestor has a definite height, and the video
- * surface depends on that.
- */
 #app {
   height: 100dvh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+/* ---------- the desktop behind the window ---------- */
+
+.xp-desktop {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  padding: 10px;
+  padding-top: max(10px, env(safe-area-inset-top));
+  padding-bottom: max(10px, env(safe-area-inset-bottom));
+  /* Bliss, near enough: a blue sky, two soft clouds, and a green hill. */
+  background-color: #4a90d9;
+  background-image:
+    radial-gradient(58% 30% at 50% 100%, #86c440 0%, #6fb02f 45%, #56942a 78%, transparent 100%),
+    radial-gradient(closest-side, rgb(255 255 255 / 78%), transparent 100%),
+    radial-gradient(closest-side, rgb(255 255 255 / 62%), transparent 100%),
+    linear-gradient(180deg, #1b56b0 0%, #3b81d8 30%, #79b6e8 58%, #b9dcf2 70%, #7fb542 70.5%, #4d8a24 100%);
+  background-size:
+    140% 46%,
+    30% 13%,
+    22% 9%,
+    100% 100%;
+  background-position:
+    50% 100%,
+    16% 22%,
+    72% 15%,
+    0 0;
+  background-repeat: no-repeat;
+}
+
+@media (max-width: 700px) {
+  .xp-desktop {
+    padding: 0;
+  }
+}
+
+/* ---------- the window ---------- */
+
+.xp-window {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--face);
+  border: 3px solid var(--frame);
+  border-top: 0;
+  border-radius: 8px 8px 0 0;
+  box-shadow: 2px 2px 10px rgb(0 0 0 / 45%);
+}
+
+@media (max-width: 700px) {
+  .xp-window {
+    border-width: 2px;
+    border-top: 0;
+    border-radius: 0;
+  }
+}
+
+.xp-titlebar {
+  flex: 0 0 auto;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 3px 0 4px;
+  border-radius: 6px 6px 0 0;
+  background: linear-gradient(
+    180deg,
+    var(--title-2) 0%,
+    var(--title-1) 8%,
+    var(--title-3) 40%,
+    var(--title-1) 88%,
+    var(--title-4) 100%
+  );
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 45%);
+  user-select: none;
+}
+
+.xp-title-icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  display: block;
+}
+
+.xp-title-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: #fff;
+  font-weight: bold;
+  font-size: 12px;
+  letter-spacing: 0.1px;
+  text-shadow: 1px 1px 1px rgb(0 0 0 / 55%);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.xp-title-buttons {
+  display: flex;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+/* The three caption buttons. All of them do something. */
+.xp-cap {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  min-height: 0;
+  border: 1px solid rgb(255 255 255 / 70%);
+  border-radius: 3px;
+  background: linear-gradient(180deg, #7ab3f5 0%, #2e73d8 45%, #1b5cc4 55%, #4c93ee 100%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 45%);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  color: #fff;
+}
+
+.xp-cap:hover {
+  filter: brightness(1.15);
+}
+
+.xp-cap:active {
+  filter: brightness(0.9);
+}
+
+.xp-cap.close {
+  width: 24px;
+  background: linear-gradient(180deg, #f39c8e 0%, #d6503c 45%, #c33822 55%, #ea7a63 100%);
+}
+
+.xp-cap svg {
+  display: block;
+}
+
+.xp-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--face);
 }
 
 main {
@@ -129,8 +230,34 @@ main {
   overflow-x: hidden;
 }
 
-::selection {
-  background: color-mix(in srgb, var(--accent) 30%, transparent);
+/* ---------- status bar ---------- */
+
+.xp-status {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 2px;
+  background: var(--face);
+  border-top: 1px solid var(--face-light);
+  font-size: 11px;
+  color: var(--fg-dim);
+}
+
+.xp-status-panel {
+  border: 1px solid;
+  border-color: var(--face-shadow) var(--face-light) var(--face-light) var(--face-shadow);
+  padding: 2px 7px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.xp-status-panel.grow {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 /* ---------- typography ---------- */
@@ -139,24 +266,21 @@ h1,
 h2,
 h3 {
   margin: 0;
-  font-weight: 640;
-  letter-spacing: -0.021em;
-  line-height: 1.15;
+  font-weight: bold;
+  line-height: 1.2;
 }
 
 h1 {
-  font-size: clamp(28px, 5vw, 40px);
+  font-size: 20px;
 }
 
 h2 {
-  font-size: 21px;
+  font-size: 15px;
 }
 
 .lede {
-  font-size: 16px;
-  color: var(--fg-dim);
   margin: 0;
-  max-width: 48ch;
+  color: var(--fg-dim);
 }
 
 .dim {
@@ -168,18 +292,17 @@ h2 {
 }
 
 .small {
-  font-size: 13px;
+  font-size: 11px;
 }
 
 .tiny {
-  font-size: 12px;
-  line-height: 1.45;
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .mono {
   font-family: var(--mono);
-  font-size: 0.92em;
-  font-variant-numeric: tabular-nums;
+  font-size: 11px;
 }
 
 .truncate {
@@ -188,55 +311,54 @@ h2 {
   white-space: nowrap;
 }
 
+/* XP names a group of settings with a plain bold label, not an eyebrow. */
 .eyebrow {
   font-size: 11px;
-  font-weight: 620;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--fg-faint);
+  font-weight: bold;
+  color: #003399;
 }
 
-/* ---------- controls ---------- */
+/* ---------- buttons ---------- */
 
 button {
-  font: inherit;
-  font-weight: 520;
+  font-family: var(--sans);
+  font-size: 11px;
   color: var(--fg);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  padding: 8px 14px;
-  min-height: 38px;
+  min-height: 23px;
+  padding: 2px 12px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 5px;
   white-space: nowrap;
   user-select: none;
-  box-shadow: var(--shadow-sm);
-  transition:
-    background 140ms var(--ease),
-    border-color 140ms var(--ease),
-    box-shadow 140ms var(--ease),
-    transform 90ms var(--ease),
-    color 140ms var(--ease);
+  border: 1px solid var(--frame-dark);
+  border-radius: 3px;
+  background: linear-gradient(180deg, #fff 0%, #f2f1e6 46%, #e5e2d2 47%, #f0eee2 100%);
+  box-shadow: inset 0 0 0 1px #fff;
 }
 
 button:hover:not(:disabled) {
-  background: var(--surface-2);
-  border-color: color-mix(in srgb, var(--fg-faint) 45%, var(--line));
+  /* XP glows amber under the pointer. */
+  background: linear-gradient(180deg, #fffdf5 0%, #ffeeb8 46%, #ffe08a 47%, #fff3cf 100%);
+  border-color: #e9a900;
 }
 
 button:active:not(:disabled) {
-  transform: translateY(1px);
-  box-shadow: none;
+  background: linear-gradient(180deg, #ded9c6 0%, #e9e6d8 100%);
+  box-shadow: inset 1px 1px 2px rgb(0 0 0 / 20%);
+  padding-top: 3px;
+  padding-bottom: 1px;
 }
 
 button:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
+  color: var(--fg-disabled);
+  text-shadow: 1px 1px 0 #fff;
+  border-color: #b5b5a6;
+  background: var(--face);
   box-shadow: none;
+  cursor: default;
 }
 
 button:focus-visible,
@@ -244,9 +366,8 @@ input:focus-visible,
 select:focus-visible,
 summary:focus-visible,
 [tabindex]:focus-visible {
-  outline: none;
-  box-shadow: var(--ring);
-  border-color: var(--accent);
+  outline: 1px dotted #000;
+  outline-offset: -4px;
 }
 
 .icon {
@@ -254,143 +375,120 @@ summary:focus-visible,
   display: block;
 }
 
+/* The default button in an XP dialog carries a heavier border. */
 button.primary {
-  background-image: linear-gradient(160deg, var(--accent-2), var(--accent) 62%, var(--accent-deep));
-  color: var(--accent-fg);
-  border-color: transparent;
-  font-weight: 600;
+  font-weight: bold;
+  border-color: #2c5c9a;
   box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 26%),
-    0 2px 6px color-mix(in srgb, var(--accent) 34%, transparent),
-    0 10px 24px color-mix(in srgb, var(--accent) 24%, transparent);
-}
-
-button.primary:hover:not(:disabled) {
-  filter: saturate(1.08) brightness(1.06);
-  border-color: transparent;
+    inset 0 0 0 1px #fff,
+    0 0 0 1px #4a7ab8;
 }
 
 button.danger {
-  color: var(--bad);
-  border-color: color-mix(in srgb, var(--bad) 34%, var(--line));
-  background: color-mix(in srgb, var(--bad) 7%, var(--surface));
-}
-
-button.danger:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--bad) 13%, var(--surface));
-  border-color: var(--bad);
+  color: #8c1a1a;
 }
 
 button.ghost {
+  border-color: transparent;
   background: transparent;
   box-shadow: none;
-  border-color: transparent;
-  color: var(--fg-dim);
 }
 
 button.ghost:hover:not(:disabled) {
-  background: var(--surface-2);
-  border-color: var(--line);
-  color: var(--fg);
+  border-color: #e9a900;
+  background: linear-gradient(180deg, #fffdf5 0%, #ffeeb8 46%, #ffe08a 47%, #fff3cf 100%);
 }
 
 button.icon-only {
   padding: 0;
-  width: 38px;
-  min-width: 38px;
+  width: 23px;
+  min-width: 23px;
 }
 
 button.big {
-  min-height: 50px;
-  padding: 0 26px;
-  font-size: 16px;
-  border-radius: var(--radius);
-}
-
-button.small {
-  min-height: 32px;
-  padding: 4px 11px;
-  font-size: 13px;
-}
-
-button.tiny-btn {
-  min-height: 27px;
-  padding: 2px 10px;
+  min-height: 28px;
+  padding: 4px 20px;
   font-size: 12px;
 }
 
-button.on {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 11%, var(--surface));
+button.small,
+button.tiny-btn {
+  min-height: 21px;
+  padding: 1px 9px;
 }
+
+/* A pressed toolbar button, the way XP shows an active toggle. */
+button.on {
+  background: linear-gradient(180deg, #cfd8ea 0%, #dde4f2 100%);
+  border-color: #2c5c9a;
+  box-shadow: inset 1px 1px 2px rgb(0 0 0 / 22%);
+}
+
+/* ---------- fields ---------- */
 
 input[type="text"],
 select {
-  font: inherit;
-  color: inherit;
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  padding: 8px 11px;
-  min-height: 38px;
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--fg);
+  background: var(--field);
+  border: 1px solid;
+  border-color: var(--field-border) #fff #fff var(--field-border);
+  outline: 1px solid var(--face-shadow);
+  outline-offset: -2px;
+  padding: 3px 5px;
+  min-height: 21px;
   width: 100%;
-  transition: border-color 140ms var(--ease), box-shadow 140ms var(--ease);
 }
 
 select {
+  outline: none;
+  border: 1px solid var(--field-border);
+  padding-right: 20px;
   appearance: none;
-  padding-right: 30px;
-  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
-    linear-gradient(135deg, currentColor 50%, transparent 50%);
-  background-position: calc(100% - 16px) calc(50% + 1px), calc(100% - 11px) calc(50% + 1px);
-  background-size: 5px 5px, 5px 5px;
+  background-image: linear-gradient(45deg, transparent 50%, #000 50%),
+    linear-gradient(135deg, #000 50%, transparent 50%);
+  background-position: calc(100% - 11px) calc(50% + 1px), calc(100% - 7px) calc(50% + 1px);
+  background-size: 4px 4px;
   background-repeat: no-repeat;
 }
 
 input[type="range"] {
   width: 100%;
-  accent-color: var(--accent);
-  min-height: 26px;
+  accent-color: var(--select);
+  min-height: 20px;
 }
 
 label {
   display: block;
   font-size: 11px;
-  font-weight: 620;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--fg-faint);
-  margin-bottom: 7px;
+  color: var(--fg);
+  margin-bottom: 4px;
 }
 
 hr {
   border: 0;
-  border-top: 1px solid var(--line-soft);
-  margin: 14px 0;
+  border-top: 1px solid var(--face-shadow);
+  border-bottom: 1px solid #fff;
+  margin: 9px 0;
 }
 
-/* ---------- surfaces ---------- */
+/* ---------- group boxes ---------- */
 
+/* An XP group box: one grey line with a white line offset under it, etched. */
 .card {
-  background: var(--glass);
-  backdrop-filter: blur(24px) saturate(1.5);
-  -webkit-backdrop-filter: blur(24px) saturate(1.5);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: var(--pad);
-  box-shadow: var(--shadow-sm);
-}
-
-.card.flush {
-  padding: 0;
-  overflow: hidden;
+  background: transparent;
+  border: 1px solid #d3d0c4;
+  border-radius: 0;
+  padding: 9px 10px 10px;
+  position: relative;
+  box-shadow: 1px 1px 0 #fff, inset 1px 1px 0 #fff;
 }
 
 .row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
 }
 
 .row.wrap {
@@ -409,67 +507,63 @@ hr {
 .stack {
   display: flex;
   flex-direction: column;
-  gap: var(--pad);
+  gap: 9px;
 }
 
 .stack.tight {
-  gap: 9px;
+  gap: 6px;
 }
 
 .hidden {
   display: none !important;
 }
 
-/* ---------- pills ---------- */
+/* ---------- pills, as small sunken readouts ---------- */
 
 .pill {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 500;
-  padding: 3px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: var(--surface-2);
+  gap: 4px;
+  font-size: 10px;
+  font-family: var(--mono);
+  padding: 1px 5px;
+  border: 1px solid;
+  border-color: var(--face-shadow) #fff #fff var(--face-shadow);
+  background: var(--face-light);
   color: var(--fg-dim);
   white-space: nowrap;
-  font-variant-numeric: tabular-nums;
 }
 
 .pill.good {
   color: var(--good);
-  border-color: color-mix(in srgb, var(--good) 36%, transparent);
-  background: color-mix(in srgb, var(--good) 10%, transparent);
+  background: #eaf6ea;
 }
 
 .pill.warn {
   color: var(--warn);
-  border-color: color-mix(in srgb, var(--warn) 36%, transparent);
-  background: color-mix(in srgb, var(--warn) 10%, transparent);
+  background: #fdf4e3;
 }
 
 .pill.bad {
   color: var(--bad);
-  border-color: color-mix(in srgb, var(--bad) 36%, transparent);
-  background: color-mix(in srgb, var(--bad) 10%, transparent);
+  background: #fbeaea;
 }
 
 .dot {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: currentColor;
   flex: 0 0 auto;
 }
 
 .dot.live {
-  animation: pulse 2s ease-in-out infinite;
+  animation: pulse 1.6s steps(2, end) infinite;
 }
 
 @keyframes pulse {
   50% {
-    opacity: 0.25;
+    opacity: 0.2;
   }
 }
 
@@ -482,132 +576,56 @@ hr {
   }
 }
 
-/* ---------- app shell ---------- */
-
-.topbar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex: 0 0 auto;
-  padding: 9px max(var(--pad), env(safe-area-inset-right)) 9px
-    max(var(--pad), env(safe-area-inset-left));
-  padding-top: max(9px, env(safe-area-inset-top));
-  border-bottom: 1px solid var(--line-soft);
-  background: var(--glass);
-  backdrop-filter: blur(24px) saturate(1.5);
-  -webkit-backdrop-filter: blur(24px) saturate(1.5);
-}
-
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  font-weight: 640;
-  font-size: 15px;
-  letter-spacing: -0.015em;
-}
+/* ---------- layout ---------- */
 
 .pad {
-  padding: var(--pad) max(var(--pad), env(safe-area-inset-right))
-    max(var(--pad), env(safe-area-inset-bottom)) max(var(--pad), env(safe-area-inset-left));
+  padding: 10px;
 }
 
-/* safe center keeps the top of a tall panel reachable instead of clipping it. */
 .center-page {
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: safe center;
-  padding: 28px max(var(--pad), env(safe-area-inset-right))
-    max(28px, env(safe-area-inset-bottom)) max(var(--pad), env(safe-area-inset-left));
+  padding: 14px;
 }
 
 .sheet {
   width: 100%;
-  max-width: 460px;
+  max-width: 430px;
 }
-
-/* ---------- the opening screen ---------- */
-
-.hero {
-  width: 100%;
-  max-width: 520px;
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
-}
-
-.hero-mark {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.hero h1 {
-  margin: 0;
-}
-
-.hero-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.footnote {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  font-size: 12px;
-  color: var(--fg-faint);
-}
-
-.footnote .sep {
-  opacity: 0.5;
-}
-
-/* A compact preset picker: one row of chips, one line of guidance beneath. */
-.picker {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.picker-why {
-  font-size: 12.5px;
-  color: var(--fg-dim);
-  line-height: 1.45;
-  min-height: 2.9em;
-}
-
-/* ---------- host layout ---------- */
 
 .host-grid {
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 348px;
-  gap: var(--pad);
-  padding: var(--pad) max(var(--pad), env(safe-area-inset-right))
-    max(var(--pad), env(safe-area-inset-bottom)) max(var(--pad), env(safe-area-inset-left));
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 8px;
+  padding: 8px;
+}
+
+.host-grid.wide {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.host-grid.wide .host-side {
+  display: none;
 }
 
 .host-side {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   padding-right: 2px;
-  scrollbar-width: thin;
 }
 
 @media (max-width: 900px) {
   .host-grid {
     flex: 0 0 auto;
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(200px, 42dvh) auto;
+    grid-template-rows: minmax(180px, 40dvh) auto;
   }
 
   .host-side {
@@ -615,74 +633,88 @@ hr {
   }
 }
 
-@media (min-width: 1800px) {
-  .host-grid {
-    grid-template-columns: minmax(0, 1fr) 400px;
-  }
-}
+/* ---------- the viewer list ---------- */
 
 .viewer-row {
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: 7px 10px;
-  padding: 11px 0;
-  border-top: 1px solid var(--line-soft);
+  gap: 4px 8px;
+  padding: 6px 0;
+  border-top: 1px solid var(--face-dark);
 }
 
 .viewer-row:first-of-type {
   border-top: 0;
-  padding-top: 3px;
+  padding-top: 2px;
 }
 
 .statline {
   grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: 3px;
 }
 
 .linkbox {
   display: flex;
-  gap: 7px;
+  gap: 5px;
 }
 
 .linkbox input {
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: 11px;
 }
 
-/* ---------- quality presets ---------- */
+/* ---------- the preset list, as an XP list box ---------- */
 
 .presets {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 0;
+  background: var(--field);
+  border: 1px solid;
+  border-color: var(--field-border) #fff #fff var(--field-border);
+  outline: 1px solid var(--face-shadow);
+  outline-offset: -2px;
+  padding: 2px;
 }
 
 .preset {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 3px;
+  gap: 2px;
   width: 100%;
   text-align: left;
-  padding: 9px 12px;
+  padding: 4px 6px;
   min-height: 0;
-  background: var(--surface-2);
-  border: 1px solid transparent;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   box-shadow: none;
   white-space: normal;
-  border-radius: var(--radius-sm);
+  color: var(--fg);
 }
 
 .preset:hover:not(.custom) {
-  background: var(--surface-3);
-  border-color: var(--line);
+  background: #e8f0fd;
+  border: 0;
+}
+
+.preset:active:not(.custom) {
+  padding: 4px 6px;
+  box-shadow: none;
 }
 
 .preset.on {
-  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
-  background: color-mix(in srgb, var(--accent) 12%, var(--surface-2));
+  background: var(--select);
+  color: var(--select-fg);
+}
+
+.preset.on .preset-name,
+.preset.on .faint,
+.preset.on .dim {
+  color: var(--select-fg);
 }
 
 .preset.custom {
@@ -690,87 +722,75 @@ hr {
 }
 
 .preset-name {
-  font-weight: 590;
-  font-size: 13.5px;
-}
-
-.preset.on .preset-name {
-  color: var(--accent);
+  font-weight: bold;
+  font-size: 11px;
 }
 
 .preset-why {
-  line-height: 1.45;
+  line-height: 1.35;
 }
 
-/* ---------- chips ---------- */
+/* ---------- chips, as small toolbar toggles ---------- */
 
 .chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: 3px;
 }
 
 .chip {
-  padding: 5px 11px;
-  min-height: 32px;
-  font-size: 12.5px;
-  font-weight: 520;
-  background: var(--surface-2);
-  border: 1px solid transparent;
-  box-shadow: none;
-  border-radius: 999px;
-}
-
-.chip:hover:not(:disabled) {
-  background: var(--surface-3);
-  border-color: var(--line);
+  padding: 1px 8px;
+  min-height: 20px;
+  font-size: 11px;
+  border-radius: 3px;
 }
 
 .chip.on {
-  border-color: transparent;
-  color: var(--accent-fg);
-  background-image: linear-gradient(160deg, var(--accent-2), var(--accent) 70%);
-  font-weight: 600;
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 30%, transparent);
+  background: linear-gradient(180deg, #cfd8ea 0%, #dde4f2 100%);
+  border-color: #2c5c9a;
+  box-shadow: inset 1px 1px 2px rgb(0 0 0 / 22%);
+  font-weight: bold;
 }
 
 /* ---------- readouts ---------- */
 
 .plan-box {
-  background: var(--surface-2);
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-sm);
-  padding: 10px 12px;
+  background: #ffffe1; /* the XP tooltip yellow */
+  border: 1px solid #000;
+  padding: 5px 7px;
+  font-size: 11px;
 }
 
 .plan-line {
-  color: var(--fg);
-  line-height: 1.45;
+  color: #000;
 }
 
 .plan-box .warn {
-  color: var(--warn);
+  color: #8c4b00;
+  font-weight: bold;
 }
 
 .empty {
-  padding: 16px 12px;
-  border: 1px dashed var(--line);
-  border-radius: var(--radius-sm);
+  padding: 10px;
+  border: 1px solid var(--face-dark);
+  background: var(--field);
   text-align: center;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
 }
 
 .summary-card {
-  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
-  background: color-mix(in srgb, var(--accent) 8%, var(--glass));
+  background: #fbfbf5;
 }
 
+/* The segmented green progress bar, the most XP thing there is. */
 .meter {
-  height: 5px;
-  border-radius: 3px;
-  background: var(--surface-3);
+  height: 13px;
+  background: var(--field);
+  border: 1px solid;
+  border-color: var(--face-shadow) #fff #fff var(--face-shadow);
+  padding: 1px;
   overflow: hidden;
   flex: 1 1 auto;
   min-width: 40px;
@@ -780,56 +800,61 @@ hr {
   display: block;
   height: 100%;
   width: 0%;
-  border-radius: 3px;
-  background-image: linear-gradient(90deg, var(--accent), var(--accent-2));
+  background-image: repeating-linear-gradient(
+    90deg,
+    var(--progress) 0 7px,
+    transparent 7px 9px
+  );
   transition: width 90ms linear;
 }
 
 .kv {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 4px 12px;
-  font-size: 13px;
+  gap: 3px 10px;
+  font-size: 11px;
 }
 
 .shortcuts {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 14px;
+  gap: 4px 12px;
   justify-content: center;
-  font-size: 12px;
-  color: var(--fg-faint);
+  font-size: 11px;
+  color: #dfe8f6;
 }
 
 .shortcuts span {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
 }
 
 kbd {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  font-weight: 600;
-  background: rgb(255 255 255 / 12%);
-  border: 1px solid rgb(255 255 255 / 22%);
-  border-radius: 5px;
-  padding: 1px 6px;
-  min-width: 20px;
+  font-family: var(--sans);
+  font-size: 10px;
+  font-weight: bold;
+  color: #000;
+  background: var(--face);
+  border: 1px solid;
+  border-color: #fff var(--face-shadow) var(--face-shadow) #fff;
+  padding: 0 4px;
+  min-width: 16px;
   text-align: center;
 }
 
+/* ---------- disclosure ---------- */
+
 details.adv > summary {
   cursor: pointer;
-  font-size: 13px;
-  font-weight: 540;
-  color: var(--fg-dim);
-  padding: 5px 0;
+  font-size: 11px;
+  color: #0033cc;
+  padding: 2px 0;
   list-style: none;
   display: flex;
   align-items: center;
-  gap: 7px;
-  border-radius: var(--radius-sm);
+  gap: 5px;
+  text-decoration: underline;
 }
 
 details.adv > summary::-webkit-details-marker {
@@ -838,36 +863,41 @@ details.adv > summary::-webkit-details-marker {
 
 details.adv > summary::before {
   content: "";
-  width: 6px;
-  height: 6px;
-  border-right: 1.6px solid currentColor;
-  border-bottom: 1.6px solid currentColor;
-  transform: rotate(-45deg);
-  transition: transform 160ms var(--ease);
-  margin-left: 3px;
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border: 1px solid var(--face-shadow);
+  background: var(--field)
+    linear-gradient(90deg, transparent 3px, #000 3px 6px, transparent 6px) no-repeat center /
+    9px 1px;
+  box-shadow: inset 0 0 0 1px #fff;
 }
 
 details.adv[open] > summary::before {
-  transform: rotate(45deg);
+  background-image: linear-gradient(90deg, transparent 3px, #000 3px 6px, transparent 6px),
+    linear-gradient(0deg, transparent 3px, #000 3px 6px, transparent 6px);
+  background-size: 9px 1px, 1px 9px;
+  background-position: center, center;
+  background-repeat: no-repeat, no-repeat;
 }
 
-details.adv > summary:hover {
-  color: var(--fg);
+details.adv[open] > summary::before {
+  background-image: linear-gradient(90deg, transparent 3px, #000 3px 6px, transparent 6px);
 }
 
 details.adv[open] > summary {
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 }
 
 .support-list {
   margin: 0;
-  padding-left: 18px;
-  font-size: 13px;
+  padding-left: 16px;
+  font-size: 11px;
   color: var(--fg-dim);
 }
 
 .support-list li {
-  margin: 4px 0;
+  margin: 3px 0;
 }
 
 /* ---------- video surface ---------- */
@@ -875,21 +905,21 @@ details.adv[open] > summary {
 .surface {
   position: relative;
   background: #000;
-  border-radius: var(--radius);
   overflow: hidden;
   min-height: 0;
   min-width: 0;
   display: flex;
   touch-action: none;
-  box-shadow: var(--shadow);
-  border: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+  border: 1px solid;
+  border-color: var(--face-shadow) #fff #fff var(--face-shadow);
+  outline: 1px solid #5a5a4a;
+  outline-offset: -2px;
 }
 
 .surface.fullbleed {
-  border-radius: 0;
   border: 0;
+  outline: 0;
   flex: 1 1 auto;
-  box-shadow: none;
 }
 
 .surface video {
@@ -897,21 +927,18 @@ details.adv[open] > summary {
   background: #000;
 }
 
-/* Fit: the whole picture is visible, letterboxed. Never stretched. */
 .surface[data-mode="fit"] video {
   width: 100%;
   height: 100%;
   object-fit: contain;
 }
 
-/* Fill: crops the edges to remove the letterbox. */
 .surface[data-mode="fill"] video {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-/* Actual: one stream pixel per screen pixel, with zoom and pan. */
 .surface[data-mode="actual"] {
   overflow: hidden;
   cursor: grab;
@@ -938,114 +965,79 @@ details.adv[open] > summary {
   inset: 0;
   display: grid;
   place-items: center;
-  background:
-    radial-gradient(80ch 50ch at 50% 40%, rgb(20 119 230 / 22%), transparent 70%),
-    rgb(6 9 14 / 82%);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  background: linear-gradient(180deg, #1b56b0 0%, #3b81d8 45%, #245ba8 100%);
   text-align: center;
-  padding: var(--pad);
-  color: #eef2f8;
+  padding: 16px;
+  color: #fff;
   z-index: 3;
 }
 
-.surface-overlay .dim {
-  color: rgb(238 242 248 / 72%);
+.surface-overlay .dim,
+.surface-overlay p {
+  color: #dfe8f6;
 }
 
 .surface-badges {
   position: absolute;
-  top: 11px;
-  left: 11px;
+  top: 6px;
+  left: 6px;
   display: flex;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: 3px;
   z-index: 2;
   pointer-events: none;
-  max-width: calc(100% - 22px);
-  transition: opacity 200ms var(--ease);
+  max-width: calc(100% - 12px);
 }
 
 .surface-badges .pill {
-  background: rgb(10 14 20 / 62%);
-  border-color: rgb(255 255 255 / 15%);
-  color: rgb(238 242 248 / 92%);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-}
-
-.surface-badges .pill.good {
-  color: #6ee7b7;
-}
-
-.surface-badges .pill.warn {
-  color: #fbc76a;
-}
-
-.surface-badges .pill.bad {
-  color: #ff8b80;
+  background: var(--face);
+  border-color: #fff var(--face-shadow) var(--face-shadow) #fff;
+  color: #000;
 }
 
 .surface.hide-bar .surface-badges {
   opacity: 0;
 }
 
-/* A floating control bar, the way a Zorin panel sits over the desktop. */
+/* An XP toolbar, floating over the picture. */
 .surface-bar {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
-  bottom: max(12px, env(safe-area-inset-bottom));
+  bottom: 8px;
   z-index: 4;
   display: flex;
   align-items: center;
-  gap: 6px;
-  max-width: calc(100% - 24px);
-  padding: 6px;
-  border-radius: 999px;
-  background: rgb(16 20 28 / 62%);
-  border: 1px solid rgb(255 255 255 / 13%);
-  backdrop-filter: blur(22px) saturate(1.7);
-  -webkit-backdrop-filter: blur(22px) saturate(1.7);
-  box-shadow: 0 8px 30px rgb(0 0 0 / 40%);
-  transition: opacity 220ms var(--ease), transform 220ms var(--ease);
+  gap: 3px;
+  max-width: calc(100% - 16px);
+  padding: 3px 4px;
+  background: var(--face);
+  border: 1px solid;
+  border-color: #fff var(--face-shadow) var(--face-shadow) #fff;
+  box-shadow: 1px 1px 4px rgb(0 0 0 / 45%);
+  transition: opacity 160ms linear;
 }
 
 .surface-bar button {
-  background: transparent;
-  border-color: transparent;
-  color: rgb(238 242 248 / 88%);
-  box-shadow: none;
-  min-height: 34px;
-  border-radius: 999px;
-}
-
-.surface-bar button:hover:not(:disabled) {
-  background: rgb(255 255 255 / 13%);
-  border-color: transparent;
-  color: #fff;
-}
-
-.surface-bar button.on {
-  background: linear-gradient(160deg, var(--accent-2), var(--accent));
-  color: #fff;
+  min-height: 22px;
 }
 
 .surface-bar button.icon-only {
-  width: 34px;
-  min-width: 34px;
+  width: 24px;
+  min-width: 24px;
 }
 
 .surface-bar .divider {
   width: 1px;
-  height: 20px;
-  background: rgb(255 255 255 / 16%);
+  height: 16px;
+  margin: 0 2px;
+  background: var(--face-shadow);
+  border-right: 1px solid #fff;
   flex: 0 0 auto;
 }
 
 .surface.hide-bar .surface-bar {
   opacity: 0;
-  transform: translateX(-50%) translateY(10px);
   pointer-events: none;
 }
 
@@ -1058,81 +1050,65 @@ details.adv[open] > summary {
   display: none;
 }
 
+.vol {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 1 120px;
+  min-width: 86px;
+}
+
+.vol input[type="range"] {
+  min-width: 50px;
+}
+
+.zoom-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  min-width: 38px;
+  text-align: center;
+}
+
 /* The picker prompt, centred on the empty stage. */
 .pick {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
   text-align: center;
+  max-width: 420px;
 }
 
 .pick h2 {
-  margin: 4px 0 0;
-  font-size: 24px;
+  margin: 2px 0 0;
+  font-size: 17px;
+  color: #fff;
 }
 
 .pick p {
-  line-height: 1.5;
-}
-
-.pick button {
-  margin-top: 6px;
-}
-
-.vol {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex: 0 1 140px;
-  min-width: 92px;
-  padding-right: 6px;
-}
-
-.vol input[type="range"] {
-  min-width: 54px;
-}
-
-.zoom-label {
-  font-family: var(--mono);
-  font-size: 11.5px;
-  color: rgb(238 242 248 / 80%);
-  min-width: 42px;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-}
-
-@media (max-width: 560px) {
-  .surface-bar {
-    gap: 3px;
-    padding: 5px;
-  }
-
-  .vol {
-    flex: 0 0 92px;
-    min-width: 92px;
-  }
+  margin: 0;
+  line-height: 1.45;
 }
 
 /* ---------- QR ---------- */
 
 .qr-frame {
   background: #fff;
-  border-radius: var(--radius);
-  padding: 14px;
+  padding: 10px;
   display: grid;
   place-items: center;
-  box-shadow: var(--shadow);
+  border: 1px solid;
+  border-color: var(--face-shadow) #fff #fff var(--face-shadow);
   line-height: 0;
 }
 
 .qr-frame svg {
   display: block;
-  width: min(58vw, 260px);
+  width: min(58vw, 240px);
   height: auto;
 }
 
-/* ---------- modal ---------- */
+/* ---------- dialog ---------- */
 
 .scrim {
   position: fixed;
@@ -1140,77 +1116,109 @@ details.adv[open] > summary {
   z-index: 60;
   display: grid;
   place-items: center;
-  padding: var(--pad);
-  background: rgb(6 9 14 / 55%);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  animation: fade 160ms var(--ease);
-}
-
-@keyframes fade {
-  from {
-    opacity: 0;
-  }
+  padding: 14px;
+  background: rgb(0 0 0 / 35%);
 }
 
 .modal {
   width: 100%;
-  max-width: 340px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
-  padding: 18px;
+  max-width: 320px;
+  background: var(--face);
+  border: 3px solid var(--frame);
+  border-top: 0;
+  border-radius: 8px 8px 0 0;
+  box-shadow: 2px 2px 10px rgb(0 0 0 / 45%);
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  animation: rise 200ms var(--ease);
 }
 
-@keyframes rise {
-  from {
-    opacity: 0;
-    transform: translateY(10px) scale(0.98);
-  }
+.modal > .row:first-child {
+  height: 26px;
+  padding: 0 3px 0 7px;
+  border-radius: 6px 6px 0 0;
+  background: linear-gradient(
+    180deg,
+    var(--title-2) 0%,
+    var(--title-1) 8%,
+    var(--title-3) 40%,
+    var(--title-1) 88%,
+    var(--title-4) 100%
+  );
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 45%);
 }
 
-/* ---------- toasts ---------- */
+.modal > .row:first-child .eyebrow {
+  color: #fff;
+  font-weight: bold;
+  font-size: 12px;
+  text-shadow: 1px 1px 1px rgb(0 0 0 / 55%);
+}
+
+.modal > .row:first-child button {
+  width: 22px;
+  min-width: 22px;
+  height: 20px;
+  min-height: 20px;
+  padding: 0;
+  color: #fff;
+  border: 1px solid rgb(255 255 255 / 70%);
+  border-radius: 3px;
+  background: linear-gradient(180deg, #f39c8e 0%, #d6503c 45%, #c33822 55%, #ea7a63 100%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 45%);
+}
+
+.modal > *:not(:first-child) {
+  margin: 0 12px;
+}
+
+.modal > *:nth-child(2) {
+  margin-top: 12px;
+}
+
+.modal > *:last-child {
+  margin-bottom: 12px;
+}
+
+/* ---------- balloon notifications ---------- */
 
 .toasts {
   position: fixed;
-  left: 50%;
-  transform: translateX(-50%);
-  bottom: max(18px, env(safe-area-inset-bottom));
+  right: 14px;
+  bottom: 14px;
   z-index: 70;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  align-items: center;
-  width: min(540px, calc(100vw - 24px));
+  gap: 6px;
+  align-items: flex-end;
+  width: min(340px, calc(100vw - 28px));
   pointer-events: none;
 }
 
 .toast {
   pointer-events: auto;
-  background: var(--glass);
-  backdrop-filter: blur(24px) saturate(1.6);
-  -webkit-backdrop-filter: blur(24px) saturate(1.6);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-lg);
-  padding: 11px 12px 11px 15px;
-  font-size: 13.5px;
+  background: #ffffe1;
+  border: 1px solid #000;
+  box-shadow: 2px 2px 5px rgb(0 0 0 / 35%);
+  padding: 7px 8px 7px 10px;
+  font-size: 11px;
   width: 100%;
   display: flex;
-  gap: 10px;
+  gap: 8px;
   align-items: flex-start;
-  animation: rise 220ms var(--ease);
+  color: #000;
 }
 
 .toast.bad {
-  border-color: color-mix(in srgb, var(--bad) 50%, transparent);
+  border-color: #b81a1a;
 }
 
 .toast.warn {
-  border-color: color-mix(in srgb, var(--warn) 50%, transparent);
+  border-color: #9a6400;
+}
+
+.toast button {
+  min-height: 17px;
+  padding: 0 5px;
+  font-size: 10px;
 }

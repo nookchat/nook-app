@@ -13,6 +13,7 @@ import type { Envelope } from '../signal/envelope'
 import { ViewerPeer } from '../rtc/viewer-peer'
 import { gradeOf } from '../rtc/stats'
 import { clear, fmtKbps, h } from './dom'
+import type { WindowChrome } from './shell'
 import { toast } from './toast'
 import { VideoSurface } from './video-surface'
 
@@ -26,6 +27,7 @@ export class ViewerView {
   private readonly root: HTMLElement
   private readonly secret: string
   private readonly onExit: () => void
+  private readonly chrome: WindowChrome | null
   private readonly selfId = newPeerId()
 
   private room: Room | null = null
@@ -45,10 +47,29 @@ export class ViewerView {
     void this.bus?.send({ type: 'bye' })
   }
 
-  constructor(root: HTMLElement, secret: string, onExit: () => void) {
+  constructor(
+    root: HTMLElement,
+    secret: string,
+    onExit: () => void,
+    chrome: WindowChrome | null = null,
+  ) {
     this.root = root
     this.secret = secret
     this.onExit = onExit
+    this.chrome = chrome
+    chrome?.setActions({
+      minimise: () => this.surface?.cycleMode(),
+      maximise: () => this.surface?.requestFullscreen(),
+      close: () => {
+        this.stop()
+        clear(this.root)
+        this.onExit()
+      },
+    })
+  }
+
+  private say(status: string): void {
+    this.chrome?.setStatus([status])
   }
 
   async start(): Promise<void> {
@@ -125,6 +146,7 @@ export class ViewerView {
       ]),
     )
     this.surface?.setOverlay(card)
+    this.say('Ready to join.')
   }
 
   private async join(): Promise<void> {
@@ -137,6 +159,7 @@ export class ViewerView {
     void this.surface?.playWithSound()
 
     this.surface?.setOverlay(this.message('Connecting', 'Beam is looking for the host.', []))
+    this.say('Connecting to the host...')
 
     const bus = new SignalBus(this.room, this.selfId)
     bus.onMessage = (env) => void this.onMessage(env)
@@ -207,6 +230,7 @@ export class ViewerView {
         if (env.from !== this.hostId) return
         if (this.phase === 'live' || this.phase === 'connecting') {
           this.phase = 'ended'
+          this.say('The stream ended.')
           this.peer?.close()
           this.peer = null
           this.surface?.setStream(null)
@@ -237,6 +261,7 @@ export class ViewerView {
         const state = this.peer?.state
         if (state === 'connected' && this.phase !== 'live') {
           this.phase = 'live'
+          this.chrome?.setTitle('Beam - watching a shared screen')
           this.surface?.setOverlay(null)
         } else if (state === 'disconnected' && this.phase === 'live') {
           this.surface?.setBadges([{ text: 'reconnecting', tone: 'warn' }])
@@ -322,6 +347,11 @@ export class ViewerView {
     if (s.codec) badges.push({ text: s.codec })
     if (s.kbps === 0) badges.push({ text: 'no picture yet', tone: 'warn' })
     this.surface?.setBadges(badges)
+    this.chrome?.setStatus([
+      `Watching. ${s.width}x${s.height} at ${s.fps} frames.`,
+      fmtKbps(s.kbps),
+      s.codec || 'negotiating',
+    ])
   }
 
   // ---- small builders ----

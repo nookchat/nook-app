@@ -105,9 +105,12 @@ export function brandMark(size = 26): SVGSVGElement {
   gradient.setAttribute('y1', '0')
   gradient.setAttribute('x2', '1')
   gradient.setAttribute('y2', '1')
+  // Fixed colours, not palette tokens: this mark sits on a blue title bar and
+  // has to stay legible whatever the rest of the interface is wearing.
   for (const [offset, color] of [
-    ['0%', 'var(--accent-2)'],
-    ['100%', 'var(--accent)'],
+    ['0%', '#8fd3ff'],
+    ['55%', '#2f86e8'],
+    ['100%', '#12459b'],
   ]) {
     const stop = document.createElementNS(ns, 'stop')
     stop.setAttribute('offset', offset)
@@ -136,6 +139,16 @@ export function brandMark(size = 26): SVGSVGElement {
   beam.setAttribute('stroke-linecap', 'round')
   beam.setAttribute('opacity', '0.96')
   svg.append(beam)
+
+  // A hairline of white so the mark separates from a dark title bar.
+  const rim = document.createElementNS(ns, 'path')
+  rim.setAttribute('d', 'M16 3.6 27.2 10v12L16 28.4 4.8 22V10z')
+  rim.setAttribute('fill', 'none')
+  rim.setAttribute('stroke', '#ffffff')
+  rim.setAttribute('stroke-width', '1.4')
+  rim.setAttribute('stroke-linejoin', 'round')
+  rim.setAttribute('opacity', '0.75')
+  svg.append(rim)
 
   return svg
 }
