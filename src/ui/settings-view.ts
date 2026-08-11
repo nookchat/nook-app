@@ -14,6 +14,7 @@
 import { cleanName } from '../chat'
 import { loadIdentity, saveDisplayName, shortKey } from '../store/identity'
 import { setSounds, soundsOn } from './sounds'
+import { micSettings, setMicSettings, type MicSettings } from '../net/mic'
 import { copyText, fmtBytes, h } from './dom'
 import { storagePressure } from '../store/compact'
 import { download, exportAll, importBundle } from '../store/transfer'
@@ -60,6 +61,34 @@ export function settingsView(actions: SettingsActions): HTMLElement {
       },
     },
   })
+
+  /*
+   * Microphone processing. All three default to on, which is right for talking
+   * to people and wrong for music, so they are off-switches rather than
+   * features. A change takes effect the next time you join a channel, because
+   * the processing is chosen when the microphone is opened.
+   */
+  const micRow = (
+    key: keyof MicSettings,
+    label: string,
+    why: string,
+  ): HTMLElement => {
+    const on = (): boolean => micSettings()[key]
+    const button = h('button', {
+      class: on() ? 'on' : '',
+      text: on() ? `${label}: on` : `${label}: off`,
+      title: why,
+      on: {
+        click: () => {
+          const next = { ...micSettings(), [key]: !on() }
+          setMicSettings(next)
+          button.textContent = next[key] ? `${label}: on` : `${label}: off`
+          button.classList.toggle('on', next[key])
+        },
+      },
+    })
+    return button
+  }
 
   const file = h('input', { type: 'text', ariaLabel: 'Import a file' })
   file.type = 'file'
@@ -154,6 +183,17 @@ export function settingsView(actions: SettingsActions): HTMLElement {
           h('span', { class: 'eyebrow', text: 'Sounds' }),
           sound,
           h('div', { class: 'tiny faint', text: 'A short blip when somebody says something, or walks into the voice channel you are in. Never for anything you did yourself, and never for history arriving from a peer.' }),
+        ]),
+
+        h('div', { class: 'card stack tight' }, [
+          h('span', { class: 'eyebrow', text: 'Microphone' }),
+          micRow('denoise', 'Noise suppression', 'Takes out steady background noise: fans, traffic, a room hum.'),
+          micRow('echo', 'Echo cancellation', 'Stops the other side hearing themselves through your speakers.'),
+          micRow('gain', 'Automatic volume', 'Evens out how loud you are as you move around.'),
+          h('div', {
+            class: 'tiny faint',
+            text: 'All three run in the audio driver rather than in the page, so they cost nothing and add no delay. Leave them on for talking. Turn them off for music, where the processing hears the content as noise and fights it. A change applies the next time you join a voice channel.',
+          }),
         ]),
 
         h('div', { class: 'card stack tight' }, [

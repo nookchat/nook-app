@@ -187,6 +187,8 @@ export class ChatPanel {
       for (const node of formatText(m.text)) text.append(node)
       line.append(text)
 
+      for (const src of imageLinks(m.text)) line.append(embed(src))
+
       if (m.edited) line.append(h('span', { class: 'chat-edited', text: '(edited)' }))
       line.append(h('span', { class: 'chat-at', text: clockLabel(m.at) }))
 
@@ -368,6 +370,58 @@ export function formatText(text: string): Node[] {
   }
   if (last < rest.length) pushInline(rest.slice(last))
   return out
+}
+
+/**
+ * Pictures and GIFs, from links.
+ *
+ * There is no upload, because there is nowhere to upload to: the whole point
+ * of this thing is that it runs without a server holding anybody's files. What
+ * there is instead is the same thing every chat did before uploads existed.
+ * Paste a link to a picture and the picture is what you see.
+ *
+ * That is enough for GIFs, which is what people actually want. Any GIF site
+ * gives you a direct link, and it plays because the browser plays it: an
+ * animated GIF needs no player and no permission.
+ *
+ * Only https, and only paths that end in a picture. A link is still a request
+ * to somebody else's server, which tells them you are here, so this never
+ * follows one that is not obviously a picture.
+ */
+const IMAGE_RE = /\.(gif|png|jpe?g|webp|avif)(\?[^\s]*)?$/i
+
+export function imageLinks(text: string): string[] {
+  const out: string[] = []
+  URL_RE.lastIndex = 0
+  for (const match of text.matchAll(URL_RE)) {
+    const raw = match[0]
+    let url: URL
+    try {
+      url = new URL(raw)
+    } catch {
+      continue
+    }
+    if (url.protocol !== 'https:') continue
+    if (!IMAGE_RE.test(url.pathname + url.search)) continue
+    if (!out.includes(raw)) out.push(raw)
+    if (out.length === 4) break // a wall of pictures is somebody else's problem
+  }
+  return out
+}
+
+function embed(src: string): HTMLElement {
+  const img = h('img', { class: 'chat-image' })
+  img.alt = 'Shared image'
+  img.loading = 'lazy'
+  img.referrerPolicy = 'no-referrer'
+  img.src = src
+  // A link that turns out not to be a picture leaves nothing behind.
+  img.addEventListener('error', () => wrap.remove())
+  const wrap = h('a', { class: 'chat-image-wrap' }, [img])
+  wrap.href = src
+  wrap.target = '_blank'
+  wrap.rel = 'noopener noreferrer'
+  return wrap
 }
 
 function dayLabel(at: number): string {

@@ -16,6 +16,7 @@
  */
 
 import { rtcConfig } from '../rtc/config'
+import { micConstraints } from './mic'
 import type { SignalBus } from '../signal/bus'
 import type { Envelope } from '../signal/envelope'
 
@@ -78,7 +79,7 @@ export class Voice {
     this.leave()
     try {
       this.mic = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        audio: micConstraints(),
         video: false,
       })
     } catch {
@@ -104,6 +105,11 @@ export class Voice {
     this.muted = muted
     for (const track of this.mic?.getAudioTracks() ?? []) track.enabled = !muted
     this.onChange?.()
+  }
+
+  /** The live microphone, so the settings screen can say what it really got. */
+  get stream(): MediaStream | null {
+    return this.mic
   }
 
   /** Everyone we can actually hear right now. */

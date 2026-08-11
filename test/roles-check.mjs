@@ -265,6 +265,45 @@ try {
     check(`a ${kind} event is handed to the other people`, outbound.includes(kind), outbound.join(','))
   }
 
+  // --- pictures and GIFs ----------------------------------------------------
+  const pics = await page.evaluate(async () => {
+    const { imageLinks } = await import('/src/ui/chat-panel.ts')
+    return {
+      gif: imageLinks('look https://example.com/cat.gif'),
+      query: imageLinks('https://media.example.com/a/b.gif?width=200'),
+      png: imageLinks('https://example.com/shot.png and https://example.com/x.webp'),
+      plain: imageLinks('https://example.com/article'),
+      insecure: imageLinks('http://example.com/cat.gif'),
+      capped: imageLinks(
+        [1, 2, 3, 4, 5, 6].map((n) => `https://example.com/${n}.gif`).join(' '),
+      ).length,
+      tricked: imageLinks('https://example.com/cat.gif.exe'),
+    }
+  })
+  check('a GIF link becomes a GIF', pics.gif.length === 1, pics.gif.join())
+  check('and one with a query string still does', pics.query.length === 1)
+  check('so do the other picture kinds', pics.png.length === 2)
+  check('an ordinary link is left as a link', pics.plain.length === 0)
+  check('an insecure link is never fetched', pics.insecure.length === 0)
+  check('and one message cannot post a wall of them', pics.capped === 4, `${pics.capped}`)
+  check('something dressed up as a picture is not one', pics.tricked.length === 0)
+
+  // --- the microphone -------------------------------------------------------
+  const mic = await page.evaluate(async () => {
+    const { micConstraints, micSettings, setMicSettings } = await import('/src/net/mic.ts')
+    const before = micConstraints()
+    setMicSettings({ ...micSettings(), denoise: false })
+    const after = micConstraints()
+    setMicSettings({ echo: true, denoise: true, gain: true })
+    return { before, after }
+  })
+  check(
+    'the microphone is cleaned up by default',
+    mic.before.noiseSuppression === true && mic.before.echoCancellation === true,
+    JSON.stringify(mic.before),
+  )
+  check('and the cleaning can be turned off for music', mic.after.noiseSuppression === false)
+
   // --- sounds --------------------------------------------------------------
   const sounds = await page.evaluate(async () => {
     const { isNews, soundsOn, setSounds } = await import('/src/ui/sounds.ts')
