@@ -13,7 +13,8 @@
     "test:mesh": "node test/mesh.mjs",
     "test:repro": "node test/repro.mjs",
     "test:relays": "node test/relay-probe.mjs",
-    "test:qr": "node test/qr-check.mjs"
+    "test:qr": "node test/qr-check.mjs",
+    "test:uplink": "node test/uplink.mjs"
   },
   "dependencies": {
     "@noble/curves": "^1.9.0"

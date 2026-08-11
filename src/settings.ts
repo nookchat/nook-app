@@ -22,6 +22,8 @@ export interface HostSettings {
   fps: number
   bitrateScale: number
   budgetKbps: number
+  /** True while Beam sets the budget from what it measures. */
+  budgetAuto: boolean
   maxViewers: number
   approve: boolean
   codec: CodecChoice
@@ -37,6 +39,7 @@ export function defaultSettings(): HostSettings {
     fps: preset.fps,
     bitrateScale: preset.bitrateScale,
     budgetKbps: 6000,
+    budgetAuto: true,
     maxViewers: 10,
     approve: false,
     codec: 'auto',
@@ -58,6 +61,7 @@ export function loadSettings(): HostSettings {
     merged.budgetKbps = clamp(merged.budgetKbps, 500, 50_000, base.budgetKbps)
     merged.maxViewers = clamp(Math.round(merged.maxViewers), 1, 20, base.maxViewers)
     if (merged.mode !== 'text' && merged.mode !== 'motion') merged.mode = base.mode
+    merged.budgetAuto = merged.budgetAuto !== false
     return merged
   } catch {
     return base

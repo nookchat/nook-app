@@ -26,6 +26,7 @@ import {
   type QualityPlan,
 } from '../rtc/quality'
 import { gradeOf } from '../rtc/stats'
+import { UplinkMeter } from '../net/uplink'
 import { loadSettings, saveSettings, type HostSettings } from '../settings'
 import { clear, copyText, fmtDuration, fmtKbps, h, labelled } from './dom'
 import { brandMark, icon } from './icons'
@@ -63,9 +64,8 @@ export class HostView {
   private phase: 'idle' | 'live' = 'idle'
   private lastSummary: SessionSummary | null = null
 
-  private effectiveBudget = 0
-  private congestedTicks = 0
-  private lastBudgetDrop = 0
+  /** What Beam believes this connection will carry upward. */
+  private readonly uplink = new UplinkMeter()
 
   private timers: number[] = []
 
@@ -86,9 +86,18 @@ export class HostView {
   private relayLine!: HTMLDivElement
   private elapsed!: HTMLSpanElement
 
+  private budgetLabel!: HTMLSpanElement
+  private budgetNote!: HTMLDivElement
+  private budgetInput!: HTMLInputElement
+  private autoButton!: HTMLButtonElement
+
   constructor(root: HTMLElement) {
     this.root = root
-    this.effectiveBudget = this.settings.budgetKbps
+  }
+
+  /** The budget in force: measured while automatic, otherwise the slider. */
+  private budgetKbps(): number {
+    return this.settings.budgetAuto ? this.uplink.estimateKbps : this.settings.budgetKbps
   }
 
   get isLive(): boolean {
@@ -130,7 +139,6 @@ export class HostView {
     this.startedAt = Date.now()
     this.peakViewers = 0
     this.bytesSent = 0
-    this.effectiveBudget = this.settings.budgetKbps
 
     this.mixer = new AudioMixer()
     await this.mixer.resume()
@@ -311,7 +319,7 @@ export class HostView {
       this.bytesSent += ((peer.stats.kbps + peer.stats.audioKbps) * 1000 * (STATS_MS / 1000)) / 8
     }
 
-    this.adaptBudget(peers)
+    this.measureUplink(peers)
 
     const plan = this.currentPlan(Math.max(1, peers.length))
     for (const peer of peers) await peer.setPlan(plan)
@@ -322,43 +330,31 @@ export class HostView {
   }
 
   /**
-   * The upload budget slider is the ceiling the host set. This lowers the real
-   * budget when the viewers report loss, and it walks back up when the loss
-   * clears. WebRTC adapts on its own too, but a mesh needs a shared ceiling,
-   * otherwise every connection fights the others for the same uplink.
+   * Fold this round of statistics into the uplink estimate.
+   *
+   * Two things are real measurements of the upload path: what the viewers
+   * report losing, and what the bandwidth estimator inside WebRTC says the path
+   * will carry. Both come from bytes that actually travelled.
    */
-  private adaptBudget(peers: HostPeer[]): void {
+  private measureUplink(peers: HostPeer[]): void {
     const live = peers.filter((p) => p.state === 'connected' && p.stats.kbps > 0)
-    if (live.length === 0) {
-      this.effectiveBudget = this.settings.budgetKbps
-      return
-    }
-    const avgLoss = live.reduce((sum, p) => sum + p.stats.lossPct, 0) / live.length
-    const now = Date.now()
+    if (live.length === 0) return
 
-    if (avgLoss > 3) {
-      this.congestedTicks += 1
-      if (this.congestedTicks >= 2) {
-        const next = Math.max(1000, Math.round(this.effectiveBudget * 0.8))
-        if (next < this.effectiveBudget) {
-          this.effectiveBudget = next
-          this.lastBudgetDrop = now
-        }
-        this.congestedTicks = 0
-      }
-      return
-    }
+    const sendingKbps = live.reduce((sum, p) => sum + p.stats.kbps + p.stats.audioKbps, 0)
+    const availableKbps = live.reduce((sum, p) => sum + p.stats.availableOutKbps, 0)
+    const lossPct = live.reduce((sum, p) => sum + p.stats.lossPct, 0) / live.length
+    const { width, height } = this.sourceSize()
+    const demandKbps =
+      idealBitrateKbps(
+        this.settings.mode,
+        width,
+        height,
+        this.settings.bitrateScale,
+        this.settings.fps,
+      ) * live.length
 
-    this.congestedTicks = 0
-    if (
-      avgLoss < 0.5 &&
-      this.effectiveBudget < this.settings.budgetKbps &&
-      now - this.lastBudgetDrop > 15_000
-    ) {
-      this.effectiveBudget = Math.min(
-        this.settings.budgetKbps,
-        Math.round(this.effectiveBudget * 1.1),
-      )
+    if (this.uplink.observe({ demandKbps, sendingKbps, availableKbps, lossPct })) {
+      this.renderBudget()
     }
   }
 
@@ -374,7 +370,7 @@ export class HostView {
     const { width, height } = this.sourceSize()
     return planFor({
       mode: this.settings.mode,
-      budgetKbps: Math.min(this.effectiveBudget, this.settings.budgetKbps),
+      budgetKbps: this.budgetKbps(),
       viewerCount,
       width,
       height,
@@ -476,6 +472,7 @@ export class HostView {
     this.renderPresets()
     this.renderResolutions()
     this.renderFps()
+    this.renderBudget()
     this.renderPlan(this.currentPlan(1), 0)
   }
 
@@ -508,6 +505,7 @@ export class HostView {
     this.renderPresets()
     this.renderResolutions()
     this.renderFps()
+    this.renderBudget()
     this.renderViewers()
     this.renderPlan(this.currentPlan(1), 0)
     this.renderPreviewBadges()
@@ -626,27 +624,45 @@ export class HostView {
     this.resolutionRow = h('div', { class: 'chips' })
     this.fpsRow = h('div', { class: 'chips' })
 
-    const budget = h('input', {
+    this.budgetInput = h('input', {
       type: 'range',
       min: '1',
       max: '50',
       step: '1',
-      value: String(Math.round(this.settings.budgetKbps / 1000)),
+      value: String(Math.round(this.budgetKbps() / 1000)),
       ariaLabel: 'Total upload budget',
       on: {
+        // Touching the slider is the decision to drive it by hand.
         input: () => {
-          this.settings.budgetKbps = Number(budget.value) * 1000
-          this.effectiveBudget = this.settings.budgetKbps
-          budgetLabel.textContent = `${budget.value} Mb/s`
+          this.settings.budgetAuto = false
+          this.settings.budgetKbps = Number(this.budgetInput.value) * 1000
           this.persist()
+          this.renderBudget()
           void this.tickStats()
         },
       },
     })
-    const budgetLabel = h('span', {
-      class: 'tiny mono',
-      style: { minWidth: '58px', textAlign: 'right' },
-      text: `${Math.round(this.settings.budgetKbps / 1000)} Mb/s`,
+
+    this.budgetLabel = h('span', {
+      class: 'tiny mono budget-label',
+      style: { minWidth: '96px', textAlign: 'right' },
+    })
+
+    this.budgetNote = h('div', { class: 'tiny faint budget-note' })
+
+    this.autoButton = h('button', {
+      class: 'chip',
+      text: 'Automatic',
+      title: 'Let Beam set the budget from what it measures on the live connection.',
+      on: {
+        click: () => {
+          this.settings.budgetAuto = !this.settings.budgetAuto
+          if (!this.settings.budgetAuto) this.settings.budgetKbps = this.uplink.estimateKbps
+          this.persist()
+          this.renderBudget()
+          void this.tickStats()
+        },
+      },
     })
 
     const codec = h('select', {
@@ -717,8 +733,11 @@ export class HostView {
           labelled('Frame rate', this.fpsRow, 'Fewer frames leave more bits for detail.'),
           labelled(
             'Upload budget',
-            h('div', { class: 'row' }, [budget, budgetLabel]),
-            'All viewers share this. Beam lowers it on its own when it sees packet loss.',
+            h('div', { class: 'stack tight' }, [
+              h('div', { class: 'row' }, [this.autoButton, this.budgetLabel]),
+              this.budgetInput,
+              this.budgetNote,
+            ]),
           ),
           labelled(
             'Viewer limit',
@@ -1144,11 +1163,23 @@ export class HostView {
     if (plan.maxBitrateKbps < ideal * 0.95) {
       parts.push('The budget is holding the quality down.')
     }
-    if (this.effectiveBudget < this.settings.budgetKbps) {
-      parts.push(`Beam lowered the budget to ${fmtKbps(this.effectiveBudget)} after packet loss.`)
-    }
     this.uploadLine.textContent = parts.join(' ')
-    this.uploadLine.classList.toggle('warn', total > this.settings.budgetKbps * 0.95)
+    this.uploadLine.classList.toggle('warn', total > this.budgetKbps() * 0.95)
+  }
+
+  /** Keep the budget row honest about the number and where it came from. */
+  private renderBudget(): void {
+    if (!this.budgetLabel) return
+    const auto = this.settings.budgetAuto
+    const kbps = this.budgetKbps()
+
+    this.autoButton.classList.toggle('on', auto)
+    this.budgetLabel.textContent = `${fmtKbps(kbps)} · ${auto ? this.uplink.label : 'manual'}`
+    this.budgetInput.value = String(Math.max(1, Math.round(kbps / 1000)))
+    this.budgetInput.disabled = auto
+    this.budgetNote.textContent = auto
+      ? this.uplink.note
+      : 'You set this by hand. Beam keeps to it, and still drops quality if the viewers report loss.'
   }
 
   private renderPreviewBadges(): void {

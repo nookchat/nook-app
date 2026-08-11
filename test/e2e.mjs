@@ -150,6 +150,24 @@ try {
   )
   check('a signal relay came up', relayOpen > 0, `${relayOpen} good pills`)
 
+  // The upload budget must start automatic, with the source of the number named.
+  const budget = await host.evaluate(() => {
+    const auto = Array.from(document.querySelectorAll('.chip')).find(
+      (c) => c.textContent === 'Automatic',
+    )
+    return {
+      label: document.querySelector('.budget-label')?.textContent ?? '',
+      note: document.querySelector('.budget-note')?.textContent ?? '',
+      auto: auto?.classList.contains('on') ?? false,
+      sliderLocked: document.querySelector('input[aria-label="Total upload budget"]')?.disabled,
+    }
+  })
+  check(
+    'the upload budget starts automatic and says where the figure came from',
+    budget.auto && budget.sliderLocked === true && /·\s(measured|estimated|default)$/.test(budget.label),
+    `${budget.label} — ${budget.note.slice(0, 60)}`,
+  )
+
   // The QR must carry the exact link. Chrome's own decoder is the judge.
   await host.getByRole('button', { name: 'Show a QR code' }).click()
   await host.locator('.qr-frame svg').waitFor({ timeout: 5000 })

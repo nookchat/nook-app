@@ -38,6 +38,7 @@ as secure while you develop.
 npm run test:e2e       # two real Chrome pages, real relays, real media
 npm run test:mesh 10   # one host, ten viewers, prints the per viewer plan
 npm run test:qr        # every QR version, decoded back by Chrome
+npm run test:uplink    # the upload estimator, against made up statistics
 npm run test:relays    # which public relays really carry a handshake
 npm run test:repro skew    # viewer clock five minutes ahead
 npm run test:repro delay   # viewer joins 100 s later, host tab hidden
@@ -161,6 +162,42 @@ and the budget all take their cut:
 | 1440p      | 4.0 Mb/s | 6.0 Mb/s  |
 | 2160p      | 6.0 Mb/s | 10.0 Mb/s |
 
+### The upload budget
+
+Beam runs no upload speed test, because a speed test needs a server that accepts
+an upload and Beam has none. A static host refuses a POST, and pushing megabytes
+through the free public signal relays would get the room rate limited, which is
+a poor trade for a number that can be learned honestly. So `src/net/uplink.ts`
+does two things instead:
+
+1. **On load it reads what the browser already knows.** The Network Information
+   API reports data saver, a coarse connection class, and whether the link is
+   cellular. That sets a careful starting budget, labelled `estimated`.
+2. **Once a viewer connects it measures.** Real bytes travel the real path, and
+   the bandwidth estimator inside WebRTC reports what that path will carry.
+   Packet loss reported back by the viewers measures the same thing from the
+   other end. The budget converges on that, and the label changes to `measured`.
+
+| Hint                     | Starting budget |
+| ------------------------ | --------------- |
+| Data saver on            | 1.5 Mb/s        |
+| 2g or slower             | 0.8 Mb/s        |
+| 3g                       | 2.5 Mb/s        |
+| Cellular                 | 4.0 Mb/s        |
+| Anything else, or no API | 6.0 Mb/s        |
+
+The numeric `downlink` figure is deliberately ignored. It is built from recent
+traffic, rounded and capped, and on a freshly opened page it often reads far
+below the truth: trusting it made Beam open at 870 kb/s on a fast link and warn
+that the budget was holding the quality down.
+
+The estimate only reaches upward while the encoders actually want more than the
+current budget. There is no point discovering a spare 20 Mb/s to carry a
+1.2 Mb/s document, so a quiet stream never probes.
+
+The budget is automatic until you touch the slider, and manual from then on. The
+label always says which mode it is in and where the figure came from.
+
 ### The mesh limit
 
 The host encodes and sends the picture once per viewer. Ten viewers at 2.5 Mb/s
@@ -168,9 +205,8 @@ need 25 Mb/s of upload, which most home connections do not have. Beam therefore:
 
 - divides the upload budget across the connected viewers and caps each sender,
 - halves the sent resolution above six viewers,
-- reads `getStats` every two seconds and lowers the real budget by 20 percent
-  when the viewers report more than 3 percent packet loss for two samples,
-- walks the budget back up when the loss clears for 15 seconds,
+- reads `getStats` every two seconds and folds it into the uplink estimate
+  above, which pulls the budget down on loss and lifts it on spare capacity,
 - enforces a viewer limit, 10 by default.
 
 Above about ten viewers a mesh stops being the right shape. The next step would
@@ -234,6 +270,7 @@ Anyone holding the link can watch. Two host controls make that safe:
 ```
 src/
   main.ts             route to host or viewer from the URL fragment
+  net/uplink.ts       how much upload Beam may use, guessed then measured
   room.ts             secret, roomId, roomKey, link build and parse
   settings.ts         host preferences, kept in localStorage
   diagnostics.ts      what this browser can do, in plain words
@@ -261,7 +298,8 @@ src/
     video-surface.ts  fit, fill, and one to one with zoom and pan
     dom.ts toast.ts   small helpers, no framework
 test/
-  e2e.mjs             host and viewer, end to end, 26 checks
+  e2e.mjs             host and viewer, end to end, 27 checks
+  uplink.mjs          the upload estimator, against made up statistics
   qr-check.mjs        every QR version, decoded back by Chrome
   mesh.mjs            N viewers against one host
   relay-probe.mjs     which public relays really carry a handshake
