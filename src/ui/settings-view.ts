@@ -187,12 +187,13 @@ export function settingsView(actions: SettingsActions): HTMLElement {
 
         h('div', { class: 'card stack tight' }, [
           h('span', { class: 'eyebrow', text: 'Microphone' }),
-          micRow('denoise', 'Noise suppression', 'Takes out steady background noise: fans, traffic, a room hum.'),
+          micRow('smart', 'Smart noise removal', 'A small neural network that removes keys, doors and voices behind you, not just steady sound.'),
+          micRow('denoise', 'Basic noise suppression', 'The driver\u2019s own. Takes out steady background noise: fans, traffic, a room hum.'),
           micRow('echo', 'Echo cancellation', 'Stops the other side hearing themselves through your speakers.'),
           micRow('gain', 'Automatic volume', 'Evens out how loud you are as you move around.'),
           h('div', {
             class: 'tiny faint',
-            text: 'All three run in the audio driver rather than in the page, so they cost nothing and add no delay. Leave them on for talking. Turn them off for music, where the processing hears the content as noise and fights it. A change applies the next time you join a voice channel.',
+            text: 'Smart removal is a neural network trained on the noises the driver cannot find: typing, a door, somebody talking behind you. It runs on the audio thread, costs about a tenth of a core, and adds ten milliseconds. The other three run in the driver and cost nothing. Leave them on for talking, and turn them off for music, where the processing hears the content as noise and fights it. A change applies the next time you join a voice channel.',
           }),
         ]),
 

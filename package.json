@@ -26,6 +26,7 @@
     "test:roles": "node test/roles-check.mjs"
   },
   "dependencies": {
+    "@jitsi/rnnoise-wasm": "^0.2.1",
     "@noble/curves": "^1.9.0"
   },
   "devDependencies": {

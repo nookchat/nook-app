@@ -16,7 +16,8 @@
  */
 
 import { rtcConfig } from '../rtc/config'
-import { micConstraints } from './mic'
+import { micConstraints, micSettings } from './mic'
+import { denoise, type Denoiser } from './denoise'
 import type { SignalBus } from '../signal/bus'
 import type { Envelope } from '../signal/envelope'
 
@@ -36,6 +37,9 @@ export class Voice {
   private readonly selfId: string
   private readonly calls = new Map<string, Call>()
   private mic: MediaStream | null = null
+  /** The raw microphone, kept so it can be stopped when the cleaned one is. */
+  private rawMic: MediaStream | null = null
+  private cleaner: Denoiser | null = null
   private channel: string | null = null
   private muted = false
   /** Where everybody else is standing, from their announcements. */
@@ -78,12 +82,23 @@ export class Voice {
     if (this.channel === channel) return
     this.leave()
     try {
-      this.mic = await navigator.mediaDevices.getUserMedia({
+      this.rawMic = await navigator.mediaDevices.getUserMedia({
         audio: micConstraints(),
         video: false,
       })
     } catch {
       throw new Error('Cathode could not open your microphone.')
+    }
+
+    /*
+     * Put it through the network if that is wanted and possible. When it is
+     * not, the microphone goes out as it came: the driver has already done the
+     * easy half, and a call with some noise in it beats no call.
+     */
+    this.mic = this.rawMic
+    if (micSettings().smart) {
+      this.cleaner = await denoise(this.rawMic)
+      if (this.cleaner) this.mic = this.cleaner.stream
     }
     this.channel = channel
     this.muted = false
@@ -94,7 +109,11 @@ export class Voice {
   leave(): void {
     for (const call of this.calls.values()) call.close()
     this.calls.clear()
+    this.cleaner?.close()
+    this.cleaner = null
+    this.rawMic?.getTracks().forEach((t) => t.stop())
     this.mic?.getTracks().forEach((t) => t.stop())
+    this.rawMic = null
     this.mic = null
     this.channel = null
     this.muted = false
@@ -103,6 +122,8 @@ export class Voice {
 
   setMuted(muted: boolean): void {
     this.muted = muted
+    // Mute at the source, so nothing reaches the network either.
+    for (const track of this.rawMic?.getAudioTracks() ?? []) track.enabled = !muted
     for (const track of this.mic?.getAudioTracks() ?? []) track.enabled = !muted
     this.onChange?.()
   }

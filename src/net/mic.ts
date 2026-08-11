@@ -30,9 +30,17 @@ export interface MicSettings {
   echo: boolean
   denoise: boolean
   gain: boolean
+  /**
+   * Run the neural denoiser as well as the driver's own.
+   *
+   * The two do different jobs and stack: the driver takes out the steady
+   * sound, the network takes out the rest. On by default, because the case it
+   * fixes is the common one and the cost is a tenth of a core.
+   */
+  smart: boolean
 }
 
-const DEFAULTS: MicSettings = { echo: true, denoise: true, gain: true }
+const DEFAULTS: MicSettings = { echo: true, denoise: true, gain: true, smart: true }
 
 export function micSettings(): MicSettings {
   try {
@@ -43,6 +51,7 @@ export function micSettings(): MicSettings {
       echo: saved.echo !== false,
       denoise: saved.denoise !== false,
       gain: saved.gain !== false,
+      smart: saved.smart !== false,
     }
   } catch {
     return { ...DEFAULTS }
