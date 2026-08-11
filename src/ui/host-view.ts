@@ -44,7 +44,9 @@ import { icon } from './icons'
 import { qrSvg } from './qr'
 import { aboutCard, summaryCard, type SessionSummary, type WindowChrome } from './shell'
 import { ChatPanel } from './chat-panel'
-import { cleanName, newMessageId, parseWire, toLine, type ChatWire } from '../chat'
+import { cleanName } from '../chat'
+import { RoomChat } from '../store/room-chat'
+import type { LogEvent } from '../store/log'
 import { toast } from './toast'
 import { VideoSurface } from './video-surface'
 
@@ -115,6 +117,9 @@ export class HostView {
   private grid!: HTMLDivElement
   private controlsColumn!: HTMLDivElement
   private chatPanel: ChatPanel | null = null
+  private chat: RoomChat | null = null
+  /** Arrivals and departures, which are not log events: they are about now. */
+  private readonly notes: { at: number; text: string }[] = []
   /** Names viewers gave for themselves, so the list is not a wall of hex. */
   private readonly names = new Map<string, string>()
   private wide = false
@@ -197,10 +202,47 @@ export class HostView {
 
     const secret = newSecret()
     this.room = await deriveRoom(secret)
+    await this.openChat(secret)
     this.claimUrl(secret)
     this.renderLive(secret)
     this.openBus()
     this.startLoops()
+  }
+
+  /** Load this device's copy of the room, then wire the panel to it. */
+  private async openChat(secret: string): Promise<void> {
+    if (!this.room) return
+    const chat = new RoomChat(this.room.id, secret)
+    chat.onChange = () => this.drawChat()
+    await chat.load()
+    await chat.announceName(chat.displayName)
+    this.chat = chat
+    this.chatPanel?.setMe(chat.me)
+    this.chatPanel?.setName(chat.displayName)
+    this.drawChat()
+  }
+
+  private drawChat(): void {
+    if (!this.chat || !this.chatPanel) return
+    this.chatPanel.setMe(this.chat.me)
+    this.chatPanel.render(this.chat.messages(), this.notes)
+  }
+
+  private note(text: string): void {
+    this.notes.push({ at: Date.now(), text })
+    if (this.notes.length > 60) this.notes.shift()
+    this.drawChat()
+  }
+
+  /** Pass events on to everyone except where they came from. */
+  private relay(events: LogEvent[], from: string | null): void {
+    if (!this.chat || events.length === 0) return
+    for (const raw of this.chat.encode(events)) {
+      for (const [id, peer] of this.peers) {
+        if (id === from) continue
+        peer.sendChat(raw)
+      }
+    }
   }
 
   /** Put the room in the address bar, and remember that this tab owns it. */
@@ -335,7 +377,7 @@ export class HostView {
       send: (type, data) => void this.bus?.send({ type, to: viewerId, data }),
       onChange: () => this.onPeerStateChange(viewerId),
       onFailed: (reason) => toast(reason, 'bad', 8000),
-      onChat: (raw) => this.onChatFromViewer(viewerId, raw),
+      onChat: (raw) => void this.onChatFromViewer(viewerId, raw),
     })
     this.peers.set(viewerId, peer)
     this.peakViewers = Math.max(this.peakViewers, this.peers.size)
@@ -356,41 +398,34 @@ export class HostView {
     if (peer?.state === 'connected' && !this.announced.has(viewerId)) {
       this.announced.add(viewerId)
       const name = this.label(viewerId)
-      this.broadcastChat({ v: 1, id: newMessageId(), kind: 'joined', name }, null)
+      this.note(`${name} joined`)
       toast(`${name} joined.`, 'info', 4000)
+      // Hand them everything this device holds, so they arrive to a room with
+      // a history rather than an empty box.
+      for (const raw of this.chat?.backfill() ?? []) peer.sendChat(raw)
     }
     this.renderViewers()
   }
 
-  private onChatFromViewer(viewerId: string, raw: string): void {
-    const wire = parseWire(raw)
-    if (!wire) return
-    // A viewer names itself on the channel. Keep that for the viewer list too.
-    if (wire.kind === 'said') this.names.set(viewerId, wire.name)
-    this.broadcastChat(wire, viewerId)
+  private async onChatFromViewer(viewerId: string, raw: string): Promise<void> {
+    const fresh = (await this.chat?.ingest(raw)) ?? []
+    if (fresh.length === 0) return
+    // A viewer names itself in the log, so the viewer list can use it too.
+    for (const event of fresh) {
+      if (event.kind === 'profile') {
+        const name = cleanName(String(event.body.name ?? ''))
+        if (name) this.names.set(viewerId, name)
+      }
+    }
+    this.relay(fresh, viewerId)
+    this.renderViewers()
   }
 
-  /** Show a line here, then repeat it to every viewer except where it came from. */
-  private broadcastChat(wire: ChatWire, from: string | null): void {
-    this.chatPanel?.append(toLine(wire, false))
-    const raw = JSON.stringify(wire)
-    for (const [id, peer] of this.peers) {
-      if (id === from) continue
-      peer.sendChat(raw)
-    }
-  }
-
-  private saySomething(text: string): void {
-    const wire: ChatWire = {
-      v: 1,
-      id: newMessageId(),
-      kind: 'said',
-      name: this.chatPanel?.currentName ?? 'Host',
-      text,
-    }
-    this.chatPanel?.append(toLine(wire, true))
-    const raw = JSON.stringify(wire)
-    for (const peer of this.peers.values()) peer.sendChat(raw)
+  /** Write one event locally, then push it to everybody. */
+  private async publish(make: (chat: RoomChat) => Promise<LogEvent>): Promise<void> {
+    if (!this.chat) return
+    const event = await make(this.chat)
+    this.relay([event], null)
   }
 
   private drop(viewerId: string, tellThem = false): void {
@@ -399,12 +434,7 @@ export class HostView {
       peer.close()
       this.peers.delete(viewerId)
     }
-    if (this.announced.delete(viewerId)) {
-      this.broadcastChat(
-        { v: 1, id: newMessageId(), kind: 'left', name: this.label(viewerId) },
-        viewerId,
-      )
-    }
+    if (this.announced.delete(viewerId)) this.note(`${this.label(viewerId)} left`)
     this.names.delete(viewerId)
     this.pending.delete(viewerId)
     if (tellThem) {
@@ -553,10 +583,16 @@ export class HostView {
     this.surface = new VideoSurface({ muted: true, showVolume: false })
     this.surface.setMode('fit')
     this.sidePanel = h('div', { class: 'host-controls' })
-    this.chatPanel = new ChatPanel('Chat')
-    this.chatPanel.onSay = (text) => this.saySomething(text)
-    this.chatPanel.onRename = () => this.renderViewers()
-    this.chatPanel.setEnabled(false, 'Nobody is here yet')
+    this.chatPanel = new ChatPanel(this.chat?.displayName ?? 'Host', 'Chat')
+    this.chatPanel.actions = {
+      say: (text, replyTo) => void this.publish((c) => c.say(text, replyTo)),
+      edit: (id, text) => void this.publish((c) => c.edit(id, text)),
+      react: (id, emoji) => void this.publish((c) => c.react(id, emoji)),
+      retract: (id) => void this.publish((c) => c.retract(id)),
+      rename: (name) => void this.publish((c) => c.announceName(name)),
+    }
+    this.chatPanel.setEnabled(true)
+    this.drawChat()
 
     this.controlsColumn = h('div', { class: 'host-side' }, [
       this.sidePanel,
@@ -1194,7 +1230,6 @@ export class HostView {
       }),
     )
     this.chatPanel?.setPresence(connected + 1)
-    this.chatPanel?.setEnabled(connected > 0, 'Nobody is here yet')
     if (this.peers.size > 6) {
       this.statusPills.append(
         h('span', {

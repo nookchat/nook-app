@@ -8,13 +8,15 @@
 
 import { checkSupport, viewerBlocker } from '../diagnostics'
 import { deriveRoom, newPeerId, type Room } from '../room'
+import { loadIdentity } from '../store/identity'
 import { SignalBus, type RelayHealth } from '../signal/bus'
 import type { Envelope } from '../signal/envelope'
 import { ViewerPeer } from '../rtc/viewer-peer'
 import { gradeOf } from '../rtc/stats'
 import { clear, fmtKbps, h } from './dom'
 import { ChatPanel } from './chat-panel'
-import { newMessageId, parseWire, toLine, type ChatWire } from '../chat'
+import { RoomChat } from '../store/room-chat'
+import type { LogEvent } from '../store/log'
 import type { WindowChrome } from './shell'
 import { toast } from './toast'
 import { VideoSurface } from './video-surface'
@@ -37,6 +39,8 @@ export class ViewerView {
   private peer: ViewerPeer | null = null
   private surface: VideoSurface | null = null
   private chatPanel: ChatPanel | null = null
+  private chat: RoomChat | null = null
+  private readonly notes: { at: number; text: string }[] = []
   private soundHandled = false
 
   private phase: Phase = 'ready'
@@ -77,25 +81,34 @@ export class ViewerView {
    * click if it does not. Muted playback always starts, so the picture is never
    * held up waiting for permission that may never come.
    */
+  /** This device's copy of the room, read before any peer is contacted. */
+  private async openChat(): Promise<void> {
+    if (!this.room) return
+    const chat = new RoomChat(this.room.id, this.secret)
+    chat.onChange = () => this.drawChat()
+    await chat.load()
+    this.chat = chat
+    this.chatPanel?.setMe(chat.me)
+    this.drawChat()
+  }
+
+  private drawChat(): void {
+    if (!this.chat || !this.chatPanel) return
+    this.chatPanel.render(this.chat.messages(), this.notes)
+  }
+
+  private async publish(make: (chat: RoomChat) => Promise<LogEvent>): Promise<void> {
+    if (!this.chat || !this.peer?.chatReady) return
+    const event = await make(this.chat)
+    for (const raw of this.chat.encode([event])) this.peer.sendChat(raw)
+  }
+
   private async tryForSound(): Promise<void> {
     if (this.soundHandled) return
     this.soundHandled = true
     const got = await this.surface?.tryUnmute()
     if (got) return
     this.surface?.setSoundPrompt(() => void this.surface?.tryUnmute())
-  }
-
-  private saySomething(text: string): void {
-    if (!this.peer?.chatReady) return
-    const wire: ChatWire = {
-      v: 1,
-      id: newMessageId(),
-      kind: 'said',
-      name: this.chatPanel?.currentName ?? 'Visitor',
-      text,
-    }
-    this.chatPanel?.append(toLine(wire, true))
-    this.peer.sendChat(JSON.stringify(wire))
   }
 
   private say(status: string): void {
@@ -107,8 +120,14 @@ export class ViewerView {
     const blocker = viewerBlocker(support)
 
     this.surface = new VideoSurface({ muted: true, showVolume: true, fullBleed: true })
-    this.chatPanel = new ChatPanel('Chat')
-    this.chatPanel.onSay = (text) => this.saySomething(text)
+    this.chatPanel = new ChatPanel(loadIdentity().name, 'Chat')
+    this.chatPanel.actions = {
+      say: (text, replyTo) => void this.publish((c) => c.say(text, replyTo)),
+      edit: (id, text) => void this.publish((c) => c.edit(id, text)),
+      react: (id, emoji) => void this.publish((c) => c.react(id, emoji)),
+      retract: (id) => void this.publish((c) => c.retract(id)),
+      rename: (name) => void this.publish((c) => c.announceName(name)),
+    }
     this.chatPanel.setEnabled(false, 'Connecting...')
 
     this.root.append(
@@ -124,6 +143,7 @@ export class ViewerView {
 
     try {
       this.room = await deriveRoom(this.secret)
+      await this.openChat()
     } catch {
       this.surface.setOverlay(
         this.message('This link is broken', 'The key in the link is not valid. Ask for a new link.', [
@@ -275,11 +295,13 @@ export class ViewerView {
         }
       },
       onFailed: (reason) => this.fail('The connection failed', reason),
-      onChat: (raw) => {
-        const wire = parseWire(raw)
-        if (wire) this.chatPanel?.append(toLine(wire, false))
+      onChat: (raw) => void this.chat?.ingest(raw),
+      onChatReady: () => {
+        this.chatPanel?.setEnabled(true)
+        // Say who we are, and hand over anything this device already holds.
+        void this.publish((c) => c.announceName(c.displayName))
+        for (const raw of this.chat?.backfill() ?? []) this.peer?.sendChat(raw)
       },
-      onChatReady: () => this.chatPanel?.setEnabled(true),
     })
   }
 

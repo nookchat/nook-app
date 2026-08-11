@@ -18,7 +18,9 @@
     "test:encoder": "node test/encoder-check.mjs",
     "test:cpu": "node test/cpu-check.mjs",
     "test:fallback": "node test/codec-fallback.mjs",
-    "test:url": "node test/url-check.mjs"
+    "test:url": "node test/url-check.mjs",
+    "test:persist": "node test/persist-check.mjs",
+    "test:themes": "node test/theme-shots.mjs"
   },
   "dependencies": {
     "@noble/curves": "^1.9.0"

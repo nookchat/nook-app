@@ -5,6 +5,7 @@
  */
 
 import './styles.css'
+import { bootTheme } from './ui/themes'
 import { clearLink, readLinkSecret } from './room'
 import { clear } from './ui/dom'
 import { HostView } from './ui/host-view'
@@ -12,6 +13,9 @@ import { createWindow, type WindowChrome } from './ui/shell'
 import { toast } from './ui/toast'
 import { ViewerView } from './ui/viewer-view'
 import { checkSupport } from './diagnostics'
+
+// Before anything is drawn, so nothing flashes in the wrong skin.
+bootTheme()
 
 const app = document.getElementById('app')
 

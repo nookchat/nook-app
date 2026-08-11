@@ -1,52 +1,486 @@
 /*
- * Cathode, dressed as Windows XP.
+ * Cathode, in five skins.
  *
- * The Luna blue theme, as faithfully as CSS allows: a gradient title bar with
- * rounded top corners, the #ece9d8 face colour, beveled buttons, sunken white
- * fields, etched group boxes, segmented green progress, and a status bar with
- * sunken panels. Tahoma throughout, because that is the whole voice of it.
- *
- * This commits to one look. Windows XP had no dark mode, so neither does this,
- * and every colour is painted explicitly rather than inherited from the host.
+ * Every visual decision below reads from a token. A theme is a block of token
+ * values and nothing else, which is why five skins this different need only one
+ * set of structural rules. If you find yourself writing a rule under a
+ * [data-theme] selector, the thing you are styling probably wants a token.
  */
 
-:root {
-  /* Luna blue */
-  --title-1: #0a58e8;
-  --title-2: #3f8cf3;
-  --title-3: #1c6ae8;
-  --title-4: #0a4bd0;
-  --frame: #0831d9;
-  --frame-dark: #003c74;
+/* =========================================================================
+   Windows XP, Luna blue. The default.
+   ========================================================================= */
 
-  /* The face colour of every window and dialog in XP */
+:root,
+:root[data-theme="xp"] {
+  --desktop: #4a90d9;
+  --desktop-image:
+    radial-gradient(58% 30% at 50% 100%, #86c440 0%, #6fb02f 45%, #56942a 78%, transparent 100%),
+    radial-gradient(closest-side, rgb(255 255 255 / 78%), transparent 100%),
+    radial-gradient(closest-side, rgb(255 255 255 / 62%), transparent 100%),
+    linear-gradient(180deg, #1b56b0 0%, #3b81d8 30%, #79b6e8 58%, #b9dcf2 70%, #7fb542 70.5%, #4d8a24 100%);
+  --desktop-size: 140% 46%, 30% 13%, 22% 9%, 100% 100%;
+  --desktop-pos: 50% 100%, 16% 22%, 72% 15%, 0 0;
+  --desktop-pad: 10px;
+
+  --win-bg: #ece9d8;
+  --win-border: 3px solid #0831d9;
+  --win-radius: 8px 8px 0 0;
+  --win-shadow: 2px 2px 10px rgb(0 0 0 / 45%);
+
+  --title-bg: linear-gradient(180deg, #3f8cf3 0%, #0a58e8 8%, #1c6ae8 40%, #0a58e8 88%, #0a4bd0 100%);
+  --title-solid: #0a58e8;
+  --title-h: 26px;
+  --title-shadow: inset 0 1px 0 rgb(255 255 255 / 45%);
+
+  --cap-bg: linear-gradient(180deg, #7ab3f5 0%, #2e73d8 45%, #1b5cc4 55%, #4c93ee 100%);
+  --cap-close-bg: linear-gradient(180deg, #f39c8e 0%, #d6503c 45%, #c33822 55%, #ea7a63 100%);
+  --cap-border: 1px solid rgb(255 255 255 / 70%);
+  --cap-radius: 3px;
+  --cap-fg: #fff;
+  --cap-size: 22px;
+
   --face: #ece9d8;
-  --face-light: #f5f4ea;
-  --face-dark: #d4d0c0;
-  --face-shadow: #aca899;
-
-  --field: #ffffff;
-  --field-border: #7f9db9;
+  --surface: #f5f4ea;
+  --surface-2: #e3e0d1;
+  --line: #d3d0c4;
+  --line-soft: #e2dfd2;
+  --bevel-light: #ffffff;
+  --bevel-dark: #aca899;
 
   --fg: #000000;
   --fg-dim: #3a3a2f;
   --fg-faint: #6b6b5c;
   --fg-disabled: #a0a0a0;
+  --heading: #003399;
 
+  --accent: #1c6ae8;
+  --accent-fg: #ffffff;
   --select: #316ac5;
   --select-fg: #ffffff;
 
   --good: #157e15;
   --warn: #9a6400;
   --bad: #b81a1a;
+  --progress: repeating-linear-gradient(90deg, #2ac428 0 7px, transparent 7px 9px);
 
-  --progress: #2ac428;
+  --field-bg: #ffffff;
+  --field-border: 1px solid #7f9db9;
+  --field-inset: 1px solid var(--bevel-dark);
+  --field-radius: 0;
 
-  --mono: "Lucida Console", Consolas, Monaco, monospace;
+  --btn-bg: linear-gradient(180deg, #fff 0%, #f2f1e6 46%, #e5e2d2 47%, #f0eee2 100%);
+  --btn-bg-hover: linear-gradient(180deg, #fffdf5 0%, #ffeeb8 46%, #ffe08a 47%, #fff3cf 100%);
+  --btn-bg-active: linear-gradient(180deg, #ded9c6 0%, #e9e6d8 100%);
+  --btn-border: #003c74;
+  --btn-border-hover: #e9a900;
+  --btn-fg: #000;
+  --btn-radius: 3px;
+  --btn-shadow: inset 0 0 0 1px #fff;
+  --btn-h: 23px;
+  --btn-weight: 400;
+
+  --radius-sm: 0;
+  --pill-radius: 0;
+  --panel-radius: 0;
+  --shadow: 1px 1px 4px rgb(0 0 0 / 30%);
+  --tip-bg: #ffffe1;
+  --tip-border: #000;
+
   --sans: Tahoma, "Segoe UI", Verdana, Geneva, sans-serif;
+  --mono: "Lucida Console", Consolas, Monaco, monospace;
+  --size: 12px;
+  --size-small: 11px;
 
   color-scheme: light;
 }
+
+/* =========================================================================
+   WinAmp. Black, grey, and a green display.
+   ========================================================================= */
+
+:root[data-theme="winamp"] {
+  --desktop: #101010;
+  --desktop-image: radial-gradient(120% 90% at 50% 0%, #2a2a2a 0%, #101010 70%);
+  --desktop-size: 100% 100%;
+  --desktop-pos: 0 0;
+  --desktop-pad: 8px;
+
+  --win-bg: #232323;
+  --win-border: 1px solid #4a4a4a;
+  --win-radius: 0;
+  --win-shadow: 0 6px 22px rgb(0 0 0 / 70%);
+
+  --title-bg: linear-gradient(180deg, #4a4a4a 0%, #2e2e2e 45%, #1c1c1c 100%);
+  --title-solid: #2e2e2e;
+  --title-h: 20px;
+  --title-shadow: inset 0 1px 0 rgb(255 255 255 / 14%);
+
+  --cap-bg: linear-gradient(180deg, #5a5a5a, #303030);
+  --cap-close-bg: linear-gradient(180deg, #7a3a3a, #401c1c);
+  --cap-border: 1px solid #5f5f5f;
+  --cap-radius: 0;
+  --cap-fg: #d8d8d8;
+  --cap-size: 15px;
+
+  --face: #232323;
+  --surface: #2b2b2b;
+  --surface-2: #191919;
+  --line: #3d3d3d;
+  --line-soft: #2f2f2f;
+  --bevel-light: #5a5a5a;
+  --bevel-dark: #111111;
+
+  --fg: #d6d6d6;
+  --fg-dim: #a2a2a2;
+  --fg-faint: #767676;
+  --fg-disabled: #565656;
+  --heading: #45f01c;
+
+  --accent: #45f01c;
+  --accent-fg: #06210b;
+  --select: #2f6b18;
+  --select-fg: #b6ffa0;
+
+  --good: #45f01c;
+  --warn: #ffb000;
+  --bad: #ff5b4a;
+  --progress: repeating-linear-gradient(90deg, #45f01c 0 3px, transparent 3px 5px);
+
+  --field-bg: #000000;
+  --field-border: 1px solid #111;
+  --field-inset: 1px solid #3a3a3a;
+  --field-radius: 0;
+
+  --btn-bg: linear-gradient(180deg, #4a4a4a 0%, #333 50%, #2a2a2a 100%);
+  --btn-bg-hover: linear-gradient(180deg, #5c5c5c 0%, #414141 50%, #363636 100%);
+  --btn-bg-active: linear-gradient(180deg, #1e1e1e, #2b2b2b);
+  --btn-border: #5f5f5f;
+  --btn-border-hover: #45f01c;
+  --btn-fg: #d6d6d6;
+  --btn-radius: 0;
+  --btn-shadow: inset 0 1px 0 rgb(255 255 255 / 10%);
+  --btn-h: 21px;
+  --btn-weight: 700;
+
+  --radius-sm: 0;
+  --pill-radius: 0;
+  --panel-radius: 0;
+  --shadow: 0 2px 8px rgb(0 0 0 / 60%);
+  --tip-bg: #000;
+  --tip-border: #45f01c;
+
+  --sans: "Lucida Console", Consolas, Monaco, monospace;
+  --mono: "Lucida Console", Consolas, Monaco, monospace;
+  --size: 11px;
+  --size-small: 10px;
+
+  color-scheme: dark;
+}
+
+/* The display glows, the way the visualiser did. */
+:root[data-theme="winamp"] .share-code,
+:root[data-theme="winamp"] .chat-log,
+:root[data-theme="winamp"] .plan-box {
+  color: #45f01c;
+  text-shadow: 0 0 6px rgb(69 240 28 / 35%);
+}
+
+/* =========================================================================
+   Discord. Dark, blurple, rounded.
+   ========================================================================= */
+
+:root[data-theme="discord"] {
+  --desktop: #1e1f22;
+  --desktop-image: none;
+  --desktop-size: 100% 100%;
+  --desktop-pos: 0 0;
+  --desktop-pad: 0px;
+
+  --win-bg: #313338;
+  --win-border: 0 solid transparent;
+  --win-radius: 0;
+  --win-shadow: none;
+
+  --title-bg: #1e1f22;
+  --title-solid: #1e1f22;
+  --title-h: 30px;
+  --title-shadow: none;
+
+  --cap-bg: transparent;
+  --cap-close-bg: transparent;
+  --cap-border: 1px solid transparent;
+  --cap-radius: 6px;
+  --cap-fg: #b5bac1;
+  --cap-size: 24px;
+
+  --face: #313338;
+  --surface: #2b2d31;
+  --surface-2: #232428;
+  --line: #3f4147;
+  --line-soft: #2e3035;
+  --bevel-light: transparent;
+  --bevel-dark: transparent;
+
+  --fg: #f2f3f5;
+  --fg-dim: #dbdee1;
+  --fg-faint: #949ba4;
+  --fg-disabled: #6d6f78;
+  --heading: #f2f3f5;
+
+  --accent: #5865f2;
+  --accent-fg: #ffffff;
+  --select: #404249;
+  --select-fg: #ffffff;
+
+  --good: #23a55a;
+  --warn: #f0b232;
+  --bad: #f23f43;
+  --progress: linear-gradient(90deg, #5865f2, #7983f5);
+
+  --field-bg: #1e1f22;
+  --field-border: 1px solid #1e1f22;
+  --field-inset: 0 solid transparent;
+  --field-radius: 8px;
+
+  --btn-bg: #4e5058;
+  --btn-bg-hover: #6d6f78;
+  --btn-bg-active: #404249;
+  --btn-border: transparent;
+  --btn-border-hover: transparent;
+  --btn-fg: #ffffff;
+  --btn-radius: 8px;
+  --btn-shadow: none;
+  --btn-h: 32px;
+  --btn-weight: 500;
+
+  --radius-sm: 6px;
+  --pill-radius: 999px;
+  --panel-radius: 8px;
+  --shadow: 0 8px 24px rgb(0 0 0 / 40%);
+  --tip-bg: #111214;
+  --tip-border: #111214;
+
+  --sans: "gg sans", "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif;
+  --mono: ui-monospace, Menlo, Consolas, monospace;
+  --size: 14px;
+  --size-small: 12px;
+
+  color-scheme: dark;
+}
+
+/* =========================================================================
+   Skype, the old bright blue one.
+   ========================================================================= */
+
+:root[data-theme="skype"] {
+  --desktop: #00aff0;
+  --desktop-image: linear-gradient(160deg, #00aff0 0%, #0078a8 100%);
+  --desktop-size: 100% 100%;
+  --desktop-pos: 0 0;
+  --desktop-pad: 12px;
+
+  --win-bg: #ffffff;
+  --win-border: 1px solid #cfd8dc;
+  --win-radius: 4px;
+  --win-shadow: 0 10px 30px rgb(0 60 90 / 30%);
+
+  --title-bg: linear-gradient(180deg, #00b7f5 0%, #00aff0 55%, #009ad4 100%);
+  --title-solid: #00aff0;
+  --title-h: 34px;
+  --title-shadow: none;
+
+  --cap-bg: transparent;
+  --cap-close-bg: transparent;
+  --cap-border: 1px solid transparent;
+  --cap-radius: 3px;
+  --cap-fg: #ffffff;
+  --cap-size: 24px;
+
+  --face: #ffffff;
+  --surface: #f4f8fb;
+  --surface-2: #e6eef4;
+  --line: #d8e2e9;
+  --line-soft: #eaf1f6;
+  --bevel-light: transparent;
+  --bevel-dark: transparent;
+
+  --fg: #16303d;
+  --fg-dim: #4b6c7d;
+  --fg-faint: #7d97a5;
+  --fg-disabled: #b0c2cc;
+  --heading: #0078a8;
+
+  --accent: #00aff0;
+  --accent-fg: #ffffff;
+  --select: #cfeefc;
+  --select-fg: #0a3f55;
+
+  --good: #7bc61e;
+  --warn: #f5a623;
+  --bad: #e2453c;
+  --progress: linear-gradient(90deg, #7bc61e, #a6e04a);
+
+  --field-bg: #ffffff;
+  --field-border: 1px solid #c6d6df;
+  --field-inset: 0 solid transparent;
+  --field-radius: 3px;
+
+  --btn-bg: #ffffff;
+  --btn-bg-hover: #eaf7fd;
+  --btn-bg-active: #d6eefa;
+  --btn-border: #b7cfdb;
+  --btn-border-hover: #00aff0;
+  --btn-fg: #16303d;
+  --btn-radius: 3px;
+  --btn-shadow: none;
+  --btn-h: 28px;
+  --btn-weight: 600;
+
+  --radius-sm: 3px;
+  --pill-radius: 999px;
+  --panel-radius: 4px;
+  --shadow: 0 3px 10px rgb(0 60 90 / 18%);
+  --tip-bg: #ffffff;
+  --tip-border: #b7cfdb;
+
+  --sans: "Segoe UI", Tahoma, system-ui, sans-serif;
+  --mono: Consolas, Menlo, monospace;
+  --size: 13px;
+  --size-small: 11.5px;
+
+  color-scheme: light;
+}
+
+/* =========================================================================
+   Plain. Neutral, and it follows the system.
+   ========================================================================= */
+
+:root[data-theme="plain"] {
+  --desktop: #e9eaec;
+  --desktop-image: none;
+  --desktop-size: 100% 100%;
+  --desktop-pos: 0 0;
+  --desktop-pad: 0px;
+
+  --win-bg: #ffffff;
+  --win-border: 0 solid transparent;
+  --win-radius: 0;
+  --win-shadow: none;
+
+  --title-bg: #f4f5f7;
+  --title-solid: #f4f5f7;
+  --title-h: 32px;
+  --title-shadow: inset 0 -1px 0 #e0e2e6;
+
+  --cap-bg: transparent;
+  --cap-close-bg: transparent;
+  --cap-border: 1px solid transparent;
+  --cap-radius: 5px;
+  --cap-fg: #5c6570;
+  --cap-size: 24px;
+
+  --face: #ffffff;
+  --surface: #f7f8fa;
+  --surface-2: #eef0f3;
+  --line: #dfe2e7;
+  --line-soft: #eceef1;
+  --bevel-light: transparent;
+  --bevel-dark: transparent;
+
+  --fg: #14171a;
+  --fg-dim: #4a5158;
+  --fg-faint: #7b838c;
+  --fg-disabled: #adb4bb;
+  --heading: #14171a;
+
+  --accent: #2f6feb;
+  --accent-fg: #ffffff;
+  --select: #dbe6fd;
+  --select-fg: #14304f;
+
+  --good: #1a7f4b;
+  --warn: #9a6b00;
+  --bad: #c8362f;
+  --progress: linear-gradient(90deg, #2f6feb, #6c9bf5);
+
+  --field-bg: #ffffff;
+  --field-border: 1px solid #d3d8de;
+  --field-inset: 0 solid transparent;
+  --field-radius: 6px;
+
+  --btn-bg: #ffffff;
+  --btn-bg-hover: #f2f4f7;
+  --btn-bg-active: #e6e9ee;
+  --btn-border: #d3d8de;
+  --btn-border-hover: #b6bec7;
+  --btn-fg: #14171a;
+  --btn-radius: 6px;
+  --btn-shadow: none;
+  --btn-h: 30px;
+  --btn-weight: 500;
+
+  --radius-sm: 6px;
+  --pill-radius: 999px;
+  --panel-radius: 8px;
+  --shadow: 0 2px 8px rgb(15 20 25 / 10%);
+  --tip-bg: #ffffff;
+  --tip-border: #d3d8de;
+
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, Menlo, Consolas, monospace;
+  --size: 13.5px;
+  --size-small: 12px;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="plain"] {
+    --desktop: #0f1114;
+    --win-bg: #16191d;
+    --title-bg: #101317;
+    --title-solid: #101317;
+    --title-shadow: inset 0 -1px 0 #23272d;
+    --cap-fg: #9aa3ad;
+
+    --face: #16191d;
+    --surface: #1c2026;
+    --surface-2: #23272d;
+    --line: #2b3037;
+    --line-soft: #21252b;
+
+    --fg: #e8ebee;
+    --fg-dim: #a8b0b9;
+    --fg-faint: #79828c;
+    --fg-disabled: #545c65;
+    --heading: #e8ebee;
+
+    --accent: #4c86f0;
+    --select: #26364f;
+    --select-fg: #dbe6fd;
+
+    --field-bg: #101317;
+    --field-border: 1px solid #2b3037;
+
+    --btn-bg: #23272d;
+    --btn-bg-hover: #2c3138;
+    --btn-bg-active: #1a1e23;
+    --btn-border: #333941;
+    --btn-border-hover: #454c55;
+    --btn-fg: #e8ebee;
+
+    --tip-bg: #1c2026;
+    --tip-border: #2b3037;
+    --shadow: 0 6px 20px rgb(0 0 0 / 45%);
+
+    color-scheme: dark;
+  }
+}
+
+/* =========================================================================
+   Structure. No theme owns anything below this line.
+   ========================================================================= */
 
 * {
   box-sizing: border-box;
@@ -62,8 +496,8 @@ body {
 body {
   color: var(--fg);
   font-family: var(--sans);
-  font-size: 12px;
-  line-height: 1.35;
+  font-size: var(--size);
+  line-height: 1.4;
   overscroll-behavior: none;
   -webkit-font-smoothing: antialiased;
 }
@@ -75,32 +509,17 @@ body {
   overflow: hidden;
 }
 
-/* ---------- the desktop behind the window ---------- */
-
 .xp-desktop {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
-  padding: 10px;
-  padding-top: max(10px, env(safe-area-inset-top));
-  padding-bottom: max(10px, env(safe-area-inset-bottom));
-  /* Bliss, near enough: a blue sky, two soft clouds, and a green hill. */
-  background-color: #4a90d9;
-  background-image:
-    radial-gradient(58% 30% at 50% 100%, #86c440 0%, #6fb02f 45%, #56942a 78%, transparent 100%),
-    radial-gradient(closest-side, rgb(255 255 255 / 78%), transparent 100%),
-    radial-gradient(closest-side, rgb(255 255 255 / 62%), transparent 100%),
-    linear-gradient(180deg, #1b56b0 0%, #3b81d8 30%, #79b6e8 58%, #b9dcf2 70%, #7fb542 70.5%, #4d8a24 100%);
-  background-size:
-    140% 46%,
-    30% 13%,
-    22% 9%,
-    100% 100%;
-  background-position:
-    50% 100%,
-    16% 22%,
-    72% 15%,
-    0 0;
+  padding: var(--desktop-pad);
+  padding-top: max(var(--desktop-pad), env(safe-area-inset-top));
+  padding-bottom: max(var(--desktop-pad), env(safe-area-inset-bottom));
+  background-color: var(--desktop);
+  background-image: var(--desktop-image);
+  background-size: var(--desktop-size);
+  background-position: var(--desktop-pos);
   background-repeat: no-repeat;
 }
 
@@ -110,25 +529,21 @@ body {
   }
 }
 
-/* ---------- the window ---------- */
-
 .xp-window {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: var(--face);
-  border: 3px solid var(--frame);
+  background: var(--win-bg);
+  border: var(--win-border);
   border-top: 0;
-  border-radius: 8px 8px 0 0;
-  box-shadow: 2px 2px 10px rgb(0 0 0 / 45%);
+  border-radius: var(--win-radius);
+  box-shadow: var(--win-shadow);
 }
 
 @media (max-width: 700px) {
   .xp-window {
-    border-width: 2px;
-    border-top: 0;
     border-radius: 0;
   }
 }
@@ -136,21 +551,14 @@ body {
 /* Caption buttons only. Nothing on the left. */
 .xp-titlebar {
   flex: 0 0 auto;
-  height: 26px;
+  height: var(--title-h);
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 0 3px 0 4px;
-  border-radius: 6px 6px 0 0;
-  background: linear-gradient(
-    180deg,
-    var(--title-2) 0%,
-    var(--title-1) 8%,
-    var(--title-3) 40%,
-    var(--title-1) 88%,
-    var(--title-4) 100%
-  );
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 45%);
+  gap: 4px;
+  padding: 0 4px;
+  border-radius: var(--win-radius);
+  background: var(--title-bg);
+  box-shadow: var(--title-shadow);
   user-select: none;
 }
 
@@ -160,33 +568,39 @@ body {
   flex: 0 0 auto;
 }
 
-/* The three caption buttons. All of them do something. */
 .xp-cap {
-  width: 22px;
-  height: 22px;
+  width: var(--cap-size);
+  height: var(--cap-size);
   padding: 0;
   min-height: 0;
-  border: 1px solid rgb(255 255 255 / 70%);
-  border-radius: 3px;
-  background: linear-gradient(180deg, #7ab3f5 0%, #2e73d8 45%, #1b5cc4 55%, #4c93ee 100%);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 45%);
+  border: var(--cap-border);
+  border-radius: var(--cap-radius);
+  background: var(--cap-bg);
   display: grid;
   place-items: center;
   cursor: pointer;
-  color: #fff;
+  color: var(--cap-fg);
+  box-shadow: none;
+  font-weight: 400;
 }
 
 .xp-cap:hover {
-  filter: brightness(1.15);
+  filter: brightness(1.2);
+  background: var(--cap-bg);
+  border: var(--cap-border);
 }
 
 .xp-cap:active {
-  filter: brightness(0.9);
+  filter: brightness(0.85);
 }
 
 .xp-cap.close {
-  width: 24px;
-  background: linear-gradient(180deg, #f39c8e 0%, #d6503c 45%, #c33822 55%, #ea7a63 100%);
+  background: var(--cap-close-bg);
+}
+
+.xp-cap.close:hover {
+  background: var(--bad);
+  color: #fff;
 }
 
 .xp-cap svg {
@@ -199,7 +613,7 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--face);
+  background: var(--win-bg);
 }
 
 main {
@@ -220,14 +634,15 @@ main {
   gap: 2px;
   padding: 2px;
   background: var(--face);
-  border-top: 1px solid var(--face-light);
-  font-size: 11px;
+  border-top: 1px solid var(--line-soft);
+  font-size: var(--size-small);
   color: var(--fg-dim);
 }
 
 .xp-status-panel {
   border: 1px solid;
-  border-color: var(--face-shadow) var(--face-light) var(--face-light) var(--face-shadow);
+  border-color: var(--bevel-dark) var(--bevel-light) var(--bevel-light) var(--bevel-dark);
+  border-radius: var(--radius-sm);
   padding: 2px 7px;
   display: flex;
   align-items: center;
@@ -241,6 +656,19 @@ main {
   min-width: 0;
 }
 
+.xp-status-panel.tight {
+  padding: 0 2px;
+}
+
+.theme-picker {
+  width: auto;
+  min-height: 0;
+  padding: 1px 18px 1px 5px;
+  font-size: var(--size-small);
+  border-radius: var(--radius-sm);
+  background-position: calc(100% - 8px) calc(50% + 1px), calc(100% - 5px) calc(50% + 1px);
+}
+
 /* ---------- typography ---------- */
 
 h1,
@@ -251,17 +679,8 @@ h3 {
   line-height: 1.2;
 }
 
-h1 {
-  font-size: 20px;
-}
-
 h2 {
-  font-size: 15px;
-}
-
-.lede {
-  margin: 0;
-  color: var(--fg-dim);
+  font-size: calc(var(--size) + 3px);
 }
 
 .dim {
@@ -272,18 +691,18 @@ h2 {
   color: var(--fg-faint);
 }
 
-.small {
-  font-size: 11px;
+.small,
+.tiny {
+  font-size: var(--size-small);
 }
 
 .tiny {
-  font-size: 11px;
   line-height: 1.4;
 }
 
 .mono {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--size-small);
 }
 
 .truncate {
@@ -292,20 +711,20 @@ h2 {
   white-space: nowrap;
 }
 
-/* XP names a group of settings with a plain bold label, not an eyebrow. */
 .eyebrow {
-  font-size: 11px;
+  font-size: var(--size-small);
   font-weight: bold;
-  color: #003399;
+  color: var(--heading);
 }
 
 /* ---------- buttons ---------- */
 
 button {
   font-family: var(--sans);
-  font-size: 11px;
-  color: var(--fg);
-  min-height: 23px;
+  font-size: var(--size-small);
+  font-weight: var(--btn-weight);
+  color: var(--btn-fg);
+  min-height: var(--btn-h);
   padding: 2px 12px;
   cursor: pointer;
   display: inline-flex;
@@ -314,30 +733,25 @@ button {
   gap: 5px;
   white-space: nowrap;
   user-select: none;
-  border: 1px solid var(--frame-dark);
-  border-radius: 3px;
-  background: linear-gradient(180deg, #fff 0%, #f2f1e6 46%, #e5e2d2 47%, #f0eee2 100%);
-  box-shadow: inset 0 0 0 1px #fff;
+  border: 1px solid var(--btn-border);
+  border-radius: var(--btn-radius);
+  background: var(--btn-bg);
+  box-shadow: var(--btn-shadow);
 }
 
 button:hover:not(:disabled) {
-  /* XP glows amber under the pointer. */
-  background: linear-gradient(180deg, #fffdf5 0%, #ffeeb8 46%, #ffe08a 47%, #fff3cf 100%);
-  border-color: #e9a900;
+  background: var(--btn-bg-hover);
+  border-color: var(--btn-border-hover);
 }
 
 button:active:not(:disabled) {
-  background: linear-gradient(180deg, #ded9c6 0%, #e9e6d8 100%);
-  box-shadow: inset 1px 1px 2px rgb(0 0 0 / 20%);
-  padding-top: 3px;
-  padding-bottom: 1px;
+  background: var(--btn-bg-active);
 }
 
 button:disabled {
   color: var(--fg-disabled);
-  text-shadow: 1px 1px 0 #fff;
-  border-color: #b5b5a6;
-  background: var(--face);
+  border-color: var(--line);
+  background: var(--surface-2);
   box-shadow: none;
   cursor: default;
 }
@@ -347,8 +761,8 @@ input:focus-visible,
 select:focus-visible,
 summary:focus-visible,
 [tabindex]:focus-visible {
-  outline: 1px dotted #000;
-  outline-offset: -4px;
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
 }
 
 .icon {
@@ -356,53 +770,58 @@ summary:focus-visible,
   display: block;
 }
 
-/* The default button in an XP dialog carries a heavier border. */
 button.primary {
-  font-weight: bold;
-  border-color: #2c5c9a;
-  box-shadow:
-    inset 0 0 0 1px #fff,
-    0 0 0 1px #4a7ab8;
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: transparent;
+  font-weight: 700;
+}
+
+button.primary:hover:not(:disabled) {
+  filter: brightness(1.1);
+  border-color: transparent;
+  background: var(--accent);
 }
 
 button.danger {
-  color: #8c1a1a;
+  color: var(--bad);
 }
 
 button.ghost {
   border-color: transparent;
   background: transparent;
   box-shadow: none;
+  color: var(--fg-dim);
 }
 
 button.ghost:hover:not(:disabled) {
-  border-color: #e9a900;
-  background: linear-gradient(180deg, #fffdf5 0%, #ffeeb8 46%, #ffe08a 47%, #fff3cf 100%);
+  background: var(--surface-2);
+  border-color: var(--line);
+  color: var(--fg);
 }
 
 button.icon-only {
   padding: 0;
-  width: 23px;
-  min-width: 23px;
+  width: var(--btn-h);
+  min-width: var(--btn-h);
 }
 
 button.big {
-  min-height: 28px;
+  min-height: calc(var(--btn-h) + 8px);
   padding: 4px 20px;
-  font-size: 12px;
+  font-size: var(--size);
 }
 
 button.small,
 button.tiny-btn {
-  min-height: 21px;
+  min-height: calc(var(--btn-h) - 3px);
   padding: 1px 9px;
 }
 
-/* A pressed toolbar button, the way XP shows an active toggle. */
 button.on {
-  background: linear-gradient(180deg, #cfd8ea 0%, #dde4f2 100%);
-  border-color: #2c5c9a;
-  box-shadow: inset 1px 1px 2px rgb(0 0 0 / 22%);
+  background: var(--select);
+  color: var(--select-fg);
+  border-color: var(--accent);
 }
 
 /* ---------- fields ---------- */
@@ -410,25 +829,24 @@ button.on {
 input[type="text"],
 select {
   font-family: var(--sans);
-  font-size: 11px;
+  font-size: var(--size-small);
   color: var(--fg);
-  background: var(--field);
-  border: 1px solid;
-  border-color: var(--field-border) #fff #fff var(--field-border);
-  outline: 1px solid var(--face-shadow);
+  background: var(--field-bg);
+  border: var(--field-border);
+  outline: var(--field-inset);
   outline-offset: -2px;
-  padding: 3px 5px;
-  min-height: 21px;
+  border-radius: var(--field-radius);
+  padding: 3px 6px;
+  min-height: var(--btn-h);
   width: 100%;
 }
 
 select {
   outline: none;
-  border: 1px solid var(--field-border);
   padding-right: 20px;
   appearance: none;
-  background-image: linear-gradient(45deg, transparent 50%, #000 50%),
-    linear-gradient(135deg, #000 50%, transparent 50%);
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
   background-position: calc(100% - 11px) calc(50% + 1px), calc(100% - 7px) calc(50% + 1px);
   background-size: 4px 4px;
   background-repeat: no-repeat;
@@ -436,34 +854,31 @@ select {
 
 input[type="range"] {
   width: 100%;
-  accent-color: var(--select);
+  accent-color: var(--accent);
   min-height: 20px;
 }
 
 label {
   display: block;
-  font-size: 11px;
+  font-size: var(--size-small);
   color: var(--fg);
   margin-bottom: 4px;
 }
 
 hr {
   border: 0;
-  border-top: 1px solid var(--face-shadow);
-  border-bottom: 1px solid #fff;
+  border-top: 1px solid var(--line);
   margin: 9px 0;
 }
 
-/* ---------- group boxes ---------- */
+/* ---------- panels ---------- */
 
-/* An XP group box: one grey line with a white line offset under it, etched. */
 .card {
   background: transparent;
-  border: 1px solid #d3d0c4;
-  border-radius: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--panel-radius);
   padding: 9px 10px 10px;
   position: relative;
-  box-shadow: 1px 1px 0 #fff, inset 1px 1px 0 #fff;
 }
 
 .row {
@@ -499,35 +914,35 @@ hr {
   display: none !important;
 }
 
-/* ---------- pills, as small sunken readouts ---------- */
+/* ---------- pills ---------- */
 
 .pill {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 10px;
+  font-size: calc(var(--size-small) - 1px);
   font-family: var(--mono);
-  padding: 1px 5px;
-  border: 1px solid;
-  border-color: var(--face-shadow) #fff #fff var(--face-shadow);
-  background: var(--face-light);
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--pill-radius);
+  background: var(--surface);
   color: var(--fg-dim);
   white-space: nowrap;
 }
 
 .pill.good {
   color: var(--good);
-  background: #eaf6ea;
+  border-color: color-mix(in srgb, var(--good) 45%, transparent);
 }
 
 .pill.warn {
   color: var(--warn);
-  background: #fdf4e3;
+  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
 }
 
 .pill.bad {
   color: var(--bad);
-  background: #fbeaea;
+  border-color: color-mix(in srgb, var(--bad) 45%, transparent);
 }
 
 .dot {
@@ -601,7 +1016,6 @@ hr {
   gap: 8px;
 }
 
-/* The controls scroll. The chat below them stays put. */
 .host-controls {
   flex: 1 1 auto;
   min-height: 0;
@@ -612,99 +1026,13 @@ hr {
   padding-right: 2px;
 }
 
-/* ---------- chat ---------- */
-
 .viewer-grid {
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 260px;
+  grid-template-columns: minmax(0, 1fr) 290px;
   gap: 6px;
   padding: 6px;
-}
-
-.chat-panel {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  gap: 6px;
-  padding: 7px 8px 8px;
-}
-
-.host-side .chat-panel {
-  flex: 0 0 auto;
-  height: 40%;
-  min-height: 170px;
-}
-
-.chat-head {
-  flex: 0 0 auto;
-}
-
-.chat-log {
-  flex: 1 1 auto;
-  min-height: 60px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  background: var(--field);
-  border: 1px solid;
-  border-color: var(--field-border) #fff #fff var(--field-border);
-  outline: 1px solid var(--face-shadow);
-  outline-offset: -2px;
-  padding: 4px 5px;
-  font-size: 11px;
-  line-height: 1.45;
-  overflow-wrap: anywhere;
-}
-
-.chat-line {
-  margin: 1px 0;
-}
-
-.chat-name {
-  font-weight: bold;
-  color: #0b3c8c;
-}
-
-.chat-line.mine .chat-name {
-  color: #8c3c0b;
-}
-
-.chat-line.system {
-  color: var(--fg-faint);
-  font-style: italic;
-}
-
-.chat-compose {
-  flex: 0 0 auto;
-}
-
-.chat-compose input[type="text"] {
-  font-size: 11px;
-}
-
-@media (max-width: 900px) {
-  .viewer-grid {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(180px, 50dvh) minmax(160px, auto);
-  }
-
-  .host-controls {
-    overflow: visible;
-  }
-
-  .host-side .chat-panel {
-    height: auto;
-    min-height: 200px;
-  }
-}
-
-/* A nudge shown only when the browser insists on a click before sound. */
-.sound-prompt {
-  position: absolute;
-  right: 8px;
-  top: 8px;
-  z-index: 5;
 }
 
 @media (max-width: 900px) {
@@ -714,19 +1042,27 @@ hr {
     grid-template-rows: minmax(180px, 40dvh) auto;
   }
 
-  .host-side {
+  .host-controls {
     overflow: visible;
   }
-}
 
-/* ---------- the viewer list ---------- */
+  .viewer-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(180px, 50dvh) minmax(160px, auto);
+  }
+
+  .host-side .chat-panel {
+    height: auto;
+    min-height: 200px;
+  }
+}
 
 .viewer-row {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 4px 8px;
   padding: 6px 0;
-  border-top: 1px solid var(--face-dark);
+  border-top: 1px solid var(--line-soft);
 }
 
 .viewer-row:first-of-type {
@@ -741,27 +1077,44 @@ hr {
   gap: 3px;
 }
 
-.linkbox {
-  display: flex;
-  gap: 5px;
-}
+/* ---------- the share code ---------- */
 
-.linkbox input {
+.share-code {
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: calc(var(--size) + 2px);
+  font-weight: bold;
+  letter-spacing: 0.06em;
+  text-align: center;
+  color: var(--fg);
+  background: var(--field-bg);
+  border: var(--field-border);
+  outline: var(--field-inset);
+  outline-offset: -2px;
+  border-radius: var(--field-radius);
+  padding: 7px 4px;
+  cursor: text;
+  user-select: all;
+  overflow-wrap: anywhere;
 }
 
-/* ---------- the preset list, as an XP list box ---------- */
+.share-link {
+  font-size: calc(var(--size-small) - 0.5px);
+  font-family: var(--mono);
+  color: var(--fg-faint);
+  text-align: center;
+}
+
+/* ---------- presets ---------- */
 
 .presets {
   display: flex;
   flex-direction: column;
   gap: 0;
-  background: var(--field);
-  border: 1px solid;
-  border-color: var(--field-border) #fff #fff var(--field-border);
-  outline: 1px solid var(--face-shadow);
+  background: var(--field-bg);
+  border: var(--field-border);
+  outline: var(--field-inset);
   outline-offset: -2px;
+  border-radius: var(--field-radius);
   padding: 2px;
 }
 
@@ -772,24 +1125,20 @@ hr {
   gap: 2px;
   width: 100%;
   text-align: left;
-  padding: 4px 6px;
+  padding: 5px 7px;
   min-height: 0;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-sm);
   background: transparent;
   box-shadow: none;
   white-space: normal;
   color: var(--fg);
+  font-weight: 400;
 }
 
 .preset:hover:not(.custom) {
-  background: #e8f0fd;
+  background: var(--surface-2);
   border: 0;
-}
-
-.preset:active:not(.custom) {
-  padding: 4px 6px;
-  box-shadow: none;
 }
 
 .preset.on {
@@ -809,14 +1158,12 @@ hr {
 
 .preset-name {
   font-weight: bold;
-  font-size: 11px;
+  font-size: var(--size-small);
 }
 
 .preset-why {
   line-height: 1.35;
 }
-
-/* ---------- chips, as small toolbar toggles ---------- */
 
 .chips {
   display: flex;
@@ -826,76 +1173,36 @@ hr {
 
 .chip {
   padding: 1px 8px;
-  min-height: 20px;
-  font-size: 11px;
-  border-radius: 3px;
-}
-
-.chip.on {
-  background: linear-gradient(180deg, #cfd8ea 0%, #dde4f2 100%);
-  border-color: #2c5c9a;
-  box-shadow: inset 1px 1px 2px rgb(0 0 0 / 22%);
-  font-weight: bold;
-}
-
-/* ---------- the share code ---------- */
-
-/*
- * Set out like a product key, because that is what it looks like and what it is
- * for: five groups of five that a person can read, repeat or type.
- */
-.share-code {
-  font-family: var(--mono);
-  font-size: 14px;
-  font-weight: bold;
-  letter-spacing: 0.06em;
-  text-align: center;
-  color: #10306b;
-  background: var(--field);
-  border: 1px solid;
-  border-color: var(--field-border) #fff #fff var(--field-border);
-  outline: 1px solid var(--face-shadow);
-  outline-offset: -2px;
-  padding: 7px 4px;
-  cursor: text;
-  user-select: all;
-  overflow-wrap: anywhere;
-}
-
-.share-code:focus-visible {
-  outline: 1px dotted #000;
-  outline-offset: -4px;
-}
-
-.share-link {
-  font-size: 10.5px;
-  font-family: var(--mono);
-  color: var(--fg-faint);
-  text-align: center;
+  min-height: calc(var(--btn-h) - 3px);
+  font-size: var(--size-small);
+  border-radius: var(--pill-radius);
 }
 
 /* ---------- readouts ---------- */
 
 .plan-box {
-  background: #ffffe1; /* the XP tooltip yellow */
-  border: 1px solid #000;
+  background: var(--tip-bg);
+  border: 1px solid var(--tip-border);
+  border-radius: var(--radius-sm);
   padding: 5px 7px;
-  font-size: 11px;
+  font-size: var(--size-small);
+  color: var(--fg);
 }
 
 .plan-line {
-  color: #000;
+  color: var(--fg);
 }
 
 .plan-box .warn {
-  color: #8c4b00;
+  color: var(--warn);
   font-weight: bold;
 }
 
 .empty {
   padding: 10px;
-  border: 1px solid var(--face-dark);
-  background: var(--field);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
   text-align: center;
   display: flex;
   flex-direction: column;
@@ -903,15 +1210,14 @@ hr {
 }
 
 .summary-card {
-  background: #fbfbf5;
+  background: var(--surface);
 }
 
-/* The segmented green progress bar, the most XP thing there is. */
 .meter {
   height: 13px;
-  background: var(--field);
-  border: 1px solid;
-  border-color: var(--face-shadow) #fff #fff var(--face-shadow);
+  background: var(--field-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
   padding: 1px;
   overflow: hidden;
   flex: 1 1 auto;
@@ -922,19 +1228,8 @@ hr {
   display: block;
   height: 100%;
   width: 0%;
-  background-image: repeating-linear-gradient(
-    90deg,
-    var(--progress) 0 7px,
-    transparent 7px 9px
-  );
+  background-image: var(--progress);
   transition: width 90ms linear;
-}
-
-.kv {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 3px 10px;
-  font-size: 11px;
 }
 
 .shortcuts {
@@ -942,8 +1237,8 @@ hr {
   flex-wrap: wrap;
   gap: 4px 12px;
   justify-content: center;
-  font-size: 11px;
-  color: #dfe8f6;
+  font-size: var(--size-small);
+  color: #cfd6df;
 }
 
 .shortcuts span {
@@ -954,23 +1249,21 @@ hr {
 
 kbd {
   font-family: var(--sans);
-  font-size: 10px;
+  font-size: calc(var(--size-small) - 1px);
   font-weight: bold;
-  color: #000;
-  background: var(--face);
-  border: 1px solid;
-  border-color: #fff var(--face-shadow) var(--face-shadow) #fff;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
   padding: 0 4px;
   min-width: 16px;
   text-align: center;
 }
 
-/* ---------- disclosure ---------- */
-
 details.adv > summary {
   cursor: pointer;
-  font-size: 11px;
-  color: #0033cc;
+  font-size: var(--size-small);
+  color: var(--accent);
   padding: 2px 0;
   list-style: none;
   display: flex;
@@ -983,30 +1276,6 @@ details.adv > summary::-webkit-details-marker {
   display: none;
 }
 
-details.adv > summary::before {
-  content: "";
-  width: 9px;
-  height: 9px;
-  flex: 0 0 auto;
-  border: 1px solid var(--face-shadow);
-  background: var(--field)
-    linear-gradient(90deg, transparent 3px, #000 3px 6px, transparent 6px) no-repeat center /
-    9px 1px;
-  box-shadow: inset 0 0 0 1px #fff;
-}
-
-details.adv[open] > summary::before {
-  background-image: linear-gradient(90deg, transparent 3px, #000 3px 6px, transparent 6px),
-    linear-gradient(0deg, transparent 3px, #000 3px 6px, transparent 6px);
-  background-size: 9px 1px, 1px 9px;
-  background-position: center, center;
-  background-repeat: no-repeat, no-repeat;
-}
-
-details.adv[open] > summary::before {
-  background-image: linear-gradient(90deg, transparent 3px, #000 3px 6px, transparent 6px);
-}
-
 details.adv[open] > summary {
   margin-bottom: 6px;
 }
@@ -1014,7 +1283,7 @@ details.adv[open] > summary {
 .support-list {
   margin: 0;
   padding-left: 16px;
-  font-size: 11px;
+  font-size: var(--size-small);
   color: var(--fg-dim);
 }
 
@@ -1032,15 +1301,12 @@ details.adv[open] > summary {
   min-width: 0;
   display: flex;
   touch-action: none;
-  border: 1px solid;
-  border-color: var(--face-shadow) #fff #fff var(--face-shadow);
-  outline: 1px solid #5a5a4a;
-  outline-offset: -2px;
+  border: 1px solid var(--line);
+  border-radius: var(--panel-radius);
 }
 
 .surface.fullbleed {
   border: 0;
-  outline: 0;
   flex: 1 1 auto;
 }
 
@@ -1087,7 +1353,7 @@ details.adv[open] > summary {
   inset: 0;
   display: grid;
   place-items: center;
-  background: linear-gradient(180deg, #1b56b0 0%, #3b81d8 45%, #245ba8 100%);
+  background: linear-gradient(180deg, rgb(10 14 20 / 92%), rgb(6 9 14 / 96%));
   text-align: center;
   padding: 16px;
   color: #fff;
@@ -1096,7 +1362,7 @@ details.adv[open] > summary {
 
 .surface-overlay .dim,
 .surface-overlay p {
-  color: #dfe8f6;
+  color: #cfd6df;
 }
 
 .surface-badges {
@@ -1112,16 +1378,15 @@ details.adv[open] > summary {
 }
 
 .surface-badges .pill {
-  background: var(--face);
-  border-color: #fff var(--face-shadow) var(--face-shadow) #fff;
-  color: #000;
+  background: rgb(0 0 0 / 62%);
+  border-color: rgb(255 255 255 / 20%);
+  color: #eef2f7;
 }
 
 .surface.hide-bar .surface-badges {
   opacity: 0;
 }
 
-/* An XP toolbar, floating over the picture. */
 .surface-bar {
   position: absolute;
   left: 50%;
@@ -1134,9 +1399,9 @@ details.adv[open] > summary {
   max-width: calc(100% - 16px);
   padding: 3px 4px;
   background: var(--face);
-  border: 1px solid;
-  border-color: #fff var(--face-shadow) var(--face-shadow) #fff;
-  box-shadow: 1px 1px 4px rgb(0 0 0 / 45%);
+  border: 1px solid var(--line);
+  border-radius: var(--panel-radius);
+  box-shadow: var(--shadow);
   transition: opacity 160ms linear;
 }
 
@@ -1153,8 +1418,7 @@ details.adv[open] > summary {
   width: 1px;
   height: 16px;
   margin: 0 2px;
-  background: var(--face-shadow);
-  border-right: 1px solid #fff;
+  background: var(--line);
   flex: 0 0 auto;
 }
 
@@ -1186,12 +1450,11 @@ details.adv[open] > summary {
 
 .zoom-label {
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: calc(var(--size-small) - 1px);
   min-width: 38px;
   text-align: center;
 }
 
-/* The picker prompt, centred on the empty stage. */
 .pick {
   display: flex;
   flex-direction: column;
@@ -1201,26 +1464,188 @@ details.adv[open] > summary {
   max-width: 420px;
 }
 
-.pick h2 {
-  margin: 2px 0 0;
-  font-size: 17px;
-  color: #fff;
+.sound-prompt {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  z-index: 5;
 }
 
-.pick p {
-  margin: 0;
-  line-height: 1.45;
+/* ---------- chat ---------- */
+
+.chat-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 6px;
+  padding: 7px 8px 8px;
 }
 
-/* ---------- QR ---------- */
+.host-side .chat-panel {
+  flex: 0 0 auto;
+  height: 42%;
+  min-height: 170px;
+}
+
+.chat-head {
+  flex: 0 0 auto;
+}
+
+.chat-log {
+  flex: 1 1 auto;
+  min-height: 60px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--field-bg);
+  border: var(--field-border);
+  outline: var(--field-inset);
+  outline-offset: -2px;
+  border-radius: var(--field-radius);
+  padding: 5px 6px;
+  font-size: var(--size-small);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  color: var(--fg);
+}
+
+.chat-day {
+  text-align: center;
+  color: var(--fg-faint);
+  font-size: calc(var(--size-small) - 1px);
+  margin: 8px 0 4px;
+  border-top: 1px solid var(--line);
+  padding-top: 4px;
+}
+
+.chat-line {
+  margin: 1px 0;
+  position: relative;
+  padding-right: 44px;
+  border-radius: var(--radius-sm);
+}
+
+.chat-line:hover {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.chat-name {
+  font-weight: bold;
+  color: var(--accent);
+}
+
+.chat-line.mine .chat-name {
+  color: var(--good);
+}
+
+.chat-line.system {
+  color: var(--fg-faint);
+  font-style: italic;
+  padding-right: 0;
+}
+
+.chat-line.system:hover {
+  background: transparent;
+}
+
+.chat-at {
+  color: var(--fg-faint);
+  font-size: calc(var(--size-small) - 2px);
+  margin-left: 5px;
+}
+
+.chat-edited {
+  color: var(--fg-faint);
+  font-size: calc(var(--size-small) - 2px);
+  margin-left: 4px;
+}
+
+.chat-reply {
+  display: block;
+  color: var(--fg-faint);
+  font-size: calc(var(--size-small) - 1px);
+  border-left: 2px solid var(--line);
+  padding-left: 5px;
+  margin-bottom: 1px;
+}
+
+.chat-text code {
+  font-family: var(--mono);
+  background: var(--surface-2);
+  border-radius: 3px;
+  padding: 0 3px;
+}
+
+.chat-text a {
+  color: var(--accent);
+}
+
+.chat-actions {
+  position: absolute;
+  right: 2px;
+  top: 0;
+  display: none;
+  gap: 2px;
+}
+
+.chat-line:hover .chat-actions {
+  display: flex;
+}
+
+.chat-actions button {
+  min-height: 16px;
+  height: 16px;
+  padding: 0 4px;
+  font-size: calc(var(--size-small) - 2px);
+  border-radius: var(--radius-sm);
+}
+
+.chat-reacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin: 2px 0 3px;
+}
+
+.chat-react {
+  min-height: 17px;
+  padding: 0 5px;
+  font-size: calc(var(--size-small) - 1px);
+  border-radius: var(--pill-radius);
+}
+
+.chat-react.on {
+  background: var(--select);
+  color: var(--select-fg);
+}
+
+.chat-compose {
+  flex: 0 0 auto;
+}
+
+.chat-compose input[type="text"] {
+  font-size: var(--size-small);
+}
+
+.chat-replying {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: calc(var(--size-small) - 1px);
+  color: var(--fg-faint);
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  padding: 2px 4px 2px 7px;
+}
+
+/* ---------- QR and dialogs ---------- */
 
 .qr-frame {
   background: #fff;
   padding: 10px;
   display: grid;
   place-items: center;
-  border: 1px solid;
-  border-color: var(--face-shadow) #fff #fff var(--face-shadow);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
   line-height: 0;
 }
 
@@ -1230,8 +1655,6 @@ details.adv[open] > summary {
   height: auto;
 }
 
-/* ---------- dialog ---------- */
-
 .scrim {
   position: fixed;
   inset: 0;
@@ -1239,55 +1662,45 @@ details.adv[open] > summary {
   display: grid;
   place-items: center;
   padding: 14px;
-  background: rgb(0 0 0 / 35%);
+  background: rgb(0 0 0 / 45%);
 }
 
 .modal {
   width: 100%;
   max-width: 320px;
-  background: var(--face);
-  border: 3px solid var(--frame);
+  background: var(--win-bg);
+  border: var(--win-border);
   border-top: 0;
-  border-radius: 8px 8px 0 0;
-  box-shadow: 2px 2px 10px rgb(0 0 0 / 45%);
+  border-radius: var(--win-radius);
+  box-shadow: var(--win-shadow);
   padding: 0;
   display: flex;
   flex-direction: column;
 }
 
 .modal > .row:first-child {
-  height: 26px;
-  padding: 0 3px 0 7px;
-  border-radius: 6px 6px 0 0;
-  background: linear-gradient(
-    180deg,
-    var(--title-2) 0%,
-    var(--title-1) 8%,
-    var(--title-3) 40%,
-    var(--title-1) 88%,
-    var(--title-4) 100%
-  );
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 45%);
+  height: var(--title-h);
+  padding: 0 4px 0 8px;
+  border-radius: var(--win-radius);
+  background: var(--title-bg);
+  box-shadow: var(--title-shadow);
 }
 
 .modal > .row:first-child .eyebrow {
-  color: #fff;
+  color: var(--cap-fg);
   font-weight: bold;
-  font-size: 12px;
-  text-shadow: 1px 1px 1px rgb(0 0 0 / 55%);
 }
 
 .modal > .row:first-child button {
-  width: 22px;
-  min-width: 22px;
-  height: 20px;
-  min-height: 20px;
+  width: var(--cap-size);
+  min-width: var(--cap-size);
+  height: var(--cap-size);
+  min-height: var(--cap-size);
   padding: 0;
-  color: #fff;
-  border: 1px solid rgb(255 255 255 / 70%);
-  border-radius: 3px;
-  background: linear-gradient(180deg, #f39c8e 0%, #d6503c 45%, #c33822 55%, #ea7a63 100%);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 45%);
+  color: var(--cap-fg);
+  border: var(--cap-border);
+  border-radius: var(--cap-radius);
+  background: var(--cap-close-bg);
 }
 
 .modal > *:not(:first-child) {
@@ -1302,7 +1715,7 @@ details.adv[open] > summary {
   margin-bottom: 12px;
 }
 
-/* ---------- balloon notifications ---------- */
+/* ---------- notifications ---------- */
 
 .toasts {
   position: fixed;
@@ -1319,28 +1732,28 @@ details.adv[open] > summary {
 
 .toast {
   pointer-events: auto;
-  background: #ffffe1;
-  border: 1px solid #000;
-  box-shadow: 2px 2px 5px rgb(0 0 0 / 35%);
+  background: var(--tip-bg);
+  border: 1px solid var(--tip-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
   padding: 7px 8px 7px 10px;
-  font-size: 11px;
+  font-size: var(--size-small);
   width: 100%;
   display: flex;
   gap: 8px;
   align-items: flex-start;
-  color: #000;
+  color: var(--fg);
 }
 
 .toast.bad {
-  border-color: #b81a1a;
+  border-color: var(--bad);
 }
 
 .toast.warn {
-  border-color: #9a6400;
+  border-color: var(--warn);
 }
 
 .toast button {
   min-height: 17px;
   padding: 0 5px;
-  font-size: 10px;
 }

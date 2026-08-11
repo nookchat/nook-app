@@ -25,25 +25,82 @@ always starts, so the picture is never held up waiting for permission, and if th
 browser refuses sound a single button appears offering it. Any click anywhere on
 the page takes it too.
 
-### Chat
+### Chat, and why it is still there tomorrow
 
 Chat rides the same peer connection as the picture, on a WebRTC data channel, so
 it is exactly as direct and as private as the video: encrypted by DTLS and never
-seen by a server. The host is the hub, because viewers only ever connect to the
-host, so the host repeats each line to everybody else.
+seen by a server.
 
-Everyone gets a name straight away, drawn from the era the interface is dressed
-in, so nobody has to fill in a form before saying hello. **Caffeinated Taskbar**,
-**Dial-up Monitor**, **Sleepy Floppy**. Change it in the box and it is kept in
-this browser for next time.
+It is not a stream of messages passing through a host. It is an **append only log
+of signed events**, and every member holds a copy:
 
-Arrivals and departures appear in the chat, and the host gets a notification.
+```
+your device            their device           (later, a relay archive)
+┌────────────┐        ┌────────────┐          ┌──────────────┐
+│ IndexedDB  │◄──────►│ IndexedDB  │          │ encrypted    │
+│ full log   │ gossip │ full log   │          │ blobs        │
+└────────────┘        └────────────┘          └──────────────┘
+      ▲
+      └── history renders offline, instantly, with nobody online
+```
 
-A line is stamped with the clock of whoever displays it, never whoever sent it.
-Two machines rarely agree on the time, and a chat log that jumps backwards
-because someone's laptop is fast is a poor way to learn that. Every message is
-also checked for shape, type and length on arrival, because anybody on the room
-can put anything on the channel.
+**That is the whole answer to "will it be there tomorrow".** It will, because you
+have it. Every event is written to IndexedDB on arrival and read back on the next
+visit before any peer is contacted, so a room opens with its history even with
+the host gone and nothing to connect to. `npm run test:persist` proves exactly
+that: two people talk, the host's browser is closed entirely, the viewer reloads,
+and the conversation is still on screen.
+
+Nothing is ever changed in place. An edit is an event pointing at another event,
+and so is a reaction, a reply and a retraction:
+
+| You want    | The event                          |
+| ----------- | ---------------------------------- |
+| A message   | `said`                             |
+| An edit     | `edit`, referencing the original   |
+| A reaction  | `react`, toggling on repeat        |
+| A reply     | `said` carrying `replyTo`          |
+| A deletion  | `retract`, which hides, not unsends |
+| A new name  | `profile`                          |
+
+Two logs merge by unioning them, because a set of immutable events converges by
+construction. No CRDT and no conflict resolution.
+
+Order is `(lamport, author, id)`, never wall clock, so it is identical on every
+device and no machine has to be trusted about the time.
+
+### Identity
+
+A name used to be a claim: you typed one and everybody believed it. Now each
+person holds a **key pair**, made once and kept on the device, and every event is
+signed with it. The public key is the identity; the name is a label attached to
+it that anyone can change for themselves and nobody can change for you.
+
+An arriving event is checked for shape, then rehashed, then verified against the
+signature. An event whose id does not match its own contents is a forgery
+attempt, not a mistake, and it is dropped exactly as quietly as one with a bad
+signature. `npm run test:persist` tries all three.
+
+It signs with schnorr over secp256k1, already in the bundle for the Nostr
+transport, so identity costs no new dependency.
+
+Everyone still gets a name straight away, drawn from the era the interface is
+dressed in, so nobody has to fill in a form before saying hello. **Caffeinated
+Taskbar**, **Dial-up Monitor**, **Sleepy Floppy**.
+
+### What chat cannot do yet
+
+Honest limits, so nobody is surprised:
+
+- **Messages sent while everybody was offline** are not there when you return.
+  Your own history is, and so is anything a peer still online can give you. The
+  encrypted relay archive that closes this gap is the next stage.
+- **A room only exists while somebody is sharing.** Peers meet through the host,
+  so there is no chat without a stream yet.
+- **You cannot un-share.** Retract hides a message; whoever already received it
+  still holds it.
+- **No notification when the app is closed.** Web Push needs a push service,
+  which is a server.
 
 ## Run it
 
@@ -97,6 +154,8 @@ npm run test:e2e       # two real Chrome pages, real relays, real media
 npm run test:mesh 10   # one host, ten viewers, prints the per viewer plan
 npm run test:qr        # every QR version, decoded back by Chrome
 npm run test:url       # the share code, and the address bar it lives in
+npm run test:persist   # history survives the host leaving entirely
+npm run test:themes    # a screenshot of each skin
 npm run test:uplink    # the upload estimator, against made up statistics
 npm run test:encoder   # which codec holds up, and what it costs to encode
 npm run test:cpu       # processor cost per codec: GPU or not, measured
@@ -382,7 +441,25 @@ link on screen.
 
 ## Look
 
-Cathode is dressed as **Windows XP**, Luna blue. Not a page with a header on it: a
+Five skins, because not everybody wants the joke:
+
+| Theme          | What it is                                        |
+| -------------- | ------------------------------------------------- |
+| **Windows XP** | Luna blue, beige and bevels. The default          |
+| WinAmp         | Black, grey, and a green display that glows       |
+| Discord        | Dark, blurple, rounded                            |
+| Skype          | White with the old bright blue                    |
+| Plain          | Neutral, and it follows your system light or dark |
+
+The picker sits on the status bar, always reachable, and the choice is kept in
+this browser.
+
+**Every visual decision reads from a token**, so a theme is a block of token
+values and nothing else. That is why five skins this different need only one set
+of structural rules: the same 700 lines of layout carry all of them. If a rule
+ever needs a `[data-theme]` selector, the thing it styles wants a token instead.
+
+The default is dressed as **Windows XP**, Luna blue. Not a page with a header on it: a
 window on a desktop, because that is what software looked like before everything
 became a website.
 
@@ -439,6 +516,12 @@ Anyone holding the link can watch. Two host controls make that safe:
 ```
 src/
   main.ts             route to host or viewer from the URL fragment
+  chat.ts             names, and the silly ones people get by default
+  store/
+    identity.ts       the key pair that makes you you, kept on the device
+    log.ts            signed, immutable events and what they add up to
+    db.ts             IndexedDB, which is why it is there tomorrow
+    room-chat.ts      one room: the log, the store, and the wire
   net/uplink.ts       how much upload Cathode may use, guessed then measured
   room.ts             secret, roomId, roomKey, link build and parse
   settings.ts         host preferences, kept in localStorage
@@ -461,7 +544,9 @@ src/
     mixer.ts          WebAudio mix of screen audio and microphone into one track
   ui/
     shell.ts          the XP window: title bar, caption buttons, status bar
-    icons.ts          the stroked icon set and the brand mark
+    icons.ts          the stroked icon set
+    themes.ts         the five skins and where the choice is kept
+    chat-panel.ts     the conversation, drawn as nodes and never as HTML
     qr.ts             a QR encoder, byte mode, level M, versions 1 to 10
     host-view.ts      link, viewer list, quality, audio, session
     viewer-view.ts    join, connect, watch, and every failure message
@@ -475,6 +560,8 @@ test/
   codec-fallback.mjs  a viewer without the hardware codec still sees it
   qr-check.mjs        every QR version, decoded back by Chrome
   url-check.mjs       the code format, and a host reload staying a host
+  persist-check.mjs   history outliving the host, and forgeries refused
+  theme-shots.mjs     one screenshot per skin
   mesh.mjs            N viewers against one host
   relay-probe.mjs     which public relays really carry a handshake
   repro.mjs           named failure cases: skew, delay, reload

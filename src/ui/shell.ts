@@ -11,6 +11,7 @@
 
 import { checkSupport, supportRows } from '../diagnostics'
 import { fmtBytes, fmtDuration, h } from './dom'
+import { applyTheme, loadTheme, THEMES } from './themes'
 
 export interface SessionSummary {
   seconds: number
@@ -107,6 +108,19 @@ export function createWindow(title: string): WindowChrome {
   const win = h('div', { class: 'xp-window' }, [titlebar, body, status])
   const root = h('div', { class: 'xp-desktop' }, [win])
 
+  // The skin picker lives on the status bar, where it is always reachable and
+  // never in the way, whichever screen is up.
+  const picker = h('select', {
+    class: 'theme-picker',
+    ariaLabel: 'Theme',
+    title: 'Change the look',
+    on: { change: () => applyTheme(picker.value) },
+  })
+  for (const theme of THEMES) {
+    picker.append(h('option', { value: theme.id, text: theme.name, title: theme.note }))
+  }
+  picker.value = loadTheme()
+
   const setStatus = (panels: (HTMLElement | string)[]): void => {
     status.replaceChildren()
     panels.forEach((panel, i) => {
@@ -114,6 +128,7 @@ export function createWindow(title: string): WindowChrome {
       cell.append(typeof panel === 'string' ? panel : panel)
       status.append(cell)
     })
+    status.append(h('div', { class: 'xp-status-panel tight' }, [picker]))
   }
 
   setStatus(['Ready'])
