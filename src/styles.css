@@ -1561,6 +1561,9 @@ details.adv[open] > summary {
 
 .rail-item {
   justify-content: flex-start;
+  /* Buttons centre their text. A list of channels is a list, so it reads down
+     the left edge like one. */
+  text-align: left;
   width: 100%;
   border: 1px solid transparent;
   background: transparent;

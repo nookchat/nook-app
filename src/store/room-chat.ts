@@ -40,8 +40,9 @@ export class RoomChat {
   private name: string
   private sinceCompaction = 0
 
-  constructor(roomId: string, secret: string) {
+  constructor(roomId: string, secret: string, founder = '') {
     this.log = new RoomLog(roomId)
+    this.log.founder = founder
     this.secret = secret
     const id = loadIdentity()
     this.me = id.pubkey
@@ -58,6 +59,7 @@ export class RoomChat {
     const { keep, drop } = compact(stored, await limitsForNow())
     if (drop.length) void deleteEvents(drop)
     for (const event of keep) this.log.add(event)
+    this.pinFounder()
     void noteRoom({
       room: this.log.room,
       secret: this.secret,
@@ -82,10 +84,63 @@ export class RoomChat {
     return this.log.names().get(author) ?? ''
   }
 
+  /**
+   * Take the earliest claim to the space as the founder, once, and keep it.
+   *
+   * Only used when this device has no founder yet. Whoever made the space sets
+   * it directly; whoever joins learns it from the first claim they sync.
+   */
+  private pinFounder(): void {
+    if (this.log.founder) return
+    const claim = this.log
+      .all()
+      .find((e) => e.kind === 'role' && e.body.subject === e.author && e.body.role === 'admin')
+    if (claim) {
+      this.log.founder = claim.author
+      this.onFounder?.(claim.author)
+    }
+  }
+
+  onFounder: ((pubkey: string) => void) | null = null
+
+  get founder(): string {
+    return this.log.founder
+  }
+
+  get myRole(): string {
+    return this.log.roleOf(this.me)
+  }
+
+  get isAdmin(): boolean {
+    return this.myRole === 'admin'
+  }
+
+  roles(): Map<string, string> {
+    return this.log.roles()
+  }
+
+  spaceName(): string {
+    return this.log.spaceName()
+  }
+
+  /** Claim the space. Only ever called by whoever made it. */
+  async claimFounder(): Promise<LogEvent> {
+    this.log.founder = this.me
+    return this.write('role', { subject: this.me, role: 'admin' })
+  }
+
+  setSpaceName(name: string): Promise<LogEvent> {
+    return this.write('space', { name: name.slice(0, 32).trim() })
+  }
+
+  setRole(subject: string, role: 'admin' | 'member' | 'kicked'): Promise<LogEvent> {
+    return this.write('role', { subject, role })
+  }
+
   // ---- writing ----
 
   private async write(
-    kind: 'said' | 'edit' | 'react' | 'retract' | 'profile' | 'channel',
+    kind: 'said' | 'edit' | 'react' | 'retract' | 'profile' | 'channel' | 'role' | 'space',
     body: Record<string, unknown>,
   ): Promise<LogEvent> {
     const event = await makeEvent(this.log.room, this.me, this.log.nextLamport(), kind, body)
@@ -171,6 +226,7 @@ export class RoomChat {
       if (this.log.add(event)) fresh.push(event)
     }
     if (fresh.length) {
+      this.pinFounder()
       void putEvents(fresh)
       this.sinceCompaction += fresh.length
       if (this.sinceCompaction > 200) void this.tidy()

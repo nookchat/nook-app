@@ -17,7 +17,17 @@
 
 import { sign, verify } from './identity'
 
-export type EventKind = 'said' | 'edit' | 'react' | 'retract' | 'profile' | 'channel'
+export type EventKind =
+  | 'said'
+  | 'edit'
+  | 'react'
+  | 'retract'
+  | 'profile'
+  | 'channel'
+  | 'role'
+  | 'space'
+
+export type Role = 'admin' | 'member' | 'kicked'
 
 /** Every space has these, and they cannot be removed. */
 export const DEFAULT_CHANNEL = 'general'
@@ -79,7 +89,11 @@ export async function openEvent(raw: unknown, room: string): Promise<LogEvent | 
   if (e.room !== room) return null
   if (typeof e.lamport !== 'number' || !Number.isInteger(e.lamport) || e.lamport < 0) return null
   if (typeof e.at !== 'number' || !Number.isFinite(e.at)) return null
-  if (!['said', 'edit', 'react', 'retract', 'profile', 'channel'].includes(String(e.kind)))
+  if (
+    !['said', 'edit', 'react', 'retract', 'profile', 'channel', 'role', 'space'].includes(
+      String(e.kind),
+    )
+  )
     return null
   if (!e.body || typeof e.body !== 'object' || Array.isArray(e.body)) return null
 
@@ -142,6 +156,84 @@ export class RoomLog {
     return true
   }
 
+  /**
+   * Who the space belongs to.
+   *
+   * There is no server to ask, so the founder is pinned the first time this
+   * device sees the space and never moves after that. Whoever made it knows
+   * from the start; whoever joins takes the earliest claim they sync and keeps
+   * it. That is trust on first use, and its limit is worth stating: somebody
+   * who syncs a brand new device from nobody but an impostor would pin the
+   * impostor. Comparing the founder ID in settings out of band settles it.
+   */
+  founder = ''
+
+  /**
+   * What everybody is allowed to do, worked out from the log rather than
+   * granted by anyone.
+   *
+   * Every peer runs this over the same events and reaches the same answer, so
+   * there is no authority to disagree with. A change of role only counts if the
+   * person who signed it was an admin at that point, which is why this walks
+   * the log in order rather than reading the last word on each person.
+   */
+  roles(): Map<string, Role> {
+    const roles = new Map<string, Role>()
+    if (this.founder) roles.set(this.founder, 'admin')
+
+    for (const e of this.all()) {
+      if (e.kind !== 'role') continue
+      if (roles.get(e.author) !== 'admin') continue // only an admin may change roles
+      const subject = String(e.body.subject ?? '')
+      const role = String(e.body.role ?? '')
+      if (!/^[0-9a-f]{64}$/.test(subject)) continue
+      if (subject === this.founder) continue // the founder cannot be demoted
+      if (role !== 'admin' && role !== 'member' && role !== 'kicked') continue
+      roles.set(subject, role)
+    }
+    return roles
+  }
+
+  roleOf(pubkey: string): Role {
+    return this.roles().get(pubkey) ?? 'member'
+  }
+
+  /** The name the space goes by, set by an admin. */
+  spaceName(): string {
+    let name = ''
+    const roles = this.roles()
+    for (const e of this.all()) {
+      if (e.kind !== 'space') continue
+      if (roles.get(e.author) !== 'admin') continue
+      const claimed = String(e.body.name ?? '').slice(0, 32).trim()
+      if (claimed) name = claimed
+    }
+    return name
+  }
+
+  /**
+   * When somebody was removed, in log order. Anything they wrote after that
+   * point is ignored by everybody, because everybody computes the same instant.
+   */
+  private kickedAt(): Map<string, number> {
+    const out = new Map<string, number>()
+    const roles = new Map<string, Role>()
+    if (this.founder) roles.set(this.founder, 'admin')
+    for (const e of this.all()) {
+      if (e.kind !== 'role') continue
+      if (roles.get(e.author) !== 'admin') continue
+      const subject = String(e.body.subject ?? '')
+      const role = String(e.body.role ?? '')
+      if (subject === this.founder) continue
+      if (role === 'kicked') out.set(subject, e.lamport)
+      else if (role === 'admin' || role === 'member') {
+        out.delete(subject)
+        roles.set(subject, role)
+      }
+    }
+    return out
+  }
+
   /** Swap the contents for a compacted set, keeping the clock where it is. */
   replace(events: LogEvent[]): void {
     this.byId.clear()
@@ -172,8 +264,11 @@ export class RoomLog {
    */
   channels(voice = false): string[] {
     const names = new Set<string>(voice ? [DEFAULT_VOICE] : [DEFAULT_CHANNEL])
+    const roles = this.roles()
     for (const e of this.all()) {
       if (e.kind === 'channel') {
+        // Only an admin makes channels, so nobody can fill the rail from afar.
+        if (roles.get(e.author) !== 'admin') continue
         const isVoice = e.body.voice === true
         if (isVoice !== voice) continue
         const name = cleanChannel(String(e.body.name ?? ''))
@@ -190,8 +285,13 @@ export class RoomLog {
     const out: Message[] = []
     const index = new Map<string, Message>()
     const names = new Map<string, string>()
+    const kicked = this.kickedAt()
 
     for (const e of this.all()) {
+      // Somebody removed keeps what they already said and loses what came after.
+      const removedAt = kicked.get(e.author)
+      if (removedAt !== undefined && e.lamport > removedAt) continue
+      if (e.kind === 'role' || e.kind === 'space') continue
       if (e.kind === 'profile') {
         const name = String(e.body.name ?? '').slice(0, 24)
         if (name) names.set(e.author, name)

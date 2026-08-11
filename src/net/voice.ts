@@ -28,6 +28,8 @@ export interface VoiceState {
 
 export class Voice {
   onChange: (() => void) | null = null
+  /** Somebody walked into, or out of, the channel we are standing in. */
+  onArrival: ((arrived: boolean) => void) | null = null
 
   private readonly bus: SignalBus
   private readonly selfId: string
@@ -117,8 +119,12 @@ export class Voice {
     if (was === voice) return
 
     // Somebody arrived in our channel, or left it.
-    if (this.channel && voice === this.channel) this.considerCall(from)
+    if (this.channel && voice === this.channel) {
+      this.considerCall(from)
+      this.onArrival?.(true)
+    }
     if (was === this.channel && voice !== this.channel) {
+      this.onArrival?.(false)
       this.calls.get(from)?.close()
       this.calls.delete(from)
     }

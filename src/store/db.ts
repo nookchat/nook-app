@@ -122,6 +122,24 @@ export interface RoomNote {
   secret: string
   lastSeen: number
   title: string
+  /** Whether the code alone is enough to open it. */
+  locked?: boolean
+  /** Pinned the first time this device saw the space, and never moved after. */
+  founder?: string
+}
+
+export async function getRoom(room: string): Promise<RoomNote | null> {
+  const db = await open()
+  if (!db) return null
+  return new Promise((resolve) => {
+    try {
+      const request = tx(db, ROOMS, 'readonly').get(room)
+      request.onsuccess = () => resolve((request.result as RoomNote) ?? null)
+      request.onerror = () => resolve(null)
+    } catch {
+      resolve(null)
+    }
+  })
 }
 
 /** Remember that this room exists, so it can be listed and reopened. */

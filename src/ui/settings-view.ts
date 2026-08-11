@@ -12,7 +12,8 @@
  */
 
 import { cleanName } from '../chat'
-import { loadIdentity, saveDisplayName } from '../store/identity'
+import { loadIdentity, saveDisplayName, shortKey } from '../store/identity'
+import { setSounds, soundsOn } from './sounds'
 import { copyText, fmtBytes, h } from './dom'
 import { storagePressure } from '../store/compact'
 import { download, exportAll, importBundle } from '../store/transfer'
@@ -46,6 +47,19 @@ export function settingsView(actions: SettingsActions): HTMLElement {
       7000,
     )
   }
+
+  const sound = h('button', {
+    class: soundsOn() ? 'on' : '',
+    text: soundsOn() ? 'Sounds are on' : 'Sounds are off',
+    on: {
+      click: () => {
+        const next = !soundsOn()
+        setSounds(next)
+        sound.textContent = next ? 'Sounds are on' : 'Sounds are off'
+        sound.classList.toggle('on', next)
+      },
+    },
+  })
 
   const file = h('input', { type: 'text', ariaLabel: 'Import a file' })
   file.type = 'file'
@@ -94,7 +108,7 @@ export function settingsView(actions: SettingsActions): HTMLElement {
     if ((ev as KeyboardEvent).key === 'Enter') commit()
   })
 
-  const idBox = h('div', { class: 'share-code', text: identity.pubkey.slice(0, 16), title: identity.pubkey })
+  const idBox = h('div', { class: 'share-code', text: shortKey(identity.pubkey), title: identity.pubkey })
   const copyId = h('button', { class: 'grow' }, [icon('copy', 14), 'Copy full ID'])
   copyId.addEventListener('click', async () => {
     const ok = await copyText(identity.pubkey)
@@ -128,8 +142,18 @@ export function settingsView(actions: SettingsActions): HTMLElement {
           h('div', { class: 'row' }, [copyId]),
           h('div', {
             class: 'tiny faint',
-            text: 'This is who you are. Every message you write is signed with it, so nobody can take your name by typing it, and two people called the same thing are still two people. It never leaves this device.',
+            text: 'This is who you are, in short. Every message you write is signed with the full key behind it, so nobody can take your name by typing it, and two people called the same thing are still two people. The key never leaves this device.',
           }),
+          h('details', { class: 'adv' }, [
+            h('summary', { text: 'Show the whole key' }),
+            h('div', { class: 'tiny mono', style: { overflowWrap: 'anywhere' }, text: identity.pubkey }),
+          ]),
+        ]),
+
+        h('div', { class: 'card stack tight' }, [
+          h('span', { class: 'eyebrow', text: 'Sounds' }),
+          sound,
+          h('div', { class: 'tiny faint', text: 'A short blip when somebody says something, or walks into the voice channel you are in. Never for anything you did yourself, and never for history arriving from a peer.' }),
         ]),
 
         h('div', { class: 'card stack tight' }, [

@@ -12,7 +12,7 @@ import { clear, h } from './dom'
 import { icon } from './icons'
 
 export interface SpaceListActions {
-  open(secret: string, locked?: boolean, password?: string): void
+  open(secret: string, locked?: boolean, password?: string, name?: string): void
 }
 
 export async function spaceList(actions: SpaceListActions): Promise<HTMLElement> {
@@ -42,6 +42,25 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
     if ((ev as KeyboardEvent).key === 'Enter') go()
   })
 
+  const title = h('input', {
+    type: 'text',
+    placeholder: 'Name it. Weeknight raids, book club, work.',
+    ariaLabel: 'Space name',
+  })
+  /** Make a space and walk in as its founder. */
+  const make = (locked: boolean): void => {
+    const name = title.value.trim().slice(0, 60)
+    if (!locked) {
+      actions.open(newSecret(), false, '', name)
+      return
+    }
+    const password = window.prompt('Choose a password for this space.') ?? ''
+    if (password) actions.open(newSecret(), true, password, name)
+  }
+  title.addEventListener('keydown', (ev) => {
+    if ((ev as KeyboardEvent).key === 'Enter') make(false)
+  })
+
   const recent = h('div', { class: 'stack tight' })
   for (const room of rooms.slice(0, 12)) {
     recent.append(
@@ -49,7 +68,8 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
         'button',
         { class: 'rail-item', on: { click: () => actions.open(room.secret) } },
         [
-          h('span', { class: 'grow truncate mono', text: room.secret.slice(0, 5) + '...' }),
+          h('span', { class: 'grow truncate', text: room.title || 'Unnamed space' }),
+          room.locked ? h('span', { class: 'tiny faint', title: 'Needs a password' }, [icon('shield', 11)]) : null,
           h('span', { class: 'tiny faint', text: whenLabel(room.lastSeen) }),
         ],
       ),
@@ -78,22 +98,24 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
             h('button', { text: 'Join', on: { click: go } }),
           ]),
         ]),
-        h('div', { class: 'row' }, [
-          h(
-            'button',
-            { class: 'primary big grow', on: { click: () => actions.open(newSecret()) } },
-            [icon('plus', 16), 'New space'],
-          ),
-          h('button', {
-            class: 'big',
-            title: 'Nobody can join with the link alone: they need the password too',
-            text: 'New locked space',
-            on: {
-              click: () => {
-                const password = window.prompt('Choose a password for this space.') ?? ''
-                if (password) actions.open(newSecret(), true, password)
-              },
-            },
+        h('div', { class: 'card stack tight' }, [
+          h('span', { class: 'eyebrow', text: 'Make one' }),
+          title,
+          h('div', { class: 'row' }, [
+            h('button', { class: 'primary big grow', on: { click: () => make(false) } }, [
+              icon('plus', 16),
+              'New space',
+            ]),
+            h('button', {
+              class: 'big',
+              title: 'Nobody can join with the link alone: they need the password too',
+              text: 'Add a password',
+              on: { click: () => make(true) },
+            }),
+          ]),
+          h('div', {
+            class: 'tiny faint',
+            text: 'Whoever makes a space is its admin. Everybody else joins as a member until you say otherwise.',
           }),
         ]),
       ]),

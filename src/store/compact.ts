@@ -78,6 +78,12 @@ export function compact(events: LogEvent[], limits: Limits = DEFAULT_LIMITS): Co
       case 'said':
         messages.push(e)
         break
+      case 'role':
+      case 'space':
+        // Who is allowed to do what, and what the place is called. Both are
+        // worked out by walking the log in order, so none of it can be dropped.
+        keepIds.add(e.id)
+        break
       default:
         break
     }

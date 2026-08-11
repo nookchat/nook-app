@@ -10,23 +10,38 @@
  * The public relay therefore sees a random topic name and ciphertext only. It
  * cannot read the offer, the answer, or the IP candidates.
  *
- * The code is written the way Windows wrote a product key, five groups of five:
+ * The code is short enough to say out loud, three groups of four:
  *
- *   https://cathode.video/#K7M2X-9QPT4-VB2WN-P8ZQ3-MHRF6
+ *   https://cathode.video/#K7M2-9QPT-VB2W
  *
- * That is not only for looks. It uses Crockford's base32 alphabet, which leaves
- * out I, L, O and U, so there is no letter that can be misread as a digit and
- * nothing in it that spells anything. Twenty five symbols at five bits each is
- * 125 bits of key, which is the same order as the 128 bits it replaced: a code
- * you can read down a phone should not be a code that is easier to guess.
+ * It uses Crockford's base32 alphabet, which leaves out I, L, O and U, so there
+ * is no letter that can be misread as a digit and nothing in it spells anything.
+ * Twelve symbols at five bits each is 60 bits, which is not enough on its own,
+ * so the code is stretched into a key rather than used as one. See ROUNDS.
  */
 
 const enc = new TextEncoder()
 
 /** Crockford base32. No I, no L, no O, no U. */
 const ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
-const SYMBOLS = 25
-const GROUP = 5
+const SYMBOLS = 12
+const GROUP = 4
+
+/**
+ * How hard it is to turn a code into a key.
+ *
+ * The code shrank from twenty five symbols to twelve, which is 60 bits rather
+ * than 125, and 60 bits is not enough on its own: an attacker can subscribe to
+ * the relay with a wildcard, keep the ciphertext, and grind offline at whatever
+ * rate their hardware allows. At ten billion guesses a second, plain hashing
+ * would fall in a few years.
+ *
+ * So the code is stretched. A quarter of a million rounds of PBKDF2 costs a few
+ * hundred milliseconds once, when a space is opened, and multiplies the
+ * attacker's work by the same quarter million. That puts 60 bits back out of
+ * reach while leaving a code short enough to read down a phone.
+ */
+const ROUNDS = 250_000
 
 export interface Room {
   /** The canonical code, upper case with no hyphens. The password of the room. */
@@ -37,12 +52,19 @@ export interface Room {
   key: CryptoKey
 }
 
+function concat(a: Uint8Array, b: Uint8Array): Uint8Array {
+  const out = new Uint8Array(a.length + b.length)
+  out.set(a, 0)
+  out.set(b, a.length)
+  return out
+}
+
 function hex(bytes: Uint8Array): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
 }
 
 /**
- * A fresh room code, 125 bits.
+ * A fresh room code, 60 bits before stretching.
  *
  * One random byte per symbol, masked to five bits. A byte is uniform over 256
  * and 256 divides evenly by 32, so the mask leaves it uniform: no rejection
@@ -53,7 +75,7 @@ export function newSecret(): string {
   return Array.from(bytes, (b) => ALPHABET[b & 31]).join('')
 }
 
-/** Five groups of five, for a person to read. */
+/** Three groups of four, for a person to read down a phone. */
 export function formatSecret(secret: string): string {
   return (secret.match(new RegExp(`.{1,${GROUP}}`, 'g')) ?? []).join('-')
 }
@@ -97,25 +119,46 @@ export async function deriveRoom(secret: string, password = ''): Promise<Room> {
   if (!canonical) throw new Error('That is not a valid room code.')
   const salted = password ? `${canonical}|${password}` : canonical
 
-  const digest = await crypto.subtle.digest('SHA-256', enc.encode('cathode-room-id|' + salted))
-  const id = hex(new Uint8Array(digest)).slice(0, 32)
-
   const material = await crypto.subtle.importKey(
     'raw',
     enc.encode(salted) as BufferSource,
-    'HKDF',
+    'PBKDF2',
     false,
-    ['deriveKey'],
+    ['deriveBits'],
   )
-  const key = await crypto.subtle.deriveKey(
-    {
-      name: 'HKDF',
-      hash: 'SHA-256',
-      salt: enc.encode('cathode-signal-salt-v2'),
-      info: enc.encode('cathode-signal-key-v2'),
-    },
-    material,
-    { name: 'AES-GCM', length: 256 },
+  const stretched = new Uint8Array(
+    await crypto.subtle.deriveBits(
+      {
+        name: 'PBKDF2',
+        hash: 'SHA-256',
+        salt: enc.encode('cathode-space-v3'),
+        iterations: ROUNDS,
+      },
+      material,
+      256,
+    ),
+  )
+
+  // The topic and the key both come from the stretched bytes, kept apart by a
+  // label, so the public topic gives away nothing about the key.
+  const idBytes = new Uint8Array(
+    await crypto.subtle.digest(
+      'SHA-256',
+      concat(stretched, enc.encode('topic')) as BufferSource,
+    ),
+  )
+  const id = hex(idBytes).slice(0, 32)
+
+  const keyBytes = new Uint8Array(
+    await crypto.subtle.digest(
+      'SHA-256',
+      concat(stretched, enc.encode('signal')) as BufferSource,
+    ),
+  )
+  const key = await crypto.subtle.importKey(
+    'raw',
+    keyBytes as BufferSource,
+    { name: 'AES-GCM' },
     false,
     ['encrypt', 'decrypt'],
   )

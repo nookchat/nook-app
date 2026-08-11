@@ -1,0 +1,218 @@
+/**
+ * Named spaces, who runs them, and what a short code is worth.
+ *
+ * Three questions, none of which the type checker can answer:
+ *
+ *   1. Does the founder actually stick? It is pinned the first time a device
+ *      sees a space and never moved after, so a second person cannot walk in
+ *      and declare themselves the admin.
+ *   2. Does a member's role change get ignored? Only an admin may promote, and
+ *      the check has to live in the log rather than in the button, because a
+ *      peer sends events rather than clicks.
+ *   3. Is the twelve symbol code still a key? A wrong password must produce a
+ *      different room rather than a room you can see and fail to read, and one
+ *      symbol out must produce a different room too.
+ *
+ *   node test/roles-check.mjs
+ */
+
+import { chromium } from 'playwright-core'
+
+const APP_URL = process.argv[2] ?? 'http://localhost:5173/'
+const CHROME =
+  process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+
+const results = []
+const check = (name, ok, detail = '') => {
+  results.push({ name, ok })
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? `  — ${detail}` : ''}`)
+}
+
+const browser = await chromium.launch({
+  executablePath: CHROME,
+  headless: process.env.HEADED !== '1',
+})
+const page = await browser.newPage()
+await page.goto(APP_URL)
+
+try {
+  // --- the code is a key ---------------------------------------------------
+  const keys = await page.evaluate(async () => {
+    const { deriveRoom, newSecret, parseSecret } = await import('/src/room.ts')
+    const secret = newSecret()
+    const plain = await deriveRoom(secret)
+    const locked = await deriveRoom(secret, 'hunter2')
+    const wrong = await deriveRoom(secret, 'hunter3')
+
+    // One symbol out. Crockford has no I, L, O or U, so 'Z' is always a swap.
+    const near = secret.slice(0, -1) + (secret.at(-1) === 'Z' ? 'Y' : 'Z')
+    const neighbour = await deriveRoom(near)
+
+    return {
+      length: parseSecret(secret)?.length,
+      idLength: plain.id.length,
+      passwordMoves: plain.id !== locked.id,
+      wrongPassword: locked.id !== wrong.id,
+      neighbour: plain.id !== neighbour.id,
+      stable: (await deriveRoom(secret)).id === plain.id,
+    }
+  })
+  check('a code is twelve symbols', keys.length === 12, `${keys.length}`)
+  check('the topic gives nothing away', keys.idLength === 32, `${keys.idLength} hex`)
+  check('a password moves the space somewhere else', keys.passwordMoves)
+  check('a wrong password lands somewhere else again', keys.wrongPassword)
+  check('one symbol out is a different space', keys.neighbour)
+  check('the same code always derives the same space', keys.stable)
+
+  /*
+   * Stretching is the whole reason 60 bits is enough, so it has to be measured
+   * rather than assumed. Wall clock alone says more about the machine than
+   * about the code: a fast laptop does a quarter of a million rounds in under
+   * twenty milliseconds. So this compares the real derivation against a single
+   * round of the same thing. The ratio is what an attacker pays.
+   */
+  const cost = await page.evaluate(async () => {
+    const { deriveRoom, newSecret } = await import('/src/room.ts')
+    const secret = newSecret()
+
+    const once = async (iterations) => {
+      const material = await crypto.subtle.importKey(
+        'raw',
+        new TextEncoder().encode(secret),
+        'PBKDF2',
+        false,
+        ['deriveBits'],
+      )
+      const start = performance.now()
+      await crypto.subtle.deriveBits(
+        { name: 'PBKDF2', hash: 'SHA-256', salt: new Uint8Array(16), iterations },
+        material,
+        256,
+      )
+      return performance.now() - start
+    }
+
+    // A baseline of ten thousand rounds, timed a few times, because one sample
+    // of something this quick is mostly noise.
+    let baseline = Infinity
+    for (let i = 0; i < 5; i++) baseline = Math.min(baseline, await once(10_000))
+
+    let real = Infinity
+    for (let i = 0; i < 3; i++) {
+      const start = performance.now()
+      await deriveRoom(secret)
+      real = Math.min(real, performance.now() - start)
+    }
+
+    return { rounds: Math.round((real / baseline) * 10_000) }
+  })
+  check(
+    'a code is stretched before it is used as a key',
+    cost.rounds > 100_000,
+    `about ${cost.rounds.toLocaleString()} PBKDF2 rounds`,
+  )
+
+  // --- roles ---------------------------------------------------------------
+  const roles = await page.evaluate(async () => {
+    const { RoomLog } = await import('/src/store/log.ts')
+
+    const key = (n) => String(n).repeat(64).slice(0, 64)
+    const FOUNDER = key(1)
+    const MEMBER = key(2)
+    const THIRD = key(3)
+
+    /*
+     * Events are built by hand rather than signed, because this is about who
+     * the log obeys rather than whether a signature holds. openEvent already
+     * refuses anything unsigned, and a hostile peer would send well signed
+     * events under its own key anyway. That is exactly what MEMBER is doing.
+     */
+    let n = 0
+    const ev = (author, kind, body) => ({
+      id: `${++n}`.padStart(64, '0'),
+      room: 'r',
+      author,
+      lamport: n,
+      kind,
+      at: 1,
+      body,
+      sig: 'x'.repeat(128),
+    })
+
+    const build = (events) => {
+      const log = new RoomLog('r')
+      log.founder = FOUNDER
+      for (const e of events) log.add(e)
+      return log
+    }
+
+    const named = build([ev(FOUNDER, 'space', { name: 'Book club' })])
+    const stolenName = build([ev(MEMBER, 'space', { name: 'Mine now' })])
+
+    const grabbed = build([ev(MEMBER, 'role', { subject: MEMBER, role: 'admin' })])
+    const promoted = build([ev(FOUNDER, 'role', { subject: MEMBER, role: 'admin' })])
+
+    // A promotion, and then the new admin promoting a third person. Roles are
+    // walked in order, so this only works if the middle step really took.
+    const chain = build([
+      ev(FOUNDER, 'role', { subject: MEMBER, role: 'admin' }),
+      ev(MEMBER, 'role', { subject: THIRD, role: 'admin' }),
+    ])
+
+    // A member cannot demote the person who made the place.
+    const coup = build([
+      ev(FOUNDER, 'role', { subject: MEMBER, role: 'admin' }),
+      ev(MEMBER, 'role', { subject: FOUNDER, role: 'kicked' }),
+    ])
+
+    // Channels are an admin's job too, or the rail fills up from outside.
+    const channels = build([
+      ev(FOUNDER, 'channel', { name: 'plans' }),
+      ev(MEMBER, 'channel', { name: 'spam' }),
+    ]).channels()
+
+    return {
+      nameOk: named.spaceName() === 'Book club',
+      nameStaysPut: stolenName.spaceName() !== 'Mine now',
+      founderIsAdmin: named.roleOf(FOUNDER) === 'admin',
+      grabRefused: grabbed.roleOf(MEMBER) !== 'admin',
+      promoteWorks: promoted.roleOf(MEMBER) === 'admin',
+      chainWorks: chain.roleOf(THIRD) === 'admin',
+      founderSurvives: coup.roleOf(FOUNDER) === 'admin',
+      adminChannel: channels.includes('plans'),
+      memberChannel: channels.includes('spam') === false,
+    }
+  })
+  check('the founder names the space', roles.nameOk)
+  check('a member cannot rename it', roles.nameStaysPut)
+  check('the founder is its admin', roles.founderIsAdmin)
+  check('a member cannot promote themselves', roles.grabRefused)
+  check('an admin can promote somebody else', roles.promoteWorks)
+  check('and the new admin can promote a third', roles.chainWorks)
+  check('but nobody can depose the founder', roles.founderSurvives)
+  check('an admin makes a channel', roles.adminChannel)
+  check('a member does not', roles.memberChannel)
+
+  // --- sounds --------------------------------------------------------------
+  const sounds = await page.evaluate(async () => {
+    const { isNews, soundsOn, setSounds } = await import('/src/ui/sounds.ts')
+    const on = soundsOn()
+    setSounds(false)
+    const off = soundsOn() === false
+    setSounds(on)
+    return {
+      backfillIsQuiet: isNews(Date.now() - 10 * 60_000) === false,
+      freshIsNews: isNews(Date.now() - 1000),
+      canBeTurnedOff: off,
+    }
+  })
+  check('history arriving from a peer makes no noise', sounds.backfillIsQuiet)
+  check('something said just now does', sounds.freshIsNews)
+  check('and the whole lot can be turned off', sounds.canBeTurnedOff)
+} finally {
+  await browser.close()
+}
+
+const passed = results.filter((r) => r.ok).length
+console.log(`\n${passed} of ${results.length} checks passed.`)
+process.exit(passed === results.length ? 0 : 1)

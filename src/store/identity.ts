@@ -110,7 +110,13 @@ export function verify(idHex: string, sigHex: string, pubkeyHex: string): boolea
   }
 }
 
-/** A short, stable handle for a key, for when there is no name yet. */
+/**
+ * A short handle for a key.
+ *
+ * Six hex characters, written the way a tag is written. The whole key is 64
+ * characters and nobody reads that; six is enough to tell two people apart at a
+ * glance and the full thing is a copy away in settings when it matters.
+ */
 export function shortKey(pubkey: string): string {
-  return pubkey.slice(0, 6)
+  return `#${pubkey.slice(0, 6)}`
 }

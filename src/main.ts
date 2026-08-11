@@ -43,16 +43,29 @@ async function showList(): Promise<void> {
   chrome.setStatus(['Pick a space, or make one'])
   chrome.setActions({})
   chrome.body.append(
-    await spaceList({ open: (secret, locked, password) => openSpace(secret, locked, password) }),
+    await spaceList({
+      // A name means this space is being made rather than joined, so whoever
+      // typed it is the one who claims the founder's key.
+      open: (secret, locked, password, name) =>
+        openSpace(secret, locked, password, name !== undefined, name),
+    }),
   )
 }
 
-function openSpace(secret: string, locked = false, password = ''): void {
+function openSpace(
+  secret: string,
+  locked = false,
+  password = '',
+  fresh = false,
+  name = '',
+): void {
   const chrome = freshWindow('Cathode')
   setLinkSecret(secret, locked)
   const view = new SpaceView(chrome.body, secret, chrome, () => void showList(), {
     locked,
     password,
+    fresh,
+    name,
   })
   active = view
   void view.start()

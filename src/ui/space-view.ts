@@ -42,9 +42,10 @@ import {
 import { SignalBus } from '../signal/bus'
 import type { Envelope } from '../signal/envelope'
 import { loadSettings, saveSettings, type HostSettings } from '../settings'
-import { noteRoom } from '../store/db'
+import { getRoom, noteRoom } from '../store/db'
 import { loadIdentity, shortKey } from '../store/identity'
 import { settingsView } from './settings-view'
+import { chirpJoin, chirpLeave, chirpMessage, isNews } from './sounds'
 import { DEFAULT_CHANNEL, DEFAULT_VOICE, cleanChannel, type LogEvent } from '../store/log'
 import { RoomChat } from '../store/room-chat'
 import { ChatPanel } from './chat-panel'
@@ -75,6 +76,10 @@ export class SpaceView {
   private drawQueued = false
   private readonly locked: boolean
   private readonly password: string
+  /** True when this person just made the space, so they claim it. */
+  private readonly fresh: boolean
+  private readonly wantedName: string
+  private spaceTitle!: HTMLSpanElement
   private voice: Voice | null = null
   private stopped = false
   private timers: number[] = []
@@ -109,13 +114,18 @@ export class SpaceView {
     secret: string,
     chrome: WindowChrome | null,
     onLeave: () => void,
-    lock: { locked: boolean; password: string } = { locked: false, password: '' },
+    lock: { locked: boolean; password: string; fresh?: boolean; name?: string } = {
+      locked: false,
+      password: '',
+    },
   ) {
     this.root = root
     this.secret = secret
     this.chrome = chrome
     this.locked = lock.locked
     this.password = lock.password
+    this.fresh = lock.fresh === true
+    this.wantedName = lock.name ?? ''
     chrome?.setActions({
       minimise: () => this.root.classList.toggle('rail-hidden'),
       maximise: () => this.surface?.requestFullscreen(),
@@ -141,8 +151,10 @@ export class SpaceView {
     }
 
     const identity = loadIdentity()
-    const chat = new RoomChat(this.room.id, this.secret)
+    const note = await getRoom(this.room.id)
+    const chat = new RoomChat(this.room.id, this.secret, note?.founder ?? '')
     chat.onChange = () => this.draw()
+    chat.onFounder = (pubkey) => void this.remember({ founder: pubkey })
     await chat.load()
     this.chat = chat
     this.chatPanel?.setMe(chat.me)
@@ -151,6 +163,7 @@ export class SpaceView {
     const bus = new SignalBus(this.room, this.selfId)
     const voice = new Voice(bus, this.selfId)
     voice.onChange = () => this.draw()
+    voice.onArrival = (arrived) => (arrived ? chirpJoin() : chirpLeave())
     this.voice = voice
     const mesh = new Mesh(bus, this.selfId, identity.name)
     mesh.extra = () => ({
@@ -166,6 +179,12 @@ export class SpaceView {
     this.bus = bus
     this.mesh = mesh
 
+    // Whoever made the space claims it, once, and becomes its first admin.
+    if (this.fresh && !chat.founder) {
+      await chat.claimFounder()
+      await this.remember({ founder: chat.me })
+      if (this.wantedName) await chat.setSpaceName(this.wantedName)
+    }
     await chat.announceName(chat.displayName)
     void probeHardwareEncoders(availableCodecs()).then((probe) => (this.gpu = probe))
 
@@ -254,6 +273,10 @@ export class SpaceView {
   private async onMeshData(_from: string, raw: string): Promise<void> {
     const fresh = (await this.chat?.ingest(raw)) ?? []
     if (fresh.length === 0) return
+    // Somebody else said something, and said it just now rather than last week.
+    if (fresh.some((e) => e.kind === 'said' && e.author !== this.chat?.me && isNews(e.at))) {
+      chirpMessage()
+    }
     // Pass on what was new, so a line reaches people we are not linked to.
     for (const wire of this.chat?.encode(fresh) ?? []) this.mesh?.broadcast(wire)
   }
@@ -287,11 +310,30 @@ export class SpaceView {
     this.chatPanel?.render(this.chat.messages(this.channel))
     this.chatPanel?.setPresence(this.mesh?.reach ?? 1)
     this.channelTitle.textContent = `#${this.channel}`
+    const name = this.chat?.spaceName() || 'Unnamed space'
+    if (this.spaceTitle.textContent !== name) {
+      this.spaceTitle.textContent = name
+      void this.remember({ name })
+    }
     this.renderChannels()
     this.renderVoice()
     this.renderPeople()
     this.renderShareButton()
     this.status()
+  }
+
+  /** Keep what this device knows about the space up to date. */
+  private async remember(patch: Partial<{ founder: string; name: string }>): Promise<void> {
+    if (!this.room) return
+    const existing = await getRoom(this.room.id)
+    await noteRoom({
+      room: this.room.id,
+      secret: this.secret,
+      lastSeen: Date.now(),
+      title: patch.name ?? this.chat?.spaceName() ?? existing?.title ?? '',
+      locked: this.locked,
+      founder: patch.founder ?? existing?.founder ?? this.chat?.founder ?? '',
+    })
   }
 
   private status(): void {
@@ -339,7 +381,18 @@ export class SpaceView {
     }
     this.chatPanel.setEnabled(true)
 
+    this.spaceTitle = h('span', { class: 'space-name truncate', text: 'Unnamed space' })
+
     const left = h('div', { class: 'rail rail-left' }, [
+      h('div', { class: 'rail-head space-title' }, [
+        this.spaceTitle,
+        h('button', {
+          class: 'ghost tiny-btn',
+          text: '✎',
+          title: 'Rename this space. Admins only.',
+          on: { click: () => void this.renameSpace() },
+        }),
+      ]),
       h('div', { class: 'rail-head' }, [
         h('span', { class: 'eyebrow', text: 'Text channels' }),
         h('button', {
@@ -411,6 +464,26 @@ export class SpaceView {
         },
       }),
     )
+  }
+
+  private async renameSpace(): Promise<void> {
+    if (!this.chat?.isAdmin) {
+      toast('Only an admin can rename this space.', 'warn')
+      return
+    }
+    const raw = window.prompt('Name this space', this.chat.spaceName()) ?? ''
+    const name = raw.trim().slice(0, 32)
+    if (!name) return
+    await this.publish((c) => c.setSpaceName(name))
+    await this.remember({ name })
+  }
+
+  private async setRole(subject: string, role: 'admin' | 'member' | 'kicked'): Promise<void> {
+    if (!this.chat?.isAdmin) {
+      toast('Only an admin can do that.', 'warn')
+      return
+    }
+    await this.publish((c) => c.setRole(subject, role))
   }
 
   private rename(name: string): void {
@@ -514,8 +587,8 @@ export class SpaceView {
             class: `rail-item${here === name ? ' on' : ''}`,
             title:
               here === name
-                ? 'You are in here. Audio does not carry yet, only presence.'
-                : 'Join this voice channel. Presence only for now: audio does not carry yet.',
+                ? 'You are in here. Click to leave.'
+                : 'Join this voice channel. Everybody in it hears everybody else.',
             on: { click: () => void this.joinVoice(name) },
           },
           [
@@ -597,15 +670,18 @@ export class SpaceView {
     ): HTMLElement =>
       h('div', { class: 'rail-person', title: `ID ${id}` }, [
         h('i', { class: `dot ${ready ? 'good' : 'warn'}` }),
-        h('div', { class: 'grow', style: { minWidth: '0' } }, [
-          h('div', { class: 'truncate', text: you ? `${name} (you)` : name }),
-          // The short ID under the name: two people called the same thing are
-          // still two people, and the name is only a label on the key.
-          h('div', { class: 'tiny faint mono', text: shortKey(id) }),
-        ]),
+        /*
+         * Just the name. The identity behind it is what actually matters, but a
+         * key under every row is a column of noise nobody reads: it sits in the
+         * title instead, and stands in for the name when there is not one.
+         */
+        h('div', { class: 'grow truncate', text: you ? `${name} (you)` : name }),
         voice ? h('span', { class: 'pill', title: `In voice: ${voice}` }, [icon('volume-low', 11)]) : null,
         sharing ? h('span', { class: 'pill good', text: 'live' }) : null,
       ])
+
+    const roles = this.chat?.roles() ?? new Map<string, string>()
+    const iAmAdmin = this.chat?.isAdmin === true
 
     this.peopleList.append(
       person(
@@ -617,6 +693,12 @@ export class SpaceView {
         true,
       ),
     )
+    /*
+     * The roster is keyed by mesh id, which is per session, while roles are
+     * keyed by the identity that signs events. They are matched by name, which
+     * is loose, so the role controls sit under the people the log knows about
+     * rather than under the connections.
+     */
     for (const peer of this.mesh?.peers() ?? []) {
       this.peopleList.append(
         person(
@@ -627,6 +709,39 @@ export class SpaceView {
           this.voice?.whereIs(peer.id) ?? null,
           false,
         ),
+      )
+    }
+
+    const names = this.chat?.log.names() ?? new Map<string, string>()
+    const others = [...names.keys()].filter((k) => k !== this.chat?.me)
+    if (others.length) {
+      this.peopleList.append(h('div', { class: 'rail-head' }, [h('span', { class: 'eyebrow', text: 'Known' })]))
+    }
+    for (const key of others) {
+      const role = roles.get(key) ?? 'member'
+      this.peopleList.append(
+        h('div', { class: 'rail-person', title: `ID ${key}` }, [
+          h('div', { class: 'grow', style: { minWidth: '0' } }, [
+            h('div', { class: 'truncate', text: names.get(key) || shortKey(key) }),
+            role === 'member' ? null : h('div', { class: 'tiny faint', text: role }),
+          ]),
+          iAmAdmin && role !== 'admin'
+            ? h('button', {
+                class: 'ghost tiny-btn',
+                text: '↑',
+                title: 'Make an admin',
+                on: { click: () => void this.setRole(key, 'admin') },
+              })
+            : null,
+          iAmAdmin && role !== 'kicked' && key !== this.chat?.founder
+            ? h('button', {
+                class: 'ghost tiny-btn',
+                text: '✕',
+                title: 'Remove from this space',
+                on: { click: () => void this.setRole(key, 'kicked') },
+              })
+            : null,
+        ]),
       )
     }
   }
@@ -826,7 +941,7 @@ export class SpaceView {
         ...(s.codec ? [{ text: s.codec }] : []),
       ])
     }
-    void noteRoom({ room: this.room?.id ?? '', secret: this.secret, lastSeen: Date.now(), title: '' })
+    void this.remember({})
   }
 
   // ---- the share controls ----

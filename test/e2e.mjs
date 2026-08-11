@@ -142,7 +142,7 @@ try {
   const link = await codeBox.getAttribute('data-link')
   check(
     'a new space has a code and a link',
-    /#[0-9A-HJKMNP-TV-Z]{5}(-[0-9A-HJKMNP-TV-Z]{5}){4}$/.test(link),
+    /#[0-9A-HJKMNP-TV-Z]{4}(-[0-9A-HJKMNP-TV-Z]{4}){2}$/.test(link),
     link,
   )
 

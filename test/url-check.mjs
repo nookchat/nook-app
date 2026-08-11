@@ -29,7 +29,7 @@ const STUB = `(() => {
   navigator.mediaDevices.getDisplayMedia = async () => new MediaStream(s.getVideoTracks())
 })()`
 
-const CODE = /^[0-9A-HJKMNP-TV-Z]{5}(-[0-9A-HJKMNP-TV-Z]{5}){4}$/
+const CODE = /^[0-9A-HJKMNP-TV-Z]{4}(-[0-9A-HJKMNP-TV-Z]{4}){2}$/
 
 const results = []
 const check = (name, ok, detail = '') => {
@@ -55,7 +55,7 @@ try {
   await page.locator('.share-code').waitFor({ timeout: 15_000 })
 
   const code = (await page.locator('.share-code').textContent())?.trim() ?? ''
-  check('the code reads as five groups of five', CODE.test(code), code)
+  check('the code reads as three groups of four', CODE.test(code), code)
 
   const url = page.url()
   check('the address bar carries the space once you are in one', url.endsWith(`#${code}`), url)
@@ -63,7 +63,8 @@ try {
   const link = await page.locator('.share-code').getAttribute('data-link')
   check('the copied link matches the address bar', link === url, link ?? 'none')
 
-  // A code is a key. Twenty five Crockford symbols is 125 bits, and no two
+  // A code is a key. Twelve Crockford symbols is 60 bits, stretched by a
+  // quarter of a million PBKDF2 rounds before it is used as one, and no two
   // rooms should ever be near each other.
   const many = await page.evaluate(async () => {
     const { newSecret } = await import('/src/room.ts')
@@ -75,13 +76,13 @@ try {
 
   const folds = await page.evaluate(async () => {
     const { parseSecret } = await import('/src/room.ts')
-    const canonical = 'K7M2X9QPT4VB2WNP8ZQ3MHRF6'
+    const canonical = 'K7M29QPTVB2W'
     return {
-      hyphens: parseSecret('K7M2X-9QPT4-VB2WN-P8ZQ3-MHRF6') === canonical,
-      lower: parseSecret('k7m2x-9qpt4-vb2wn-p8zq3-mhrf6') === canonical,
-      spaces: parseSecret('  K7M2X 9QPT4 VB2WN P8ZQ3 MHRF6 ') === canonical,
-      confused: parseSecret('K7M2X-9QPT4-VB2WN-P8ZQ3-MHRF6'.replace('0', 'O')) === canonical,
-      tooShort: parseSecret('K7M2X-9QPT4') === null,
+      hyphens: parseSecret('K7M2-9QPT-VB2W') === canonical,
+      lower: parseSecret('k7m2-9qpt-vb2w') === canonical,
+      spaces: parseSecret('  K7M2 9QPT VB2W ') === canonical,
+      confused: parseSecret('K7M2-9QPT-VB2W'.replace('0', 'O')) === canonical,
+      tooShort: parseSecret('K7M2-9QPT') === null,
       rubbish: parseSecret('not a code at all') === null,
     }
   })
