@@ -18,12 +18,12 @@ const CHROME =
 const BOUNDARIES = [14, 15, 26, 27, 42, 43, 62, 63, 84, 85, 106, 107, 122, 123, 152, 153, 180, 181, 213]
 
 const CASES = [
-  'https://cathode.video/#r=UAeg19hayK8wUFSO2oqEWg',
-  'https://cathode.video/#r=' + 'A'.repeat(22),
-  'http://localhost:5173/#r=hnyiWMSfZ61Cj4V9uGjdlQ',
-  'https://a-rather-long-project-name.pages.dev/cathode/#r=xCQwtNoYKsbeF2AfcVPVNA',
+  'https://cathode.video/#K7M2X-9QPT4-VB2WN-P8ZQ3-MHRF6',
+  'https://cathode.video/#' + 'ABCDE-'.repeat(4) + 'ABCDE',
+  'http://localhost:5173/#K7M2X-9QPT4-VB2WN-P8ZQ3-MHRF6',
+  'https://a-rather-long-project-name.pages.dev/cathode/#K7M2X-9QPT4-VB2WN-P8ZQ3-MHRF6',
   'x',
-  'https://example.com/#r=' + 'A'.repeat(40),
+  'https://example.com/#' + 'A'.repeat(40),
   ...BOUNDARIES.map((n) => 'L'.repeat(n)),
 ]
 

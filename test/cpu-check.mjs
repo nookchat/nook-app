@@ -115,9 +115,9 @@ for (const codec of CODECS) {
   const idleCores = await coresUsed(hostCdp, 8000)
 
   await host.getByRole('button', { name: 'Choose what to share' }).click()
-  const box = host.locator('input[aria-label="The link to share"]')
+  const box = host.locator('.share-code')
   await box.waitFor({ timeout: 15_000 })
-  const link = await box.inputValue()
+  const link = await box.getAttribute('data-link')
 
   const viewer = await (await viewerBrowser.newContext()).newPage()
   await viewer.goto(link, { waitUntil: 'domcontentloaded' })

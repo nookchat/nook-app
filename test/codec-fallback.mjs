@@ -74,7 +74,7 @@ try {
   await host.addInitScript(STUB)
   await host.goto(APP_URL, { waitUntil: 'domcontentloaded' })
   await host.getByRole('button', { name: 'Choose what to share' }).click()
-  const link = await host.locator('input[aria-label="The link to share"]').inputValue()
+  const link = await host.locator('.share-code').getAttribute('data-link')
 
   const viewer = await (await viewerBrowser.newContext()).newPage()
   await viewer.goto(link, { waitUntil: 'domcontentloaded' })

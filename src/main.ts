@@ -56,8 +56,25 @@ function showViewer(secret: string): void {
   void view.start()
 }
 
+/*
+ * The address bar carries the room once a stream starts, so the link can be
+ * shared straight from there. That creates one trap: reloading the host page
+ * would read that fragment back and turn the host into a viewer of a room that
+ * died with the reload. This tab remembers what it was hosting, so it lands
+ * back on the picker instead.
+ */
+const HOSTING_KEY = 'cathode.hosting'
+
+function wasHosting(secret: string): boolean {
+  try {
+    return sessionStorage.getItem(HOSTING_KEY) === secret
+  } catch {
+    return false
+  }
+}
+
 const secret = readLinkSecret()
-if (secret) showViewer(secret)
+if (secret && !wasHosting(secret)) showViewer(secret)
 else showHost()
 
 window.addEventListener('beforeunload', (ev) => {

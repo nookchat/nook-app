@@ -96,6 +96,7 @@ modules square. That scans from across a desk without anybody squinting.
 npm run test:e2e       # two real Chrome pages, real relays, real media
 npm run test:mesh 10   # one host, ten viewers, prints the per viewer plan
 npm run test:qr        # every QR version, decoded back by Chrome
+npm run test:url       # the share code, and the address bar it lives in
 npm run test:uplink    # the upload estimator, against made up statistics
 npm run test:encoder   # which codec holds up, and what it costs to encode
 npm run test:cpu       # processor cost per codec: GPU or not, measured
@@ -132,16 +133,16 @@ the media never touches it.
 ### The link
 
 ```
-https://your.site/#r=<128 bit secret, base64url>
+https://cathode.video/#K7M2X-9QPT4-VB2WN-P8ZQ3-MHRF6
 ```
 
-The secret sits in the URL fragment, so the browser never sends it to the
-webserver. From the secret Cathode derives:
+The code sits in the URL fragment, so the browser never sends it to the
+webserver. From the code Cathode derives:
 
 | Value     | How                                  | Used for                          |
 | --------- | ------------------------------------ | --------------------------------- |
-| `roomId`  | SHA-256 of the secret, first 128 bits | The public topic on the relay      |
-| `roomKey` | HKDF-SHA256 of the secret            | AES-GCM on every signal message    |
+| `roomId`  | SHA-256 of the code, first 128 bits  | The public topic on the relay      |
+| `roomKey` | HKDF-SHA256 of the code              | AES-GCM on every signal message    |
 
 A relay operator sees a random topic name and opaque bytes. Cathode drops any
 message id it has already handled, using its own clock for the expiry.
@@ -344,10 +345,34 @@ be a viewer relay tree, where early viewers forward to later ones. Measure with
   audio of a shared screen. The microphone still works everywhere.
 - **No recording, no accounts, no history.** Nothing is stored anywhere.
 
-## Sharing the link
+## Sharing
 
-Copy it, or press the QR button and let somebody point a phone camera at the
-code. The QR encoder is in `src/ui/qr.ts`: byte mode, error correction level M,
+A room is a code, written the way Windows wrote a product key:
+
+```
+https://cathode.video/#K7M2X-9QPT4-VB2WN-P8ZQ3-MHRF6
+```
+
+That is not only for looks. It uses Crockford's base32 alphabet, which leaves out
+I, L, O and U, so no letter can be misread as a digit and nothing in it spells
+anything. Twenty five symbols at five bits each is **125 bits of key**, the same
+order as the 128 bits of base64url it replaced: a code you can read down a phone
+should not be a code that is easier to guess. It is read back however it was
+typed, in any case, with or without hyphens or spaces, folding `O` to `0` and
+`I` and `L` to `1`.
+
+The code **is** the key. It derives the relay topic and the AES-GCM key, and it
+sits after the `#`, so it never reaches the webserver.
+
+**The address bar carries the room.** Once a stream starts the URL becomes the
+share link, so it can be copied straight out of the address bar rather than only
+from the panel. That creates one trap, which `npm run test:url` guards: reloading
+the host page reads that fragment back, and without care the host would become a
+viewer of a room that died with the reload. The tab remembers what it was
+hosting, so a reload lands back on the picker with the dead room cleared away.
+
+Copy the link, or press the QR button and let somebody point a phone camera at
+it. The QR encoder is in `src/ui/qr.ts`: byte mode, error correction level M,
 versions 1 to 10, which carries 213 bytes and therefore any Cathode link.
 
 Correctness there is not a matter of taste, so `npm run test:qr` renders every
@@ -449,6 +474,7 @@ test/
   cpu-check.mjs       processor cost per codec, the real GPU question
   codec-fallback.mjs  a viewer without the hardware codec still sees it
   qr-check.mjs        every QR version, decoded back by Chrome
+  url-check.mjs       the code format, and a host reload staying a host
   mesh.mjs            N viewers against one host
   relay-probe.mjs     which public relays really carry a handshake
   repro.mjs           named failure cases: skew, delay, reload

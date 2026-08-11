@@ -838,6 +838,42 @@ hr {
   font-weight: bold;
 }
 
+/* ---------- the share code ---------- */
+
+/*
+ * Set out like a product key, because that is what it looks like and what it is
+ * for: five groups of five that a person can read, repeat or type.
+ */
+.share-code {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: bold;
+  letter-spacing: 0.06em;
+  text-align: center;
+  color: #10306b;
+  background: var(--field);
+  border: 1px solid;
+  border-color: var(--field-border) #fff #fff var(--field-border);
+  outline: 1px solid var(--face-shadow);
+  outline-offset: -2px;
+  padding: 7px 4px;
+  cursor: text;
+  user-select: all;
+  overflow-wrap: anywhere;
+}
+
+.share-code:focus-visible {
+  outline: 1px dotted #000;
+  outline-offset: -4px;
+}
+
+.share-link {
+  font-size: 10.5px;
+  font-family: var(--mono);
+  color: var(--fg-faint);
+  text-align: center;
+}
+
 /* ---------- readouts ---------- */
 
 .plan-box {

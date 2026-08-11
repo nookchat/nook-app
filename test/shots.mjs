@@ -21,7 +21,7 @@ for (const scheme of ['light', 'dark']) {
   await p.waitForTimeout(700)
   await p.screenshot({ path: `${OUT}idle-${scheme}.png`, fullPage: true })
   await p.getByRole('button', { name: 'Choose what to share' }).click()
-  await p.locator('input[aria-label="The link to share"]').waitFor({ timeout: 15000 })
+  await p.locator('.share-code').waitFor({ timeout: 15000 })
   await p.locator('summary', { hasText: 'Fine tuning' }).click()
   await p.waitForTimeout(1200)
   await p.mouse.move(500, 400)

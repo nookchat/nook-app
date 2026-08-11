@@ -138,10 +138,10 @@ try {
   )
 
   await host.getByRole('button', { name: 'Choose what to share' }).click()
-  const linkInput = host.locator('input[aria-label="The link to share"]')
+  const linkInput = host.locator('.share-code')
   await linkInput.waitFor({ timeout: 15_000 })
-  const link = await linkInput.inputValue()
-  check('host starts and shows a link', /#r=[A-Za-z0-9_-]{20,}/.test(link), link)
+  const link = await linkInput.getAttribute('data-link')
+  check('host starts and shows a link', /#[0-9A-HJKMNP-TV-Z]{5}(-[0-9A-HJKMNP-TV-Z]{5}){4}$/.test(link), link)
 
   const relayOpen = await waitFor(
     async () => host.evaluate(() => document.querySelectorAll('.pill.relay.good').length || null),

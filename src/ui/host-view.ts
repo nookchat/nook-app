@@ -9,7 +9,17 @@
 import { hostBlocker, hostNotes, checkSupport } from '../diagnostics'
 import { AudioMixer } from '../media/mixer'
 import { captureMicrophone, captureScreen, CaptureError, type ScreenCapture } from '../media/capture'
-import { deriveRoom, newPeerId, newSecret, roomLink, type Room } from '../room'
+import {
+  clearLink,
+  deriveRoom,
+  formatSecret,
+  newPeerId,
+  newSecret,
+  roomLink,
+  setLinkSecret,
+  shortLink,
+  type Room,
+} from '../room'
 import { SignalBus, type RelayHealth } from '../signal/bus'
 import type { Envelope } from '../signal/envelope'
 import { HostPeer } from '../rtc/host-peer'
@@ -79,7 +89,9 @@ export class HostView {
 
   // Elements we update in place.
   private sidePanel!: HTMLDivElement
-  private linkInput!: HTMLInputElement
+  private shareLink = ''
+  private codeBox!: HTMLDivElement
+  private linkLine!: HTMLDivElement
   private statusPills!: HTMLDivElement
   private viewerList!: HTMLDivElement
   private planLine!: HTMLDivElement
@@ -185,9 +197,29 @@ export class HostView {
 
     const secret = newSecret()
     this.room = await deriveRoom(secret)
+    this.claimUrl(secret)
     this.renderLive(secret)
     this.openBus()
     this.startLoops()
+  }
+
+  /** Put the room in the address bar, and remember that this tab owns it. */
+  private claimUrl(secret: string): void {
+    setLinkSecret(secret)
+    try {
+      sessionStorage.setItem('cathode.hosting', secret)
+    } catch {
+      // Private mode. The address bar still works, a reload just forgets.
+    }
+  }
+
+  private releaseUrl(): void {
+    clearLink()
+    try {
+      sessionStorage.removeItem('cathode.hosting')
+    } catch {
+      // Nothing stored, nothing to clear.
+    }
   }
 
   /** End the stream and return to the picker, without leaving the page. */
@@ -200,6 +232,7 @@ export class HostView {
       bytesSent: this.bytesSent,
     }
     this.teardownSession()
+    this.releaseUrl()
     this.renderIdle()
   }
 
@@ -582,17 +615,9 @@ export class HostView {
     this.surface?.setControlsVisible(true)
     this.surface?.setStream(this.outStream)
 
-    this.linkInput = h('input', {
-      type: 'text',
-      readOnly: true,
-      value: roomLink(secret),
-      ariaLabel: 'The link to share',
-      on: { focus: (ev) => (ev.target as HTMLInputElement).select() },
-    })
-
     clear(this.sidePanel)
     this.sidePanel.append(
-      this.linkCard(),
+      this.linkCard(secret),
       this.viewersCard(),
       this.qualityCard(),
       this.audioCard(support.systemAudio),
@@ -610,11 +635,36 @@ export class HostView {
     this.renderPreviewBadges()
   }
 
-  private linkCard(): HTMLElement {
+  /**
+   * The share card.
+   *
+   * The code leads, set out as five groups of five, because that is the thing a
+   * person reads, repeats or types. The full link sits under it in small text
+   * for the eye, and the Copy button puts the whole link on the clipboard,
+   * which is what actually gets pasted.
+   */
+  private linkCard(secretForCard: string): HTMLElement {
+    this.codeBox = h('div', {
+      class: 'share-code',
+      tabIndex: 0,
+      title: 'Click to select the whole code',
+      on: {
+        click: () => {
+          const range = document.createRange()
+          range.selectNodeContents(this.codeBox)
+          const sel = window.getSelection()
+          sel?.removeAllRanges()
+          sel?.addRange(range)
+        },
+      },
+    })
+    this.linkLine = h('div', { class: 'share-link truncate' })
+    this.setShareCode(secretForCard)
+
     const copyLabel = h('span', { text: 'Copy link' })
     const copyButton = h('button', { class: 'primary grow' }, [icon('copy'), copyLabel])
     copyButton.addEventListener('click', async () => {
-      const ok = await copyText(this.linkInput.value)
+      const ok = await copyText(this.shareLink)
       copyLabel.textContent = ok ? 'Copied' : 'Copy failed'
       clear(copyButton)
       copyButton.append(icon(ok ? 'check' : 'copy'), copyLabel)
@@ -623,7 +673,6 @@ export class HostView {
         clear(copyButton)
         copyButton.append(icon('copy'), copyLabel)
       }, 1800)
-      if (!ok) this.linkInput.select()
     })
 
     const qrButton = h('button', {
@@ -636,19 +685,20 @@ export class HostView {
 
     return h('div', { class: 'card stack tight' }, [
       h('div', { class: 'row spread' }, [
-        h('span', { class: 'eyebrow', text: 'Share this link' }),
+        h('span', { class: 'eyebrow', text: 'Share this code' }),
         h('span', { class: 'pill good' }, [h('i', { class: 'dot live' }), 'live']),
       ]),
-      this.linkInput,
+      this.codeBox,
+      this.linkLine,
       h('div', { class: 'row' }, [copyButton, qrButton]),
       h('div', {
         class: 'tiny faint',
-        text: 'The key after the # never reaches the webserver. Anyone who holds the whole link can watch.',
+        text: 'The code after the # never reaches the webserver. Anyone who holds it can watch.',
       }),
       h('div', { class: 'row', style: { marginTop: '2px' } }, [
-        h('button', { class: 'ghost small', title: 'Rotate the key. Every old link stops working.', on: { click: () => void this.rotateLink() } }, [
+        h('button', { class: 'ghost small', title: 'Make a new code. Every old link stops working.', on: { click: () => void this.rotateLink() } }, [
           icon('refresh', 15),
-          'New link',
+          'New code',
         ]),
         h('button', { class: 'ghost small', title: 'Share a different window, tab, or display.', on: { click: () => void this.changeScreen() } }, [
           icon('monitor', 15),
@@ -658,9 +708,18 @@ export class HostView {
     ])
   }
 
+  /** Point the whole card at a code, so rotating one updates every part of it. */
+  private setShareCode(secret: string): void {
+    if (!this.codeBox) return
+    this.shareLink = roomLink(secret)
+    this.codeBox.textContent = formatSecret(secret)
+    this.codeBox.dataset.link = this.shareLink
+    this.linkLine.textContent = shortLink(secret)
+  }
+
   /** A QR code big enough to scan from across a desk. */
   private showQr(): void {
-    const link = this.linkInput.value
+    const link = this.shareLink
     const close = (): void => scrim.remove()
 
     const frame = h('div', { class: 'qr-frame' })
@@ -1176,7 +1235,7 @@ export class HostView {
       this.viewerList.append(
         h('div', { class: 'empty' }, [
           h('div', { class: 'small', text: 'Nobody has joined yet.' }),
-          h('div', { class: 'tiny faint', text: 'Send the link above. Viewers appear here.' }),
+          h('div', { class: 'tiny faint', text: 'Send the code above. Viewers appear here.' }),
         ]),
       )
       return
@@ -1362,7 +1421,8 @@ export class HostView {
     this.pending.clear()
     const secret = newSecret()
     this.room = await deriveRoom(secret)
-    this.linkInput.value = roomLink(secret)
+    this.claimUrl(secret)
+    this.setShareCode(secret)
     this.openBus()
     this.renderViewers()
     toast('New link ready. Every old link is now dead.', 'info')

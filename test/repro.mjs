@@ -46,9 +46,9 @@ const host = await ctx.newPage()
 await host.addInitScript(DISPLAY_STUB)
 await host.goto(APP_URL)
 await host.getByRole('button', { name: 'Choose what to share' }).click()
-const box = host.locator('input[aria-label="The link to share"]')
+const box = host.locator('.share-code')
 await box.waitFor({ timeout: 15_000 })
-const link = await box.inputValue()
+const link = await box.getAttribute('data-link')
 console.log(`case=${CASE}  host live`)
 
 if (CASE === 'reload') {

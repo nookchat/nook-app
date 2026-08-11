@@ -96,9 +96,9 @@ for (const codec of CODECS) {
   await host.addInitScript(PC_SPY)
   await host.goto(APP_URL, { waitUntil: 'domcontentloaded' })
   await host.getByRole('button', { name: 'Choose what to share' }).click()
-  const box = host.locator('input[aria-label="The link to share"]')
+  const box = host.locator('.share-code')
   await box.waitFor({ timeout: 15_000 })
-  const link = await box.inputValue()
+  const link = await box.getAttribute('data-link')
 
   const viewer = await context.newPage()
   await viewer.addInitScript(PC_SPY)
