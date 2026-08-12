@@ -16,7 +16,7 @@ import { loadIdentity, saveDisplayName, shortKey } from '../store/identity'
 import { setSounds, soundsOn } from './sounds'
 import { micSettings, setMicSettings, type MicSettings } from '../net/mic'
 import { defaultArchive, setDefaultArchive } from '../store/archive'
-import { gifKey, keyService, setGifKey } from '../store/gifs'
+import { gifCredential, GIF_SERVICES, setGifCredential, type GifService } from '../store/gifs'
 import { clear, copyText, fmtBytes, h } from './dom'
 import { openEmojiPicker, quickReactions, setQuickReactions } from './emoji'
 import { avatarOf } from './chat-panel'
@@ -163,37 +163,44 @@ export function settingsView(actions: SettingsActions): HTMLElement {
   /*
    * A key for GIF search, kept here and used from here.
    *
-   * Tenor and Giphy both want a key and neither gives one away in the page,
-   * so a chat with no server has two honest choices: an archive holds the key
-   * for the room, or you hold your own. This is the second, and it is the one
-   * that works for a space with no archive, which is most of them.
+   * Every one of these services wants a key and none of them gives one away in
+   * the page, so a chat with no server has two honest choices: an archive holds
+   * the key for the room, or you hold your own. This is the second, and it is
+   * the one that works for a space with no archive, which is most of them.
    *
-   * Which service it belongs to is read off the key. A Tenor key is a Google
-   * API key and every Google API key starts with AIza, so one box takes both
-   * and there is no menu to get wrong.
+   * The service is picked rather than guessed. Two of these hand out keys that
+   * look alike, and guessing wrong means handing one company's key to another
+   * company, which is worse than one small menu.
    */
+  const held = gifCredential()
+  const gifPick = h('select', { ariaLabel: 'GIF service' })
+  for (const service of GIF_SERVICES) {
+    const option = h('option', { text: service.label, value: service.id })
+    if (held?.service === service.id) option.selected = true
+    gifPick.append(option)
+  }
   const gifInput = h('input', {
     type: 'text',
+    class: 'grow',
     ariaLabel: 'GIF search key',
-    placeholder: 'Tenor or Giphy key',
-    value: gifKey(),
+    placeholder: 'Your key',
+    value: held?.key ?? '',
   })
   const gifState = h('div', { class: 'tiny faint' })
+  const chosen = (): GifService => (gifPick.value as GifService) || 'klipy'
   const sayGifState = (): void => {
-    const service = keyService(gifInput.value)
-    gifState.textContent =
-      service === 'tenor'
-        ? 'Searching with your Tenor key. It stays in this browser.'
-        : service === 'giphy'
-          ? 'Searching with your Giphy key. It stays in this browser.'
-          : 'No key. GIF search falls back to the archive, if this space has one with a key.'
+    const service = GIF_SERVICES.find((s) => s.id === chosen())
+    gifState.textContent = gifInput.value.trim()
+      ? `Searching with your ${service?.label ?? ''} key. It stays in this browser.`
+      : `No key. Get one from ${service?.where ?? ''}, or leave this empty and GIF search falls back to the archive, if this space has one with a key.`
   }
   sayGifState()
+  gifPick.addEventListener('change', () => sayGifState())
   const gifSave = h('button', {
     text: 'Save',
     on: {
       click: () => {
-        setGifKey(gifInput.value)
+        setGifCredential(chosen(), gifInput.value)
         sayGifState()
         toast(gifInput.value.trim() ? 'GIF key saved.' : 'GIF key cleared.', 'good')
       },
@@ -584,11 +591,11 @@ export function settingsView(actions: SettingsActions): HTMLElement {
 
         h('div', { class: 'card stack tight' }, [
           h('span', { class: 'eyebrow', text: 'GIFs' }),
-          h('div', { class: 'row' }, [gifInput, gifSave]),
+          h('div', { class: 'row' }, [gifPick, gifInput, gifSave]),
           gifState,
           h('div', {
             class: 'tiny faint',
-            text: 'Optional. Tenor and Giphy both hand out a free key, and one of them is what /gif searches with. The key is kept in this browser, is never said in a space, and is never sent anywhere except to the service it belongs to. What that service is told is the word you searched for, which is the whole deal being made and is why this is off until you fill it in.',
+            text: 'Optional. All three hand out a free key, and Klipy is the quickest: a test key from their partner panel takes about a minute, where Tenor wants a Google Cloud project. The key is kept in this browser, is never said in a space, and is never sent anywhere except to the service you picked. What that service is told is the word you searched for, which is the whole deal being made and is why this is off until you fill it in.',
           }),
         ]),
 

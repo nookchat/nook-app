@@ -49,7 +49,7 @@ import { settingsView } from './settings-view'
 import { Archive, defaultArchive } from '../store/archive'
 import { buzzNudge, chirpJoin, chirpLeave, chirpMessage, isNews, speak } from './sounds'
 import { openSoundboard, playSound, soundById, soundByName, SOUNDS } from './soundboard'
-import { keyService, searchGifs, type Gif } from '../store/gifs'
+import { gifCredential, searchGifs, serviceLabel, type Gif } from '../store/gifs'
 import {
   DEFAULT_CHANNEL,
   DEFAULT_VOICE,
@@ -2780,8 +2780,9 @@ export class SpaceView {
    * that flashes past somebody who was looking at the grid.
    */
   private async findGifs(term: string): Promise<{ gifs: Gif[]; from: string }> {
-    if (keyService()) {
-      return { gifs: await searchGifs(term), from: keyService() === 'tenor' ? 'Tenor' : 'Giphy' }
+    const held = gifCredential()
+    if (held) {
+      return { gifs: await searchGifs(term, held), from: serviceLabel(held.service) }
     }
     // The archive answers a term. It has nothing to say about an empty one,
     // so an empty box waits rather than asking a question with no question.

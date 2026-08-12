@@ -104,9 +104,10 @@ archive.example.org {
 
 An archive is one of two ways to search for a GIF, and the better one when a
 space has an archive: the key sits on this machine rather than on everybody's.
-The other way needs no archive at all. Anybody can paste their own Tenor or
-Giphy key under Settings, GIFs, and their browser searches with it directly.
-The picker looks for that key first and falls back to the archive.
+The other way needs no archive at all. Anybody can paste their own Klipy, Tenor
+or Giphy key under Settings, GIFs, and their browser searches with it directly.
+Klipy is the quickest of the three to get a key from. The picker looks for that
+key first and falls back to the archive.
 
 A room id is 32 hex characters, derived from the space code. It gives away
 nothing about the code, and the archive cannot work backwards from it.
