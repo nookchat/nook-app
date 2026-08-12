@@ -53,7 +53,7 @@ try {
   await waitFor(
     async () =>
       two.evaluate(() => {
-        const m = (document.querySelector('.chat-panel .pill')?.textContent ?? '').match(/(\d+) here/)
+        const m = (document.querySelector('.status-bar')?.textContent ?? '').match(/(\d+) here/)
         return m && Number(m[1]) >= 2 ? true : null
       }),
     45_000,

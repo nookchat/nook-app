@@ -436,7 +436,7 @@ export interface QrOptions {
 /**
  * An SVG element holding the code.
  *
- * A QR code is always dark on light, in either theme. A scanner needs the
+ * A QR code is always dark on light, whatever is around it. A scanner needs the
  * contrast in that direction, so this never follows the page colours.
  */
 export function qrSvg(text: string, options: QrOptions = {}): SVGSVGElement {

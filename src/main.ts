@@ -5,7 +5,6 @@
  */
 
 import './styles.css'
-import { bootTheme } from './ui/themes'
 import { clearLink, readLink, setLinkSecret } from './room'
 import { clear } from './ui/dom'
 import { createWindow, type WindowChrome } from './ui/shell'
@@ -14,9 +13,6 @@ import { SpaceView } from './ui/space-view'
 import { findBySecret } from './store/db'
 import { toast } from './ui/toast'
 import { checkSupport } from './diagnostics'
-
-// Before anything is drawn, so nothing flashes in the wrong skin.
-bootTheme()
 
 const app = document.getElementById('app')
 if (!app) throw new Error('The page could not find its mount point.')

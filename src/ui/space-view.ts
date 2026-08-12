@@ -728,7 +728,6 @@ export class SpaceView {
       this.chatPanel?.render(this.chat.messages(this.channel))
       this.chatPanel?.setTitle('Chat')
     }
-    this.chatPanel?.setPresence(this.mesh?.reach ?? 1)
     this.channelTitle.textContent = `#${this.channel}`
     // Whatever is on the screen counts as read.
     this.markRead(this.channel)

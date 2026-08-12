@@ -93,57 +93,34 @@ link on screen.
 
 ## Look
 
-Five skins, because not everybody wants the joke:
+One look. Dark, quiet, and out of the way, because the interesting thing on the
+screen is what people are saying to each other.
 
-| Theme          | What it is                                        |
-| -------------- | ------------------------------------------------- |
-| **Windows XP** | Luna blue, beige and bevels. The default          |
-| WinAmp         | Black, grey, and a green display that glows       |
-| Discord        | Dark, blurple, rounded                            |
-| Skype          | White with the old bright blue                    |
-| Plain          | Neutral, and it follows your system light or dark |
+There were five skins here once, including a full Windows XP costume with a
+wallpaper, a window frame and three caption buttons. It was a good joke and it
+cost a set of layout rules that had to hold up under bevels and under flat
+design at the same time, plus a picker on the status bar for a decision nobody
+makes twice. It is one palette now, and the app fills the window.
 
-The picker sits on the status bar, always reachable, and the choice is kept in
-this browser.
+**Every value the look is made of lives in one block at the top of
+`src/styles.css`,** and nothing below that block names a colour. That was the
+rule when there were five of them and it is still the rule with one: a colour
+written into a layout rule is a colour that has to be found again by hand when
+the palette moves.
 
-**Every visual decision reads from a token**, so a theme is a block of token
-values and nothing else. That is why five skins this different need only one set
-of structural rules: the same 700 lines of layout carry all of them. If a rule
-ever needs a `[data-theme]` selector, the thing it styles wants a token instead.
+| Piece      | How                                                                |
+| ---------- | ------------------------------------------------------------------ |
+| Depth      | Four greys, from the background to the raised surfaces on top of it |
+| Accent     | One blue, used about four times per screen and nowhere else         |
+| Lines      | One hairline between columns, and under the header. No card borders |
+| Corners    | 6 px on small things, 8 px on buttons and fields, 10 px on panels   |
+| Type       | The system stack, 14 px, with 11 px capitals for section labels     |
+| Selection  | Raised rather than painted: the accent does not follow you around   |
+| Status bar | One quiet line: where you are, who is here, how many relays are up  |
 
-The default is dressed as **Windows XP**, Luna blue. Not a page with a header on it: a
-window on a desktop, because that is what software looked like before everything
-became a website.
-
-| Piece            | How                                                                  |
-| ---------------- | -------------------------------------------------------------------- |
-| Title bar        | The Luna gradient, rounded top corners, bold white text with a shadow |
-| Caption buttons  | Blue minimise and maximise, red close, all three doing real work      |
-| Window body      | `#ece9d8`, the face colour of every XP dialog, inside a blue frame    |
-| Buttons          | Beveled, 3 px corners, and they glow amber under the pointer          |
-| Fields           | Sunken white with the `#7f9db9` inner line                            |
-| Group boxes      | One grey line with a white line etched under it                       |
-| Preset list      | A list box, selection in `#316ac5` with white text                    |
-| The plan readout | Tooltip yellow, `#ffffe1`, with a hairline black border               |
-| Level meters     | The segmented green progress bar, the most XP thing there is          |
-| Status bar       | Sunken panels along the bottom of the window                          |
-| Notifications    | Balloon tips in the bottom corner                                     |
-| Desktop          | Bliss, near enough: sky, two clouds, and a green hill in CSS          |
-| Type             | Tahoma, falling back to Verdana                                       |
-
-**All three caption buttons do something.** A decorative control that does
-nothing is worse than no control at all:
-
-| Button    | On the host                                    | On a viewer            |
-| --------- | ---------------------------------------------- | ---------------------- |
-| Minimise  | Hides the panel, gives the window to the picture | Cycles fit, fill, 1:1 |
-| Maximise  | Takes the picture fullscreen                   | Same                   |
-| Close     | Stops the stream, back to the picker           | Leaves, back to the picker |
-
-This commits to one look. Windows XP had no dark mode, so neither does Cathode, and
-every colour is painted explicitly rather than inherited from the host. The old
-top bar is gone: the title bar carries the name and the live state, and the
-status bar carries what is happening, the relay count, and the clock.
+The three columns sit flush against each other and are told apart by shade
+rather than by a border each. The conversation has nothing drawn around it at
+all.
 
 Icons are stroked outlines on a 24 unit grid in `src/ui/icons.ts`, drawn in the
 current text colour so one icon works on a button and on a dark video overlay.
@@ -167,14 +144,20 @@ Anyone holding the link can watch. Two host controls make that safe:
 
 ```
 src/
-  main.ts             route to host or viewer from the URL fragment
-  chat.ts             names, and the silly ones people get by default
+  main.ts             open a space from the link, or show the list of them
+  chat.ts             names, mentions, and the silly names people start with
   store/
     identity.ts       the key pair that makes you you, kept on the device
     log.ts            signed, immutable events and what they add up to
     db.ts             IndexedDB, which is why it is there tomorrow
     room-chat.ts      one room: the log, the store, and the wire
-  net/uplink.ts       how much upload Cathode may use, guessed then measured
+    compact.ts        keeping the log small without losing what counted
+    archive.ts        the optional always awake peer, and what it is not trusted with
+    transfer.ts       export and import, verified event by event
+  net/
+    mesh.ts           everybody connected to everybody, and who offers to whom
+    voice.ts          voice channels, mic.ts denoise.ts talking.ts around them
+    uplink.ts         how much upload Cathode may use, guessed then measured
   room.ts             secret, roomId, roomKey, link build and parse
   settings.ts         host preferences, kept in localStorage
   diagnostics.ts      what this browser can do, in plain words
@@ -195,33 +178,44 @@ src/
     capture.ts        getDisplayMedia and the microphone, with clear errors
     mixer.ts          WebAudio mix of screen audio and microphone into one track
   ui/
-    shell.ts          the XP window: title bar, caption buttons, status bar
-    icons.ts          the stroked icon set
-    themes.ts         the five skins and where the choice is kept
+    space-view.ts     the room: channels, people, threads, search, sharing
+    space-list.ts     the opening screen, and leaving a space
     chat-panel.ts     the conversation, drawn as nodes and never as HTML
+    emoji.ts          the set, the picker, and what a quick reaction is
+    settings-view.ts  your name, your key, your data, and this space
+    shell.ts          the frame: where a screen mounts, and the status bar
+    icons.ts          the stroked icon set
     qr.ts             a QR encoder, byte mode, level M, versions 1 to 10
-    host-view.ts      link, viewer list, quality, audio, session
-    viewer-view.ts    join, connect, watch, and every failure message
     video-surface.ts  fit, fill, and one to one with zoom and pan
     dom.ts toast.ts   small helpers, no framework
 test/
-  e2e.mjs             host and viewer, end to end, 27 checks
+  e2e.mjs             host and viewer, end to end, 34 checks
+  chat-check.mjs      typing, unread, mentions, search, threads, multi-line
+  emoji-check.mjs     the picker, and what one emoji is made of
+  leave-check.mjs     leaving, deleting, and one code meaning one room
+  roles-check.mjs     who may do what, and what a member may not
+  agree-check.mjs     three browsers typing at once, ending up identical
+  converge-check.mjs  the same events shuffled two hundred ways
+  archive-check.mjs   the archive: what it keeps, and what it cannot read
+  storage-check.mjs   compaction, trimming, export and import
+  persist-check.mjs   history outliving the host, and forgeries refused
+  rejoin-check.mjs    one row per person, however many devices they use
+  live-check.mjs      two people sharing at once, and picking between them
+  voice-check.mjs     voice channels, who is talking, and being moved
+  url-check.mjs       the code format, and a reload staying in the space
   uplink.mjs          the upload estimator, against made up statistics
   encoder-check.mjs   codec by codec: resolution held, and encode cost
   cpu-check.mjs       processor cost per codec, the real GPU question
   codec-fallback.mjs  a viewer without the hardware codec still sees it
   qr-check.mjs        every QR version, decoded back by Chrome
-  url-check.mjs       the code format, and a host reload staying a host
-  persist-check.mjs   history outliving the host, and forgeries refused
-  theme-shots.mjs     one screenshot per skin
+  denoise-check.mjs   the neural noise removal, on real noise
   mesh.mjs            N viewers against one host
   relay-probe.mjs     which public relays really carry a handshake
   repro.mjs           named failure cases: skew, delay, reload
   debug.mjs           prints what both pages see, for a stuck room
   relaycheck.mjs      the relays each side actually has open
-  shots.mjs           screenshots of both themes
+  shots.mjs           screenshots of the app
 ```
-
 ## When a viewer is stuck
 
 The waiting screen names the cause instead of spinning:

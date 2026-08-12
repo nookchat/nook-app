@@ -1,485 +1,80 @@
 /*
- * Cathode, in five skins.
+ * Cathode.
  *
- * Every visual decision below reads from a token. A theme is a block of token
- * values and nothing else, which is why five skins this different need only one
- * set of structural rules. If you find yourself writing a rule under a
- * [data-theme] selector, the thing you are styling probably wants a token.
+ * One look, and every value it is made of lives in the block below. That is
+ * still the rule even with nothing to switch between: a colour written into a
+ * layout rule is a colour that has to be found again by hand when the palette
+ * moves, and there were five skins here once because that was easy to get wrong.
+ *
+ * Dark, quiet, and out of the way. The interesting thing on the screen is what
+ * people are saying to each other, so the furniture is grey, the accent appears
+ * about four times per screen, and nothing has a gradient on it.
  */
 
-/* =========================================================================
-   Windows XP, Luna blue. The default.
-   ========================================================================= */
+:root {
+  /* Depth, from the back of the window to the front of it. */
+  --bg: #131519;
+  --face: #181b20;
+  --surface: #1c2026;
+  --surface-2: #252a32;
+  --line: #2b313a;
+  --line-soft: #23282f;
 
-:root,
-:root[data-theme="xp"] {
-  --desktop: #4a90d9;
-  --desktop-image:
-    radial-gradient(58% 30% at 50% 100%, #86c440 0%, #6fb02f 45%, #56942a 78%, transparent 100%),
-    radial-gradient(closest-side, rgb(255 255 255 / 78%), transparent 100%),
-    radial-gradient(closest-side, rgb(255 255 255 / 62%), transparent 100%),
-    linear-gradient(180deg, #1b56b0 0%, #3b81d8 30%, #79b6e8 58%, #b9dcf2 70%, #7fb542 70.5%, #4d8a24 100%);
-  --desktop-size: 140% 46%, 30% 13%, 22% 9%, 100% 100%;
-  --desktop-pos: 50% 100%, 16% 22%, 72% 15%, 0 0;
-  --desktop-pad: 10px;
+  --fg: #e7eaef;
+  --fg-dim: #b6bcc7;
+  --fg-faint: #7f8794;
+  --fg-disabled: #565d68;
+  --heading: #8b94a1;
 
-  --win-bg: #ece9d8;
-  --win-border: 3px solid #0831d9;
-  --win-radius: 8px 8px 0 0;
-  --win-shadow: 2px 2px 10px rgb(0 0 0 / 45%);
-
-  --title-bg: linear-gradient(180deg, #3f8cf3 0%, #0a58e8 8%, #1c6ae8 40%, #0a58e8 88%, #0a4bd0 100%);
-  --title-solid: #0a58e8;
-  --title-h: 26px;
-  --title-shadow: inset 0 1px 0 rgb(255 255 255 / 45%);
-
-  --cap-bg: linear-gradient(180deg, #7ab3f5 0%, #2e73d8 45%, #1b5cc4 55%, #4c93ee 100%);
-  --cap-close-bg: linear-gradient(180deg, #f39c8e 0%, #d6503c 45%, #c33822 55%, #ea7a63 100%);
-  --cap-border: 1px solid rgb(255 255 255 / 70%);
-  --cap-radius: 3px;
-  --cap-fg: #fff;
-  --cap-size: 22px;
-
-  --face: #ece9d8;
-  --surface: #f5f4ea;
-  --surface-2: #e3e0d1;
-  --line: #d3d0c4;
-  --line-soft: #e2dfd2;
-  --bevel-light: #ffffff;
-  --bevel-dark: #aca899;
-
-  --fg: #000000;
-  --fg-dim: #3a3a2f;
-  --fg-faint: #6b6b5c;
-  --fg-disabled: #a0a0a0;
-  --heading: #003399;
-
-  --accent: #1c6ae8;
+  --accent: #5b7cfa;
   --accent-fg: #ffffff;
-  --select: #316ac5;
+  /* What is selected is raised rather than painted: an accent behind every
+     channel you happen to be standing in is an accent that stops meaning
+     anything. */
+  --select: #2d333d;
   --select-fg: #ffffff;
 
-  --good: #157e15;
-  --warn: #9a6400;
-  --bad: #b81a1a;
-  --progress: repeating-linear-gradient(90deg, #2ac428 0 7px, transparent 7px 9px);
+  --good: #3fb950;
+  --warn: #d29922;
+  --bad: #f85149;
+  --progress: linear-gradient(90deg, var(--accent), #7d95fb);
 
-  --field-bg: #ffffff;
-  --field-border: 1px solid #7f9db9;
-  --field-inset: 1px solid var(--bevel-dark);
-  --field-radius: 0;
-
-  --btn-bg: linear-gradient(180deg, #fff 0%, #f2f1e6 46%, #e5e2d2 47%, #f0eee2 100%);
-  --btn-bg-hover: linear-gradient(180deg, #fffdf5 0%, #ffeeb8 46%, #ffe08a 47%, #fff3cf 100%);
-  --btn-bg-active: linear-gradient(180deg, #ded9c6 0%, #e9e6d8 100%);
-  --btn-border: #003c74;
-  --btn-border-hover: #e9a900;
-  --btn-fg: #000;
-  --btn-radius: 3px;
-  --btn-shadow: inset 0 0 0 1px #fff;
-  --btn-h: 23px;
-  --btn-weight: 400;
-
-  --radius-sm: 0;
-  --pill-radius: 0;
-  --panel-radius: 0;
-  --shadow: 1px 1px 4px rgb(0 0 0 / 30%);
-  --tip-bg: #ffffe1;
-  --tip-border: #000;
-
-  --sans: Tahoma, "Segoe UI", Verdana, Geneva, sans-serif;
-  --mono: "Lucida Console", Consolas, Monaco, monospace;
-  --size: 12px;
-  --size-small: 11px;
-
-  color-scheme: light;
-}
-
-/* =========================================================================
-   WinAmp. Black, grey, and a green display.
-   ========================================================================= */
-
-:root[data-theme="winamp"] {
-  --desktop: #101010;
-  --desktop-image: radial-gradient(120% 90% at 50% 0%, #2a2a2a 0%, #101010 70%);
-  --desktop-size: 100% 100%;
-  --desktop-pos: 0 0;
-  --desktop-pad: 8px;
-
-  --win-bg: #232323;
-  --win-border: 1px solid #4a4a4a;
-  --win-radius: 0;
-  --win-shadow: 0 6px 22px rgb(0 0 0 / 70%);
-
-  --title-bg: linear-gradient(180deg, #4a4a4a 0%, #2e2e2e 45%, #1c1c1c 100%);
-  --title-solid: #2e2e2e;
-  --title-h: 20px;
-  --title-shadow: inset 0 1px 0 rgb(255 255 255 / 14%);
-
-  --cap-bg: linear-gradient(180deg, #5a5a5a, #303030);
-  --cap-close-bg: linear-gradient(180deg, #7a3a3a, #401c1c);
-  --cap-border: 1px solid #5f5f5f;
-  --cap-radius: 0;
-  --cap-fg: #d8d8d8;
-  --cap-size: 15px;
-
-  --face: #232323;
-  --surface: #2b2b2b;
-  --surface-2: #191919;
-  --line: #3d3d3d;
-  --line-soft: #2f2f2f;
-  --bevel-light: #5a5a5a;
-  --bevel-dark: #111111;
-
-  --fg: #d6d6d6;
-  --fg-dim: #a2a2a2;
-  --fg-faint: #767676;
-  --fg-disabled: #565656;
-  --heading: #45f01c;
-
-  --accent: #45f01c;
-  --accent-fg: #06210b;
-  --select: #2f6b18;
-  --select-fg: #b6ffa0;
-
-  --good: #45f01c;
-  --warn: #ffb000;
-  --bad: #ff5b4a;
-  --progress: repeating-linear-gradient(90deg, #45f01c 0 3px, transparent 3px 5px);
-
-  --field-bg: #000000;
-  --field-border: 1px solid #111;
-  --field-inset: 1px solid #3a3a3a;
-  --field-radius: 0;
-
-  --btn-bg: linear-gradient(180deg, #4a4a4a 0%, #333 50%, #2a2a2a 100%);
-  --btn-bg-hover: linear-gradient(180deg, #5c5c5c 0%, #414141 50%, #363636 100%);
-  --btn-bg-active: linear-gradient(180deg, #1e1e1e, #2b2b2b);
-  --btn-border: #5f5f5f;
-  --btn-border-hover: #45f01c;
-  --btn-fg: #d6d6d6;
-  --btn-radius: 0;
-  --btn-shadow: inset 0 1px 0 rgb(255 255 255 / 10%);
-  --btn-h: 21px;
-  --btn-weight: 700;
-
-  --radius-sm: 0;
-  --pill-radius: 0;
-  --panel-radius: 0;
-  --shadow: 0 2px 8px rgb(0 0 0 / 60%);
-  --tip-bg: #000;
-  --tip-border: #45f01c;
-
-  --sans: "Lucida Console", Consolas, Monaco, monospace;
-  --mono: "Lucida Console", Consolas, Monaco, monospace;
-  --size: 11px;
-  --size-small: 10px;
-
-  color-scheme: dark;
-}
-
-/* The display glows, the way the visualiser did. */
-:root[data-theme="winamp"] .share-code,
-:root[data-theme="winamp"] .chat-log,
-:root[data-theme="winamp"] .plan-box {
-  color: #45f01c;
-  text-shadow: 0 0 6px rgb(69 240 28 / 35%);
-}
-
-/* =========================================================================
-   Discord. Dark, blurple, rounded.
-   ========================================================================= */
-
-:root[data-theme="discord"] {
-  --desktop: #1e1f22;
-  --desktop-image: none;
-  --desktop-size: 100% 100%;
-  --desktop-pos: 0 0;
-  --desktop-pad: 0px;
-
-  --win-bg: #313338;
-  --win-border: 0 solid transparent;
-  --win-radius: 0;
-  --win-shadow: none;
-
-  --title-bg: #1e1f22;
-  --title-solid: #1e1f22;
-  --title-h: 30px;
-  --title-shadow: none;
-
-  --cap-bg: transparent;
-  --cap-close-bg: transparent;
-  --cap-border: 1px solid transparent;
-  --cap-radius: 6px;
-  --cap-fg: #b5bac1;
-  --cap-size: 24px;
-
-  --face: #313338;
-  --surface: #2b2d31;
-  --surface-2: #232428;
-  --line: #3f4147;
-  --line-soft: #2e3035;
-  --bevel-light: transparent;
-  --bevel-dark: transparent;
-
-  --fg: #f2f3f5;
-  --fg-dim: #dbdee1;
-  --fg-faint: #949ba4;
-  --fg-disabled: #6d6f78;
-  --heading: #f2f3f5;
-
-  --accent: #5865f2;
-  --accent-fg: #ffffff;
-  --select: #404249;
-  --select-fg: #ffffff;
-
-  --good: #23a55a;
-  --warn: #f0b232;
-  --bad: #f23f43;
-  --progress: linear-gradient(90deg, #5865f2, #7983f5);
-
-  --field-bg: #1e1f22;
-  --field-border: 1px solid #1e1f22;
+  --field-bg: #131519;
+  --field-border: 1px solid #2b313a;
   --field-inset: 0 solid transparent;
   --field-radius: 8px;
 
-  --btn-bg: #4e5058;
-  --btn-bg-hover: #6d6f78;
-  --btn-bg-active: #404249;
+  --btn-bg: #262c35;
+  --btn-bg-hover: #2f3641;
+  --btn-bg-active: #1f242b;
   --btn-border: transparent;
   --btn-border-hover: transparent;
-  --btn-fg: #ffffff;
+  --btn-fg: #e7eaef;
   --btn-radius: 8px;
-  --btn-shadow: none;
-  --btn-h: 32px;
-  --btn-weight: 500;
-
-  --radius-sm: 6px;
-  --pill-radius: 999px;
-  --panel-radius: 8px;
-  --shadow: 0 8px 24px rgb(0 0 0 / 40%);
-  --tip-bg: #111214;
-  --tip-border: #111214;
-
-  --sans: "gg sans", "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif;
-  --mono: ui-monospace, Menlo, Consolas, monospace;
-  --size: 14px;
-  --size-small: 12px;
-
-  color-scheme: dark;
-}
-
-/* =========================================================================
-   Skype, the old bright blue one.
-   ========================================================================= */
-
-:root[data-theme="skype"] {
-  --desktop: #00aff0;
-  --desktop-image: linear-gradient(160deg, #00aff0 0%, #0078a8 100%);
-  --desktop-size: 100% 100%;
-  --desktop-pos: 0 0;
-  --desktop-pad: 12px;
-
-  --win-bg: #ffffff;
-  --win-border: 1px solid #cfd8dc;
-  --win-radius: 4px;
-  --win-shadow: 0 10px 30px rgb(0 60 90 / 30%);
-
-  --title-bg: linear-gradient(180deg, #00b7f5 0%, #00aff0 55%, #009ad4 100%);
-  --title-solid: #00aff0;
-  --title-h: 34px;
-  --title-shadow: none;
-
-  --cap-bg: transparent;
-  --cap-close-bg: transparent;
-  --cap-border: 1px solid transparent;
-  --cap-radius: 3px;
-  --cap-fg: #ffffff;
-  --cap-size: 24px;
-
-  --face: #ffffff;
-  --surface: #f4f8fb;
-  --surface-2: #e6eef4;
-  --line: #d8e2e9;
-  --line-soft: #eaf1f6;
-  --bevel-light: transparent;
-  --bevel-dark: transparent;
-
-  --fg: #16303d;
-  --fg-dim: #4b6c7d;
-  --fg-faint: #7d97a5;
-  --fg-disabled: #b0c2cc;
-  --heading: #0078a8;
-
-  --accent: #00aff0;
-  --accent-fg: #ffffff;
-  --select: #cfeefc;
-  --select-fg: #0a3f55;
-
-  --good: #7bc61e;
-  --warn: #f5a623;
-  --bad: #e2453c;
-  --progress: linear-gradient(90deg, #7bc61e, #a6e04a);
-
-  --field-bg: #ffffff;
-  --field-border: 1px solid #c6d6df;
-  --field-inset: 0 solid transparent;
-  --field-radius: 3px;
-
-  --btn-bg: #ffffff;
-  --btn-bg-hover: #eaf7fd;
-  --btn-bg-active: #d6eefa;
-  --btn-border: #b7cfdb;
-  --btn-border-hover: #00aff0;
-  --btn-fg: #16303d;
-  --btn-radius: 3px;
-  --btn-shadow: none;
-  --btn-h: 28px;
-  --btn-weight: 600;
-
-  --radius-sm: 3px;
-  --pill-radius: 999px;
-  --panel-radius: 4px;
-  --shadow: 0 3px 10px rgb(0 60 90 / 18%);
-  --tip-bg: #ffffff;
-  --tip-border: #b7cfdb;
-
-  --sans: "Segoe UI", Tahoma, system-ui, sans-serif;
-  --mono: Consolas, Menlo, monospace;
-  --size: 13px;
-  --size-small: 11.5px;
-
-  color-scheme: light;
-}
-
-/* =========================================================================
-   Plain. Neutral, and it follows the system.
-   ========================================================================= */
-
-:root[data-theme="plain"] {
-  --desktop: #e9eaec;
-  --desktop-image: none;
-  --desktop-size: 100% 100%;
-  --desktop-pos: 0 0;
-  --desktop-pad: 0px;
-
-  --win-bg: #ffffff;
-  --win-border: 0 solid transparent;
-  --win-radius: 0;
-  --win-shadow: none;
-
-  --title-bg: #f4f5f7;
-  --title-solid: #f4f5f7;
-  --title-h: 32px;
-  --title-shadow: inset 0 -1px 0 #e0e2e6;
-
-  --cap-bg: transparent;
-  --cap-close-bg: transparent;
-  --cap-border: 1px solid transparent;
-  --cap-radius: 5px;
-  --cap-fg: #5c6570;
-  --cap-size: 24px;
-
-  --face: #ffffff;
-  --surface: #f7f8fa;
-  --surface-2: #eef0f3;
-  --line: #dfe2e7;
-  --line-soft: #eceef1;
-  --bevel-light: transparent;
-  --bevel-dark: transparent;
-
-  --fg: #14171a;
-  --fg-dim: #4a5158;
-  --fg-faint: #7b838c;
-  --fg-disabled: #adb4bb;
-  --heading: #14171a;
-
-  --accent: #2f6feb;
-  --accent-fg: #ffffff;
-  --select: #dbe6fd;
-  --select-fg: #14304f;
-
-  --good: #1a7f4b;
-  --warn: #9a6b00;
-  --bad: #c8362f;
-  --progress: linear-gradient(90deg, #2f6feb, #6c9bf5);
-
-  --field-bg: #ffffff;
-  --field-border: 1px solid #d3d8de;
-  --field-inset: 0 solid transparent;
-  --field-radius: 6px;
-
-  --btn-bg: #ffffff;
-  --btn-bg-hover: #f2f4f7;
-  --btn-bg-active: #e6e9ee;
-  --btn-border: #d3d8de;
-  --btn-border-hover: #b6bec7;
-  --btn-fg: #14171a;
-  --btn-radius: 6px;
   --btn-shadow: none;
   --btn-h: 30px;
   --btn-weight: 500;
 
   --radius-sm: 6px;
   --pill-radius: 999px;
-  --panel-radius: 8px;
-  --shadow: 0 2px 8px rgb(15 20 25 / 10%);
-  --tip-bg: #ffffff;
-  --tip-border: #d3d8de;
+  --panel-radius: 10px;
+  --shadow: 0 10px 30px rgb(0 0 0 / 45%);
+  --tip-bg: #252a32;
+  --tip-border: #2b313a;
 
-  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --mono: ui-monospace, Menlo, Consolas, monospace;
-  --size: 13.5px;
-  --size-small: 12px;
+  /* The one square button, on the corner of a dialog. */
+  --cap-size: 26px;
 
-  color-scheme: light;
-}
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --size: 14px;
+  --size-small: 12.5px;
 
-@media (prefers-color-scheme: dark) {
-  :root[data-theme="plain"] {
-    --desktop: #0f1114;
-    --win-bg: #16191d;
-    --title-bg: #101317;
-    --title-solid: #101317;
-    --title-shadow: inset 0 -1px 0 #23272d;
-    --cap-fg: #9aa3ad;
-
-    --face: #16191d;
-    --surface: #1c2026;
-    --surface-2: #23272d;
-    --line: #2b3037;
-    --line-soft: #21252b;
-
-    --fg: #e8ebee;
-    --fg-dim: #a8b0b9;
-    --fg-faint: #79828c;
-    --fg-disabled: #545c65;
-    --heading: #e8ebee;
-
-    --accent: #4c86f0;
-    --select: #26364f;
-    --select-fg: #dbe6fd;
-
-    --field-bg: #101317;
-    --field-border: 1px solid #2b3037;
-
-    --btn-bg: #23272d;
-    --btn-bg-hover: #2c3138;
-    --btn-bg-active: #1a1e23;
-    --btn-border: #333941;
-    --btn-border-hover: #454c55;
-    --btn-fg: #e8ebee;
-
-    --tip-bg: #1c2026;
-    --tip-border: #2b3037;
-    --shadow: 0 6px 20px rgb(0 0 0 / 45%);
-
-    color-scheme: dark;
-  }
+  color-scheme: dark;
 }
 
 /* =========================================================================
-   Structure. No theme owns anything below this line.
+   Structure. Nothing below this line names a colour.
    ========================================================================= */
 
 * {
@@ -509,52 +104,30 @@ body {
   overflow: hidden;
 }
 
-.xp-desktop {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  padding: var(--desktop-pad);
-  padding-top: max(var(--desktop-pad), env(safe-area-inset-top));
-  padding-bottom: max(var(--desktop-pad), env(safe-area-inset-bottom));
-  background-color: var(--desktop);
-  background-image: var(--desktop-image);
-  background-size: var(--desktop-size);
-  background-position: var(--desktop-pos);
-  background-repeat: no-repeat;
-}
-
-@media (max-width: 700px) {
-  .xp-desktop {
-    padding: 0;
-  }
-}
-
-.xp-window {
+/*
+ * The app fills the window.
+ *
+ * There used to be a desktop behind it with a wallpaper on it, and a window
+ * floating on that with a frame and a title bar. Three layers of picture frame
+ * around a chat room. It is a page now: the screen is the app.
+ */
+.app-shell {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: var(--win-bg);
-  border: var(--win-border);
-  border-top: 0;
-  border-radius: var(--win-radius);
-  box-shadow: var(--win-shadow);
+  background: var(--bg);
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
-@media (max-width: 700px) {
-  .xp-window {
-    border-radius: 0;
-  }
-}
-
-.xp-body {
+.app-body {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--win-bg);
 }
 
 main {
@@ -568,23 +141,21 @@ main {
 
 /* ---------- status bar ---------- */
 
-.xp-status {
+/* One quiet line along the bottom: where you are, who is here, how many relays
+   are up. Panels rather than boxes, separated by space instead of by borders. */
+.status-bar {
   flex: 0 0 auto;
   display: flex;
-  align-items: stretch;
-  gap: 2px;
-  padding: 2px;
+  align-items: center;
+  gap: 14px;
+  padding: 5px 12px;
   background: var(--face);
   border-top: 1px solid var(--line-soft);
   font-size: var(--size-small);
-  color: var(--fg-dim);
+  color: var(--fg-faint);
 }
 
-.xp-status-panel {
-  border: 1px solid;
-  border-color: var(--bevel-dark) var(--bevel-light) var(--bevel-light) var(--bevel-dark);
-  border-radius: var(--radius-sm);
-  padding: 2px 7px;
+.status-cell {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -592,22 +163,10 @@ main {
   white-space: nowrap;
 }
 
-.xp-status-panel.grow {
+.status-cell.grow {
   flex: 1 1 auto;
   min-width: 0;
-}
-
-.xp-status-panel.tight {
-  padding: 0 2px;
-}
-
-.theme-picker {
-  width: auto;
-  min-height: 0;
-  padding: 1px 18px 1px 5px;
-  font-size: var(--size-small);
-  border-radius: var(--radius-sm);
-  background-position: calc(100% - 8px) calc(50% + 1px), calc(100% - 5px) calc(50% + 1px);
+  color: var(--fg-dim);
 }
 
 /* ---------- typography ---------- */
@@ -652,10 +211,23 @@ h2 {
   white-space: nowrap;
 }
 
+/* A section label. Small, spaced, and grey: it names the thing under it and
+   then gets out of the way. */
 .eyebrow {
-  font-size: var(--size-small);
-  font-weight: bold;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--heading);
+}
+
+/* The one at the top of the conversation is a heading rather than a label. */
+.space-head .eyebrow {
+  font-size: var(--size);
+  letter-spacing: 0;
+  text-transform: none;
+  font-weight: 600;
+  color: var(--fg);
 }
 
 /* ---------- buttons ---------- */
@@ -759,10 +331,12 @@ button.tiny-btn {
   padding: 1px 9px;
 }
 
+/* On, as opposed to selected. Tinted with the accent rather than outlined in
+   it: a coloured border on a resting button reads as a focus ring. */
 button.on {
-  background: var(--select);
-  color: var(--select-fg);
-  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, var(--surface-2));
+  color: var(--fg);
+  border-color: transparent;
 }
 
 /* ---------- fields ---------- */
@@ -815,9 +389,10 @@ hr {
 
 /* ---------- panels ---------- */
 
+/* A card is a raised surface, not an outline. */
 .card {
-  background: transparent;
-  border: 1px solid var(--line);
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
   border-radius: var(--panel-radius);
   padding: 9px 10px 10px;
   position: relative;
@@ -1415,13 +990,20 @@ details.adv[open] > summary {
 
 /* ---------- the space: channels left, the room on the right ---------- */
 
+/*
+ * Three columns, flush.
+ *
+ * They used to be three bordered cards floating on a padded background, which
+ * is four edges each to look at before you get to anybody's message. Depth
+ * carries it instead: the rails sit back, the conversation sits forward, and
+ * the only lines left are the two between them.
+ */
 .space-grid {
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
-  grid-template-columns: 190px minmax(0, 1fr) 180px;
-  gap: 6px;
-  padding: 6px;
+  grid-template-columns: 220px minmax(0, 1fr) 200px;
+  background: var(--face);
 }
 
 @media (max-width: 1080px) {
@@ -1480,19 +1062,38 @@ details.adv[open] > summary {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   overflow-y: auto;
   background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--panel-radius);
-  padding: 7px;
+  padding: 8px 8px 10px;
+}
+
+.rail-left {
+  border-right: 1px solid var(--line-soft);
+}
+
+.rail-right {
+  border-left: 1px solid var(--line-soft);
 }
 
 .rail-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 2px 2px;
+  padding: 10px 2px 3px;
+}
+
+/* The name of the place, at the top of the column that lists what is in it. */
+.space-title {
+  padding: 2px 2px 10px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.space-name {
+  font-size: var(--size);
+  font-weight: 600;
+  color: var(--fg);
 }
 
 .rail-list {
@@ -1557,8 +1158,8 @@ details.adv[open] > summary {
 
 .rail-foot {
   flex: 0 0 auto;
-  padding-top: 6px;
-  border-top: 1px solid var(--line);
+  padding-top: 8px;
+  border-top: 1px solid var(--line-soft);
 }
 
 .rail-foot .share-code {
@@ -1571,12 +1172,18 @@ details.adv[open] > summary {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  background: var(--face);
 }
 
+/* Where you are, and the way to find something. One line, with the rule under
+   it that separates the header from the conversation. */
 .space-head {
   flex: 0 0 auto;
-  padding: 2px 2px 0;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line-soft);
 }
 
 .stage {
@@ -1612,12 +1219,15 @@ details.adv[open] > summary {
 
 /* ---------- chat ---------- */
 
+/* The conversation, with nothing drawn around it. */
 .chat-panel {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  gap: 6px;
-  padding: 7px 8px 8px;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
 .host-side .chat-panel {
@@ -1635,45 +1245,63 @@ details.adv[open] > summary {
   min-height: 60px;
   overflow-y: auto;
   overflow-x: hidden;
-  background: var(--field-bg);
-  border: var(--field-border);
-  outline: var(--field-inset);
-  outline-offset: -2px;
-  border-radius: var(--field-radius);
-  padding: 5px 6px;
-  font-size: var(--size-small);
-  line-height: 1.5;
+  background: transparent;
+  border: 0;
+  padding: 0 2px;
+  font-size: var(--size);
+  line-height: 1.45;
   overflow-wrap: anywhere;
-  color: var(--fg);
+  color: var(--fg-dim);
 }
 
+/* A date, with the rule running through it rather than above it. */
 .chat-day {
-  text-align: center;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0 6px;
   color: var(--fg-faint);
   font-size: calc(var(--size-small) - 1px);
-  margin: 8px 0 4px;
-  border-top: 1px solid var(--line);
-  padding-top: 4px;
+}
+
+.chat-day::before,
+.chat-day::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--line-soft);
 }
 
 .chat-line {
-  margin: 1px 0;
+  margin: 0;
   position: relative;
-  padding-right: 44px;
+  padding: 2px 44px 2px 6px;
   border-radius: var(--radius-sm);
 }
 
 .chat-line:hover {
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  background: var(--surface);
 }
 
+/* The first line of a run carries the name, so that is where the gap goes. */
+.chat-line:has(.chat-name) {
+  margin-top: 10px;
+}
+
+.chat-log > .chat-line:first-child {
+  margin-top: 0;
+}
+
+/*
+ * Everybody's name is the same colour.
+ *
+ * It was the accent for other people and green for your own, which is two
+ * colours doing the job of one piece of information you already have: your own
+ * messages are the ones you just wrote.
+ */
 .chat-name {
-  font-weight: bold;
-  color: var(--accent);
-}
-
-.chat-line.mine .chat-name {
-  color: var(--good);
+  font-weight: 600;
+  color: var(--fg);
 }
 
 .chat-line.system {
@@ -2152,33 +1780,23 @@ input[type="text"].emoji-search {
   display: grid;
   place-items: center;
   padding: 14px;
-  background: rgb(0 0 0 / 45%);
+  background: rgb(0 0 0 / 62%);
 }
 
 .modal {
   width: 100%;
   max-width: 320px;
-  background: var(--win-bg);
-  border: var(--win-border);
-  border-top: 0;
-  border-radius: var(--win-radius);
-  box-shadow: var(--win-shadow);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--panel-radius);
+  box-shadow: var(--shadow);
   padding: 0;
   display: flex;
   flex-direction: column;
 }
 
 .modal > .row:first-child {
-  height: var(--title-h);
-  padding: 0 4px 0 8px;
-  border-radius: var(--win-radius);
-  background: var(--title-bg);
-  box-shadow: var(--title-shadow);
-}
-
-.modal > .row:first-child .eyebrow {
-  color: var(--cap-fg);
-  font-weight: bold;
+  padding: 8px 8px 4px 12px;
 }
 
 .modal > .row:first-child button {
@@ -2187,10 +1805,15 @@ input[type="text"].emoji-search {
   height: var(--cap-size);
   min-height: var(--cap-size);
   padding: 0;
-  color: var(--cap-fg);
-  border: var(--cap-border);
-  border-radius: var(--cap-radius);
-  background: var(--cap-close-bg);
+  color: var(--fg-faint);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+}
+
+.modal > .row:first-child button:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--fg);
 }
 
 .modal > *:not(:first-child) {

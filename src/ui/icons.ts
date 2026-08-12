@@ -2,9 +2,9 @@
  * The icon set.
  *
  * Stroked outlines on a 24 unit grid, drawn in the current text colour, so one
- * icon works on a button, on a dark video overlay, and in either theme. Beam
- * used emoji here before, which changed shape on every platform and never
- * matched the weight of the text beside it.
+ * icon works on a button and on a dark video overlay. Beam used emoji here
+ * before, which changed shape on every platform and never matched the weight of
+ * the text beside it.
  */
 
 export type IconName =

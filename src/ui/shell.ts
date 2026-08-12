@@ -1,17 +1,19 @@
 /**
- * The window.
+ * The shell.
  *
- * Cathode is not a page with a header on it. It is a window on a desktop, with a
- * title bar, caption buttons, and a status bar, the way software looked before
- * everything became a website.
+ * The app fills the window, and along the bottom there is one line saying what
+ * is happening: where you are, how many people are here, how many relays are
+ * up. That is the whole chrome.
  *
- * All three caption buttons do something real. A decorative control that does
- * nothing is worse than no control at all.
+ * There was more of it once. A desktop with a wallpaper, a window floating on
+ * it with a frame and a title bar, and three caption buttons, two of which
+ * repeated what the browser already does. A strip of furniture that repeats the
+ * furniture above it is wasted height, and on a phone it was a tenth of the
+ * screen.
  */
 
 import { checkSupport, supportRows } from '../diagnostics'
 import { fmtBytes, fmtDuration, h } from './dom'
-import { applyTheme, loadTheme, THEMES } from './themes'
 
 export interface SessionSummary {
   seconds: number
@@ -38,49 +40,20 @@ export interface WindowChrome {
 }
 
 export function createWindow(title: string): WindowChrome {
-  /*
-   * No title bar.
-   *
-   * It carried three buttons that a browser already provides: the tab closes
-   * the thing, the window resizes it, and the operating system hides it. A
-   * strip of chrome that repeats what the chrome above it already does is a
-   * strip of wasted height, and on a phone it was a tenth of the screen.
-   *
-   * What is left is the window itself and the status bar along the bottom,
-   * which says what is actually happening. The actions the caption buttons
-   * stood for are still reachable: fullscreen and leaving both live where they
-   * belong, next to the thing they act on.
-   *
-   * setTitle still means something: it names the browser tab.
-   */
+  // setTitle still means something: it names the browser tab.
   document.title = title
 
-  const body = h('div', { class: 'xp-body' })
-  const status = h('div', { class: 'xp-status' })
-  const win = h('div', { class: 'xp-window' }, [body, status])
-  const root = h('div', { class: 'xp-desktop' }, [win])
-
-  // The skin picker lives on the status bar, where it is always reachable and
-  // never in the way, whichever screen is up.
-  const picker = h('select', {
-    class: 'theme-picker',
-    ariaLabel: 'Theme',
-    title: 'Change the look',
-    on: { change: () => applyTheme(picker.value) },
-  })
-  for (const theme of THEMES) {
-    picker.append(h('option', { value: theme.id, text: theme.name, title: theme.note }))
-  }
-  picker.value = loadTheme()
+  const body = h('div', { class: 'app-body' })
+  const status = h('div', { class: 'status-bar' })
+  const root = h('div', { class: 'app-shell' }, [body, status])
 
   const setStatus = (panels: (HTMLElement | string)[]): void => {
     status.replaceChildren()
     panels.forEach((panel, i) => {
-      const cell = h('div', { class: `xp-status-panel${i === 0 ? ' grow' : ''}` })
+      const cell = h('div', { class: `status-cell${i === 0 ? ' grow' : ''}` })
       cell.append(typeof panel === 'string' ? panel : panel)
       status.append(cell)
     })
-    status.append(h('div', { class: 'xp-status-panel tight' }, [picker]))
   }
 
   setStatus(['Ready'])

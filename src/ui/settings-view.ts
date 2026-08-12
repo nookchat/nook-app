@@ -21,7 +21,6 @@ import { openEmojiPicker, quickReactions, setQuickReactions } from './emoji'
 import { storagePressure } from '../store/compact'
 import { download, exportAll, importBundle } from '../store/transfer'
 import { icon } from './icons'
-import { applyTheme, loadTheme, THEMES } from './themes'
 import { toast } from './toast'
 
 export interface SettingsActions {
@@ -270,10 +269,6 @@ export function settingsView(actions: SettingsActions): HTMLElement {
     return row
   }
 
-  const theme = h('select', { ariaLabel: 'Theme', on: { change: () => applyTheme(theme.value) } })
-  for (const t of THEMES) theme.append(h('option', { value: t.id, text: t.name, title: t.note }))
-  theme.value = loadTheme()
-
   return h('main', {}, [
     h('div', { class: 'center-page' }, [
       h('div', { class: 'sheet stack' }, [
@@ -437,12 +432,6 @@ export function settingsView(actions: SettingsActions): HTMLElement {
             class: 'tiny faint',
             text: 'Every event in a file is verified the same way one from a person is, so an import can only add what it can prove. Old messages, edits and reactions are compacted away as they are superseded, and history past a limit is trimmed from the oldest end.',
           }),
-        ]),
-
-        h('div', { class: 'card stack tight' }, [
-          h('span', { class: 'eyebrow', text: 'Look' }),
-          theme,
-          h('div', { class: 'tiny faint', text: 'Kept in this browser.' }),
         ]),
       ]),
     ]),

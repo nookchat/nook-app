@@ -129,7 +129,9 @@ try {
 
   // The app opens on the spaces you have been in, not on a screen picker.
   const opening = await host.evaluate(() => ({
-    list: document.body.innerText.includes('Your spaces'),
+    // Case folded: section labels are drawn in capitals by the stylesheet, and
+    // innerText reports what is drawn.
+    list: document.body.innerText.toLowerCase().includes('your spaces'),
     make: !!Array.from(document.querySelectorAll('button')).find((b) =>
       (b.textContent ?? '').includes('New space'),
     ),
@@ -178,7 +180,7 @@ try {
   const relayOpen = await waitFor(
     async () =>
       host.evaluate(() => {
-        const text = document.querySelector('.xp-status')?.textContent ?? ''
+        const text = document.querySelector('.status-bar')?.textContent ?? ''
         const m = text.match(/(\d+) relay/)
         return m && Number(m[1]) > 0 ? Number(m[1]) : null
       }),
@@ -245,7 +247,7 @@ try {
   const meshUp = await waitFor(
     async () =>
       viewer.evaluate(() => {
-        const text = document.querySelector('.chat-panel .pill')?.textContent ?? ''
+        const text = document.querySelector('.status-bar')?.textContent ?? ''
         const m = text.match(/(\d+) here/)
         return m && Number(m[1]) >= 2 ? Number(m[1]) : null
       }),

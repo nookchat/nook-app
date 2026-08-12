@@ -77,12 +77,12 @@ export class ChatPanel {
   private readonly sendButton: HTMLButtonElement
   private readonly pollButton: HTMLButtonElement
   private readonly emojiButton: HTMLButtonElement
-  private readonly count: HTMLSpanElement
   private readonly replyBar: HTMLDivElement
   private readonly nameRow: HTMLDivElement
   private readonly typingLine: HTMLDivElement
   private readonly title: HTMLSpanElement
   private readonly backButton: HTMLButtonElement
+  private readonly head: HTMLDivElement
   private name: string
   private me = ''
   private replyTo: Message | null = null
@@ -106,7 +106,6 @@ export class ChatPanel {
     this.name = initialName
 
     this.log = h('div', { class: 'chat-log' })
-    this.count = h('span', { class: 'pill', text: '1 here' })
     this.replyBar = h('div', { class: 'chat-replying hidden' })
 
     this.nameInput = h('input', {
@@ -187,11 +186,19 @@ export class ChatPanel {
       on: { click: () => this.onThread?.(null) },
     })
 
-    this.root = h('div', { class: 'card chat-panel' }, [
-      h('div', { class: 'row spread chat-head' }, [
-        h('div', { class: 'row' }, [this.backButton, this.title]),
-        this.count,
-      ]),
+    /*
+     * The header only exists inside a thread.
+     *
+     * Outside one it said "Chat" above a channel already named at the top of
+     * the column, beside a count of who is here that the members list and the
+     * status bar both carry. Three labels for two facts.
+     */
+    this.head = h('div', { class: 'row spread chat-head hidden' }, [
+      h('div', { class: 'row' }, [this.backButton, this.title]),
+    ])
+
+    this.root = h('div', { class: 'chat-panel' }, [
+      this.head,
       this.pins,
       this.log,
       h('div', { class: 'chat-compose stack tight' }, [
@@ -227,10 +234,6 @@ export class ChatPanel {
     if (document.activeElement !== this.nameInput) this.nameInput.value = name
   }
 
-  setPresence(people: number): void {
-    this.count.textContent = `${people} here`
-  }
-
   /** Who is in the room, by key, so a mention can be spelled and recognised. */
   setNames(names: Map<string, string>): void {
     this.names = names
@@ -258,6 +261,7 @@ export class ChatPanel {
   setThread(rootId: string | null): void {
     this.threadRoot = rootId
     this.backButton.classList.toggle('hidden', rootId === null)
+    this.head.classList.toggle('hidden', rootId === null)
     this.textInput.placeholder = rootId ? 'Reply in this thread' : 'Say something'
     this.cancelPending()
   }
