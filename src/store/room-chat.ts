@@ -9,7 +9,7 @@
  */
 
 import { loadIdentity } from './identity'
-import { deleteEvents, loadRoom, noteRoom, putEvents } from './db'
+import { deleteEvents, getRoom, loadRoom, noteRoom, putEvents } from './db'
 import { compact, limitsForNow } from './compact'
 import {
   cleanChannel,
@@ -69,18 +69,34 @@ export class RoomChat {
     return this.name
   }
 
-  /** Read this device's copy before talking to anybody, and tidy it on the way in. */
+  /**
+   * Read this device's copy before talking to anybody, and tidy it on the way in.
+   *
+   * Loaded first, tidied second, and in that order for a reason: tidying needs
+   * the log's own answer about which events counted, and the log has no answer
+   * until it holds them. Tidying a bare pile of events falls back to guessing,
+   * and the guess is what used to throw away real edits.
+   */
   async load(): Promise<void> {
+    const note = await getRoom(this.log.room)
+    if (note?.floor) this.log.floor = note.floor
     const stored = await loadRoom(this.log.room)
-    const { keep, drop } = compact(stored, await limitsForNow())
-    if (drop.length) void deleteEvents(drop)
-    for (const event of keep) this.log.add(event)
+    for (const event of stored) this.log.add(event)
     this.pinFounder()
+
+    const { keep, drop } = compact(stored, await limitsForNow(), this.log.effective())
+    if (drop.length) {
+      this.raiseFloor(keep)
+      void deleteEvents(drop)
+      this.log.replace(keep)
+      this.pinFounder()
+    }
     void noteRoom({
+      ...(note ?? { room: this.log.room, secret: this.secret, title: '' }),
       room: this.log.room,
       secret: this.secret,
       lastSeen: Date.now(),
-      title: '',
+      floor: this.log.floor || undefined,
     })
     this.onChange?.()
   }
@@ -245,11 +261,37 @@ export class RoomChat {
     return this.write('profile', { name })
   }
 
+  /**
+   * Remember how far back this device is willing to go.
+   *
+   * Set to the oldest message that survived trimming, so the peer that still
+   * has the older ones does not hand them straight back to be trimmed again.
+   * Only moves forward, and only on the device that trimmed.
+   */
+  private raiseFloor(keep: LogEvent[]): void {
+    let oldest = Infinity
+    for (const e of keep) {
+      if (e.kind !== 'said' && e.kind !== 'poll') continue
+      if (e.lamport < oldest) oldest = e.lamport
+    }
+    if (!Number.isFinite(oldest) || oldest <= this.log.floor) return
+    this.log.floor = oldest
+    void this.rememberFloor()
+  }
+
+  /** Keep the floor across a reload, or the next peer undoes the trimming. */
+  private async rememberFloor(): Promise<void> {
+    const note = await getRoom(this.log.room)
+    if (!note) return
+    await noteRoom({ ...note, floor: this.log.floor })
+  }
+
   /** Throw away what the log no longer needs, in memory and on disk. */
   async tidy(): Promise<void> {
     this.sinceCompaction = 0
-    const { keep, drop } = compact(this.log.all(), await limitsForNow())
+    const { keep, drop } = compact(this.log.all(), await limitsForNow(), this.log.effective())
     if (drop.length === 0) return
+    this.raiseFloor(keep)
     this.log.replace(keep)
     await deleteEvents(drop)
     this.onChange?.()

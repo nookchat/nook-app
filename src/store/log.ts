@@ -168,6 +168,15 @@ export function packEvent(e: LogEvent): WireEvent {
  */
 const CLEARABLE = new Set<EventKind>(['said', 'edit', 'react', 'retract', 'pin', 'poll', 'vote'])
 
+/**
+ * How far ahead of our own clock another device may push ours.
+ *
+ * Five minutes, which is more than two honest machines ever disagree by and
+ * far less than a wrong one claims. Beyond it the other device is either
+ * broken or lying, and either way its idea of the time is not worth adopting.
+ */
+const SKEW_MS = 5 * 60 * 1000
+
 /** Deterministic on every device, with no clock involved. */
 export function compare(a: LogEvent, b: LogEvent): number {
   if (a.lamport !== b.lamport) return a.lamport - b.lamport
@@ -185,6 +194,21 @@ export class RoomLog {
   readonly room: string
   /** Whose device this is, so "did I vote" can be answered without asking. */
   me = ''
+
+  /**
+   * The oldest history this device is still willing to hold.
+   *
+   * Only ever set by trimming, and only on the device that trimmed. Without
+   * it, a device short of storage throws away old messages, is handed them
+   * straight back by the first peer that still has them, throws them away
+   * again, and so on for as long as both are open. Nothing breaks and nothing
+   * settles either, and the device that was short of room spends the evening
+   * writing and deleting the same events.
+   *
+   * It is a local decision and travels nowhere. Somebody else's copy is not
+   * affected and their history is not shortened by ours being short.
+   */
+  floor = 0
   private readonly byId = new Map<string, LogEvent>()
   private clock = 0
 
@@ -225,9 +249,33 @@ export class RoomLog {
   /** Returns true when the event was new, so callers know whether to redraw. */
   add(event: LogEvent): boolean {
     if (this.byId.has(event.id)) return false
+    // Older than this device is willing to keep, and only conversation is ever
+    // refused: who runs the place is not history to be trimmed.
+    if (event.lamport < this.floor && CLEARABLE.has(event.kind)) return false
     this.byId.set(event.id, event)
-    if (event.lamport > this.clock) this.clock = event.lamport
+    this.advance(event.lamport)
     return true
+  }
+
+  /**
+   * Take account of a clock we have heard, without letting it run away.
+   *
+   * The clock starts from the wall clock so a conversation reads in the order
+   * it happened, which means a device whose own clock is wrong writes numbers
+   * from its idea of now, and everybody who hears it takes the higher number.
+   * One machine set to 2099 would otherwise drag the whole room's ordering
+   * there permanently, and every message written afterwards, by anybody, would
+   * sort above everything that ever really happened.
+   *
+   * So a heard value moves our clock forward by at most a day past our own.
+   * The mad event still sorts where it says it does, because every device
+   * sorts by what the event carries and they all agree on that. What it cannot
+   * do is follow us home.
+   */
+  private advance(lamport: number): void {
+    const ceiling = Date.now() + SKEW_MS
+    const capped = Math.min(lamport, ceiling)
+    if (capped > this.clock) this.clock = capped
   }
 
   /**
@@ -308,17 +356,32 @@ export class RoomLog {
    * room for everybody else.
    */
   pinned(): Set<string> {
+    return this.pinnedIds().on
+  }
+
+  /**
+   * What is pinned, and the event that said so.
+   *
+   * The id is needed as well as the answer, because compaction keeps whatever
+   * had an effect and has no business working out for itself which pin that
+   * was. Only a pin from somebody who was an admin at the time counts, so
+   * "the newest pin" and "the pin that counts" are different events whenever
+   * anybody who is not an admin has pressed the button.
+   */
+  private pinnedIds(): { on: Set<string>; by: Map<string, string> } {
     const roles = this.roles()
-    const out = new Set<string>()
+    const on = new Set<string>()
+    const by = new Map<string, string>()
     for (const e of this.all()) {
       if (e.kind !== 'pin') continue
       if (roles.get(e.author) !== 'admin') continue
       const target = String(e.body.target ?? '')
       if (!/^[0-9a-f]{64}$/.test(target)) continue
-      if (e.body.on === false) out.delete(target)
-      else out.add(target)
+      if (e.body.on === false) on.delete(target)
+      else on.add(target)
+      by.set(target, e.id)
     }
-    return out
+    return { on, by }
   }
 
   roleOf(pubkey: string): Role {
@@ -408,12 +471,68 @@ export class RoomLog {
   }
 
   /** Pass a channel to see only that one, or nothing to see them all. */
-  messages(channel?: string): Message[] {
+  /**
+   * Which events actually did something.
+   *
+   * Compaction needs this and used to guess at it, by keeping the newest edit
+   * of a message, the newest pin, and so on. The guess was wrong in the way
+   * that matters: an edit from somebody who did not write the message is
+   * ignored when the room is drawn and was newest as far as compaction was
+   * concerned, so compaction threw away the real edit and kept the one nobody
+   * honours. The same for a pin. Anybody could quietly delete anybody's edit
+   * by typing over it, and it only took effect once the log was tidied, which
+   * is long after they had gone.
+   *
+   * So there is one walk and one answer. Whatever drew the room is what is
+   * kept, and nothing else can be, because there is no second opinion to have.
+   */
+  effective(): Set<string> {
+    const live = new Set<string>()
+    this.messages(undefined, live)
+    for (const e of this.all()) {
+      // The room itself, as opposed to what was said in it. Every one of these
+      // is kept: who runs the place is worked out by walking them in order, so
+      // dropping any of them changes the answer.
+      if (e.kind === 'role' || e.kind === 'space' || e.kind === 'reset') live.add(e.id)
+      // And every retraction, which is a tombstone rather than an event: a
+      // peer offers the original again on the next sync and this refuses it.
+      if (e.kind === 'retract') live.add(e.id)
+    }
+    for (const id of this.latestProfiles().values()) live.add(id)
+    for (const id of this.latestChannels().values()) live.add(id)
+    return live
+  }
+
+  /** The newest name each key gave itself, by event id. */
+  private latestProfiles(): Map<string, string> {
+    const out = new Map<string, string>()
+    for (const e of this.all()) if (e.kind === 'profile') out.set(e.author, e.id)
+    return out
+  }
+
+  /** The newest word on each channel, by event id. Admins only, as ever. */
+  private latestChannels(): Map<string, string> {
+    const roles = this.roles()
+    const out = new Map<string, string>()
+    for (const e of this.all()) {
+      if (e.kind !== 'channel') continue
+      if (roles.get(e.author) !== 'admin') continue
+      out.set(`${e.body.voice === true ? 'v' : 't'}:${String(e.body.name ?? '')}`, e.id)
+    }
+    return out
+  }
+
+  messages(channel?: string, effective?: Set<string>): Message[] {
     const out: Message[] = []
     const index = new Map<string, Message>()
     const names = new Map<string, string>()
     const kicked = this.kickedAt()
     const cleared = this.resetAt()
+    // The newest word from each person on each thing, so the ones it replaced
+    // can be dropped rather than kept for ever.
+    const edited = new Map<string, string>()
+    const reacted = new Map<string, string>()
+    const voted = new Map<string, string>()
 
     for (const e of this.all()) {
       // Everything above the line an admin drew is finished with.
@@ -452,6 +571,7 @@ export class RoomLog {
         }
         index.set(e.id, message)
         out.push(message)
+        effective?.add(e.id)
         continue
       }
       if (e.kind === 'vote') {
@@ -464,6 +584,11 @@ export class RoomLog {
         const set = target.poll.votes.get(choice) ?? new Set<string>()
         set.add(e.author)
         target.poll.votes.set(choice, set)
+        // The newest vote from this person on this poll, so older ones go.
+        const was = voted.get(`${e.author}|${target.id}`)
+        if (was) effective?.delete(was)
+        voted.set(`${e.author}|${target.id}`, e.id)
+        effective?.add(e.id)
         continue
       }
       if (e.kind === 'said') {
@@ -481,6 +606,7 @@ export class RoomLog {
         }
         index.set(e.id, message)
         out.push(message)
+        effective?.add(e.id)
         continue
       }
       const target = index.get(String(e.body.target ?? ''))
@@ -489,11 +615,17 @@ export class RoomLog {
         if (e.author !== target.author) continue
         target.text = String(e.body.text ?? '')
         target.edited = true
+        // Only the newest edit that counts is worth keeping.
+        const was = edited.get(target.id)
+        if (was) effective?.delete(was)
+        edited.set(target.id, e.id)
+        effective?.add(e.id)
       } else if (e.kind === 'retract') {
         if (e.author !== target.author) continue
         target.retracted = true
         target.text = ''
         target.reactions.clear()
+        effective?.add(e.id)
       } else if (e.kind === 'react') {
         const emoji = String(e.body.emoji ?? '').slice(0, 8)
         if (!emoji) continue
@@ -508,13 +640,38 @@ export class RoomLog {
         else who.add(e.author)
         if (who.size) target.reactions.set(emoji, who)
         else target.reactions.delete(emoji)
+        const key = `${e.author}|${target.id}|${emoji}`
+        const was = reacted.get(key)
+        if (was) effective?.delete(was)
+        reacted.set(key, e.id)
+        effective?.add(e.id)
       }
     }
 
-    const pins = this.pinned()
+    /*
+     * A retracted message keeps nothing but its tombstone.
+     *
+     * The text is the thing somebody asked to be rid of, so it has to leave
+     * the disk on the next tidy rather than sit there unread. The retraction
+     * itself stays, because a peer will offer the original again on the next
+     * sync and the tombstone is what refuses it.
+     */
+    if (effective) {
+      for (const m of out) {
+        if (!m.retracted) continue
+        effective.delete(m.id)
+        const wasEdited = edited.get(m.id)
+        if (wasEdited) effective.delete(wasEdited)
+        for (const [key, id] of reacted) if (key.endsWith(`|${m.id}`) || key.includes(`|${m.id}|`)) effective.delete(id)
+        for (const [key, id] of voted) if (key.endsWith(`|${m.id}`)) effective.delete(id)
+      }
+    }
+
+    const pins = this.pinnedIds()
+    for (const [target, id] of pins.by) if (index.has(target)) effective?.add(id)
     for (const m of out) {
       m.name = names.get(m.author) ?? ''
-      m.pinned = pins.has(m.id)
+      m.pinned = pins.on.has(m.id)
       if (!m.poll) continue
       let total = 0
       for (const [choice, who] of m.poll.votes) {

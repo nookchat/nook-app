@@ -23,9 +23,22 @@ try {
   await page.goto(APP_URL, { waitUntil: 'domcontentloaded' })
 
   const out = await page.evaluate(async () => {
-    const { makeEvent } = await import('/src/store/log.ts')
-    const { compact } = await import('/src/store/compact.ts')
+    const { makeEvent, RoomLog } = await import('/src/store/log.ts')
+    const { compact, DEFAULT_LIMITS } = await import('/src/store/compact.ts')
     const { loadIdentity } = await import('/src/store/identity.ts')
+
+    /*
+     * Compaction asks the log which events counted rather than guessing, so a
+     * test of compaction has to build the log first. That is the point of the
+     * argument: two places deciding the same question is how the real edit of
+     * a message used to get thrown away in favour of somebody else's.
+     */
+    const logOf = (list) => {
+      const log = new RoomLog('room')
+      log.founder = list[0]?.author ?? ''
+      for (const e of list) log.add(e)
+      return log
+    }
     const me = loadIdentity().pubkey
     const room = 'r'
     let clock = 0
@@ -46,12 +59,12 @@ try {
     events.push(gone, await ev('retract', { target: gone.id }))
 
     const before = events.length
-    const { keep, drop } = compact(events)
+    const { keep, drop } = compact(events, DEFAULT_LIMITS, logOf(events).effective())
 
     // Plenty of messages, to see the per channel limit bite.
     const many = []
     for (let i = 0; i < 60; i++) many.push(await ev('said', { text: `m${i}`, channel: 'general' }))
-    const trimmed = compact(many, { perChannel: 20, total: 100 })
+    const trimmed = compact(many, { perChannel: 20, total: 100 }, logOf(many).effective())
 
     return {
       before,
@@ -83,6 +96,19 @@ try {
     const { putEvents, noteRoom } = await import('/src/store/db.ts')
     const { makeEvent } = await import('/src/store/log.ts')
     const { loadIdentity } = await import('/src/store/identity.ts')
+
+    /*
+     * Compaction asks the log which events counted rather than guessing, so a
+     * test of compaction has to build the log first. That is the point of the
+     * argument: two places deciding the same question is how the real edit of
+     * a message used to get thrown away in favour of somebody else's.
+     */
+    const logOf = (list) => {
+      const log = new RoomLog('room')
+      log.founder = list[0]?.author ?? ''
+      for (const e of list) log.add(e)
+      return log
+    }
     const me = loadIdentity().pubkey
     const said = await makeEvent('movingroom', me, 1, 'said', { text: 'carried across', channel: 'general' })
     await putEvents([said])

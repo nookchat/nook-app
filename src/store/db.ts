@@ -147,6 +147,14 @@ export interface RoomNote {
    */
   archive?: string
   archiveAt?: number
+  /**
+   * The oldest history this device still holds, after trimming.
+   *
+   * Kept so the floor survives a reload. Without it, a device short of storage
+   * trims, closes, opens again with the floor forgotten, and is handed the
+   * whole lot back by the first peer it meets.
+   */
+  floor?: number
 }
 
 export async function getRoom(room: string): Promise<RoomNote | null> {

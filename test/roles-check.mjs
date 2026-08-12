@@ -438,7 +438,7 @@ try {
     // A member's line is not a line.
     const ignored = build([old1, byMember]).messages('general').map((m) => m.text)
 
-    const { keep } = compact(all)
+    const { keep } = compact(all, { perChannel: 1500, total: 8000 }, build(all).effective())
     const kinds = keep.map((e) => e.kind).sort()
 
     return {
