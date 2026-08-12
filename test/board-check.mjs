@@ -142,6 +142,56 @@ try {
     `${withText.display}, picture after the words: ${withText.above}`,
   )
 
+  // ---- a picture arriving does not push itself off the screen --------------
+  // A picture has no height until it loads, so the scroll to the end when the
+  // message is drawn lands at the end of a row about to grow. What that looked
+  // like was a GIF cut in half by the bottom of the window.
+  const TALL = await alice.evaluate(() => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 300
+    canvas.height = 900
+    const ctx = canvas.getContext('2d')
+    ctx.fillStyle = '#8e44ad'
+    ctx.fillRect(0, 0, 300, 900)
+    return canvas.toDataURL('image/png').split(',')[1]
+  })
+  await alice.route('https://example.com/tall.png', (route) =>
+    route.fulfill({ contentType: 'image/png', body: Buffer.from(TALL, 'base64') }),
+  )
+
+  // Enough said to make the log scroll in the first place.
+  for (let i = 0; i < 12; i += 1) await say(alice, `filling the channel, line ${i}`)
+  await say(alice, 'https://example.com/tall.png')
+  await alice.waitForTimeout(1200)
+  const landed = await alice.evaluate(() => {
+    const log = document.querySelector('.chat-log')
+    const img = [...document.querySelectorAll('.chat-image')].pop()
+    if (!log || !img) return null
+    const below = log.scrollHeight - log.scrollTop - log.clientHeight
+    return {
+      below,
+      cut: Math.round(img.getBoundingClientRect().bottom - log.getBoundingClientRect().bottom),
+      tall: img.getBoundingClientRect().height > 100,
+    }
+  })
+  check('the picture is a big one, so there is something to cut off', landed?.tall === true)
+  check('the conversation follows it down as it loads', (landed?.below ?? 999) <= 4, `${landed?.below ?? '?'} px left below`)
+  check('and none of it is left under the bottom edge', (landed?.cut ?? 999) <= 2, `${landed?.cut ?? '?'} px past the edge`)
+
+  // And the other half of the rule: a picture loading in something you have
+  // scrolled up to read must not drag you back down to the end.
+  await alice.evaluate(() => {
+    document.querySelector('.chat-log').scrollTop = 0
+  })
+  await alice.waitForTimeout(200)
+  await alice.route('https://example.com/second.png', (route) =>
+    route.fulfill({ contentType: 'image/png', body: Buffer.from(TALL, 'base64') }),
+  )
+  await say(bob, 'https://example.com/second.png')
+  await alice.waitForTimeout(1500)
+  const heldPlace = await alice.evaluate(() => document.querySelector('.chat-log').scrollTop)
+  check('a picture arriving while you read history leaves you where you are', heldPlace < 60, `${heldPlace} px down`)
+
   // ---- a clip is a GIF that weighs less ------------------------------------
   // A real webm, recorded here from a canvas, because a clip that fails to
   // load takes its own frame out of the message the way a picture does.
@@ -191,6 +241,58 @@ try {
   check('drawn like a picture, with no bubble around it', played?.marked === true)
   check('it loops, it is muted, and it has no controls', played?.loop === true && played?.muted === true && played?.controls === false)
   check('and it plays on its own', played?.started === true)
+
+  // ---- a written-out svg is a picture ---------------------------------------
+  // Drawn through an img and a data: address, never parsed into the page, so
+  // a script inside it is a passenger with no engine. The hostile one below
+  // must draw (or vanish) without running a line.
+  const SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" fill="#076fef"/></svg>'
+  await alice.fill(BOX, SVG)
+  await alice.press(BOX, 'Enter')
+  await alice.waitForTimeout(600)
+
+  const drawn = await bob
+    .waitForFunction(
+      () => {
+        const img = [...document.querySelectorAll('img.chat-image')].find((i) =>
+          i.src.startsWith('data:image/svg+xml'),
+        )
+        return img && img.naturalWidth > 0 ? true : null
+      },
+      null,
+      { timeout: 15_000 },
+    )
+    .then(() => true)
+    .catch(() => false)
+  check('a posted svg draws as a picture on the other side', drawn)
+
+  const sourceHidden = await bob.evaluate(
+    () => ![...document.querySelectorAll('.chat-text')].some((t) => t.textContent.includes('<svg')),
+  )
+  check('and the markup itself is not shown', sourceHidden)
+
+  const EVIL =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" onload="window.__pwned=1">' +
+    '<script>window.__pwned=1<' + '/script>' +
+    '<rect width="40" height="40" fill="#c00" onclick="window.__pwned=1"/></svg>'
+  await alice.fill(BOX, EVIL)
+  await alice.press(BOX, 'Enter')
+  await alice.waitForTimeout(1200)
+  const pwned = await Promise.all([
+    alice.evaluate(() => window.__pwned === 1),
+    bob.evaluate(() => window.__pwned === 1),
+  ])
+  check('a script inside an svg never runs, on either side', !pwned[0] && !pwned[1])
+  const noSvgInPage = await bob.evaluate(() => document.querySelectorAll('.chat-log svg').length === 0)
+  check('and no svg element is ever parsed into the page', noSvgInPage)
+
+  await say(alice, 'the <svg> element is my favourite')
+  const stillText = await alice.evaluate(() =>
+    [...document.querySelectorAll('.chat-text')].some((t) =>
+      t.textContent.includes('the <svg> element is my favourite'),
+    ),
+  )
+  check('an svg mentioned mid-sentence stays text', stillText)
 
   // ---- how long a message may be -------------------------------------------
   // The limit was four thousand characters of body, which a pasted stack trace

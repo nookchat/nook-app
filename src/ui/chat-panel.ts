@@ -198,6 +198,13 @@ export class ChatPanel {
    * not jump away the moment the next message lands.
    */
   private readMark = 0
+  /**
+   * Whether the conversation was at the bottom the last time anybody looked.
+   *
+   * Kept rather than measured, because the question is always asked after
+   * something grew, and by then the answer has already changed.
+   */
+  private pinned = true
   private suggestions: HTMLDivElement | null = null
   private suggestAt = -1
   /** Which kind of list is up, because Enter means different things to them. */
@@ -334,12 +341,35 @@ export class ChatPanel {
       title: 'Go to the end of the conversation',
       on: {
         click: () => {
+          this.pinned = true
           this.log.scrollTop = this.log.scrollHeight
           this.toBottom.classList.add('hidden')
         },
       },
     })
-    this.log.addEventListener('scroll', () => this.showJump())
+    this.log.addEventListener('scroll', () => {
+      this.pinned = this.isAtBottom()
+      this.showJump()
+    })
+
+    /*
+     * Follow a picture down as it arrives.
+     *
+     * A picture has no height until it has loaded, so the scroll to the end
+     * that happens when the message is drawn lands at the end of a row that is
+     * about to get two hundred pixels taller. The GIF then pushed itself half
+     * off the bottom of the screen, which is a poor look for the thing the
+     * message was.
+     *
+     * So the end is found again once the thing knows how big it is. Only when
+     * the conversation was already sitting at the bottom: a picture loading in
+     * something you scrolled up to read must not drag you away from it.
+     *
+     * Load does not bubble, hence the capture, and a video says loadedmetadata
+     * rather than load.
+     */
+    this.log.addEventListener('load', () => this.followMedia(), true)
+    this.log.addEventListener('loadedmetadata', () => this.followMedia(), true)
     this.title = h('span', { class: 'eyebrow', text: title })
     this.backButton = h('button', {
       class: 'ghost tiny-btn hidden',
@@ -883,7 +913,10 @@ export class ChatPanel {
     }
 
     this.reconcile(items)
-    if (stuck) this.log.scrollTop = this.log.scrollHeight
+    if (stuck) {
+      this.log.scrollTop = this.log.scrollHeight
+      this.pinned = true
+    }
     this.showJump()
   }
 
@@ -1039,7 +1072,22 @@ export class ChatPanel {
       line.append(text)
       line.append(this.pollBox(m))
     } else {
-      const pictures = imageLinks(m.text)
+      // A message that IS a picture, written rather than linked. Drawn the
+      // way every picture here is drawn, through an img, never parsed into
+      // the page: see svgSource for what that buys.
+      const svg = m.emote ? null : svgSource(m.text)
+      if (svg) {
+        line.classList.add('has-picture')
+        line.append(
+          svgEmbed(svg, () => {
+            // It would not draw, so it goes back to being what it was: text.
+            line.classList.remove('has-picture')
+            for (const node of formatText(m.text, this.names, this.me)) text.append(node)
+            line.prepend(text)
+          }),
+        )
+      }
+      const pictures = svg ? [] : imageLinks(m.text)
       // A message that is nothing but a picture link is the picture. The
       // address under it said the same thing worse.
       const bare = !m.emote && pictures.length === 1 && m.text.trim() === pictures[0]
@@ -1050,7 +1098,7 @@ export class ChatPanel {
        * picture is not jammed into the middle of a sentence.
        */
       if (pictures.length > 0) line.classList.add('has-picture')
-      if (!bare) {
+      if (!bare && !svg) {
         if (pictures.length > 0) text.classList.add('boxed')
         for (const node of formatText(m.text, this.names, this.me)) text.append(node)
         line.append(text)
@@ -1429,6 +1477,22 @@ export class ChatPanel {
     clear(this.replyBar)
   }
 
+  /**
+   * The end again, one frame after something in the log changed size.
+   *
+   * A frame later rather than now, because the picture knows its size before
+   * the row around it has been laid out with it, and scrolling to a height
+   * that is about to change is what this exists to stop.
+   */
+  private followMedia(): void {
+    if (!this.pinned) return
+    requestAnimationFrame(() => {
+      if (!this.pinned) return
+      this.log.scrollTop = this.log.scrollHeight
+      this.showJump()
+    })
+  }
+
   private isAtBottom(): boolean {
     return this.log.scrollTop + this.log.clientHeight >= this.log.scrollHeight - 24
   }
@@ -1797,6 +1861,61 @@ function embed(src: string): HTMLElement {
   wrap.href = src
   wrap.target = '_blank'
   wrap.rel = 'noopener noreferrer'
+  return wrap
+}
+
+/**
+ * The message, when the whole thing is one written-out svg element.
+ *
+ * Drawn through an img and a data: address, which is the deal every picture
+ * here gets. In image context the browser runs no script the file carries,
+ * fires no event handler on it, and lets nothing inside it reach the network.
+ * Parsing it into the page instead is what would make those live, and it is
+ * exactly what the rule at the top of this file forbids.
+ *
+ * Only the whole message counts. An svg element in the middle of a sentence
+ * stays text, because a reader quoting markup is not posting a drawing.
+ */
+export function svgSource(text: string): string | null {
+  const t = text.trim()
+  if (t.length > MAX_TEXT) return null
+  if (!/^<svg[\s>]/i.test(t)) return null
+  if (!/<\/svg>$/i.test(t)) return null
+  return t
+}
+
+function svgEmbed(source: string, fallback: () => void): HTMLElement {
+  const img = h('img', { class: 'chat-image' })
+  img.alt = 'Shared drawing'
+  img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(source)}`
+  /*
+   * An svg that names no width gets the browser's 300 by 150 default, which
+   * draws a tall logo as a postage stamp. Its viewBox says the true shape, so
+   * the size comes from there: shrunk to fit the cap every picture has, and
+   * never blown up past the size it asked for.
+   */
+  const head = source.slice(0, source.indexOf('>') + 1)
+  const shape = /viewBox\s*=\s*["']\s*[\d.+-]+[\s,]+[\d.+-]+[\s,]+([\d.]+)[\s,]+([\d.]+)/i.exec(source)
+  if (!/\swidth\s*=/i.test(head) && shape) {
+    const w = parseFloat(shape[1])
+    const tall = parseFloat(shape[2])
+    if (w > 0 && tall > 0) {
+      const scale = Math.min(340 / w, 240 / tall, 1)
+      img.width = Math.round(w * scale)
+      img.height = Math.round(tall * scale)
+    }
+  }
+  // A file that does not draw leaves nothing behind; the caller says what
+  // stands in for it.
+  img.addEventListener(
+    'error',
+    () => {
+      wrap.remove()
+      fallback()
+    },
+    true,
+  )
+  const wrap = h('span', { class: 'chat-image-wrap' }, [img])
   return wrap
 }
 
