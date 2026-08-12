@@ -55,7 +55,50 @@ export interface LogEvent {
   sig: string
 }
 
-const MAX_BODY = 4000
+/**
+ * The most one event's body may be, as JSON, counted the same way at both ends.
+ *
+ * It was four thousand, which is a paragraph, and a pasted stack trace or a
+ * long answer hit it. Sixteen thousand is about two and a half thousand words.
+ *
+ * The ceiling above it is the wire. One event is one message on a data
+ * channel, sent whole and never cut into pieces, and a browser refuses a
+ * message past the size it agreed with the far side. Sixty four kilobytes is
+ * the figure every browser is safe at, so the body has to stay well under it
+ * even in the worst case, where JSON escaping doubles what is counted here.
+ *
+ * A body over this is refused on arrival rather than trimmed, so the sender
+ * has to check the same number before it goes. MAX_TEXT is that check with
+ * room left for the fields around the words.
+ */
+export const MAX_BODY = 16_000
+
+/** The most text one message may carry, leaving room for escaping and fields. */
+export const MAX_TEXT = 12_000
+
+/**
+ * And the most a private message may, measured in bytes rather than letters.
+ *
+ * A private message is sealed before it is written down, and sealing turns
+ * bytes into about a third more base64 again. One emoji is four bytes and one
+ * letter is one, so a limit counted in letters would be right for English and
+ * wrong by four times for anything else. This is the ciphertext budget.
+ */
+export const MAX_DM_BYTES = 11_000
+
+/** Cut a string to fit a byte budget, without splitting a character in half. */
+export function trimToBytes(text: string, max: number): string {
+  const enc = new TextEncoder()
+  if (enc.encode(text).length <= max) return text
+  let out = text
+  while (out.length > 0 && enc.encode(out).length > max) {
+    // Overshoot by the ratio, then walk the last few off one at a time. A
+    // character can be four bytes, so stepping by one byte would be wrong.
+    const over = enc.encode(out).length - max
+    out = out.slice(0, Math.max(0, out.length - Math.max(1, Math.ceil(over / 4))))
+  }
+  return out
+}
 
 /** The exact bytes that get hashed. Field order is part of the format. */
 function canonical(e: Omit<LogEvent, 'id' | 'sig'>): string {

@@ -1841,9 +1841,11 @@ details.adv[open] > summary {
   color: var(--accent-fg);
 }
 
-.chat-line.calls-me {
-  background: color-mix(in srgb, var(--warn) 14%, var(--surface));
-  border-color: color-mix(in srgb, var(--warn) 40%, transparent);
+/* A message that names you: a warm wash across the whole row, with a bar on
+   the edge so it still says so when the wash is under the pointer tint. */
+.chat-row:has(.calls-me) {
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+  box-shadow: inset 2px 0 0 var(--warn);
 }
 
 /* The line you came back to read. */
@@ -1920,6 +1922,24 @@ details.adv[open] > summary {
   font-size: calc(var(--size-small) - 1px);
   color: var(--fg-faint);
   font-style: italic;
+}
+
+/*
+ * How much room is left in the message, shown only in the last stretch of it.
+ * A counter that is always there is a rule being read out to somebody who was
+ * not about to break it.
+ */
+.chat-room-left {
+  flex: 0 0 auto;
+  align-self: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-faint);
+  white-space: nowrap;
+}
+
+.chat-room-left.over {
+  color: var(--bad);
+  font-weight: 600;
 }
 
 .rail-item.unread {

@@ -17,6 +17,9 @@ import {
   cleanAvatar,
   DEFAULT_CHANNEL,
   makeEvent,
+  MAX_DM_BYTES,
+  MAX_TEXT,
+  trimToBytes,
   oneEmoji,
   openEvent,
   packEvent,
@@ -309,7 +312,12 @@ export class RoomChat {
     inThread = false,
     emote = false,
   ): Promise<LogEvent> {
-    const body: Record<string, unknown> = { text, channel: cleanChannel(channel) || DEFAULT_CHANNEL }
+    const body: Record<string, unknown> = {
+      // The composer stops a person here first and says so. This is the
+      // backstop, for a message that arrived from anywhere else.
+      text: text.slice(0, MAX_TEXT),
+      channel: cleanChannel(channel) || DEFAULT_CHANNEL,
+    }
     if (replyTo) body.replyTo = replyTo
     if (replyTo && inThread) body.thread = true
     if (emote) body.emote = true
@@ -358,7 +366,7 @@ export class RoomChat {
   }
 
   edit(target: string, text: string): Promise<LogEvent> {
-    return this.write('edit', { target, text })
+    return this.write('edit', { target, text: text.slice(0, MAX_TEXT) })
   }
 
   /** One emoji goes on the wire, so what everybody stores is what was picked. */
@@ -426,11 +434,11 @@ export class RoomChat {
       await crypto.subtle.encrypt(
         { name: 'AES-GCM', iv: iv as BufferSource },
         key,
-        new TextEncoder().encode(text.slice(0, 2000)) as BufferSource,
+        new TextEncoder().encode(trimToBytes(text, MAX_DM_BYTES)) as BufferSource,
       ),
     )
     const event = await this.write('dm', { to, iv: b64(iv), box: b64(sealed) })
-    this.opened.set(event.id, text.slice(0, 2000))
+    this.opened.set(event.id, trimToBytes(text, MAX_DM_BYTES))
     this.onDirect?.()
     return event
   }

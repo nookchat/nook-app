@@ -10,7 +10,7 @@
  * message from a stranger cannot become a script.
  */
 
-import type { Message } from '../store/log'
+import { MAX_DM_BYTES, MAX_TEXT, type Message } from '../store/log'
 import type { LinkPreview } from '../store/archive'
 import { cleanName, EVERYONE, findMentions, mentionsMe } from '../chat'
 import { shortKey } from '../store/identity'
@@ -166,6 +166,9 @@ export class ChatPanel {
   private readonly replyBar: HTMLDivElement
   private readonly nameRow: HTMLDivElement
   private readonly typingLine: HTMLDivElement
+  private readonly roomLeft: HTMLSpanElement
+  /** Whether the space is in a state where anything may be said at all. */
+  private enabled = false
   private readonly title: HTMLSpanElement
   private readonly backButton: HTMLButtonElement
   private readonly head: HTMLDivElement
@@ -313,6 +316,7 @@ export class ChatPanel {
     ])
 
     this.typingLine = h('div', { class: 'chat-typing hidden' })
+    this.roomLeft = h('span', { class: 'chat-room-left tiny hidden', ariaLabel: 'Room left in this message' })
     /*
      * The way back down.
      *
@@ -359,6 +363,7 @@ export class ChatPanel {
         this.nameRow,
         h('div', { class: 'row' }, [
           this.textInput,
+          this.roomLeft,
           this.gifButton,
           this.soundButton,
           this.emojiButton,
@@ -429,6 +434,9 @@ export class ChatPanel {
     this.directName = name
     this.showHead()
     this.cancelPending()
+    // A private message is measured in bytes and a channel one in letters, so
+    // the count means something different the moment this changes.
+    this.sayRoom()
   }
 
   private showHead(): void {
@@ -456,9 +464,12 @@ export class ChatPanel {
   }
 
   setEnabled(enabled: boolean, why = ''): void {
+    this.enabled = enabled
     this.textInput.disabled = !enabled
-    this.sendButton.disabled = !enabled
     this.textInput.placeholder = enabled ? 'Say something' : why || 'Connecting...'
+    // Two things can stop Send: the space is not ready, or the message is too
+    // long. One place decides, so neither of them undoes the other.
+    this.sayRoom()
   }
 
   focus(): void {
@@ -552,6 +563,42 @@ export class ChatPanel {
     const input = this.textInput
     input.style.height = 'auto'
     input.style.height = `${Math.min(input.scrollHeight, 116)}px`
+    this.sayRoom()
+  }
+
+  /**
+   * How much room is left, once there is a reason to care.
+   *
+   * A message past the limit is refused by everybody who receives it, so it
+   * would look sent here and arrive nowhere. Rather than let that happen the
+   * count appears in the last stretch, turns red when the box is over, and
+   * Send stops working until it is not.
+   *
+   * A private message is sealed before it is written, and sealing counts bytes
+   * rather than letters, so the number shown for one is the byte budget. One
+   * emoji spends four of them and one letter spends one.
+   */
+  /** How much of the limit is left, in whatever the limit is counted in. */
+  private roomFor(): number {
+    const limit = this.directWith ? MAX_DM_BYTES : MAX_TEXT
+    const used = this.directWith
+      ? new TextEncoder().encode(this.textInput.value).length
+      : this.textInput.value.length
+    return limit - used
+  }
+
+  private tooLong(): boolean {
+    return this.roomFor() < 0
+  }
+
+  private sayRoom(): void {
+    const left = this.roomFor()
+    const limit = this.directWith ? MAX_DM_BYTES : MAX_TEXT
+    const near = left <= Math.max(200, Math.round(limit / 12))
+    this.roomLeft.classList.toggle('hidden', !near)
+    this.roomLeft.classList.toggle('over', left < 0)
+    this.roomLeft.textContent = left < 0 ? `${-left} too many` : `${left} left`
+    this.sendButton.disabled = !this.enabled || left < 0
   }
 
   // ---- mentions ----
@@ -1375,6 +1422,9 @@ export class ChatPanel {
   private submit(): void {
     const text = this.textInput.value.trim()
     if (!text) return
+    // Past the limit nobody would receive it, so it does not leave the box.
+    // The count beside Send has been saying so since the last stretch.
+    if (!this.enabled || this.tooLong()) return
     /*
      * A line starting with a slash is an instruction rather than something to
      * say. The panel does not know what any of them mean: it hands the line to

@@ -109,13 +109,16 @@ try {
     return {
       marked: line.classList.contains('has-picture'),
       background: style.backgroundColor,
-      border: style.borderTopColor,
+      border: style.borderTopWidth,
       hasImage: !!line.querySelector('.chat-image'),
     }
   })
   check('a picture message carries the mark', bare?.marked === true)
-  check('and no bubble behind it', bare?.background === 'rgba(0, 0, 0, 0)', bare?.background ?? '')
-  check('and no bubble around it', bare?.border === 'rgba(0, 0, 0, 0)', bare?.border ?? '')
+  check(
+    'and nothing is drawn behind it or around it',
+    bare?.background === 'rgba(0, 0, 0, 0)' && bare?.border === '0px',
+    `${bare?.background ?? ''}, border ${bare?.border ?? ''}`,
+  )
   check('the picture itself is there', bare?.hasImage === true)
 
   await say(alice, 'look at this https://example.com/cat.png')
@@ -124,16 +127,78 @@ try {
     const text = line?.querySelector('.chat-text')
     return {
       boxed: text?.classList.contains('boxed') === true,
-      textBg: text ? getComputedStyle(text).backgroundColor : '',
-      lineBg: line ? getComputedStyle(line).backgroundColor : '',
+      display: text ? getComputedStyle(text).display : '',
+      // 4 is DOCUMENT_POSITION_FOLLOWING: the picture comes after the words.
+      above:
+        text && line.querySelector('.chat-image-wrap')
+          ? (text.compareDocumentPosition(line.querySelector('.chat-image-wrap')) & 4) !== 0
+          : false,
     }
   })
-  check('words in the same message keep a bubble of their own', withText.boxed)
+  check('words in the same message are marked', withText.boxed)
   check(
-    'and it is the words that are in it, not the picture',
-    withText.textBg !== 'rgba(0, 0, 0, 0)' && withText.lineBg === 'rgba(0, 0, 0, 0)',
-    `${withText.textBg} on ${withText.lineBg}`,
+    'and sit on their own line, above the picture',
+    withText.display === 'block' && withText.above,
+    `${withText.display}, picture after the words: ${withText.above}`,
   )
+
+  // ---- how long a message may be -------------------------------------------
+  // The limit was four thousand characters of body, which a pasted stack trace
+  // passes. What matters is not the number but that a message at the limit
+  // crosses the wire whole: one event is one message on a data channel, sent
+  // in one piece, and a body over the limit is refused by whoever receives it.
+  const limits = await alice.evaluate(async () => {
+    const { MAX_TEXT, MAX_DM_BYTES, trimToBytes } = await import('/src/store/log.ts')
+    return {
+      MAX_TEXT,
+      MAX_DM_BYTES,
+      // Nine bytes holds two of a four byte character, not two and a quarter.
+      trimmed: trimToBytes('🎺🎺🎺', 9).length,
+      whole: trimToBytes('🎺🎺🎺', 12).length,
+    }
+  })
+  check('the limit is larger than it was', limits.MAX_TEXT > 4000, `${limits.MAX_TEXT} characters`)
+  check(
+    'a byte budget never cuts a character in half',
+    limits.trimmed === 4 && limits.whole === 6,
+    `${limits.trimmed} then ${limits.whole} units of UTF-16`,
+  )
+
+  const long = `long: ${'x'.repeat(limits.MAX_TEXT - 12)} end`
+  await alice.fill(BOX, long)
+  await alice.press(BOX, 'Enter')
+  const arrived = await bob
+    .waitForFunction(
+      (want) => [...document.querySelectorAll('.chat-text')].some((e) => e.textContent.length >= want),
+      long.length - 20,
+      { timeout: 20_000 },
+    )
+    .then(() => true)
+    .catch(() => false)
+  check('a message at the limit reaches the other browser whole', arrived, `${long.length} characters`)
+
+  await alice.fill(BOX, 'x'.repeat(limits.MAX_TEXT + 50))
+  await alice.waitForTimeout(200)
+  const over = await alice.evaluate(() => ({
+    said: document.querySelector('.chat-room-left')?.textContent ?? '',
+    red: document.querySelector('.chat-room-left')?.classList.contains('over') === true,
+    sendOff: document.querySelector('.chat-compose button:last-child')?.disabled === true,
+  }))
+  check('over the limit the box says by how much', over.said.includes('too many'), over.said)
+  check('and Send stops working', over.red && over.sendOff)
+
+  await alice.press(BOX, 'Enter')
+  await alice.waitForTimeout(400)
+  const stayed = await alice.inputValue(BOX)
+  check('and Enter leaves it in the box rather than losing it', stayed.length > limits.MAX_TEXT)
+
+  await alice.fill(BOX, 'back to normal')
+  await alice.waitForTimeout(200)
+  const quiet = await alice.evaluate(
+    () => document.querySelector('.chat-room-left')?.classList.contains('hidden') === true,
+  )
+  check('and the count is out of the way when there is room', quiet)
+  await alice.fill(BOX, '')
 
   // ---- the soundboard ------------------------------------------------------
   await alice.click('button[aria-label="Soundboard"]')
