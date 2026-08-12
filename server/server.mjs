@@ -39,8 +39,15 @@ const DATA = resolve(process.env.CATHODE_DATA ?? './data')
 /** A room id is 32 hex characters and nothing else is a room id. */
 const ROOM = /^[0-9a-f]{32}$/
 
-/** One line of ciphertext. Generous for a message, mean for a nuisance. */
-const MAX_LINE = 64 * 1024
+/**
+ * One line of ciphertext. Generous for a message, mean for a nuisance.
+ *
+ * A line is four thirds of the event it seals, and change: b64url of iv plus
+ * AES-GCM over the envelope. The client caps an event body (MAX_BODY, in
+ * store/log.ts) so a full-size message seals to under 64 KiB; this sits at
+ * double that so the two numbers never touch. Raise that one, raise this one.
+ */
+const MAX_LINE = 128 * 1024
 /** How much one request may add at once. */
 const MAX_BODY = 4 * 1024 * 1024
 /** How much one space may keep. Past this the oldest go. */

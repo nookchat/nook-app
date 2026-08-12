@@ -58,28 +58,30 @@ export interface LogEvent {
 /**
  * The most one event's body may be, as JSON, counted the same way at both ends.
  *
- * The ceiling is the wire. One event is one message on a data channel, sent
- * whole and never cut into pieces, and a browser refuses a message past the
- * size it agreed with the far side. Sixty four kilobytes is the figure every
- * browser is safe at, so the body sits just under it with room for the
- * signature and fields around it.
+ * The ceiling is the tightest pipe an event has to fit through, and there are
+ * two. The wire: one event is one message on a data channel, sent whole, and
+ * sixty four kilobytes is the figure every browser is safe at. The archive:
+ * one event is one stored line of b64url(iv + ciphertext), which is four
+ * thirds of the event and change, against the 64 KiB line cap every archive
+ * already deployed enforces. The archive is the tighter pipe, and the one
+ * that matters most, because the message only the archive can deliver is
+ * exactly the one written while everybody else was offline.
  *
- * It was sixteen thousand letters, counted with a margin for what JSON
- * escaping and multibyte text do to a letter on the wire. Counting the bytes
- * of the escaped form directly, which is the thing that actually travels,
- * buys back the whole margin: a written-out svg the size of a real logo now
- * fits in one message.
+ * So the body stays under three quarters of the archive line, with room for
+ * the seal and the fields. It was sixteen thousand letters counted with a
+ * margin for escaping; counting the bytes of the escaped form directly buys
+ * enough back that a written-out svg the size of a real logo fits.
  *
  * A body over this is refused on arrival rather than trimmed, so the sender
  * has to check the same number before it goes. A tab still running the old
  * code refuses anything over its own smaller figure, and a reload is what
  * fixes it.
  */
-export const MAX_BODY = 60_000
+export const MAX_BODY = 48_000
 
 /** The most one message's text may weigh in its JSON form, in bytes, leaving
     room inside MAX_BODY for the fields that ride beside it. */
-export const MAX_TEXT = 58_000
+export const MAX_TEXT = 46_000
 
 /**
  * And the most a private message may, measured in bytes rather than letters.
@@ -87,10 +89,10 @@ export const MAX_TEXT = 58_000
  * A private message is sealed before it is written down, and sealing turns
  * bytes into about a third more base64 again. One emoji is four bytes and one
  * letter is one, so a limit counted in letters would be right for English and
- * wrong by four times for anything else. This is the ciphertext budget, and
- * it grew with MAX_BODY: a third more than this plus the seal stays inside it.
+ * wrong by four times for anything else. This is the plaintext budget, and it
+ * follows MAX_BODY: a third more than this plus the seal stays inside it.
  */
-export const MAX_DM_BYTES = 40_000
+export const MAX_DM_BYTES = 34_000
 
 /**
  * Cut a string until its JSON form fits a byte budget.

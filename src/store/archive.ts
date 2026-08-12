@@ -42,6 +42,9 @@ export interface LinkPreview {
 
 /** How many events to push in one request. */
 const BATCH = 200
+/** The smallest line cap any deployed archive enforces, in characters. A
+    sealed line over this can never land anywhere, whatever this build says. */
+const LINE_FLOOR = 64 * 1024
 /** How long to wait before trying again after the archive said no. */
 const RETRY_MS = 15_000
 /** Sweep for anything that never made it, this often. */
@@ -276,11 +279,29 @@ export class Archive {
       // rather than being lost or sent twice.
       const batch = [...this.waiting.values()].slice(0, BATCH)
       const sealed = await Promise.all(batch.map((e) => seal(this.key, wrap(e))))
+      /*
+       * A line no archive will ever keep must not be sent, and must not stay
+       * in the queue to be sent for ever. Every archive in the wild caps a
+       * line at 64 KiB, older ones included, and a line over that is filtered
+       * out of the batch server-side while the request still answers 200. The
+       * client's own limits keep an honest event well under this; anything
+       * over it here was made by something else, and it is dropped rather
+       * than left to poison the queue.
+       */
+      const send: string[] = []
+      for (let i = 0; i < batch.length; i++) {
+        if (sealed[i].length > LINE_FLOOR) this.waiting.delete(batch[i].id)
+        else send.push(sealed[i])
+      }
+      if (send.length === 0) {
+        this.nextTry = 0
+        return
+      }
       const res = await globalThis.fetch(`${this.url}/events/${this.room}`, {
         method: 'POST',
         mode: 'cors',
         headers: { 'content-type': 'application/json', 'x-cathode-write': this.write },
-        body: JSON.stringify(sealed),
+        body: JSON.stringify(send),
       })
       if (!res.ok) {
         /*
@@ -290,6 +311,18 @@ export class Archive {
          * claim, and a quiet loop every quarter hour costs nothing.
          */
         this.nextTry = Date.now() + (res.status === 403 ? RETRY_MS * 60 : RETRY_MS)
+        return
+      }
+      /*
+       * A 200 with a short count is not done: the archive kept fewer lines
+       * than it was given. Everything sent fits the line floor, so this says
+       * something unexpected happened on the far side. The batch stays in the
+       * queue for another round; the read path drops any duplicate lines a
+       * retry appends, so the worst this costs is file space.
+       */
+      const kept = (await res.json().catch(() => null)) as { added?: number } | null
+      if (typeof kept?.added === 'number' && kept.added < send.length) {
+        this.nextTry = Date.now() + RETRY_MS
         return
       }
       // Only now, and only these. Anything added since is still waiting.
