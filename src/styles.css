@@ -2391,6 +2391,28 @@ input[type="text"].emoji-search {
   margin-top: 4px;
   max-width: min(320px, 100%);
   line-height: 0;
+  /* A click looks closer rather than leaving, and the hand says so. */
+  cursor: zoom-in;
+}
+
+/* A picture, up close. Over the conversation rather than instead of it:
+   escape, or a click anywhere, puts it away. */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(0 0 0 / 78%);
+  cursor: zoom-out;
+}
+
+.lightbox-media {
+  max-width: 94vw;
+  max-height: 92vh;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
 }
 
 .chat-image {

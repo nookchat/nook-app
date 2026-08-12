@@ -192,6 +192,26 @@ try {
   const heldPlace = await alice.evaluate(() => document.querySelector('.chat-log').scrollTop)
   check('a picture arriving while you read history leaves you where you are', heldPlace < 60, `${heldPlace} px down`)
 
+  // ---- a picture up close ---------------------------------------------------
+  // A click used to leave for the address the picture came from. It opens the
+  // picture over the conversation now; leaving is what a modified click is for.
+  const before = await alice.evaluate(() => location.href)
+  await alice.evaluate(() => [...document.querySelectorAll('.chat-image-wrap')].pop().click())
+  await alice.waitForTimeout(300)
+  const closeUp = await alice.evaluate(() => {
+    const box = document.querySelector('.lightbox')
+    return {
+      up: !!box?.querySelector('img, video'),
+      here: location.href,
+    }
+  })
+  check('a click opens the picture over the conversation', closeUp.up === true)
+  check('and goes nowhere', closeUp.here === before)
+  await alice.keyboard.press('Escape')
+  await alice.waitForTimeout(200)
+  const putAway = await alice.evaluate(() => !document.querySelector('.lightbox'))
+  check('escape puts it away', putAway)
+
   // ---- a clip is a GIF that weighs less ------------------------------------
   // A real webm, recorded here from a canvas, because a clip that fails to
   // load takes its own frame out of the message the way a picture does.

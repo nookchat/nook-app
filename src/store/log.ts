@@ -58,23 +58,28 @@ export interface LogEvent {
 /**
  * The most one event's body may be, as JSON, counted the same way at both ends.
  *
- * It was four thousand, which is a paragraph, and a pasted stack trace or a
- * long answer hit it. Sixteen thousand is about two and a half thousand words.
+ * The ceiling is the wire. One event is one message on a data channel, sent
+ * whole and never cut into pieces, and a browser refuses a message past the
+ * size it agreed with the far side. Sixty four kilobytes is the figure every
+ * browser is safe at, so the body sits just under it with room for the
+ * signature and fields around it.
  *
- * The ceiling above it is the wire. One event is one message on a data
- * channel, sent whole and never cut into pieces, and a browser refuses a
- * message past the size it agreed with the far side. Sixty four kilobytes is
- * the figure every browser is safe at, so the body has to stay well under it
- * even in the worst case, where JSON escaping doubles what is counted here.
+ * It was sixteen thousand letters, counted with a margin for what JSON
+ * escaping and multibyte text do to a letter on the wire. Counting the bytes
+ * of the escaped form directly, which is the thing that actually travels,
+ * buys back the whole margin: a written-out svg the size of a real logo now
+ * fits in one message.
  *
  * A body over this is refused on arrival rather than trimmed, so the sender
- * has to check the same number before it goes. MAX_TEXT is that check with
- * room left for the fields around the words.
+ * has to check the same number before it goes. A tab still running the old
+ * code refuses anything over its own smaller figure, and a reload is what
+ * fixes it.
  */
-export const MAX_BODY = 16_000
+export const MAX_BODY = 60_000
 
-/** The most text one message may carry, leaving room for escaping and fields. */
-export const MAX_TEXT = 12_000
+/** The most one message's text may weigh in its JSON form, in bytes, leaving
+    room inside MAX_BODY for the fields that ride beside it. */
+export const MAX_TEXT = 58_000
 
 /**
  * And the most a private message may, measured in bytes rather than letters.
@@ -82,9 +87,29 @@ export const MAX_TEXT = 12_000
  * A private message is sealed before it is written down, and sealing turns
  * bytes into about a third more base64 again. One emoji is four bytes and one
  * letter is one, so a limit counted in letters would be right for English and
- * wrong by four times for anything else. This is the ciphertext budget.
+ * wrong by four times for anything else. This is the ciphertext budget, and
+ * it grew with MAX_BODY: a third more than this plus the seal stays inside it.
  */
-export const MAX_DM_BYTES = 11_000
+export const MAX_DM_BYTES = 40_000
+
+/**
+ * Cut a string until its JSON form fits a byte budget.
+ *
+ * The escaped form is what travels, so it is the thing measured: a quote or a
+ * newline costs two bytes on the wire however it looks in the box. This is
+ * the backstop behind the composer's own count, for text that arrives from
+ * anywhere else.
+ */
+export function trimToWire(text: string, max: number): string {
+  const enc = new TextEncoder()
+  let out = text
+  while (out.length > 0) {
+    const size = enc.encode(JSON.stringify(out)).length
+    if (size <= max) return out
+    out = out.slice(0, Math.max(0, out.length - Math.max(1, Math.ceil((size - max) / 4))))
+  }
+  return out
+}
 
 /** Cut a string to fit a byte budget, without splitting a character in half. */
 export function trimToBytes(text: string, max: number): string {
@@ -171,7 +196,7 @@ export async function openEvent(raw: unknown, room: string): Promise<LogEvent | 
   if (!e.body || typeof e.body !== 'object' || Array.isArray(e.body)) return null
 
   const body = e.body as Record<string, unknown>
-  if (JSON.stringify(body).length > MAX_BODY) return null
+  if (new TextEncoder().encode(JSON.stringify(body)).length > MAX_BODY) return null
 
   const base = {
     room: e.room,

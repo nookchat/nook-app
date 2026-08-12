@@ -20,6 +20,7 @@ import {
   MAX_DM_BYTES,
   MAX_TEXT,
   trimToBytes,
+  trimToWire,
   oneEmoji,
   openEvent,
   packEvent,
@@ -315,7 +316,7 @@ export class RoomChat {
     const body: Record<string, unknown> = {
       // The composer stops a person here first and says so. This is the
       // backstop, for a message that arrived from anywhere else.
-      text: text.slice(0, MAX_TEXT),
+      text: trimToWire(text, MAX_TEXT),
       channel: cleanChannel(channel) || DEFAULT_CHANNEL,
     }
     if (replyTo) body.replyTo = replyTo
@@ -381,7 +382,7 @@ export class RoomChat {
   }
 
   edit(target: string, text: string): Promise<LogEvent> {
-    return this.write('edit', { target, text: text.slice(0, MAX_TEXT) })
+    return this.write('edit', { target, text: trimToWire(text, MAX_TEXT) })
   }
 
   /** One emoji goes on the wire, so what everybody stores is what was picked. */

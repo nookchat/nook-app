@@ -616,9 +616,11 @@ export class ChatPanel {
   /** How much of the limit is left, in whatever the limit is counted in. */
   private roomFor(): number {
     const limit = this.directWith ? MAX_DM_BYTES : MAX_TEXT
+    // A channel message is measured the way it travels: the bytes of its
+    // JSON form, where a quote or a newline costs two.
     const used = this.directWith
       ? new TextEncoder().encode(this.textInput.value).length
-      : this.textInput.value.length
+      : new TextEncoder().encode(JSON.stringify(this.textInput.value)).length
     return limit - used
   }
 
@@ -1861,7 +1863,72 @@ function embed(src: string): HTMLElement {
   wrap.href = src
   wrap.target = '_blank'
   wrap.rel = 'noopener noreferrer'
+  wrap.title = 'Look closer'
+  /*
+   * A plain click looks closer, right here, instead of leaving for the
+   * address the picture came from. The address keeps working the way any
+   * link does for a modified click, a middle click, or a copy.
+   */
+  wrap.addEventListener('click', (ev) => {
+    if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return
+    ev.preventDefault()
+    openLightbox(media)
+  })
   return wrap
+}
+
+/**
+ * The picture, as big as the window can show it.
+ *
+ * Over the conversation rather than instead of it: escape, or a click
+ * anywhere, puts it away and hands focus back to where it was. A clip keeps
+ * being a GIF that weighs less, only bigger, so it arrives already moving
+ * and still has no controls to trip on.
+ */
+function openLightbox(media: HTMLElement): void {
+  const was = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  const shown = media.cloneNode(true) as HTMLElement
+  shown.classList.remove('chat-image')
+  shown.classList.add('lightbox-media')
+  if (shown instanceof HTMLVideoElement) {
+    shown.muted = true
+    shown.loop = true
+    void shown.play().catch(() => undefined)
+  }
+  /*
+   * A drawing sized from its viewBox wears that size as attributes, and it
+   * scales losslessly, so up close it gets the whole window: the same shape,
+   * grown to fit. A raster picture keeps its own size and the style caps it.
+   */
+  const w = Number(shown.getAttribute('width'))
+  const tall = Number(shown.getAttribute('height'))
+  if (w > 0 && tall > 0) {
+    const scale = Math.min((window.innerWidth * 0.94) / w, (window.innerHeight * 0.92) / tall)
+    shown.style.width = `${Math.round(w * scale)}px`
+    shown.style.height = `${Math.round(tall * scale)}px`
+  }
+  function close(): void {
+    box.remove()
+    was?.focus()
+  }
+  const box = h(
+    'div',
+    {
+      class: 'lightbox',
+      role: 'dialog',
+      ariaLabel: 'Picture, up close',
+      tabIndex: -1,
+      on: {
+        click: () => close(),
+        keydown: (ev) => {
+          if ((ev as KeyboardEvent).key === 'Escape') close()
+        },
+      },
+    },
+    [shown],
+  )
+  document.body.append(box)
+  box.focus()
 }
 
 /**
@@ -1915,7 +1982,22 @@ function svgEmbed(source: string, fallback: () => void): HTMLElement {
     },
     true,
   )
-  const wrap = h('span', { class: 'chat-image-wrap' }, [img])
+  const wrap = h('span', {
+    class: 'chat-image-wrap',
+    role: 'button',
+    tabIndex: 0,
+    title: 'Look closer',
+    on: {
+      click: () => openLightbox(img),
+      keydown: (ev) => {
+        const key = (ev as KeyboardEvent).key
+        if (key === 'Enter' || key === ' ') {
+          ev.preventDefault()
+          openLightbox(img)
+        }
+      },
+    },
+  }, [img])
   return wrap
 }
 
