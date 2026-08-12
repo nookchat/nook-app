@@ -18,13 +18,16 @@ import { micSettings, setMicSettings, type MicSettings } from '../net/mic'
 import { defaultArchive, setDefaultArchive } from '../store/archive'
 import { clear, copyText, fmtBytes, h } from './dom'
 import { openEmojiPicker, quickReactions, setQuickReactions } from './emoji'
+import { avatarOf } from './chat-panel'
+import { loadAvatar, saveAvatar, squareThumb } from './avatar'
+import { askNotify, notifyState, stopNotify } from './notify'
 import { storagePressure } from '../store/compact'
 import { download, exportAll, importBundle } from '../store/transfer'
 import { icon } from './icons'
 import { toast } from './toast'
 
 export interface SettingsActions {
-  rename(name: string): void
+  rename(name: string, avatar?: string): void
   back(): void
   /** Where this space keeps a copy, if it keeps one. Empty means it does not. */
   archive?: string
@@ -191,6 +194,60 @@ export function settingsView(actions: SettingsActions): HTMLElement {
     ariaLabel: 'Your name',
     placeholder: 'Your name',
   })
+
+  /*
+   * A picture, shrunk until it fits in one signed event.
+   *
+   * There is nowhere to upload it to, so it travels inside the profile event
+   * that carries the name, and an event has a size limit that everybody
+   * enforces. Forty eight pixels of WebP is about fifteen hundred characters,
+   * which fits with room to spare, and at the size it is drawn nobody can tell.
+   */
+  const picture = h('div', { class: 'row' })
+  const drawAvatar = (): void => {
+    clear(picture)
+    picture.append(
+      avatarOf(identity.pubkey, identity.name, loadAvatar(), 44),
+      h('button', {
+        text: loadAvatar() ? 'Change picture' : 'Add a picture',
+        on: { click: () => pickPicture.click() },
+      }),
+    )
+    if (loadAvatar()) {
+      picture.append(
+        h('button', {
+          class: 'ghost',
+          text: 'Remove',
+          on: {
+            click: () => {
+              saveAvatar('')
+              actions.rename(cleanName(name.value) || identity.name, '')
+              drawAvatar()
+            },
+          },
+        }),
+      )
+    }
+  }
+  const pickPicture = h('input', { type: 'text', ariaLabel: 'Choose a picture' })
+  pickPicture.type = 'file'
+  pickPicture.accept = 'image/*'
+  pickPicture.classList.add('hidden')
+  pickPicture.addEventListener('change', async () => {
+    const chosen = pickPicture.files?.[0]
+    if (!chosen) return
+    pickPicture.value = ''
+    try {
+      const small = await squareThumb(chosen)
+      saveAvatar(small)
+      actions.rename(cleanName(name.value) || identity.name, small)
+      drawAvatar()
+      toast('Picture set. Everybody sees it the next time they hear from you.', 'info', 6000)
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'That picture could not be used.', 'bad', 7000)
+    }
+  })
+  drawAvatar()
   const save = h('button', { class: 'primary', text: 'Save name' })
   const commit = (): void => {
     const next = cleanName(name.value)
@@ -213,6 +270,39 @@ export function settingsView(actions: SettingsActions): HTMLElement {
     const ok = await copyText(identity.pubkey)
     toast(ok ? 'ID copied.' : 'Could not copy the ID.', ok ? 'info' : 'warn')
   })
+
+  /** Off, on, or the browser has taken the decision out of your hands. */
+  function notifyButton(): HTMLElement {
+    const button = h('button', {})
+    const paint = (): void => {
+      const state = notifyState()
+      button.className = state === 'on' ? 'on' : ''
+      button.disabled = state === 'blocked' || state === 'unsupported'
+      button.textContent =
+        state === 'on'
+          ? 'Notifications are on'
+          : state === 'blocked'
+            ? 'This browser is blocking them'
+            : state === 'unsupported'
+              ? 'This browser has none'
+              : 'Notifications are off'
+    }
+    button.addEventListener('click', () => {
+      if (notifyState() === 'on') {
+        stopNotify()
+        paint()
+        return
+      }
+      void askNotify().then((state) => {
+        paint()
+        if (state === 'blocked') {
+          toast('The browser is refusing. Turn them on for this site in its settings.', 'warn', 8000)
+        }
+      })
+    })
+    paint()
+    return button
+  }
 
   /** Five slots. Clicking one opens the picker; picking nothing empties it. */
   function quickRow(): HTMLElement {
@@ -280,6 +370,8 @@ export function settingsView(actions: SettingsActions): HTMLElement {
         h('div', { class: 'card stack tight' }, [
           h('span', { class: 'eyebrow', text: 'Your name' }),
           h('div', { class: 'row' }, [name, save]),
+          picture,
+          pickPicture,
           h('div', {
             class: 'tiny faint',
             text: 'A label, not an identity. Change it whenever you like: it updates everywhere, in old messages too.',
@@ -313,6 +405,23 @@ export function settingsView(actions: SettingsActions): HTMLElement {
           h('div', {
             class: 'tiny faint',
             text: 'The five offered the moment you react to a message. Click one to change it, or leave them empty to be offered whatever you have used lately.',
+          }),
+        ]),
+
+        /*
+         * Being told when you are not looking.
+         *
+         * The browser's own notifications, which need no server and last as
+         * long as the tab does. Asked for here, on a button that says what it
+         * is for, rather than on the way in: a prompt nobody asked for gets
+         * refused, and a refusal cannot be taken back from inside the page.
+         */
+        h('div', { class: 'card stack tight' }, [
+          h('span', { class: 'eyebrow', text: 'Notifications' }),
+          notifyButton(),
+          h('div', {
+            class: 'tiny faint',
+            text: 'Only when somebody says your name or writes to you privately, and only while this tab is open behind something else. There is no server holding your messages, so nothing can reach you once the tab is closed.',
           }),
         ]),
 

@@ -149,6 +149,13 @@ export class Mesh {
       case 'announce': {
         const name = typeof data.name === 'string' ? data.name.slice(0, 24) : ''
         const key = typeof data.key === 'string' && /^[0-9a-f]{64}$/.test(data.key) ? data.key : ''
+        /*
+         * A session carrying our own key is another tab of ours, or the one we
+         * just reloaded out of. It is still linked and still synced with, since
+         * two tabs hold two copies of the log in memory and only one of them
+         * has what was just typed. It is not another person, and the roster
+         * folds it into one row: see SpaceView.roster.
+         */
         const known = this.seen.get(env.from)
         this.seen.set(env.from, {
           name: name || known?.name || '',

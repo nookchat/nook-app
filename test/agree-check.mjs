@@ -180,14 +180,14 @@ try {
   await Promise.all([
     alice.evaluate(() => {
       // Alice edits her own first line.
-      const line = [...document.querySelectorAll('.chat-line')].find((el) =>
+      const line = [...document.querySelectorAll('.chat-row')].find((el) =>
         el.textContent.includes('alice 0'),
       )
       const edit = [...line.querySelectorAll('.chat-actions button')].find((b) => b.title === 'Edit')
       edit?.click()
     }),
     bob.evaluate(() => {
-      const line = [...document.querySelectorAll('.chat-line')].find((el) =>
+      const line = [...document.querySelectorAll('.chat-row')].find((el) =>
         el.textContent.includes('carol 1'),
       )
       const react = [...line.querySelectorAll('.chat-actions button')].find(
@@ -196,7 +196,7 @@ try {
       react?.click()
     }),
     carol.evaluate(() => {
-      const line = [...document.querySelectorAll('.chat-line')].find((el) =>
+      const line = [...document.querySelectorAll('.chat-row')].find((el) =>
         el.textContent.includes('bob 2'),
       )
       const react = [...line.querySelectorAll('.chat-actions button')].find(
@@ -217,7 +217,7 @@ try {
   // Alice was asked for new text by a prompt, which needs handling, so she
   // instead pins something, which is the admin action worth checking here.
   await alice.evaluate(() => {
-    const line = [...document.querySelectorAll('.chat-line')].find((el) =>
+    const line = [...document.querySelectorAll('.chat-row')].find((el) =>
       el.textContent.includes('bob 0'),
     )
     const pin = [...line.querySelectorAll('.chat-actions button')].find((b) =>

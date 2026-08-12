@@ -15,7 +15,7 @@
  * transport, so this costs no new dependency.
  */
 
-import { schnorr } from '@noble/curves/secp256k1'
+import { schnorr, secp256k1 } from '@noble/curves/secp256k1'
 import { cleanName, sillyName } from '../chat'
 
 const PRIV_KEY = 'cathode.identity.v1'
@@ -90,6 +90,43 @@ export function saveDisplayName(name: string): void {
   } catch {
     /* the name lasts for this session only */
   }
+}
+
+/**
+ * The key two people share, and nobody else has.
+ *
+ * Both sides of a conversation work out the same bytes from their own private
+ * key and the other person's public one, which is what makes a private message
+ * possible with no server to hold a key and no exchange to intercept. The x
+ * coordinate of the shared point is hashed into an AES key; the y coordinate is
+ * dropped, which is what everybody who does this does, because an x-only public
+ * key does not carry it.
+ *
+ * Cached per person: the elliptic curve part is the expensive half and the
+ * answer never changes.
+ */
+const shared = new Map<string, Promise<CryptoKey>>()
+
+export function sharedKey(theirPubkey: string): Promise<CryptoKey> {
+  const held = shared.get(theirPubkey)
+  if (held) return held
+  const making = (async () => {
+    if (!priv) loadIdentity()
+    if (!/^[0-9a-f]{64}$/.test(theirPubkey)) throw new Error('That is not a key.')
+    // An x-only key is a point with the even y, which is the convention every
+    // schnorr key is written under. 02 says so.
+    const point = secp256k1.getSharedSecret(priv!, `02${theirPubkey}`, true)
+    const x = point.slice(1)
+    const bits = await crypto.subtle.digest('SHA-256', x as BufferSource)
+    return crypto.subtle.importKey('raw', bits, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt'])
+  })()
+  shared.set(theirPubkey, making)
+  return making
+}
+
+/** Forget the shared keys, for when the identity behind them is replaced. */
+export function forgetShared(): void {
+  shared.clear()
 }
 
 /** Sign 32 bytes of hash. Returns hex. */

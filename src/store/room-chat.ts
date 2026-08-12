@@ -9,20 +9,36 @@
  */
 
 import { mentionsMe } from '../chat'
-import { loadIdentity } from './identity'
+import { loadIdentity, sharedKey } from './identity'
 import { deleteEvents, getRoom, loadRoom, noteRoom, putEvents } from './db'
 import { compact, limitsForNow } from './compact'
 import {
   cleanChannel,
+  cleanAvatar,
   DEFAULT_CHANNEL,
   makeEvent,
   oneEmoji,
   openEvent,
   packEvent,
   RoomLog,
+  type ChannelInfo,
   type LogEvent,
   type Message,
 } from './log'
+
+/** Base64, for the two byte strings a sealed message is made of. */
+function b64(bytes: Uint8Array): string {
+  let out = ''
+  for (const b of bytes) out += String.fromCharCode(b)
+  return btoa(out)
+}
+
+function unb64(text: string): Uint8Array {
+  const raw = atob(text)
+  const out = new Uint8Array(raw.length)
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i)
+  return out
+}
 
 export interface Unread {
   count: number
@@ -63,6 +79,18 @@ export class RoomChat {
   private readonly secret: string
   private name: string
   private sinceCompaction = 0
+  /**
+   * Private messages, opened.
+   *
+   * The log holds them sealed, because that is how they reach the person they
+   * are for: they travel with everything else and every device stores them.
+   * Opening one needs a key only two people can work out, so this map is what
+   * this device can read, and it is built once as events arrive rather than on
+   * every redraw, which would mean asking the browser to decrypt on a frame.
+   */
+  private readonly opened = new Map<string, string>()
+  /** Told when a private message is opened, so the panel can draw it. */
+  onDirect: (() => void) | null = null
 
   constructor(roomId: string, secret: string, founder = '') {
     this.log = new RoomLog(roomId)
@@ -123,6 +151,15 @@ export class RoomChat {
 
   nameOf(author: string): string {
     return this.log.names().get(author) ?? ''
+  }
+
+  avatarOf(author: string): string {
+    return this.log.avatars().get(author) ?? ''
+  }
+
+  /** The channels with what an admin has said about them. */
+  channelInfo(voice = false): ChannelInfo[] {
+    return this.log.channelList(voice)
   }
 
   /**
@@ -242,7 +279,8 @@ export class RoomChat {
       | 'poll'
       | 'vote'
       | 'reset'
-      | 'close',
+      | 'close'
+      | 'dm',
     body: Record<string, unknown>,
   ): Promise<LogEvent> {
     const event = await makeEvent(this.log.room, this.me, this.log.nextLamport(), kind, body)
@@ -266,10 +304,12 @@ export class RoomChat {
     channel: string,
     replyTo?: string | null,
     inThread = false,
+    emote = false,
   ): Promise<LogEvent> {
     const body: Record<string, unknown> = { text, channel: cleanChannel(channel) || DEFAULT_CHANNEL }
     if (replyTo) body.replyTo = replyTo
     if (replyTo && inThread) body.thread = true
+    if (emote) body.emote = true
     return this.write('said', body)
   }
 
@@ -283,6 +323,27 @@ export class RoomChat {
 
   makeChannel(name: string, voice = false): Promise<LogEvent> {
     return this.write('channel', voice ? { name: cleanChannel(name), voice: true } : { name: cleanChannel(name) })
+  }
+
+  /** What a channel is called on screen. The name it routes by never moves. */
+  labelChannel(name: string, label: string, voice = false): Promise<LogEvent> {
+    const body: Record<string, unknown> = { name: cleanChannel(name), label: label.slice(0, 32).trim() }
+    if (voice) body.voice = true
+    return this.write('channel', body)
+  }
+
+  /** A line saying what a channel is for, or nothing. */
+  setTopic(name: string, topic: string, voice = false): Promise<LogEvent> {
+    const body: Record<string, unknown> = { name: cleanChannel(name), topic: topic.slice(0, 140).trim() }
+    if (voice) body.voice = true
+    return this.write('channel', body)
+  }
+
+  /** Take a channel away, and what was said in it with it. */
+  dropChannel(name: string, voice = false): Promise<LogEvent> {
+    const body: Record<string, unknown> = { name: cleanChannel(name), gone: true }
+    if (voice) body.voice = true
+    return this.write('channel', body)
   }
 
   edit(target: string, text: string): Promise<LogEvent> {
@@ -336,6 +397,122 @@ export class RoomChat {
     return this.write('close', { at: Date.now() })
   }
 
+  // ---- private messages ----
+
+  /**
+   * Say something to one person.
+   *
+   * Sealed with a key derived from the two identity keys, so the room carries
+   * it and cannot read it. What the room can see is that you sent somebody
+   * something, and how long it was. That is the honest limit of doing this
+   * without a server: delivery rides on the log everybody already shares, and
+   * the price is that the shape of the traffic is not hidden.
+   */
+  async sayDirect(to: string, text: string): Promise<LogEvent> {
+    const key = await sharedKey(to)
+    const iv = crypto.getRandomValues(new Uint8Array(12))
+    const sealed = new Uint8Array(
+      await crypto.subtle.encrypt(
+        { name: 'AES-GCM', iv: iv as BufferSource },
+        key,
+        new TextEncoder().encode(text.slice(0, 2000)) as BufferSource,
+      ),
+    )
+    const event = await this.write('dm', { to, iv: b64(iv), box: b64(sealed) })
+    this.opened.set(event.id, text.slice(0, 2000))
+    this.onDirect?.()
+    return event
+  }
+
+  /** Open whatever has arrived that this device can read. Never throws. */
+  async readDirect(): Promise<void> {
+    let fresh = false
+    for (const e of this.log.all()) {
+      if (e.kind !== 'dm' || this.opened.has(e.id)) continue
+      const to = String(e.body.to ?? '')
+      const other = e.author === this.me ? to : e.author
+      if (e.author !== this.me && to !== this.me) continue
+      try {
+        const key = await sharedKey(other)
+        const plain = await crypto.subtle.decrypt(
+          { name: 'AES-GCM', iv: unb64(String(e.body.iv ?? '')) as BufferSource },
+          key,
+          unb64(String(e.body.box ?? '')) as BufferSource,
+        )
+        this.opened.set(e.id, new TextDecoder().decode(plain))
+        fresh = true
+      } catch {
+        // Not for us, or not what it claims to be. Either way it is not shown.
+        this.opened.set(e.id, '')
+      }
+    }
+    if (fresh) this.onDirect?.()
+  }
+
+  /** Everybody this device has a private conversation with, most recent first. */
+  directs(): { key: string; name: string; last: number; unread: number }[] {
+    const names = this.log.names()
+    const out = new Map<string, { key: string; name: string; last: number; unread: number }>()
+    for (const e of this.log.all()) {
+      if (e.kind !== 'dm') continue
+      const to = String(e.body.to ?? '')
+      const mine = e.author === this.me
+      if (!mine && to !== this.me) continue
+      const other = mine ? to : e.author
+      if (!/^[0-9a-f]{64}$/.test(other)) continue
+      const was = out.get(other) ?? { key: other, name: names.get(other) ?? '', last: 0, unread: 0 }
+      was.name = names.get(other) ?? was.name
+      if (e.at > was.last) was.last = e.at
+      if (!mine && e.lamport > (this.readDm[other] ?? 0)) was.unread += 1
+      out.set(other, was)
+    }
+    return [...out.values()].sort((a, b) => b.last - a.last)
+  }
+
+  /** One private conversation, in log order. */
+  directWith(other: string): Message[] {
+    const names = this.log.names()
+    const out: Message[] = []
+    for (const e of this.log.all()) {
+      if (e.kind !== 'dm') continue
+      const to = String(e.body.to ?? '')
+      const mine = e.author === this.me
+      const them = mine ? to : e.author
+      if (them !== other) continue
+      if (!mine && to !== this.me) continue
+      const text = this.opened.get(e.id)
+      if (!text) continue
+      out.push({
+        id: e.id,
+        author: e.author,
+        name: names.get(e.author) ?? '',
+        channel: '',
+        at: e.at,
+        lamport: e.lamport,
+        text,
+        replyTo: null,
+        edited: false,
+        retracted: false,
+        reactions: new Map(),
+      })
+    }
+    return out
+  }
+
+  /** How far this device has read in each private conversation. */
+  private readDm: Record<string, number> = {}
+
+  setDirectRead(marks: Record<string, number>): void {
+    this.readDm = { ...marks }
+  }
+
+  /** The newest thing said in one, so reading it can be marked. */
+  directHighWater(other: string): number {
+    let top = 0
+    for (const m of this.directWith(other)) if (m.lamport > top) top = m.lamport
+    return top
+  }
+
   /** Hold a message up at the top of its channel, or stop holding it. */
   pin(target: string, on: boolean): Promise<LogEvent> {
     return this.write('pin', { target, on })
@@ -349,10 +526,13 @@ export class RoomChat {
    * this device, and an archive keeps every line it is ever given, so the tidy
    * log and the untidy archive slowly disagreed about the same room.
    */
-  announceName(name: string): Promise<LogEvent | null> {
+  announceName(name: string, avatar?: string): Promise<LogEvent | null> {
     this.name = name
-    if (this.log.names().get(this.me) === name) return Promise.resolve(null)
-    return this.write('profile', { name })
+    const picture = avatar === undefined ? this.log.avatars().get(this.me) ?? '' : cleanAvatar(avatar)
+    const sameName = this.log.names().get(this.me) === name
+    const samePicture = (this.log.avatars().get(this.me) ?? '') === picture
+    if (sameName && samePicture) return Promise.resolve(null)
+    return this.write('profile', picture ? { name, avatar: picture } : { name })
   }
 
   /**

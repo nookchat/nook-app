@@ -31,7 +31,8 @@
     "test:archive": "node test/archive-check.mjs",
     "test:leave": "node test/leave-check.mjs",
     "test:emoji": "node test/emoji-check.mjs",
-    "test:chat": "node test/chat-check.mjs"
+    "test:chat": "node test/chat-check.mjs",
+    "test:extras": "node test/extras-check.mjs"
   },
   "dependencies": {
     "@jitsi/rnnoise-wasm": "^0.2.1",

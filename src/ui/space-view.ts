@@ -42,9 +42,9 @@ import {
 import { SignalBus } from '../signal/bus'
 import type { Envelope } from '../signal/envelope'
 import { loadSettings, saveSettings, type HostSettings } from '../settings'
-import { mentionsMe } from '../chat'
+import { cleanName, mentionsMe } from '../chat'
 import { forgetRoom, getRoom, noteRoom, tombstoneRoom } from '../store/db'
-import { loadIdentity, shortKey } from '../store/identity'
+import { loadIdentity, saveDisplayName, shortKey } from '../store/identity'
 import { settingsView } from './settings-view'
 import { Archive, defaultArchive } from '../store/archive'
 import { chirpJoin, chirpLeave, chirpMessage, isNews } from './sounds'
@@ -52,6 +52,7 @@ import {
   DEFAULT_CHANNEL,
   DEFAULT_VOICE,
   cleanChannel,
+  type ChannelInfo,
   type LogEvent,
   type Message,
 } from '../store/log'
@@ -60,9 +61,12 @@ import { ChatPanel } from './chat-panel'
 import { clear, copyText, fmtKbps, h, labelled } from './dom'
 import { icon } from './icons'
 import { openMenu, type MenuItem } from './menu'
+import { avatarOf } from './chat-panel'
+import { loadAvatar } from './avatar'
 import { qrSvg } from './qr'
 import type { WindowChrome } from './shell'
 import { toast } from './toast'
+import { notify } from './notify'
 import { VideoSurface } from './video-surface'
 
 /**
@@ -75,10 +79,37 @@ const RECENT_MS = 14 * 24 * 60 * 60 * 1000
 
 const STATS_MS = 2000
 
+/** One person in the members list, however many tabs they have open. */
+interface PersonRow {
+  key: string
+  name: string
+  here: boolean
+  ready: boolean
+  talking: boolean
+  sharing: boolean
+  voice: string | null
+  you: boolean
+  /** Here, but with this space behind whatever they are actually doing. */
+  away: boolean
+}
+
 /** How often to tell the room somebody is writing, at the very most. */
 const TYPING_EVERY_MS = 2000
 /** And how long that stays true without another word. */
 const TYPING_FOR_MS = 5000
+
+/** What a slash offers. The panel lists them; runCommand is what they mean. */
+const COMMANDS = [
+  { name: 'me', note: 'Say what you are doing' },
+  { name: 'dm', note: 'Write to one person' },
+  { name: 'nick', note: 'Change your name' },
+  { name: 'topic', note: 'Say what this channel is for' },
+  { name: 'rename', note: 'Rename this channel' },
+  { name: 'shrug', note: '\u00af\\_(\u30c4)_/\u00af' },
+  { name: 'invite', note: 'Copy the invite link' },
+  { name: 'leave', note: 'Leave this space' },
+  { name: 'help', note: 'List these' },
+]
 
 export class SpaceView {
   private readonly root: HTMLElement
@@ -112,6 +143,15 @@ export class SpaceView {
   private forgotten = false
   /** True while this device is the one closing the space down. */
   private closing = false
+  /**
+   * True once the log has been read and the room can be drawn truthfully.
+   *
+   * Between the shell being laid out and the store answering there is about a
+   * frame and a half, and it used to be spent showing a room that did not
+   * exist: "Unnamed space", no messages, and nobody here. A third of a tenth of
+   * a second of confident wrong is what a flash is.
+   */
+  private loaded = false
   /** True while the settings screen is up rather than the space itself. */
   private settingsOpen = false
 
@@ -136,18 +176,23 @@ export class SpaceView {
   // Elements redrawn in place.
   private channelList!: HTMLDivElement
   private voiceList!: HTMLDivElement
+  private directList!: HTMLDivElement
   private peopleList!: HTMLDivElement
   private voiceBar!: HTMLDivElement
   private shell!: HTMLElement
   private stage!: HTMLDivElement
   private shareButton!: HTMLButtonElement
   private sharePanel!: HTMLDivElement
-  private channelTitle!: HTMLSpanElement
+  private channelTitle!: HTMLDivElement
   private searchInput!: HTMLInputElement
   private searchResults!: HTMLDivElement
 
   /** The thread being read, if any. Its root is a message in this space. */
   private thread: string | null = null
+  /** The person being written to privately, if any. */
+  private direct: string | null = null
+  /** How far this device has read in each private conversation. */
+  private readDm: Record<string, number> = {}
   /**
    * How far this device has read in each channel, and what it had read when the
    * channel was opened.
@@ -222,6 +267,7 @@ export class SpaceView {
     const note = await getRoom(this.room.id)
     const chat = new RoomChat(this.room.id, this.secret, note?.founder ?? '')
     chat.onChange = () => this.draw()
+    chat.onDirect = () => this.draw()
     chat.onFounder = (pubkey) => void this.remember({ founder: pubkey })
     await chat.load()
     this.chat = chat
@@ -229,7 +275,10 @@ export class SpaceView {
     this.chatPanel?.setName(chat.displayName)
     // Where this device had got to, per channel, and where the line goes today.
     this.read = { ...(note?.read ?? {}) }
+    this.readDm = { ...(note?.readDm ?? {}) }
+    chat.setDirectRead(this.readDm)
     this.openedAt = this.read[this.channel] ?? 0
+    void chat.readDirect()
 
     const bus = new SignalBus(this.room, this.selfId)
     const voice = new Voice(bus, this.selfId)
@@ -299,7 +348,7 @@ export class SpaceView {
       await this.remember({ founder: chat.me })
       if (this.wantedName) await chat.setSpaceName(this.wantedName)
     }
-    await chat.announceName(chat.displayName)
+    await chat.announceName(chat.displayName, loadAvatar())
     void probeHardwareEncoders(availableCodecs()).then((probe) => (this.gpu = probe))
 
     this.timers.push(window.setInterval(() => void this.tick(), STATS_MS))
@@ -333,10 +382,22 @@ export class SpaceView {
    * outlives the space it belongs to would search a room that is gone.
    */
   private readonly onShortcut = (ev: KeyboardEvent): void => {
-    if (!(ev.metaKey || ev.ctrlKey) || ev.key.toLowerCase() !== 'k') return
-    ev.preventDefault()
-    this.searchInput?.focus()
-    this.searchInput?.select()
+    if (!(ev.metaKey || ev.ctrlKey)) return
+    if (ev.key.toLowerCase() === 'k') {
+      ev.preventDefault()
+      this.searchInput?.focus()
+      this.searchInput?.select()
+      return
+    }
+    // The channels in the rail, in the order they are drawn.
+    if (/^[1-9]$/.test(ev.key)) {
+      const channels = this.chat?.channels() ?? []
+      const wanted = channels[Number(ev.key) - 1]
+      if (!wanted) return
+      ev.preventDefault()
+      this.openChannel(wanted)
+      this.chatPanel?.focus()
+    }
   }
 
   destroy(): void {
@@ -445,6 +506,8 @@ export class SpaceView {
 
     const fresh = (await this.chat?.ingest(raw)) ?? []
     if (fresh.length === 0) return
+    // Anything private that just arrived, opened before it is drawn.
+    if (fresh.some((e) => e.kind === 'dm')) void this.chat?.readDirect()
     // Somebody else said something, and said it just now rather than last week.
     if (fresh.some((e) => e.kind === 'said' && e.author !== this.chat?.me && isNews(e.at))) {
       chirpMessage()
@@ -490,10 +553,15 @@ export class SpaceView {
       return false
     }
     if (note.t !== 'typing') return false
-    // Which person, rather than which tab: the roster is keyed by who they are.
-    const peer = this.mesh?.peers().find((p) => p.id === from)
-    const key = peer?.key || from
-    this.typing.set(key, {
+    /*
+     * Kept by session and resolved to a person when it is drawn.
+     *
+     * It used to be stored under whichever of the two was known at the time,
+     * so a note that arrived before that peer's announcement was filed under
+     * the session id and the next one under their key. One person, two slots,
+     * and the line said they and a string of hex were both typing.
+     */
+    this.typing.set(from, {
       channel: typeof note.c === 'string' ? cleanChannel(note.c) : DEFAULT_CHANNEL,
       at: Date.now(),
     })
@@ -504,16 +572,19 @@ export class SpaceView {
   /** Whoever has said something in the last few seconds, in this channel. */
   private showTyping(): void {
     const cutoff = Date.now() - TYPING_FOR_MS
-    const names: string[] = []
-    for (const [key, note] of this.typing) {
+    const peers = this.mesh?.peers() ?? []
+    const people = new Map<string, string>()
+    for (const [session, note] of this.typing) {
       if (note.at < cutoff) {
-        this.typing.delete(key)
+        this.typing.delete(session)
         continue
       }
       if (note.channel !== this.channel) continue
-      names.push(this.chat?.nameOf(key) || shortKey(key))
+      // One name per person, however many tabs of theirs are typing.
+      const key = peers.find((p) => p.id === session)?.key || session
+      people.set(key, this.chat?.nameOf(key) || shortKey(key))
     }
-    this.chatPanel?.setTyping(names)
+    this.chatPanel?.setTyping([...people.values()])
   }
 
   // ---- unread, and being called by name ----
@@ -541,7 +612,7 @@ export class SpaceView {
     void this.remember({ read: this.read })
   }
 
-  /** Somebody said your name while you were reading something else. */
+  /** Somebody said your name, or wrote to you, while you were elsewhere. */
   private noticeMentions(fresh: LogEvent[]): void {
     const chat = this.chat
     if (!chat) return
@@ -549,18 +620,223 @@ export class SpaceView {
     // arrived is noticed as well as marked.
     const names = this.everybody()
     for (const e of fresh) {
-      if (e.kind !== 'said' || e.author === chat.me) continue
-      if (!isNews(e.at)) continue
+      if (e.author === chat.me || !isNews(e.at)) continue
+      const who = chat.nameOf(e.author) || shortKey(e.author)
+
+      if (e.kind === 'dm') {
+        if (String(e.body.to ?? '') !== chat.me) continue
+        if (this.direct === e.author) continue
+        toast(`${who} sent you a message`, 'info', 8000, {
+          label: 'Read',
+          run: () => this.openDirect(e.author),
+        })
+        // The text is sealed until readDirect has opened it, so the
+        // notification says who rather than what, which is right for a private
+        // message sitting on a lock screen anyway.
+        notify(who, 'Sent you a private message', () => this.openDirect(e.author))
+        continue
+      }
+
+      if (e.kind !== 'said') continue
       const text = String(e.body.text ?? '')
       if (!mentionsMe(text, names, chat.me)) continue
       const where = cleanChannel(String(e.body.channel ?? '')) || DEFAULT_CHANNEL
-      if (where === this.channel && !this.thread) continue
-      const who = chat.nameOf(e.author) || shortKey(e.author)
+      notify(`${who} in #${where}`, text, () => this.openChannel(where))
+      if (where === this.channel && !this.thread && !this.direct) continue
       toast(`${who} mentioned you in #${where}`, 'info', 8000, {
         label: 'Go',
         run: () => this.openChannel(where),
       })
     }
+  }
+
+  // ---- channels ----
+
+  /**
+   * What an admin may do with a channel.
+   *
+   * Renaming changes what it is called and not what it is: every message ever
+   * written carries the name it was written in, and nothing in this design
+   * rewrites what was signed. So the name routes for ever and the label is what
+   * anybody reads, which is what somebody fixing a typo wanted anyway.
+   */
+  private channelActions(channel: ChannelInfo): MenuItem[] {
+    if (!this.chat?.isAdmin) return []
+    const items: MenuItem[] = [
+      {
+        label: 'Rename it',
+        note: `Shown instead of ${channel.name}`,
+        run: () => {
+          const raw = window.prompt('What should this channel be called?', channel.label) ?? ''
+          const label = raw.trim().slice(0, 32)
+          if (!label) return
+          void this.publish((c) => c.labelChannel(channel.name, label))
+        },
+      },
+      {
+        label: channel.topic ? 'Change the topic' : 'Set a topic',
+        note: channel.topic || 'A line saying what it is for',
+        run: () => {
+          const raw = window.prompt('What is this channel for?', channel.topic) ?? ''
+          void this.publish((c) => c.setTopic(channel.name, raw.trim().slice(0, 140)))
+        },
+      },
+    ]
+    if (channel.name !== DEFAULT_CHANNEL) {
+      items.push({
+        label: 'Delete it',
+        note: 'Takes the channel and everything said in it',
+        danger: true,
+        run: () => {
+          const ok = window.confirm(
+            `Delete ${channel.label}? Everything said in it goes with it, on every device that reads the log. It cannot be undone.`,
+          )
+          if (!ok) return
+          if (this.channel === channel.name) this.openChannel(DEFAULT_CHANNEL)
+          void this.publish((c) => c.dropChannel(channel.name))
+        },
+      })
+    }
+    return items
+  }
+
+  // ---- slash commands ----
+
+  /**
+   * A line that starts with a slash.
+   *
+   * Returns true when it was one, which is what tells the panel to clear the
+   * box. Anything unknown says so rather than being sent as a message, because
+   * a typo'd command posted to everybody is the worst of both.
+   */
+  private runCommand(line: string): boolean {
+    const [word, ...rest] = line.slice(1).split(' ')
+    const name = word.toLowerCase()
+    const arg = rest.join(' ').trim()
+    const chat = this.chat
+    if (!chat) return false
+
+    const needsAdmin = (): boolean => {
+      if (chat.isAdmin) return false
+      toast('Only an admin can do that.', 'warn')
+      return true
+    }
+
+    switch (name) {
+      case 'me': {
+        if (!arg) return true
+        void this.publish((c) => c.say(arg, this.channel, null, false, true))
+        return true
+      }
+      case 'shrug': {
+        /*
+         * The arm and both underscores are escaped for the formatter, or it
+         * eats them: the backslash is a shrug's shoulder and the underscores
+         * are what it is standing on.
+         */
+        const text = `${arg} \u00af\\\\\\_(\u30c4)\\_/\u00af`.trim()
+        void this.publish((c) => c.say(text, this.channel))
+        return true
+      }
+      case 'nick': {
+        const next = cleanName(arg)
+        if (!next) {
+          toast('Say what to call you: /nick your name', 'warn')
+          return true
+        }
+        saveDisplayName(next)
+        this.rename(next)
+        toast('Name changed. It updates everywhere, including old messages.', 'info', 5000)
+        return true
+      }
+      case 'topic': {
+        if (needsAdmin()) return true
+        void this.publish((c) => c.setTopic(this.channel, arg))
+        toast(arg ? 'Topic set.' : 'Topic cleared.', 'good')
+        return true
+      }
+      case 'rename': {
+        if (needsAdmin()) return true
+        const label = arg.slice(0, 32)
+        if (!label) {
+          toast('Say what to call it: /rename the new name', 'warn')
+          return true
+        }
+        void this.publish((c) => c.labelChannel(this.channel, label))
+        return true
+      }
+      case 'dm':
+      case 'msg': {
+        const names = this.everybody()
+        const wanted = arg.split(' ')[0]?.toLowerCase() ?? ''
+        const found = [...names].find(([, who]) => who.toLowerCase() === wanted)
+        if (!found) {
+          toast(`Nobody here is called ${wanted || 'that'}.`, 'warn')
+          return true
+        }
+        const text = arg.slice(wanted.length).trim()
+        this.openDirect(found[0])
+        if (text) void this.publish((c) => c.sayDirect(found[0], text))
+        return true
+      }
+      case 'invite': {
+        void copyText(roomLink(this.secret, this.locked)).then((ok) =>
+          toast(ok ? 'Invite link copied.' : 'Could not copy it.', ok ? 'info' : 'warn'),
+        )
+        return true
+      }
+      case 'leave': {
+        void this.leaveSpace()
+        return true
+      }
+      case 'help': {
+        toast(
+          COMMANDS.map((c) => `/${c.name}`).join('  '),
+          'info',
+          9000,
+        )
+        return true
+      }
+      default:
+        toast(`There is no /${name}. Try /help.`, 'warn')
+        return true
+    }
+  }
+
+  // ---- private messages ----
+
+  /**
+   * Open a conversation with one person, or close the one that is open.
+   *
+   * It takes over the panel, the way a thread does, because it is the same
+   * thing from the panel's side: a different slice of the same log, with a
+   * different place for what you write to go.
+   */
+  private openDirect(key: string | null): void {
+    this.chatPanel?.keepDraft()
+    this.direct = key
+    this.thread = null
+    this.chatPanel?.setThread(null)
+    this.chatPanel?.setDirect(key)
+    this.closeSearch()
+    if (key) {
+      this.chatPanel?.useDraft(`dm:${key}`)
+      this.markDirectRead(key)
+    } else {
+      this.chatPanel?.useDraft(this.channel)
+    }
+    this.drawNow()
+    if (key) this.chatPanel?.focus()
+  }
+
+  /** Whatever is on the screen in a private conversation counts as read. */
+  private markDirectRead(key: string): void {
+    if (typeof document !== 'undefined' && document.hidden) return
+    const top = this.chat?.directHighWater(key) ?? 0
+    if (top <= (this.readDm[key] ?? 0)) return
+    this.readDm[key] = top
+    this.chat?.setDirectRead(this.readDm)
+    void this.remember({ readDm: this.readDm })
   }
 
   // ---- threads ----
@@ -736,15 +1012,25 @@ export class SpaceView {
 
   private drawNow(): void {
     if (this.stopped || !this.chat) return
+    if (!this.loaded) {
+      this.loaded = true
+      this.shell.classList.remove('loading')
+    }
     if (this.chatPanel) this.chatPanel.canPin = this.chat.isAdmin
-    this.chatPanel?.setNames(this.everybody())
+    this.chatPanel?.setNames(this.everybody(), this.chat.log.avatars())
     this.chatPanel?.setReadMark(this.thread ? 0 : this.openedAt)
     /*
      * A thread, or the channel. The thread is the same panel showing a
      * different slice of the same log, which is why replying, reacting,
      * editing and pinning all work in it without a line of their own.
      */
-    if (this.thread) {
+    if (this.direct) {
+      const name = this.chat.nameOf(this.direct) || shortKey(this.direct)
+      this.chatPanel?.setDirect(this.direct, name)
+      this.chatPanel?.render(this.chat.directWith(this.direct))
+      this.chatPanel?.setTitle(name)
+      this.markDirectRead(this.direct)
+    } else if (this.thread) {
       const thread = this.chat.threadOf(this.thread)
       // The root going away takes the thread with it: there is nothing left to
       // hang it on, and a thread whose question is gone is a list of answers.
@@ -758,7 +1044,14 @@ export class SpaceView {
       this.chatPanel?.render(this.chat.messages(this.channel))
       this.chatPanel?.setTitle('Chat')
     }
-    this.channelTitle.textContent = `#${this.channel}`
+    // The header says what the rail says: the label an admin chose, and the
+    // line about what the channel is for when there is one.
+    const here = this.chat.channelInfo().find((c) => c.name === this.channel)
+    clear(this.channelTitle)
+    this.channelTitle.append(h('span', { class: 'eyebrow', text: `#${here?.label ?? this.channel}` }))
+    if (here?.topic) {
+      this.channelTitle.append(h('span', { class: 'channel-topic truncate', text: here.topic }))
+    }
     // Whatever is on the screen counts as read.
     this.markRead(this.channel)
     this.showTyping()
@@ -781,6 +1074,7 @@ export class SpaceView {
     // news to leave the building first.
     if (this.chat?.isClosed && !this.closing) void this.acceptClose()
     this.renderChannels()
+    this.renderDirects()
     this.renderVoice()
     this.renderPeople()
     this.renderShareButton()
@@ -811,6 +1105,7 @@ export class SpaceView {
       name: string
       archive: string
       read: Record<string, number>
+      readDm: Record<string, number>
     }>,
   ): Promise<void> {
     if (!this.room || this.forgotten) return
@@ -837,6 +1132,7 @@ export class SpaceView {
       // A space that was closed stays closed, however it is opened again.
       closed: existing?.closed || undefined,
       read: patch.read ?? existing?.read,
+      readDm: patch.readDm ?? existing?.readDm,
       archiveAt: this.archive?.cursor ?? existing?.archiveAt,
       founder: patch.founder ?? existing?.founder ?? this.chat?.founder ?? '',
     })
@@ -844,8 +1140,15 @@ export class SpaceView {
 
   private status(): void {
     if (!this.chrome) return
+    if (!this.loaded) {
+      // Nothing true to say yet, so it says that rather than something else.
+      this.chrome.setStatus(['Opening...'])
+      return
+    }
     const relays = this.bus?.healthList.filter((r) => r.status === 'open').length ?? 0
-    const people = this.mesh?.peers().length ?? 0
+    // The same count the list on the right draws, worked out the same way. See
+    // roster(): one row per person, whatever they have open.
+    const people = this.hereNow()
     const what = this.capture
       ? 'Sharing your screen'
       : this.watching
@@ -857,7 +1160,7 @@ export class SpaceView {
     this.chrome.setTitle(this.mentions ? `(${this.mentions}) ${name}` : name)
     this.chrome.setStatus([
       what,
-      `${people + 1} here`,
+      `${people} here`,
       `${relays} relay${relays === 1 ? '' : 's'}`,
     ])
   }
@@ -869,6 +1172,7 @@ export class SpaceView {
 
     this.channelList = h('div', { class: 'rail-list' })
     this.voiceList = h('div', { class: 'rail-list' })
+    this.directList = h('div', { class: 'rail-list' })
     this.peopleList = h('div', { class: 'rail-list' })
     this.voiceBar = h('div', { class: 'voice-bar hidden' })
     this.stage = h('div', { class: 'stage hidden' })
@@ -881,7 +1185,9 @@ export class SpaceView {
      * are watching is pressed in.
      */
     this.streamBar = h('div', { class: 'stream-bar hidden' })
-    this.channelTitle = h('span', { class: 'eyebrow', text: `#${this.channel}` })
+    this.channelTitle = h('div', { class: 'row channel-head' }, [
+      h('span', { class: 'eyebrow', text: `#${this.channel}` }),
+    ])
 
     this.shareButton = h('button', { class: 'primary grow' }, [icon('monitor', 15), 'Share screen'])
     this.shareButton.addEventListener('click', () => void this.toggleShare())
@@ -893,9 +1199,13 @@ export class SpaceView {
     this.chatPanel.onPoll = () => void this.newPoll()
     this.chatPanel.onTyping = () => this.sayTyping()
     this.chatPanel.onThread = (rootId) => this.openThread(rootId)
+    this.chatPanel.onDirect = (key) => this.openDirect(key)
+    this.chatPanel.onCommand = (line) => this.runCommand(line)
+    this.chatPanel.commands = COMMANDS
     this.chatPanel.actions = {
       say: (text, replyTo, inThread) =>
         void this.publish((c) => c.say(text, this.channel, replyTo, inThread)),
+      sayDirect: (to, text) => void this.publish((c) => c.sayDirect(to, text)),
       edit: (id, text) => void this.publish((c) => c.edit(id, text)),
       react: (id, emoji, on) => void this.publish((c) => c.react(id, emoji, on)),
       retract: (id) => void this.publish((c) => c.retract(id)),
@@ -905,7 +1215,8 @@ export class SpaceView {
     }
     this.chatPanel.setEnabled(true)
 
-    this.spaceTitle = h('span', { class: 'space-name truncate', text: 'Unnamed space' })
+    // Empty rather than a guess. The name arrives with the log.
+    this.spaceTitle = h('span', { class: 'space-name truncate', text: '' })
 
     const left = h('div', { class: 'rail rail-left' }, [
       // Just the name. Renaming and clearing live in settings, where a thing
@@ -935,6 +1246,14 @@ export class SpaceView {
         }),
       ]),
       this.voiceList,
+      h('div', { class: 'rail-head' }, [
+        h('span', {
+          class: 'eyebrow',
+          text: 'Direct',
+          title: 'Sealed so the room carries them and cannot read them',
+        }),
+      ]),
+      this.directList,
       h('div', { class: 'grow' }),
       this.voiceBar,
       h('div', { class: 'rail-foot stack tight' }, [
@@ -992,7 +1311,7 @@ export class SpaceView {
     })
     this.searchResults = h('div', { class: 'search-results hidden' })
 
-    this.shell = h('div', { class: 'space-grid' }, [
+    this.shell = h('div', { class: 'space-grid loading' }, [
       left,
       h('div', { class: 'space-main' }, [
         h('div', { class: 'space-head row spread' }, [this.channelTitle, this.searchInput]),
@@ -1013,7 +1332,7 @@ export class SpaceView {
     this.settingsOpen = true
     this.root.append(
       settingsView({
-        rename: (name) => this.rename(name),
+        rename: (name, avatar) => this.rename(name, avatar),
         archive: this.archiveAddress,
         setArchive: (url) => this.setArchive(url),
         space: {
@@ -1138,10 +1457,10 @@ export class SpaceView {
     await this.publish((c) => c.setRole(subject, role))
   }
 
-  private rename(name: string): void {
+  private rename(name: string, avatar?: string): void {
     this.mesh?.setName(name)
     this.chatPanel?.setName(name)
-    void this.publish((c) => c.announceName(name))
+    void this.publish((c) => c.announceName(name, avatar))
   }
 
   private inviteBox(): HTMLElement {
@@ -1224,18 +1543,19 @@ export class SpaceView {
     let mentions = 0
     for (const [, count] of waiting) mentions += count.mentions
 
-    for (const name of this.chat?.channels() ?? [DEFAULT_CHANNEL]) {
+    for (const channel of this.chat?.channelInfo() ?? [{ name: DEFAULT_CHANNEL, label: DEFAULT_CHANNEL, topic: '' }]) {
+      const name = channel.name
       const sharingHere = [...this.sharers.values()].includes(name)
       const news = waiting.get(name)
-      this.channelList.append(
-        h(
+      const open = h(
           'button',
           {
-            class: `rail-item${name === this.channel ? ' on' : ''}${news ? ' unread' : ''}`,
+            class: `rail-item grow${name === this.channel && !this.direct ? ' on' : ''}${news ? ' unread' : ''}`,
+            title: channel.topic || `Open ${channel.label}`,
             on: { click: () => this.openChannel(name) },
           },
           [
-            h('span', { class: 'truncate grow', text: `# ${name}` }),
+            h('span', { class: 'truncate grow', text: `# ${channel.label}` }),
             sharingHere ? h('span', { class: 'pill good', text: 'live' }) : null,
             /*
              * A count only when somebody used your name. The rest is a change
@@ -1247,7 +1567,16 @@ export class SpaceView {
               ? h('span', { class: 'pill bad', text: `${news.mentions}`, title: 'You were mentioned' })
               : null,
           ],
-        ),
+        )
+      const more = h('button', {
+        class: 'ghost tiny-btn person-more',
+        title: `What you can do with ${channel.label}`,
+        ariaLabel: `Actions for ${channel.label}`,
+        on: { click: () => openMenu(more, this.channelActions(channel)) },
+      })
+      more.append(icon('more', 14))
+      this.channelList.append(
+        h('div', { class: 'row rail-row' }, [open, this.chat?.isAdmin ? more : null]),
       )
     }
     /*
@@ -1257,6 +1586,39 @@ export class SpaceView {
      */
     this.mentions = mentions
     this.status()
+  }
+
+  /** The people you have written to privately, most recent first. */
+  private renderDirects(): void {
+    clear(this.directList)
+    const chats = this.chat?.directs() ?? []
+    if (chats.length === 0) {
+      this.directList.append(
+        h('div', {
+          class: 'tiny faint',
+          style: { padding: '2px 7px' },
+          text: 'Nobody yet. Use somebody\u2019s menu, or /dm.',
+        }),
+      )
+      return
+    }
+    for (const talk of chats) {
+      const label = talk.name || shortKey(talk.key)
+      this.directList.append(
+        h(
+          'button',
+          {
+            class: `rail-item${this.direct === talk.key ? ' on' : ''}${talk.unread ? ' unread' : ''}`,
+            on: { click: () => this.openDirect(talk.key) },
+          },
+          [
+            avatarOf(talk.key, talk.name, this.chat?.avatarOf(talk.key) ?? '', 16),
+            h('span', { class: 'truncate grow', text: label }),
+            talk.unread ? h('span', { class: 'pill bad', text: `${talk.unread}` }) : null,
+          ],
+        ),
+      )
+    }
   }
 
   private renderVoice(): void {
@@ -1418,6 +1780,12 @@ export class SpaceView {
      * the person in the members list, and the thing you want is to say their
      * name to the room.
      */
+    items.push({
+      label: `Message ${name}`,
+      note: 'Privately, sealed to the two of you',
+      run: () => this.openDirect(key),
+    })
+
     if (chat.nameOf(key)) {
       items.push({
         label: `Mention ${name}`,
@@ -1500,28 +1868,20 @@ export class SpaceView {
    * here right now lights their own row up. That also gives the offline half of
    * the space somewhere to live, instead of a second list underneath the first.
    */
-  private renderPeople(): void {
-    clear(this.peopleList)
-
-    interface Row {
-      key: string
-      name: string
-      here: boolean
-      ready: boolean
-      talking: boolean
-      sharing: boolean
-      voice: string | null
-      you: boolean
-      /** Here, but with this space behind whatever they are actually doing. */
-      away: boolean
-    }
-
+  /**
+   * Who is in this space, as people rather than as connections.
+   *
+   * One answer, used by the list on the right and by the count along the
+   * bottom. They were worked out separately, and disagreed: the list showed one
+   * row per person and the status bar counted one per session, so somebody with
+   * a second tab open, or a tab that had just been reloaded, was two.
+   */
+  private roster(): PersonRow[] {
     const chat = this.chat
     const names = chat?.log.names() ?? new Map<string, string>()
-    const roles = chat?.roles() ?? new Map<string, string>()
-    const rows = new Map<string, Row>()
+    const rows = new Map<string, PersonRow>()
 
-    const put = (key: string, patch: Partial<Row>): void => {
+    const put = (key: string, patch: Partial<PersonRow>): void => {
       const was = rows.get(key)
       rows.set(key, {
         key,
@@ -1572,19 +1932,22 @@ export class SpaceView {
 
     /*
      * Whoever is connected right now. Their announcement carries their key, so
-     * this lands on the row the log already has. A peer old enough not to send
-     * one still gets a row of its own rather than disappearing.
+     * this lands on the row the log already has, and two tabs belonging to one
+     * person land on the same row rather than making a second one.
      */
     for (const peer of this.mesh?.peers() ?? []) {
       const key = peer.key || peer.id
+      const was = rows.get(key)
       put(key, {
-        name: peer.name || rows.get(key)?.name || '',
+        name: peer.name || was?.name || '',
         here: true,
-        ready: peer.ready,
-        away: this.away.has(peer.id),
-        sharing: this.sharers.has(peer.id),
-        voice: this.voice?.whereIs(peer.id) ?? null,
-        talking: this.voice?.isTalking(peer.id) ?? false,
+        // Either tab being on screen means the person is looking, and either
+        // link being up means they can be reached.
+        ready: peer.ready || was?.ready === true,
+        away: this.away.has(peer.id) && !(was?.here && !was.away),
+        sharing: this.sharers.has(peer.id) || was?.sharing === true,
+        voice: this.voice?.whereIs(peer.id) ?? was?.voice ?? null,
+        talking: this.voice?.isTalking(peer.id) === true || was?.talking === true,
       })
     }
 
@@ -1602,11 +1965,23 @@ export class SpaceView {
     }
 
     // You first, then whoever is here, then the rest, alphabetically within each.
-    const order = [...rows.values()].sort((a, b) => {
+    return [...rows.values()].sort((a, b) => {
       if (a.you !== b.you) return a.you ? -1 : 1
       if (a.here !== b.here) return a.here ? -1 : 1
       return (a.name || a.key).localeCompare(b.name || b.key)
     })
+  }
+
+  /** How many people are in the space right now, counting you. */
+  private hereNow(): number {
+    return this.roster().filter((r) => r.here).length
+  }
+
+  private renderPeople(): void {
+    clear(this.peopleList)
+    const chat = this.chat
+    const roles = chat?.roles() ?? new Map<string, string>()
+    const order = this.roster()
 
     let drawnOffline = false
     for (const row of order) {
@@ -1679,10 +2054,14 @@ export class SpaceView {
   }
 
   private openChannel(name: string): void {
-    if (name === this.channel && !this.thread) return
+    if (name === this.channel && !this.thread && !this.direct) return
+    this.chatPanel?.keepDraft()
     this.channel = name
     this.thread = null
+    this.direct = null
     this.chatPanel?.setThread(null)
+    this.chatPanel?.setDirect(null)
+    this.chatPanel?.useDraft(name)
     // Where the line goes, taken once on the way in. See ChatPanel.setReadMark:
     // moving it as messages arrive rubs out the thing you came back to read.
     this.openedAt = this.read[name] ?? 0

@@ -182,6 +182,9 @@ src/
     space-list.ts     the opening screen, and leaving a space
     chat-panel.ts     the conversation, drawn as nodes and never as HTML
     emoji.ts          the set, the picker, and what a quick reaction is
+    menu.ts           the popover behind every ellipsis
+    avatar.ts         a picture, shrunk until it fits inside one event
+    notify.ts         the browser's own notifications, and their honest limit
     settings-view.ts  your name, your key, your data, and this space
     shell.ts          the frame: where a screen mounts, and the status bar
     icons.ts          the stroked icon set
@@ -191,6 +194,7 @@ src/
 test/
   e2e.mjs             host and viewer, end to end, 34 checks
   chat-check.mjs      typing, unread, mentions, search, threads, multi-line
+  extras-check.mjs    markdown, slash commands, private messages, avatars
   emoji-check.mjs     the picker, and what one emoji is made of
   leave-check.mjs     leaving, deleting, and one code meaning one room
   roles-check.mjs     who may do what, and what a member may not

@@ -1019,7 +1019,38 @@ details.adv[open] > summary {
  * carries it instead: the rails sit back, the conversation sits forward, and
  * the only lines left are the two between them.
  */
+/*
+ * Held back until the store has answered.
+ *
+ * The layout is laid out, so nothing moves when it arrives; what is hidden is
+ * the content, because for the frame and a half before the log is read the only
+ * thing this can say about the room is wrong. If the wait ever runs long, a
+ * word appears rather than a blank screen.
+ */
+.space-grid.loading > * {
+  visibility: hidden;
+}
+
+.space-grid.loading::after {
+  content: "Opening...";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--fg-faint);
+  font-size: var(--size-small);
+  opacity: 0;
+  animation: appear 160ms 400ms forwards;
+}
+
+@keyframes appear {
+  to {
+    opacity: 1;
+  }
+}
+
 .space-grid {
+  position: relative;
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
@@ -1331,24 +1362,75 @@ details.adv[open] > summary {
   background: var(--line-soft);
 }
 
-.chat-line {
-  margin: 0;
+/*
+ * A message is a bubble, and the bubble is what makes a run of five from one
+ * person readable.
+ *
+ * It was a flat line of text with the name at the front, so a run showed the
+ * name once at the top and the four underneath belonged to nobody in
+ * particular. What tells you who is talking now is three things at once: the
+ * side of the panel, the colour of the name above the run, and the fact that
+ * each message is plainly its own object.
+ */
+.chat-row {
   position: relative;
-  padding: 2px 44px 2px 6px;
-  border-radius: var(--radius-sm);
+  display: flex;
+  margin-top: 2px;
+  padding-right: 46px;
 }
 
-.chat-line:hover {
-  background: var(--surface);
+.chat-row.mine {
+  justify-content: flex-end;
+  padding-right: 0;
+  padding-left: 46px;
 }
 
-/* The first line of a run carries the name, so that is where the gap goes. */
-.chat-line:has(.chat-name) {
+/* A run is one block: tight inside, with air between runs. */
+.chat-row:has(.chat-name) {
   margin-top: 10px;
 }
 
-.chat-log > .chat-line:first-child {
+.chat-log > .chat-row:first-child {
   margin-top: 0;
+}
+
+.chat-line {
+  position: relative;
+  min-width: 0;
+  max-width: 82%;
+  width: fit-content;
+  padding: 5px 10px 6px;
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  border-top-left-radius: 4px;
+}
+
+.chat-line.runs-on {
+  border-top-left-radius: 12px;
+}
+
+.chat-line.mine {
+  background: color-mix(in srgb, var(--accent) 20%, var(--surface));
+  border-color: color-mix(in srgb, var(--accent) 26%, var(--line-soft));
+  border-radius: 12px;
+  border-top-right-radius: 4px;
+}
+
+.chat-line.mine.runs-on {
+  border-top-right-radius: 12px;
+}
+
+.chat-line:hover {
+  border-color: var(--line);
+}
+
+/* Who wrote it, above the first bubble of their run. */
+.chat-who {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 1px;
 }
 
 /*
@@ -1360,17 +1442,18 @@ details.adv[open] > summary {
  */
 .chat-name {
   font-weight: 600;
+  font-size: calc(var(--size-small) - 0.5px);
   color: var(--fg);
 }
 
+/* A note about the room rather than something somebody said. Not a bubble. */
 .chat-line.system {
+  max-width: 100%;
   color: var(--fg-faint);
   font-style: italic;
-  padding-right: 0;
-}
-
-.chat-line.system:hover {
   background: transparent;
+  border-color: transparent;
+  padding-left: 2px;
 }
 
 .chat-at {
@@ -1417,7 +1500,7 @@ details.adv[open] > summary {
 .chat-actions {
   position: absolute;
   right: 2px;
-  top: 0;
+  top: 2px;
   display: flex;
   gap: 2px;
   opacity: 0;
@@ -1425,10 +1508,15 @@ details.adv[open] > summary {
   transition: opacity 90ms linear;
 }
 
-.chat-line:hover .chat-actions,
-.chat-line:focus-within .chat-actions {
+.chat-row:hover .chat-actions,
+.chat-row:focus-within .chat-actions {
   opacity: 1;
   pointer-events: auto;
+}
+
+.chat-row.mine .chat-actions {
+  right: auto;
+  left: 2px;
 }
 
 /* No pointer to hover with: show them, quietly. */
@@ -1471,6 +1559,152 @@ details.adv[open] > summary {
   padding: 0 6px;
 }
 
+/* What the channel is for, beside its name, out of the way. */
+.channel-head {
+  min-width: 0;
+  gap: 10px;
+}
+
+.channel-topic {
+  min-width: 0;
+  color: var(--fg-faint);
+  font-size: var(--size-small);
+  border-left: 1px solid var(--line);
+  padding-left: 10px;
+}
+
+/* ---------- faces ---------- */
+
+.avatar {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  overflow: hidden;
+  color: #0d1014;
+  font-weight: 700;
+  line-height: 1;
+  user-select: none;
+}
+
+.avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* ---------- what a message can be made of ---------- */
+
+.chat-code {
+  margin: 4px 0;
+  padding: 7px 9px;
+  background: var(--field-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: calc(var(--size-small) - 0.5px);
+  line-height: 1.45;
+  white-space: pre;
+}
+
+.chat-code code {
+  background: transparent;
+  padding: 0;
+}
+
+.chat-quote {
+  margin: 3px 0;
+  padding-left: 8px;
+  border-left: 2px solid var(--line);
+  color: var(--fg-dim);
+}
+
+.chat-list {
+  margin: 3px 0;
+  padding-left: 20px;
+}
+
+.chat-list li {
+  margin: 1px 0;
+}
+
+/* Hidden from a glance, and honest about being no more than that. */
+.spoiler {
+  background: var(--surface-2);
+  color: transparent;
+  border-radius: 3px;
+  padding: 0 3px;
+  cursor: pointer;
+}
+
+.spoiler.shown {
+  color: inherit;
+  background: color-mix(in srgb, var(--fg-faint) 22%, transparent);
+  cursor: auto;
+}
+
+/* Something you did rather than something you said. */
+.chat-text.emote {
+  font-style: italic;
+  color: var(--fg-dim);
+}
+
+/* ---------- the way back down ---------- */
+
+.chat-scroll {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.to-bottom {
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  transform: translateX(-50%);
+  z-index: 2;
+  min-height: 24px;
+  padding: 0 12px;
+  border-radius: var(--pill-radius);
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: transparent;
+  box-shadow: var(--shadow);
+  font-size: var(--size-small);
+}
+
+.to-bottom:hover:not(:disabled) {
+  background: var(--accent);
+  filter: brightness(1.08);
+  border-color: transparent;
+}
+
+/* ---------- a row in the rail that carries a menu ---------- */
+
+.rail-row {
+  gap: 2px;
+}
+
+.rail-row .person-more {
+  opacity: 0;
+}
+
+.rail-row:hover .person-more,
+.rail-row .person-more:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .rail-row .person-more {
+    opacity: 0.6;
+  }
+}
+
 /* ---------- mentions, threads, unread, typing ---------- */
 
 .mention {
@@ -1487,8 +1721,8 @@ details.adv[open] > summary {
 }
 
 .chat-line.calls-me {
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  box-shadow: inset 2px 0 0 var(--accent);
+  background: color-mix(in srgb, var(--warn) 14%, var(--surface));
+  border-color: color-mix(in srgb, var(--warn) 40%, transparent);
 }
 
 /* The line you came back to read. */
@@ -2035,9 +2269,25 @@ input[type="text"].emoji-search {
   border-color: transparent;
 }
 
+/*
+ * Pinned, said in a word on the message.
+ *
+ * It was a coloured bar down the left edge, which on a bubble is a stripe
+ * across the corner radius and reads as damage rather than as a state.
+ */
+/*
+ * The word carries it. A tinted edge as well would say the same thing twice,
+ * and in the same colour as being mentioned, which is a different thing.
+ */
 .chat-line.pinned {
-  border-left: 2px solid var(--accent);
-  padding-left: 5px;
+  border-color: var(--line);
+}
+
+.chat-pinned-mark {
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--warn);
 }
 
 /* Where a pin just took you. Fades out on its own. */

@@ -31,6 +31,81 @@ import {
  */
 const QUICK = ['👍', '😂', '🔥', '❤️', '👀']
 
+/**
+ * A colour for a name, from the key that signs what they write.
+ *
+ * Eight hues, picked so that none of them is the accent and all of them hold up
+ * on a dark background. It is worked out from the key rather than from the
+ * name, so somebody who renames themselves keeps their colour, and two people
+ * who pick the same name do not share one.
+ */
+const NAME_HUES = [205, 340, 145, 32, 265, 190, 95, 15]
+
+function authorColour(key: string): string {
+  let sum = 0
+  for (let i = 0; i < key.length; i++) sum = (sum * 31 + key.charCodeAt(i)) % 100_000
+  return `hsl(${NAME_HUES[sum % NAME_HUES.length]} 62% 70%)`
+}
+
+/**
+ * Hidden until somebody asks for it.
+ *
+ * The text is in the DOM either way, which is the honest thing to say about a
+ * spoiler anywhere: it hides it from a glance, not from anybody determined.
+ */
+function spoiler(text: string): HTMLElement {
+  const box = h('span', {
+    class: 'spoiler',
+    text,
+    title: 'Hidden. Click to show.',
+    role: 'button',
+    tabIndex: 0,
+    on: {
+      click: () => box.classList.add('shown'),
+      keydown: (ev) => {
+        const key = (ev as KeyboardEvent).key
+        if (key === 'Enter' || key === ' ') box.classList.add('shown')
+      },
+    },
+  })
+  return box
+}
+
+/**
+ * Somebody's face, or the next best thing.
+ *
+ * A picture when they have set one, and their initials on their own colour when
+ * they have not, which is everybody on the first day. It is never nothing: a
+ * row of identical grey circles would be worse than none at all.
+ */
+export function avatarOf(key: string, name: string, picture: string, size = 20): HTMLElement {
+  const box = h('span', { class: 'avatar', title: name || shortKey(key) })
+  box.style.width = `${size}px`
+  box.style.height = `${size}px`
+  if (picture) {
+    const img = h('img', { class: 'avatar-img' })
+    img.alt = ''
+    img.src = picture
+    box.append(img)
+    return box
+  }
+  const letters = (name || shortKey(key).slice(1))
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((word) => word[0] ?? '')
+    .join('')
+    .toUpperCase()
+  box.style.background = authorColour(key)
+  box.style.fontSize = `${Math.round(size * 0.44)}px`
+  box.append(h('span', { text: letters || '?' }))
+  return box
+}
+
+/** Held up at the top of the channel, said on the message itself. */
+function pinMark(): HTMLElement {
+  return h('span', { class: 'chat-pinned-mark', title: 'Pinned in this channel', text: 'pinned' })
+}
+
 function quickRow(): string[] {
   // Whatever this person pinned in settings comes first and stays put: a row
   // that reorders itself under the pointer is a row you cannot aim at.
@@ -48,6 +123,8 @@ function quickRow(): string[] {
 
 export interface ChatActions {
   say(text: string, replyTo: string | null, inThread?: boolean): void
+  /** Say it to one person, sealed so the room carries it and cannot read it. */
+  sayDirect?(to: string, text: string): void
   edit(id: string, text: string): void
   react(id: string, emoji: string, on: boolean): void
   retract(id: string): void
@@ -69,6 +146,8 @@ export class ChatPanel {
   onTyping: (() => void) | null = null
   /** Open the thread hanging off a message, or close the one that is open. */
   onThread: ((rootId: string | null) => void) | null = null
+  /** Open or close a private conversation. */
+  onDirect: ((key: string | null) => void) | null = null
 
   private readonly log: HTMLDivElement
   private readonly pins: HTMLDivElement
@@ -89,8 +168,13 @@ export class ChatPanel {
   private editing: Message | null = null
   /** Who is in the room, so a mention can be spelled and lit up. */
   private names = new Map<string, string>()
+  /** And what they look like, when they have said. */
+  private avatars = new Map<string, string>()
   /** The thread being read, if one is. Its root is drawn above the replies. */
   private threadRoot: string | null = null
+  /** The person this panel is writing to privately, if any. */
+  private directWith: string | null = null
+  private directName = ''
   /**
    * Everything above this clock value has been read here.
    *
@@ -101,6 +185,22 @@ export class ChatPanel {
   private readMark = 0
   private suggestions: HTMLDivElement | null = null
   private suggestAt = -1
+  /** Which kind of list is up, because Enter means different things to them. */
+  private suggestKind: 'mention' | 'command' | null = null
+  /**
+   * What was half typed in each channel.
+   *
+   * Switching channel used to throw it away, which is a small thing that
+   * happens every day: you start an answer, check something in another channel,
+   * and come back to an empty box.
+   */
+  private readonly drafts = new Map<string, string>()
+  private draftKey = ''
+  private readonly toBottom: HTMLButtonElement
+  /** Told when a slash command is typed. Returns true when it handled it. */
+  onCommand: ((line: string) => boolean) | null = null
+  /** The commands offered while typing a slash. */
+  commands: { name: string; note: string }[] = []
 
   constructor(initialName: string, title = 'Chat') {
     this.name = initialName
@@ -178,12 +278,30 @@ export class ChatPanel {
 
     this.pins = h('div', { class: 'chat-pins hidden' })
     this.typingLine = h('div', { class: 'chat-typing hidden' })
+    /*
+     * The way back down.
+     *
+     * Only there when it is needed, which is when you have scrolled up far
+     * enough that new messages are arriving out of sight.
+     */
+    this.toBottom = h('button', {
+      class: 'to-bottom hidden',
+      text: 'Jump to the newest',
+      title: 'Go to the end of the conversation',
+      on: {
+        click: () => {
+          this.log.scrollTop = this.log.scrollHeight
+          this.toBottom.classList.add('hidden')
+        },
+      },
+    })
+    this.log.addEventListener('scroll', () => this.showJump())
     this.title = h('span', { class: 'eyebrow', text: title })
     this.backButton = h('button', {
       class: 'ghost tiny-btn hidden',
       text: '← Back',
       title: 'Back to the channel',
-      on: { click: () => this.onThread?.(null) },
+      on: { click: () => (this.directWith ? this.onDirect?.(null) : this.onThread?.(null)) },
     })
 
     /*
@@ -200,7 +318,7 @@ export class ChatPanel {
     this.root = h('div', { class: 'chat-panel' }, [
       this.head,
       this.pins,
-      this.log,
+      h('div', { class: 'chat-scroll' }, [this.log, this.toBottom]),
       h('div', { class: 'chat-compose stack tight' }, [
         this.typingLine,
         this.replyBar,
@@ -235,8 +353,9 @@ export class ChatPanel {
   }
 
   /** Who is in the room, by key, so a mention can be spelled and recognised. */
-  setNames(names: Map<string, string>): void {
+  setNames(names: Map<string, string>, avatars?: Map<string, string>): void {
     this.names = names
+    if (avatars) this.avatars = avatars
   }
 
   /** What this panel is showing: a channel, or a thread inside one. */
@@ -260,10 +379,27 @@ export class ChatPanel {
 
   setThread(rootId: string | null): void {
     this.threadRoot = rootId
-    this.backButton.classList.toggle('hidden', rootId === null)
-    this.head.classList.toggle('hidden', rootId === null)
-    this.textInput.placeholder = rootId ? 'Reply in this thread' : 'Say something'
+    this.showHead()
     this.cancelPending()
+  }
+
+  /** Whose private conversation this is, or none. */
+  setDirect(key: string | null, name = ''): void {
+    this.directWith = key
+    this.directName = name
+    this.showHead()
+    this.cancelPending()
+  }
+
+  private showHead(): void {
+    const away = this.threadRoot !== null || this.directWith !== null
+    this.backButton.classList.toggle('hidden', !away)
+    this.head.classList.toggle('hidden', !away)
+    this.textInput.placeholder = this.directWith
+      ? `Message ${this.directName || 'them'}`
+      : this.threadRoot
+        ? 'Reply in this thread'
+        : 'Say something'
   }
 
   /** "Alice is typing", or nothing at all, which is most of the time. */
@@ -323,10 +459,52 @@ export class ChatPanel {
       this.submit()
       return
     }
+    /*
+     * Up on an empty box edits the last thing you said, the way it does in
+     * every terminal and every chat app. Only when the box is empty, or it
+     * would eat the cursor of somebody writing a paragraph.
+     */
+    if (ev.key === 'ArrowUp' && !this.textInput.value && !this.editing) {
+      const mine = [...this.shown].reverse().find((m) => m.author === this.me && !m.poll)
+      if (mine) {
+        this.startEdit(mine)
+        ev.preventDefault()
+      }
+      return
+    }
     if (ev.key === 'Escape') {
       this.cancelPending()
       if (this.threadRoot) this.onThread?.(null)
+      else if (this.directWith) this.onDirect?.(null)
     }
+  }
+
+  /** Whether the way back down is needed. */
+  private showJump(): void {
+    const far = this.log.scrollHeight - this.log.scrollTop - this.log.clientHeight > 220
+    this.toBottom.classList.toggle('hidden', !far)
+  }
+
+  /**
+   * Keep what is half written, per channel or per thread.
+   *
+   * Called by whoever is about to change what the panel is showing, before it
+   * changes, so the box that is about to be emptied is remembered first.
+   */
+  keepDraft(): void {
+    if (!this.draftKey) return
+    const half = this.textInput.value
+    if (half) this.drafts.set(this.draftKey, half)
+    else this.drafts.delete(this.draftKey)
+  }
+
+  /** Put back whatever was half written here last time. */
+  useDraft(key: string): void {
+    if (key === this.draftKey) return
+    this.keepDraft()
+    this.draftKey = key
+    this.textInput.value = this.drafts.get(key) ?? ''
+    this.grow()
   }
 
   /** As tall as what is in it, up to a point. */
@@ -345,6 +523,7 @@ export class ChatPanel {
    * while you are still typing is a mention of the wrong person half the time.
    */
   private suggest(): void {
+    if (this.suggestCommands()) return
     const input = this.textInput
     const caret = input.selectionStart ?? 0
     const before = input.value.slice(0, caret)
@@ -368,6 +547,7 @@ export class ChatPanel {
     }
 
     this.suggestAt = at
+    this.suggestKind = 'mention'
     const list = this.suggestions ?? h('div', { class: 'mention-pop' })
     clear(list)
     hits.forEach(([, name], i) => {
@@ -388,6 +568,50 @@ export class ChatPanel {
     placeNear(list, this.textInput)
   }
 
+  /** The commands, while the line being written is one. */
+  private suggestCommands(): boolean {
+    const value = this.textInput.value
+    if (!value.startsWith('/') || value.startsWith('//') || /\s/.test(value)) return false
+    const wanted = value.slice(1).toLowerCase()
+    const hits = this.commands.filter((c) => c.name.startsWith(wanted))
+    if (hits.length === 0) {
+      this.closeSuggestions()
+      return true
+    }
+    this.suggestAt = 0
+    this.suggestKind = 'command'
+    const list = this.suggestions ?? h('div', { class: 'mention-pop' })
+    clear(list)
+    hits.forEach((command, i) => {
+      list.append(
+        h(
+          'button',
+          {
+            class: `mention-option${i === 0 ? ' on' : ''}`,
+            on: {
+              mousedown: (ev) => {
+                ev.preventDefault()
+                this.textInput.value = `/${command.name} `
+                this.closeSuggestions()
+                this.textInput.focus()
+              },
+            },
+          },
+          [
+            h('span', { text: `/${command.name}` }),
+            h('span', { class: 'tiny faint', text: command.note }),
+          ],
+        ),
+      )
+    })
+    if (!this.suggestions) {
+      this.suggestions = list
+      document.body.append(list)
+    }
+    placeNear(list, this.textInput)
+    return true
+  }
+
   private onSuggestKey(ev: KeyboardEvent): boolean {
     const list = this.suggestions
     if (!list) return false
@@ -400,9 +624,26 @@ export class ChatPanel {
       ev.preventDefault()
       return true
     }
+    /*
+     * Enter finishes a mention, because you are in the middle of a word and
+     * the list is helping you spell it. Enter runs a command, because the line
+     * is the command and finishing it is not what pressing return means. Tab
+     * completes either.
+     */
+    if (ev.key === 'Enter' && this.suggestKind === 'command') {
+      this.closeSuggestions()
+      return false
+    }
     if (ev.key === 'Enter' || ev.key === 'Tab') {
       const chosen = options[at === -1 ? 0 : at]
-      if (chosen?.textContent) this.takeSuggestion(chosen.textContent)
+      const label = chosen?.querySelector('span')?.textContent ?? chosen?.textContent ?? ''
+      if (label.startsWith('/')) {
+        this.textInput.value = `${label} `
+        this.closeSuggestions()
+        this.grow()
+      } else if (label) {
+        this.takeSuggestion(label)
+      }
       ev.preventDefault()
       return true
     }
@@ -432,10 +673,15 @@ export class ChatPanel {
     this.suggestions?.remove()
     this.suggestions = null
     this.suggestAt = -1
+    this.suggestKind = null
   }
+
+  /** What is on screen, so up-arrow knows what your last message was. */
+  private shown: Message[] = []
 
   /** Draw the whole conversation. Cheap enough at chat sizes, and always right. */
   render(messages: Message[], joins: { at: number; text: string }[] = []): void {
+    this.shown = messages
     const stuck = this.isAtBottom()
     clear(this.log)
     this.renderPins(messages)
@@ -487,6 +733,9 @@ export class ChatPanel {
           `${mentionsMe(m.text, this.names, this.me) ? ' calls-me' : ''}`,
       })
       line.dataset.id = m.id
+      // The bubble sits in a row, and the row is what the actions hang off, so
+      // they are beside the message rather than on top of the end of it.
+      const row = h('div', { class: `chat-row${mine ? ' mine' : ''}` }, [line])
 
       /*
        * What this answers, unless the answer is standing inside the thread it
@@ -508,18 +757,34 @@ export class ChatPanel {
       }
       if (this.threadRoot && m.id === this.threadRoot) line.classList.add('thread-root')
 
-      // A run from one person shows the name once, and the clock once. The rest
-      // of the run shows its time when the pointer is on it.
+      /*
+       * A run from one person shows the name once, at the top of the run.
+       *
+       * The name carries a colour worked out from the key that signs the
+       * messages, so it is the same colour on every device and for everybody.
+       * Five bubbles in a row from one person with the name only above the
+       * first were hard to attribute at a glance; the colour and the side of
+       * the panel they sit on both answer it now without repeating anything.
+       */
       if (m.author !== lastAuthor) {
+        const name = h('span', { class: 'chat-name', text: m.name || shortKey(m.author) })
+        if (!mine) name.style.color = authorColour(m.author)
         line.append(
-          h('span', { class: 'chat-name', text: `${m.name || shortKey(m.author)}: ` }),
+          h('div', { class: 'chat-who' }, [
+            avatarOf(m.author, m.name ?? '', this.avatars.get(m.author) ?? '', 18),
+            name,
+            m.pinned ? pinMark() : null,
+          ]),
         )
       } else {
         at.classList.add('on-hover')
+        if (m.pinned) line.append(h('div', { class: 'chat-who' }, [pinMark()]))
+        line.classList.add('runs-on')
       }
       lastAuthor = m.replyTo ? '' : m.author
 
-      const text = h('span', { class: 'chat-text' })
+      const text = h('span', { class: `chat-text${m.emote ? ' emote' : ''}` })
+      if (m.emote) text.append(document.createTextNode(`${m.name || shortKey(m.author)} `))
       if (m.poll) {
         text.append(h('strong', { text: m.poll.question }))
         line.append(text)
@@ -546,9 +811,9 @@ export class ChatPanel {
       }
 
       if (m.reactions.size) {
-        const row = h('div', { class: 'chat-reacts' })
+        const reacts = h('div', { class: 'chat-reacts' })
         for (const [emoji, who] of m.reactions) {
-          row.append(
+          reacts.append(
             h('button', {
               class: `chat-react${who.has(this.me) ? ' on' : ''}`,
               text: `${emoji} ${who.size}`,
@@ -566,12 +831,12 @@ export class ChatPanel {
           ariaLabel: 'React with something else',
           on: { click: () => this.reactWith(m, more) },
         })
-        row.append(more)
-        line.append(row)
+        reacts.append(more)
+        line.append(reacts)
       }
 
-      line.append(this.rowActions(m, mine))
-      this.log.append(line)
+      row.append(this.rowActions(m, mine))
+      this.log.append(row)
 
       // In a thread, a rule under the question it hangs off. What follows is
       // the answers, and they read as answers rather than as more questions.
@@ -589,6 +854,7 @@ export class ChatPanel {
     }
 
     if (stuck) this.log.scrollTop = this.log.scrollHeight
+    this.showJump()
   }
 
   // ---- internals ----
@@ -733,11 +999,32 @@ export class ChatPanel {
     }
     if (mine) {
       bar.append(
-        h('button', { text: '✎', title: 'Edit', on: { click: () => this.startEdit(m) } }),
+        h('button', { text: '✎', title: 'Edit', ariaLabel: 'Edit', on: { click: () => this.startEdit(m) } }),
         h('button', {
           text: '✕',
           title: 'Delete for everybody who has not already read it',
+          ariaLabel: 'Delete',
           on: { click: () => this.actions?.retract(m.id) },
+        }),
+      )
+    } else if (this.canPin) {
+      /*
+       * Somebody has to be able to take down what was posted in a room they
+       * are responsible for. Behind a question, because it is somebody else's
+       * words and it cannot be undone.
+       */
+      bar.append(
+        h('button', {
+          text: '✕',
+          title: `Delete this message from ${m.name || shortKey(m.author)}`,
+          ariaLabel: 'Delete this message',
+          on: {
+            click: () => {
+              const who = m.name || shortKey(m.author)
+              if (!window.confirm(`Delete this message from ${who}?`)) return
+              this.actions?.retract(m.id)
+            },
+          },
         }),
       )
     }
@@ -871,11 +1158,40 @@ export class ChatPanel {
   private submit(): void {
     const text = this.textInput.value.trim()
     if (!text) return
+    /*
+     * A line starting with a slash is an instruction rather than something to
+     * say. The panel does not know what any of them mean: it hands the line to
+     * whoever owns the space, and only clears the box if they took it.
+     */
+    if (text.startsWith('/') && !text.startsWith('//') && !this.editing) {
+      /*
+       * Emptied before the command runs, not after.
+       *
+       * A command can change what the panel is showing, and changing that keeps
+       * whatever is half written as a draft. With the box still full, the draft
+       * kept was the command that had just been run, and it came back the next
+       * time you opened the channel.
+       */
+      this.textInput.value = ''
+      this.grow()
+      this.closeSuggestions()
+      this.drafts.delete(this.draftKey)
+      if (this.onCommand?.(text) !== true) {
+        // Nobody took it, so it goes back rather than into the bin.
+        this.textInput.value = text
+        this.grow()
+      }
+      return
+    }
     this.textInput.value = ''
     this.grow()
     this.closeSuggestions()
     if (this.editing) {
       this.actions?.edit(this.editing.id, text)
+    } else if (this.directWith) {
+      this.actions?.sayDirect?.(this.directWith, text)
+    } else if (text.startsWith('//')) {
+      this.actions?.say(text.slice(1), this.replyTo?.id ?? null)
     } else if (this.threadRoot) {
       // Everything written in a thread answers its root, whichever message in
       // it was being looked at. Flat, like every thread anybody reads.
@@ -907,10 +1223,81 @@ const URL_RE = /\bhttps?:\/\/[^\s<>"']+/g
 export function formatText(text: string, names?: Map<string, string>, me = ''): Node[] {
   const out: Node[] = []
   const lines = text.split('\n')
-  lines.forEach((line, i) => {
-    if (i > 0) out.push(h('br'))
+  let i = 0
+
+  /** Everything up to the closing fence, kept exactly as it was typed. */
+  const fence = (): void => {
+    const language = lines[i].slice(3).trim().slice(0, 20)
+    const body: string[] = []
+    i += 1
+    while (i < lines.length && !lines[i].startsWith('```')) {
+      body.push(lines[i])
+      i += 1
+    }
+    i += 1 // the closing fence, or the end of the message
+    const block = h('pre', { class: 'chat-code' }, [h('code', { text: body.join('\n') })])
+    if (language) block.dataset.language = language
+    out.push(block)
+  }
+
+  const quote = (): void => {
+    const body: string[] = []
+    while (i < lines.length && /^>\s?/.test(lines[i])) {
+      body.push(lines[i].replace(/^>\s?/, ''))
+      i += 1
+    }
+    const block = h('blockquote', { class: 'chat-quote' })
+    body.forEach((line, n) => {
+      if (n > 0) block.append(h('br'))
+      for (const node of formatLine(line, names, me)) block.append(node)
+    })
+    out.push(block)
+  }
+
+  const list = (ordered: boolean): void => {
+    const items: string[] = []
+    const pattern = ordered ? /^\s*\d+[.)]\s+/ : /^\s*[-*+]\s+/
+    while (i < lines.length && pattern.test(lines[i])) {
+      items.push(lines[i].replace(pattern, ''))
+      i += 1
+    }
+    const block = h(ordered ? 'ol' : 'ul', { class: 'chat-list' })
+    for (const item of items) {
+      const li = h('li')
+      for (const node of formatLine(item, names, me)) li.append(node)
+      block.append(li)
+    }
+    out.push(block)
+  }
+
+  let plain = 0
+  while (i < lines.length) {
+    const line = lines[i]
+    if (line.startsWith('```')) {
+      fence()
+      plain = 0
+      continue
+    }
+    if (/^>\s?/.test(line)) {
+      quote()
+      plain = 0
+      continue
+    }
+    if (/^\s*[-*+]\s+/.test(line)) {
+      list(false)
+      plain = 0
+      continue
+    }
+    if (/^\s*\d+[.)]\s+/.test(line)) {
+      list(true)
+      plain = 0
+      continue
+    }
+    if (plain > 0) out.push(h('br'))
     for (const node of formatLine(line, names, me)) out.push(node)
-  })
+    plain += 1
+    i += 1
+  }
   return out
 }
 
@@ -937,20 +1324,54 @@ function formatLine(text: string, names?: Map<string, string>, me = ''): Node[] 
 
   const pushInline = (raw: string): void => {
     pushMentions(raw, (chunk) => {
-      // The order matters: code first, so markers inside it stay literal.
-      const pattern = /`([^`]+)`|\*\*([^*]+)\*\*|\*([^*]+)\*|_([^_]+)_/
-      let cursor = chunk
-      for (;;) {
-        const match = pattern.exec(cursor)
-        if (!match) break
-        if (match.index > 0) out.push(document.createTextNode(cursor.slice(0, match.index)))
-        if (match[1] !== undefined) out.push(h('code', { text: match[1] }))
-        else if (match[2] !== undefined) out.push(h('strong', { text: match[2] }))
-        else if (match[3] !== undefined) out.push(h('em', { text: match[3] }))
-        else if (match[4] !== undefined) out.push(h('em', { text: match[4] }))
-        cursor = cursor.slice(match.index + match[0].length)
+      /*
+       * One pass, character by character, because the alternative is a stack of
+       * regular expressions that cannot see each other.
+       *
+       * A backslash makes the next marker literal, which is how anybody writes
+       * a file path or the shrug without it turning into italics. An underscore
+       * only opens italics at the edge of a word, so snake_case survives, which
+       * is the thing that would otherwise be wrong in every message a
+       * programmer sends.
+       */
+      const MARKERS = '*_~`|\\'
+      let text = ''
+      const flush = (): void => {
+        if (text) out.push(document.createTextNode(text))
+        text = ''
       }
-      if (cursor) out.push(document.createTextNode(cursor))
+      let i = 0
+      while (i < chunk.length) {
+        const ch = chunk[i]
+        if (ch === '\\' && MARKERS.includes(chunk[i + 1] ?? '')) {
+          text += chunk[i + 1]
+          i += 2
+          continue
+        }
+        const rest = chunk.slice(i)
+        const wordBefore = /\w/.test(chunk[i - 1] ?? '')
+        let match: RegExpExecArray | null = null
+        let node: Node | null = null
+
+        if ((match = /^`([^`]+)`/.exec(rest))) node = h('code', { text: match[1] })
+        else if ((match = /^\|\|([\s\S]+?)\|\|/.exec(rest))) node = spoiler(match[1])
+        else if ((match = /^~~([\s\S]+?)~~/.exec(rest))) node = h('s', { text: match[1] })
+        else if ((match = /^\*\*([\s\S]+?)\*\*/.exec(rest))) node = h('strong', { text: match[1] })
+        else if ((match = /^\*([^*\s][\s\S]*?)\*/.exec(rest))) node = h('em', { text: match[1] })
+        else if (!wordBefore && (match = /^_([^_\s][\s\S]*?)_(?!\w)/.exec(rest))) {
+          node = h('em', { text: match[1] })
+        }
+
+        if (node && match) {
+          flush()
+          out.push(node)
+          i += match[0].length
+          continue
+        }
+        text += ch
+        i += 1
+      }
+      flush()
     })
   }
 

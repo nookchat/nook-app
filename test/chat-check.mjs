@@ -51,7 +51,7 @@ const texts = (page) =>
 
 /** The action bar is faded until hovered, so reach it the way a keyboard does. */
 async function pressAction(page, label, index = 0) {
-  const button = page.locator('.chat-line').nth(index).locator(`button[aria-label="${label}"]`)
+  const button = page.locator('.chat-row').nth(index).locator(`button[aria-label="${label}"]`)
   await button.evaluate((el) => el.focus())
   await button.click()
 }
@@ -197,7 +197,7 @@ try {
   // ---- threads ------------------------------------------------------------
   await say(alice, 'what should we call the release')
   await alice.waitForTimeout(400)
-  const last = (await alice.$$eval('.chat-line', (e) => e.length)) - 1
+  const last = (await alice.$$eval('.chat-row', (e) => e.length)) - 1
   await pressAction(alice, 'Reply in a thread', last)
   await alice.waitForTimeout(400)
   const title = await alice.$eval('.chat-head .eyebrow', (el) => el.textContent)
@@ -365,6 +365,21 @@ try {
     .catch(() => false)
   check('a tab put away turns orange for everybody else', wentAway, JSON.stringify(await dots(alice)))
 
+  // The number along the bottom is the list on the right, counted.
+  const agree = await alice.evaluate(() => {
+    const rows = [...document.querySelectorAll('.rail-person')]
+    const here = rows.filter((r) => !r.classList.contains('away')).length
+    const said = Number(
+      (document.querySelector('.status-bar')?.textContent ?? '').match(/(\d+) here/)?.[1] ?? -1,
+    )
+    return { here, said }
+  })
+  check(
+    'the count along the bottom is the list on the right',
+    agree.here === agree.said,
+    JSON.stringify(agree),
+  )
+
   await setHidden(bob, false)
   const cameBack = await alice
     .waitForFunction(
@@ -380,6 +395,37 @@ try {
     .then(() => true)
     .catch(() => false)
   check('and green again the moment they come back', cameBack, JSON.stringify(await dots(alice)))
+  /*
+   * ---- nothing false on the way in ---------------------------------------
+   *
+   * Between the shell being laid out and the store answering, the app used to
+   * draw a room that did not exist: "Unnamed space", no messages, nobody here,
+   * for a frame and a half. Every frame of a reload is recorded here, and every
+   * one of them has to be either empty or right.
+   */
+  await alice.context().addInitScript(() => {
+    window.__frames = []
+    const snap = () => {
+      window.__frames.push({
+        name: document.querySelector('.space-name')?.textContent ?? '',
+        lines: document.querySelectorAll('.chat-line').length,
+        chans: document.querySelectorAll('.rail-left .rail-item').length,
+      })
+      if (window.__frames.length < 200) requestAnimationFrame(snap)
+    }
+    requestAnimationFrame(snap)
+  })
+  await alice.reload()
+  await alice.waitForSelector('.chat-line')
+  await alice.waitForTimeout(1200)
+  const frames = await alice.evaluate(() => window.__frames ?? [])
+  const drawn = frames.filter((f) => f.chans > 0)
+  const lying = drawn.filter((f) => f.name !== 'the office' || f.lines === 0)
+  check(
+    'no frame of the opening shows a room that is not there',
+    drawn.length > 0 && lying.length === 0,
+    `${frames.length} frames, ${drawn.length} drawn, ${lying.length} wrong: ${JSON.stringify(lying[0] ?? null)}`,
+  )
 } catch (err) {
   check('the run finished', false, err instanceof Error ? err.message : String(err))
 }

@@ -174,6 +174,8 @@ export interface RoomNote {
    * behaviour everybody complains about in the apps that do it.
    */
   read?: Record<string, number>
+  /** The same, for private conversations, keyed by the other person's key. */
+  readDm?: Record<string, number>
 }
 
 export async function getRoom(room: string): Promise<RoomNote | null> {

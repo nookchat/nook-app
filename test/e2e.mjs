@@ -237,7 +237,17 @@ try {
   await host.keyboard.press('Escape')
 
   // ---- viewer ----
-  const viewer = await context.newPage()
+  /*
+   * The viewer is a second browser profile, not a second tab of the first.
+   *
+   * Two tabs of one profile hold one identity between them, which is one
+   * person with two windows open: the roster folds them into a single row and
+   * the count says one, correctly. This test is about two people meeting, so it
+   * uses two people.
+   */
+  const viewerContext = await browser.newContext({ viewport: { width: 1440, height: 900 } })
+  await viewerContext.grantPermissions(['microphone'], { origin: new URL(APP_URL).origin })
+  const viewer = await viewerContext.newPage()
   watch(viewer, 'viewer')
   await viewer.goto(link, { waitUntil: 'domcontentloaded' })
 
@@ -406,7 +416,7 @@ try {
   check('a host line reaches the viewer', !!viewerGotLine)
 
   // Two machines rarely agree on the time. A room must not depend on that.
-  const skewed = await context.newPage()
+  const skewed = await viewerContext.newPage()
   watch(skewed, 'viewer')
   await skewed.addInitScript(SKEW_STUB)
   await skewed.goto(link, { waitUntil: 'domcontentloaded' })

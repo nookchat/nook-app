@@ -30,7 +30,7 @@ const browser = await chromium.launch({
   args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
 })
 
-const REACT = '.chat-line button[aria-label="React to this message"]'
+const REACT = '.chat-row button[aria-label="React to this message"]'
 
 /** The action bar is faded until hovered, so a test asks for it the way a keyboard does. */
 async function pressAction(page, selector) {

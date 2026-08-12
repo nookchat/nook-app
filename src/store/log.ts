@@ -31,6 +31,7 @@ export type EventKind =
   | 'role'
   | 'space'
   | 'close'
+  | 'dm'
 
 export type Role = 'admin' | 'member' | 'kicked'
 
@@ -118,6 +119,7 @@ export async function openEvent(raw: unknown, room: string): Promise<LogEvent | 
       'vote',
       'reset',
       'close',
+      'dm',
     ].includes(
       String(e.kind),
     )
@@ -169,6 +171,23 @@ export function packEvent(e: LogEvent): WireEvent {
  * it, and clearing them would take the room apart rather than empty it.
  */
 const CLEARABLE = new Set<EventKind>(['said', 'edit', 'react', 'retract', 'pin', 'poll', 'vote'])
+
+/**
+ * The largest an avatar may be, in characters of data URI.
+ *
+ * A profile event has to fit inside MAX_BODY like everything else, so a picture
+ * is downscaled to a thumbnail before it is ever written. See squarePng in the
+ * settings view: 48 pixels of WebP lands around fifteen hundred characters.
+ */
+export const MAX_AVATAR = 2600
+
+/** Only a picture, and only one this device can draw without running anything. */
+export function cleanAvatar(raw: unknown): string {
+  const text = typeof raw === 'string' ? raw : ''
+  if (!text || text.length > MAX_AVATAR) return ''
+  // No SVG: it is a document that can carry script, and this ends up in a src.
+  return /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(text) ? text : ''
+}
 
 /**
  * How far ahead of our own clock another device may push ours.
@@ -477,21 +496,72 @@ export class RoomLog {
    * message does.
    */
   channels(voice = false): string[] {
+    return this.channelList(voice).map((c) => c.name)
+  }
+
+  /**
+   * The channels, with whatever an admin has said about them.
+   *
+   * A channel is its name for ever, because every message written in it carries
+   * that name and nothing rewrites history here. What an admin can change is
+   * what it is called on screen and what it is for, which is what somebody
+   * fixing a typo actually wants, and it costs no rewriting of anything.
+   *
+   * Deleting one hides it and everything said in it. The events stay signed and
+   * unaltered until the next tidy sweeps them, because that is the only kind of
+   * deletion this design can honestly offer.
+   */
+  channelList(voice = false): ChannelInfo[] {
     const names = new Set<string>(voice ? [DEFAULT_VOICE] : [DEFAULT_CHANNEL])
+    const label = new Map<string, string>()
+    const topic = new Map<string, string>()
+    const gone = new Set<string>()
     const roles = this.roles()
+
     for (const e of this.all()) {
       if (e.kind === 'channel') {
-        // Only an admin makes channels, so nobody can fill the rail from afar.
+        // Only an admin makes or changes channels, so nobody can fill the rail
+        // from afar, and nobody but the people who run the place can empty it.
         if (roles.get(e.author) !== 'admin') continue
         const isVoice = e.body.voice === true
         if (isVoice !== voice) continue
         const name = cleanChannel(String(e.body.name ?? ''))
-        if (name) names.add(name)
+        if (!name) continue
+        names.add(name)
+        if (typeof e.body.label === 'string') {
+          const shown = e.body.label.slice(0, 32).trim()
+          if (shown) label.set(name, shown)
+        }
+        if (typeof e.body.topic === 'string') topic.set(name, e.body.topic.slice(0, 140).trim())
+        if (e.body.gone === true) gone.add(name)
+        else gone.delete(name)
       } else if (!voice && e.kind === 'said') {
         names.add(channelOf(e))
       }
     }
-    return [...names].sort()
+
+    // The one every space starts with cannot be taken away, or somebody has a
+    // space with nowhere to talk and no way to make one if they are not an admin.
+    gone.delete(voice ? DEFAULT_VOICE : DEFAULT_CHANNEL)
+
+    return [...names]
+      .filter((name) => !gone.has(name))
+      .sort()
+      .map((name) => ({ name, label: label.get(name) || name, topic: topic.get(name) ?? '' }))
+  }
+
+  /** Channels an admin has taken away, so what was said in them can go too. */
+  private deletedChannels(voice = false): Set<string> {
+    const live = new Set(this.channelList(voice).map((c) => c.name))
+    const gone = new Set<string>()
+    const roles = this.roles()
+    for (const e of this.all()) {
+      if (e.kind !== 'channel' || roles.get(e.author) !== 'admin') continue
+      if ((e.body.voice === true) !== voice) continue
+      const name = cleanChannel(String(e.body.name ?? ''))
+      if (name && !live.has(name)) gone.add(name)
+    }
+    return gone
   }
 
   /** Pass a channel to see only that one, or nothing to see them all. */
@@ -555,6 +625,9 @@ export class RoomLog {
     const names = new Map<string, string>()
     const kicked = this.kickedAt()
     const cleared = this.resetAt()
+    const roles = this.roles()
+    // What was said in a channel that has been taken away goes with it.
+    const removed = this.deletedChannels()
     // The newest word from each person on each thing, so the ones it replaced
     // can be dropped rather than kept for ever.
     const edited = new Map<string, string>()
@@ -568,6 +641,15 @@ export class RoomLog {
       const removedAt = kicked.get(e.author)
       if (removedAt !== undefined && e.lamport > removedAt) continue
       if (e.kind === 'role' || e.kind === 'space' || e.kind === 'close') continue
+      /*
+       * A private message is kept and never drawn here. Everybody holds the
+       * sealed copy, because that is how it reaches the person it is for; only
+       * two people in the room can open it. See RoomChat.readDirect.
+       */
+      if (e.kind === 'dm') {
+        effective?.add(e.id)
+        continue
+      }
       if (e.kind === 'profile') {
         const name = String(e.body.name ?? '').slice(0, 24)
         if (name) names.set(e.author, name)
@@ -575,6 +657,7 @@ export class RoomLog {
       }
       if (e.kind === 'channel') continue
       if (e.kind === 'poll') {
+        if (removed.has(channelOf(e))) continue
         if (channel && channelOf(e) !== channel) continue
         const question = String(e.body.question ?? '').slice(0, 200).trim()
         const raw = Array.isArray(e.body.options) ? e.body.options : []
@@ -620,6 +703,7 @@ export class RoomLog {
         continue
       }
       if (e.kind === 'said') {
+        if (removed.has(channelOf(e))) continue
         if (channel && channelOf(e) !== channel) continue
         const message: Message = {
           id: e.id,
@@ -630,6 +714,7 @@ export class RoomLog {
           text: String(e.body.text ?? ''),
           replyTo: typeof e.body.replyTo === 'string' ? e.body.replyTo : null,
           inThread: e.body.thread === true,
+          emote: e.body.emote === true,
           edited: false,
           retracted: false,
           reactions: new Map(),
@@ -651,7 +736,15 @@ export class RoomLog {
         edited.set(target.id, e.id)
         effective?.add(e.id)
       } else if (e.kind === 'retract') {
-        if (e.author !== target.author) continue
+        /*
+         * Your own, or anybody's if you run the place.
+         *
+         * Somebody has to be able to take down what was posted in a room they
+         * are responsible for, and only the author could. An admin's retraction
+         * counts from the moment they were an admin, which is the same rule
+         * every other thing an admin may do is held to.
+         */
+        if (e.author !== target.author && roles.get(e.author) !== 'admin') continue
         target.retracted = true
         target.text = ''
         target.reactions.clear()
@@ -746,6 +839,18 @@ export class RoomLog {
     return [root, ...all.filter((m) => m.inThread && m.replyTo === rootId)]
   }
 
+  /** The latest picture each key gave for itself, if any. */
+  avatars(): Map<string, string> {
+    const out = new Map<string, string>()
+    for (const e of this.all()) {
+      if (e.kind !== 'profile') continue
+      const picture = cleanAvatar(e.body.avatar)
+      if (picture) out.set(e.author, picture)
+      else if (e.body.avatar === '') out.delete(e.author)
+    }
+    return out
+  }
+
   /** The latest name each key gave for itself. */
   names(): Map<string, string> {
     const names = new Map<string, string>()
@@ -834,6 +939,15 @@ function channelOf(e: LogEvent): string {
   return raw || DEFAULT_CHANNEL
 }
 
+export interface ChannelInfo {
+  /** What every message in it carries. Never changes. */
+  name: string
+  /** What it is called on screen, which an admin may change. */
+  label: string
+  /** What it is for, in a line. */
+  topic: string
+}
+
 export interface Message {
   id: string
   author: string
@@ -854,6 +968,8 @@ export interface Message {
    * twenty people answer the same question.
    */
   inThread?: boolean
+  /** Written with /me, so it reads as an action rather than as speech. */
+  emote?: boolean
   /** How many thread replies hang off this one. Only counted for roots. */
   replies?: number
   edited: boolean
