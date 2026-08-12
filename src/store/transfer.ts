@@ -12,7 +12,7 @@
  */
 
 import { openEvent, type LogEvent } from './log'
-import { listRooms, loadRoom, noteRoom, putEvents, type RoomNote } from './db'
+import { getRoom, listRooms, loadRoom, noteRoom, putEvents, type RoomNote } from './db'
 import { loadIdentity } from './identity'
 
 const FORMAT = 'cathode-export'
@@ -103,11 +103,33 @@ export async function importBundle(text: string, takeIdentity: boolean): Promise
     }
     report.accepted += good.length
     await putEvents(good)
+    /*
+     * The whole note, not the four fields it is convenient to copy.
+     *
+     * The room id is derived from the code and the password together, so a
+     * locked space imported without its password is a space this device cannot
+     * open: the list offers it, the code derives a different, empty room, and
+     * the name on the list belongs to a room nobody can reach. Who founded it
+     * and whether it was closed matter for the same reason: they decide what
+     * the log means, and a note that lost them says something else.
+     */
+    const known = await getRoom(note.room)
     await noteRoom({
+      ...(known ?? {}),
       room: note.room,
-      secret: typeof note.secret === 'string' ? note.secret : '',
+      secret: typeof note.secret === 'string' ? note.secret : known?.secret ?? '',
       lastSeen: typeof note.lastSeen === 'number' ? note.lastSeen : Date.now(),
-      title: typeof note.title === 'string' ? note.title : '',
+      title: (typeof note.title === 'string' ? note.title : '') || known?.title || '',
+      locked: note.locked === true || known?.locked === true ? true : undefined,
+      password:
+        (typeof note.password === 'string' ? note.password : '') || known?.password || undefined,
+      founder: (typeof note.founder === 'string' ? note.founder : '') || known?.founder || '',
+      archive: typeof note.archive === 'string' ? note.archive : known?.archive,
+      // A cursor counts lines in one machine's copy of one archive. It is this
+      // device's place in it, not the exporting device's, so it does not travel.
+      archiveAt: known?.archiveAt,
+      closed: note.closed === true || known?.closed === true ? true : undefined,
+      floor: typeof note.floor === 'number' ? Math.min(note.floor, known?.floor ?? note.floor) : known?.floor,
     })
   }
 

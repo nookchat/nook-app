@@ -27,6 +27,8 @@ interface Screen {
   readonly isLive: boolean
   /** Which space this is, so a link to the same one is left alone. */
   readonly secret?: string
+  /** And whether it was opened with a password, which decides the same thing. */
+  readonly locked?: boolean
 }
 
 let active: Screen | null = null
@@ -80,26 +82,32 @@ function openSpace(
  * A locked space used to ask every single time, including for the space you
  * made yourself an hour ago. The password is kept with the space, so this only
  * has to ask the first time, or after somebody clears their data.
+ *
+ * A caller that says nothing about the lock gets the space's own answer. The
+ * password is mixed into the room id, so opening a locked space without it does
+ * not fail: it lands in a different room, empty, under the same code. That is
+ * what a bare code from the list or from somebody's message looks like, and it
+ * is why the store is asked before the code is trusted.
  */
 async function enter(
   secret: string,
-  locked = false,
+  locked?: boolean,
   password = '',
   fresh = false,
   name = '',
 ): Promise<void> {
+  const known = fresh ? null : await findBySecret(secret)
+  const needsPassword = locked ?? known?.locked === true
   let pass = password
-  if (locked && !pass) {
-    pass = (await findBySecret(secret))?.password ?? ''
-  }
-  if (locked && !pass) {
+  if (needsPassword && !pass) pass = known?.password ?? ''
+  if (needsPassword && !pass) {
     pass = window.prompt('This space has a password.') ?? ''
     if (!pass) {
       void showList()
       return
     }
   }
-  openSpace(secret, locked, pass, fresh, name)
+  openSpace(secret, needsPassword, pass, fresh, name)
 }
 
 const linked = readLink()
@@ -123,7 +131,9 @@ window.addEventListener('hashchange', () => {
     if (active) void showList()
     return
   }
-  if (active?.secret === next.secret) return
+  // The code alone does not say which room this is: a locked space and an
+  // unlocked one wearing the same code are two different rooms.
+  if (active?.secret === next.secret && active.locked === next.locked) return
   void enter(next.secret, next.locked)
 })
 

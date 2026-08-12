@@ -16,7 +16,8 @@ import { loadIdentity, saveDisplayName, shortKey } from '../store/identity'
 import { setSounds, soundsOn } from './sounds'
 import { micSettings, setMicSettings, type MicSettings } from '../net/mic'
 import { defaultArchive, setDefaultArchive } from '../store/archive'
-import { copyText, fmtBytes, h } from './dom'
+import { clear, copyText, fmtBytes, h } from './dom'
+import { openEmojiPicker, quickReactions, setQuickReactions } from './emoji'
 import { storagePressure } from '../store/compact'
 import { download, exportAll, importBundle } from '../store/transfer'
 import { icon } from './icons'
@@ -35,6 +36,10 @@ export interface SettingsActions {
     admin: boolean
     rename(): Promise<void>
     reset(): Promise<void>
+    /** Off this device only. Everybody else keeps the space. */
+    leave(): Promise<void>
+    /** Closed for everybody who reads the log. Admins only. */
+    remove(): Promise<void>
   }
 }
 
@@ -164,10 +169,17 @@ export function settingsView(actions: SettingsActions): HTMLElement {
       toast(
         `Imported ${report.accepted} events across ${report.spaces} spaces.` +
           (report.refused ? ` ${report.refused} were refused.` : '') +
-          (report.identity ? ' Your identity was replaced.' : ''),
+          (report.identity ? ' Your identity was replaced. Reloading.' : ''),
         'info',
         9000,
       )
+      /*
+       * The key is read once and held for the life of the page, so a page that
+       * was told it has a new identity still signs with the old one. It said
+       * "your identity was replaced" and then wrote everything as the person it
+       * had just replaced. Start again rather than keep two answers.
+       */
+      if (report.identity) window.setTimeout(() => window.location.reload(), 1500)
     } catch (err) {
       toast(err instanceof Error ? err.message : String(err), 'bad', 8000)
     }
@@ -203,6 +215,61 @@ export function settingsView(actions: SettingsActions): HTMLElement {
     toast(ok ? 'ID copied.' : 'Could not copy the ID.', ok ? 'info' : 'warn')
   })
 
+  /** Five slots. Clicking one opens the picker; picking nothing empties it. */
+  function quickRow(): HTMLElement {
+    const row = h('div', { class: 'row quick-slots' })
+    const paint = (): void => {
+      clear(row)
+      const pinned = quickReactions()
+      for (let i = 0; i < 5; i++) {
+        const ch = pinned[i] ?? ''
+        const slot = h('button', {
+          class: `quick-slot${ch ? '' : ' empty'}`,
+          text: ch || '+',
+          title: ch ? `${ch}. Click to change it, or empty it.` : 'Pin one here',
+          ariaLabel: ch ? `Quick reaction ${i + 1}, ${ch}` : `Quick reaction ${i + 1}, empty`,
+          on: {
+            click: () =>
+              openEmojiPicker({
+                anchor: slot,
+                title: ch ? 'Change this one' : 'Pin one here',
+                onPick: (picked) => {
+                  const next = [...quickReactions()]
+                  next[i] = picked
+                  setQuickReactions(next)
+                  paint()
+                },
+              }),
+            // The way back out: a slot you can fill has to be one you can empty.
+            contextmenu: (ev) => {
+              ev.preventDefault()
+              const next = [...quickReactions()]
+              next.splice(i, 1)
+              setQuickReactions(next)
+              paint()
+            },
+          },
+        })
+        row.append(slot)
+      }
+      row.append(
+        h('button', {
+          class: 'ghost tiny-btn',
+          text: 'Clear',
+          title: 'Empty all five and go back to whatever you have used lately',
+          on: {
+            click: () => {
+              setQuickReactions([])
+              paint()
+            },
+          },
+        }),
+      )
+    }
+    paint()
+    return row
+  }
+
   const theme = h('select', { ariaLabel: 'Theme', on: { change: () => applyTheme(theme.value) } })
   for (const t of THEMES) theme.append(h('option', { value: t.id, text: t.name, title: t.note }))
   theme.value = loadTheme()
@@ -236,6 +303,22 @@ export function settingsView(actions: SettingsActions): HTMLElement {
             h('summary', { text: 'Show the whole key' }),
             h('div', { class: 'tiny mono', style: { overflowWrap: 'anywhere' }, text: identity.pubkey }),
           ]),
+        ]),
+
+        /*
+         * The five reactions offered before the picker is opened.
+         *
+         * Empty slots fall back to whatever you have been using lately, which
+         * is right for somebody who never opens this and right on a new device.
+         * Pinning one is for the emoji a particular room runs on.
+         */
+        h('div', { class: 'card stack tight' }, [
+          h('span', { class: 'eyebrow', text: 'Quick reactions' }),
+          quickRow(),
+          h('div', {
+            class: 'tiny faint',
+            text: 'The five offered the moment you react to a message. Click one to change it, or leave them empty to be offered whatever you have used lately.',
+          }),
         ]),
 
         h('div', { class: 'card stack tight' }, [
@@ -291,6 +374,34 @@ export function settingsView(actions: SettingsActions): HTMLElement {
                     text: 'Clearing takes the messages, polls and pins off every device that is in the space or joins later. Names, channels and who runs it stay. Anybody who already saved a copy keeps it: there is no server to take it back from.',
                   })
                 : null,
+
+              /*
+               * The two ways out, which are different things and are worded as
+               * different things. Leaving is yours alone. Deleting is the whole
+               * room, and only whoever runs it can do it.
+               */
+              h('div', { class: 'row' }, [
+                h('button', {
+                  class: 'grow',
+                  text: 'Leave this space',
+                  title: 'Take it off this device. Everybody else keeps it.',
+                  on: { click: () => void actions.space?.leave() },
+                }),
+                actions.space.admin
+                  ? h('button', {
+                      class: 'danger',
+                      text: 'Delete for everybody',
+                      title: 'Close the space on every device that reads the log',
+                      on: { click: () => void actions.space?.remove() },
+                    })
+                  : null,
+              ]),
+              h('div', {
+                class: 'tiny faint',
+                text: actions.space.admin
+                  ? 'Leaving takes this space off this device and off no other. Deleting writes a signed line saying the space is finished, which every device honours by forgetting it, now or whenever it next syncs. Neither one can reach a copy somebody already exported.'
+                  : 'Leaving takes this space off this device. Everybody else keeps theirs, and the link still works if you want back in.',
+              }),
             ])
           : null,
 

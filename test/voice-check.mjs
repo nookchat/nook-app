@@ -114,8 +114,8 @@ try {
   check('the channel shows who is standing in it', seenByOne >= 2, `${seenByOne} listed`)
 
   // Now the part that matters for syncing: a name is a label on a key.
-  await two.fill('input[aria-label="Write a message"]', 'before the rename')
-  await two.press('input[aria-label="Write a message"]', 'Enter')
+  await two.fill('[aria-label="Write a message"]', 'before the rename')
+  await two.press('[aria-label="Write a message"]', 'Enter')
   await waitFor(
     async () =>
       one.evaluate(() =>

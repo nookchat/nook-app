@@ -8,6 +8,7 @@
  * to.
  */
 
+import { mentionsMe } from '../chat'
 import { loadIdentity } from './identity'
 import { deleteEvents, getRoom, loadRoom, noteRoom, putEvents } from './db'
 import { compact, limitsForNow } from './compact'
@@ -15,12 +16,20 @@ import {
   cleanChannel,
   DEFAULT_CHANNEL,
   makeEvent,
+  oneEmoji,
   openEvent,
   packEvent,
   RoomLog,
   type LogEvent,
   type Message,
 } from './log'
+
+export interface Unread {
+  count: number
+  mentions: number
+  /** The clock value of the newest one, which is the mark for reading them. */
+  newest: number
+}
 
 /** How much history to hand a peer that has just connected. */
 const BACKFILL = 250
@@ -117,6 +126,41 @@ export class RoomChat {
   }
 
   /**
+   * What is waiting in each channel, and how much of it is addressed to you.
+   *
+   * Counted against a mark this device keeps per channel, in log clock rather
+   * than wall clock: the mark has to mean the same thing as the ordering, or a
+   * device with a fast clock marks tomorrow's messages read today.
+   *
+   * Nothing of your own is ever unread. Reading your own message is not a task.
+   */
+  unread(marks: Record<string, number>): Map<string, Unread> {
+    const out = new Map<string, Unread>()
+    const names = this.log.names()
+    for (const m of this.log.messages()) {
+      if (m.author === this.me) continue
+      const mark = marks[m.channel] ?? 0
+      if (m.lamport <= mark) continue
+      const was = out.get(m.channel) ?? { count: 0, mentions: 0, newest: 0 }
+      was.count += 1
+      if (mentionsMe(m.text, names, this.me)) was.mentions += 1
+      if (m.lamport > was.newest) was.newest = m.lamport
+      out.set(m.channel, was)
+    }
+    return out
+  }
+
+  /** The newest thing in a channel, so reading it can be marked as read. */
+  highWater(channel: string): number {
+    let top = 0
+    for (const m of this.log.messages()) {
+      if (m.channel !== channel) continue
+      if (m.lamport > top) top = m.lamport
+    }
+    return top
+  }
+
+  /**
    * Take the earliest claim to the space as the founder, once, and keep it.
    *
    * Only used when this device has no founder yet. Whoever made the space sets
@@ -163,6 +207,11 @@ export class RoomChat {
     return this.log.spaceName()
   }
 
+  /** True once an admin has shut this space down, here or anywhere else. */
+  get isClosed(): boolean {
+    return this.log.closed()
+  }
+
   /** Claim the space. Only ever called by whoever made it. */
   async claimFounder(): Promise<LogEvent> {
     this.log.founder = this.me
@@ -192,7 +241,8 @@ export class RoomChat {
       | 'pin'
       | 'poll'
       | 'vote'
-      | 'reset',
+      | 'reset'
+      | 'close',
     body: Record<string, unknown>,
   ): Promise<LogEvent> {
     const event = await makeEvent(this.log.room, this.me, this.log.nextLamport(), kind, body)
@@ -203,10 +253,32 @@ export class RoomChat {
     return event
   }
 
-  say(text: string, channel: string, replyTo?: string | null): Promise<LogEvent> {
+  /**
+   * Say something.
+   *
+   * `inThread` is the difference between answering somebody where everybody is
+   * reading and answering them in the thread hanging off their message. It is
+   * the writer's choice, carried on the event, so every device draws it in the
+   * same place rather than guessing from the shape of the replies.
+   */
+  say(
+    text: string,
+    channel: string,
+    replyTo?: string | null,
+    inThread = false,
+  ): Promise<LogEvent> {
     const body: Record<string, unknown> = { text, channel: cleanChannel(channel) || DEFAULT_CHANNEL }
     if (replyTo) body.replyTo = replyTo
+    if (replyTo && inThread) body.thread = true
     return this.write('said', body)
+  }
+
+  /** One thread, root first. */
+  threadOf(rootId: string): Message[] {
+    const thread = this.log.thread(rootId)
+    const names = this.log.names()
+    for (const m of thread) m.name = names.get(m.author) ?? m.name ?? ''
+    return thread
   }
 
   makeChannel(name: string, voice = false): Promise<LogEvent> {
@@ -217,8 +289,9 @@ export class RoomChat {
     return this.write('edit', { target, text })
   }
 
+  /** One emoji goes on the wire, so what everybody stores is what was picked. */
   react(target: string, emoji: string, on: boolean): Promise<LogEvent> {
-    return this.write('react', { target, emoji, on })
+    return this.write('react', { target, emoji: oneEmoji(emoji), on })
   }
 
   retract(target: string): Promise<LogEvent> {
@@ -251,13 +324,34 @@ export class RoomChat {
     return this.write('reset', { before: this.log.nextLamport() })
   }
 
+  /**
+   * Shut the space down for everybody.
+   *
+   * Written like anything else, so it travels like anything else: to whoever is
+   * connected now, and to whoever syncs later through a peer or the archive.
+   * Every device that reads it forgets the space. See RoomLog.closed for what
+   * that can and cannot reach.
+   */
+  closeSpace(): Promise<LogEvent> {
+    return this.write('close', { at: Date.now() })
+  }
+
   /** Hold a message up at the top of its channel, or stop holding it. */
   pin(target: string, on: boolean): Promise<LogEvent> {
     return this.write('pin', { target, on })
   }
 
-  announceName(name: string): Promise<LogEvent> {
+  /**
+   * Say what you are called, if the log does not already say it.
+   *
+   * Called on the way into every space, so writing unconditionally meant one
+   * profile event per visit, for ever. Compaction takes the superseded ones off
+   * this device, and an archive keeps every line it is ever given, so the tidy
+   * log and the untidy archive slowly disagreed about the same room.
+   */
+  announceName(name: string): Promise<LogEvent | null> {
     this.name = name
+    if (this.log.names().get(this.me) === name) return Promise.resolve(null)
     return this.write('profile', { name })
   }
 

@@ -1,0 +1,273 @@
+/**
+ * The things a chat app is expected to have.
+ *
+ * Typing indicators, unread marks, mentions, search, threads, multi-line
+ * messages and the polish around them. Two browsers for anything that has to
+ * cross a wire, one for anything that does not.
+ *
+ *   node test/chat-check.mjs
+ */
+
+import { chromium } from 'playwright-core'
+
+const APP_URL = process.argv[2] ?? 'http://localhost:5173/'
+const CHROME =
+  process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+
+const results = []
+const check = (name, ok, detail = '') => {
+  results.push({ name, ok })
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? `  — ${detail}` : ''}`)
+}
+
+const browser = await chromium.launch({
+  executablePath: CHROME,
+  headless: process.env.HEADED !== '1',
+  args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
+})
+
+const BOX = '[aria-label="Write a message"]'
+
+async function person(name) {
+  const page = await (await browser.newContext()).newPage()
+  await page.goto(APP_URL)
+  await page.evaluate((n) => localStorage.setItem('cathode.name.v1', n), name)
+  await page.reload()
+  await page.waitForSelector('input[aria-label="Space name"]')
+  return page
+}
+
+async function say(page, text) {
+  await page.click(BOX)
+  await page.keyboard.type(text)
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(400)
+}
+
+const texts = (page) =>
+  page.$$eval('.chat-line', (els) =>
+    els.map((e) => e.querySelector('.chat-text')?.textContent ?? ''),
+  )
+
+/** The action bar is faded until hovered, so reach it the way a keyboard does. */
+async function pressAction(page, label, index = 0) {
+  const button = page.locator('.chat-line').nth(index).locator(`button[aria-label="${label}"]`)
+  await button.evaluate((el) => el.focus())
+  await button.click()
+}
+
+try {
+  const alice = await person('Alice')
+  await alice.fill('input[aria-label="Space name"]', 'the office')
+  await alice.click('button:has-text("New space")')
+  await alice.waitForSelector('.space-name')
+  await alice.waitForTimeout(1000)
+  const link = alice.url()
+
+  const bob = await person('Bob')
+  await bob.goto(link)
+  await bob.waitForFunction(
+    () => document.querySelector('.space-name')?.textContent === 'the office',
+    null,
+    { timeout: 60_000 },
+  )
+
+  // ---- multi-line ---------------------------------------------------------
+  await alice.click(BOX)
+  await alice.keyboard.type('line one')
+  await alice.keyboard.down('Shift')
+  await alice.keyboard.press('Enter')
+  await alice.keyboard.up('Shift')
+  await alice.keyboard.type('line two')
+  const halfway = await alice.inputValue(BOX)
+  check('shift and enter make a line rather than sending', halfway === 'line one\nline two', JSON.stringify(halfway))
+
+  await alice.keyboard.press('Enter')
+  await alice.waitForTimeout(500)
+  check('enter sends it', (await alice.inputValue(BOX)) === '')
+  const both = await alice.$eval('.chat-line .chat-text', (el) => ({
+    text: el.textContent,
+    breaks: el.querySelectorAll('br').length,
+  }))
+  check(
+    'and both lines are one message with a break in it',
+    both.breaks === 1 && both.text === 'line oneline two',
+    JSON.stringify(both),
+  )
+
+  // ---- typing indicators --------------------------------------------------
+  await bob.click(BOX)
+  await bob.keyboard.type('thinking')
+  const sawTyping = await alice
+    .waitForFunction(
+      () => {
+        const line = document.querySelector('.chat-typing')
+        return line && !line.classList.contains('hidden') && line.textContent.includes('Bob')
+      },
+      null,
+      { timeout: 15_000 },
+    )
+    .then(() => true)
+    .catch(() => false)
+  check('somebody typing shows up for everybody else', sawTyping)
+
+  // It stops on its own. Nothing is written down, so nothing has to be undone.
+  const stopped = await alice
+    .waitForFunction(
+      () => document.querySelector('.chat-typing')?.classList.contains('hidden'),
+      null,
+      { timeout: 15_000 },
+    )
+    .then(() => true)
+    .catch(() => false)
+  check('and stops on its own when they stop', stopped)
+  await bob.fill(BOX, '')
+
+  // ---- mentions -----------------------------------------------------------
+  await alice.click(BOX)
+  await alice.keyboard.type('@Bo')
+  await alice.waitForSelector('.mention-pop', { timeout: 5000 })
+  const offered = await alice.$$eval('.mention-option', (els) => els.map((e) => e.textContent))
+  check('typing an @ offers the people in the room', offered.includes('Bob'), offered.join())
+
+  await alice.keyboard.press('Enter')
+  const completed = await alice.inputValue(BOX)
+  check('and completing one writes the whole name', completed === '@Bob ', JSON.stringify(completed))
+
+  await alice.keyboard.type('can you look at this')
+  await alice.keyboard.press('Enter')
+  await alice.waitForTimeout(1500)
+
+  const litUp = await bob
+    .waitForFunction(() => document.querySelectorAll('.chat-line.calls-me').length === 1, null, {
+      timeout: 30_000,
+    })
+    .then(() => true)
+    .catch(() => false)
+  check('being named lights the message up for the person named', litUp)
+
+  const notMine = await alice.$$eval('.chat-line.calls-me', (els) => els.length)
+  check('and not for everybody else', notMine === 0, `${notMine}`)
+
+  const mentionMark = await bob.$eval('.mention', (el) => ({
+    text: el.textContent,
+    me: el.classList.contains('me'),
+  }))
+  check('the name itself is marked', mentionMark.text === '@Bob' && mentionMark.me, JSON.stringify(mentionMark))
+
+  // ---- unread -------------------------------------------------------------
+  // Bob makes a second channel and stands in it, so the first goes unread.
+  bob.once('dialog', (d) => d.accept('random'))
+  await bob.click('.rail-left button[title="Make a text channel"]')
+  await bob.waitForTimeout(800)
+  await bob.waitForFunction(() => document.querySelector('.space-head .eyebrow')?.textContent === '#random', null, { timeout: 10_000 })
+
+  await say(alice, 'anybody about')
+  await say(alice, 'hello @Bob again')
+  await bob.waitForTimeout(2500)
+
+  const rail = await bob.$$eval('.rail-left .rail-item', (els) =>
+    els.map((e) => ({
+      name: e.textContent,
+      unread: e.classList.contains('unread'),
+      badge: e.querySelector('.pill.bad')?.textContent ?? '',
+    })),
+  )
+  const general = rail.find((r) => r.name.includes('general'))
+  check('a channel with something new in it says so', general?.unread === true, JSON.stringify(rail))
+  check('and a mention in it is counted', general?.badge === '1', JSON.stringify(general))
+  const tab = await bob.title()
+  check('the tab carries the mention count too', tab.startsWith('(1)'), tab)
+
+  await bob.click('.rail-left .rail-item:has-text("general")')
+  await bob.waitForTimeout(1200)
+  const line = await bob.$$eval('.chat-new', (els) => els.map((e) => e.textContent))
+  check('coming back draws a line where you left off', line.includes('New'), JSON.stringify(line))
+
+  const stillUnread = await bob.$$eval('.rail-left .rail-item.unread', (els) => els.length)
+  check('and reading it clears the mark', stillUnread === 0, `${stillUnread}`)
+
+  // The mark is this device's own business and outlives a reload.
+  await bob.reload()
+  await bob.waitForSelector('.chat-line')
+  await bob.waitForTimeout(1500)
+  const afterReload = await bob.$$eval('.rail-left .rail-item.unread', (els) => els.length)
+  check('the mark survives a reload', afterReload === 0, `${afterReload}`)
+
+  // ---- threads ------------------------------------------------------------
+  await say(alice, 'what should we call the release')
+  await alice.waitForTimeout(400)
+  const last = (await alice.$$eval('.chat-line', (e) => e.length)) - 1
+  await pressAction(alice, 'Reply in a thread', last)
+  await alice.waitForTimeout(400)
+  const title = await alice.$eval('.chat-head .eyebrow', (el) => el.textContent)
+  check('a message opens a thread', title === 'Thread in #general', title)
+
+  await say(alice, 'how about Bliss')
+  await say(alice, 'or Luna')
+  const inThread = await texts(alice)
+  check('replies land in the thread', inThread.length === 3, JSON.stringify(inThread))
+
+  await alice.click('button:has-text("Back")')
+  await alice.waitForTimeout(500)
+  const inChannel = await texts(alice)
+  check(
+    'and stay out of the channel underneath',
+    !inChannel.includes('how about Bliss'),
+    JSON.stringify(inChannel.slice(-3)),
+  )
+  const affordance = await alice.$$eval('.chat-thread', (els) => els.map((e) => e.textContent))
+  check('the channel shows the way in, and the count', affordance.includes('2 replies'), JSON.stringify(affordance))
+
+  const bobSees = await bob
+    .waitForFunction(
+      () => [...document.querySelectorAll('.chat-thread')].some((e) => e.textContent === '2 replies'),
+      null,
+      { timeout: 30_000 },
+    )
+    .then(() => true)
+    .catch(() => false)
+  check('everybody else sees the thread too', bobSees)
+
+  // ---- search -------------------------------------------------------------
+  await alice.fill('input[aria-label="Search this space"]', 'luna')
+  await alice.waitForTimeout(400)
+  const hits = await alice.$$eval('.search-hit', (els) => els.map((e) => e.textContent))
+  check('search finds a message inside a thread', hits.length === 1 && hits[0].includes('or Luna'), JSON.stringify(hits))
+
+  await alice.click('.search-hit')
+  await alice.waitForTimeout(600)
+  const landed = await alice.$eval('.chat-head .eyebrow', (el) => el.textContent)
+  check('and clicking it takes you to where it was said', landed === 'Thread in #general', landed)
+
+  await alice.click('button:has-text("Back")')
+  await alice.fill('input[aria-label="Search this space"]', 'nothing like this exists')
+  await alice.waitForTimeout(400)
+  const empty = await alice.$eval('.search-results', (el) => el.textContent)
+  check('and says so when there is nothing', empty.includes('Nothing matches'), empty)
+  await alice.fill('input[aria-label="Search this space"]', '')
+
+  // ---- quick reactions ----------------------------------------------------
+  await alice.evaluate(() =>
+    localStorage.setItem('cathode.quick.v1', JSON.stringify(['🎉', '🚀'])),
+  )
+  await pressAction(alice, 'React to this message', 0)
+  await alice.waitForSelector('.emoji-pop.quick')
+  const quick = await alice.$$eval('.emoji-pop.quick .chat-react', (els) =>
+    els.map((e) => e.textContent),
+  )
+  check('the pinned reactions lead the quick row', quick[0] === '🎉' && quick[1] === '🚀', quick.join(''))
+  await alice.keyboard.press('Escape')
+
+  // ---- polish -------------------------------------------------------------
+  const grouped = await alice.$$eval('.chat-at.on-hover', (els) => els.length)
+  check('a run from one person shows one clock, not five', grouped > 0, `${grouped} hidden`)
+} catch (err) {
+  check('the run finished', false, err instanceof Error ? err.message : String(err))
+}
+
+await browser.close()
+
+const failed = results.filter((r) => !r.ok).length
+console.log(`\n${results.length - failed}/${results.length} passed`)
+process.exit(failed ? 1 : 0)

@@ -132,11 +132,18 @@ export class Archive {
     return this.url
   }
 
-  /** Point it somewhere, or at nothing. Returns what was actually accepted. */
+  /**
+   * Point it somewhere, or at nothing. Returns what was actually accepted.
+   *
+   * A cursor counts lines in one archive, so it means nothing once the address
+   * changes and is thrown away when it does. It used to be thrown away every
+   * time: the address is empty until this is called, so the stored cursor never
+   * matched and every visit read the whole archive from the top.
+   */
   use(raw: string, at = 0): string {
     const next = clean(raw)
-    if (next !== this.url) this.at = 0
-    else this.at = at
+    const sameAddress = this.url === '' || next === this.url
+    this.at = next && sameAddress ? at : 0
     this.url = next
     if (this.url) this.startSweeping()
     else this.stopSweeping()
@@ -182,27 +189,51 @@ export class Archive {
    */
   async fetch(): Promise<LogEvent[]> {
     if (!this.url) return []
-    let page: { at?: number; events?: unknown }
+    const page = await this.page(this.at)
+    if (!page) return []
+    /*
+     * An archive that got shorter trimmed itself, and trimming rewrites the
+     * file, so every line number after it moved. Ours now points past the end
+     * and would sit there for ever, reading nothing while the archive filled up
+     * again. Start over from the top: everything already held costs one merge
+     * that finds nothing new, and nothing else.
+     */
+    if (page.at < this.at) {
+      this.at = 0
+      const again = await this.page(0)
+      return again ? this.take(again) : []
+    }
+    return this.take(page)
+  }
+
+  /** One request. Null when the archive is unreachable or unhappy. */
+  private async page(from: number): Promise<{ at: number; events: unknown[] } | null> {
     try {
-      const res = await globalThis.fetch(`${this.url}/events/${this.room}?from=${this.at}`, {
+      const res = await globalThis.fetch(`${this.url}/events/${this.room}?from=${from}`, {
         method: 'GET',
         mode: 'cors',
       })
-      if (!res.ok) return []
-      page = (await res.json()) as { at?: number; events?: unknown }
+      if (!res.ok) return null
+      const body = (await res.json()) as { at?: number; events?: unknown }
+      return {
+        at: typeof body.at === 'number' && body.at >= 0 ? body.at : from,
+        events: Array.isArray(body.events) ? body.events : [],
+      }
     } catch {
-      return []
+      return null
     }
+  }
 
-    const lines = Array.isArray(page.events) ? page.events : []
+  /** Open what came back, and move the cursor to where it ended. */
+  private async take(page: { at: number; events: unknown[] }): Promise<LogEvent[]> {
     const out: LogEvent[] = []
-    for (const line of lines) {
+    for (const line of page.events) {
       if (typeof line !== 'string') continue
       const env = await unseal(this.key, line)
       if (!env?.data) continue
       out.push(env.data as unknown as LogEvent)
     }
-    if (typeof page.at === 'number' && page.at >= this.at) this.at = page.at
+    if (page.at >= this.at) this.at = page.at
     return out
   }
 

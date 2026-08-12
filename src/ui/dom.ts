@@ -16,8 +16,10 @@ export interface Props {
   placeholder?: string
   disabled?: boolean
   readOnly?: boolean
+  rows?: number
   tabIndex?: number
   ariaLabel?: string
+  role?: string
   data?: Record<string, string>
   style?: Partial<CSSStyleDeclaration>
   on?: Partial<Record<keyof HTMLElementEventMap, EventListener>>
@@ -35,12 +37,13 @@ export function h<K extends keyof HTMLElementTagNameMap>(
   if (props.title) el.title = props.title
   if (props.id) el.id = props.id
   if (props.ariaLabel) el.setAttribute('aria-label', props.ariaLabel)
+  if (props.role) el.setAttribute('role', props.role)
   if (props.tabIndex !== undefined) el.tabIndex = props.tabIndex
   if (props.data) for (const [k, v] of Object.entries(props.data)) el.dataset[k] = v
   if (props.style) Object.assign(el.style, props.style)
 
   const anyEl = el as unknown as Record<string, unknown>
-  for (const key of ['type', 'value', 'min', 'max', 'step', 'placeholder', 'disabled', 'readOnly'] as const) {
+  for (const key of ['type', 'value', 'min', 'max', 'step', 'placeholder', 'disabled', 'readOnly', 'rows'] as const) {
     if (props[key] !== undefined) anyEl[key] = props[key]
   }
 

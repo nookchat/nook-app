@@ -90,10 +90,10 @@ try {
     'the viewer to connect',
   )
 
-  await viewer.fill('input[aria-label="Write a message"]', 'this should outlive the host')
-  await viewer.press('input[aria-label="Write a message"]', 'Enter')
-  await host.fill('input[aria-label="Write a message"]', 'so should this')
-  await host.press('input[aria-label="Write a message"]', 'Enter')
+  await viewer.fill('[aria-label="Write a message"]', 'this should outlive the host')
+  await viewer.press('[aria-label="Write a message"]', 'Enter')
+  await host.fill('[aria-label="Write a message"]', 'so should this')
+  await host.press('[aria-label="Write a message"]', 'Enter')
 
   await waitFor(
     async () =>

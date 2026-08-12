@@ -262,6 +262,39 @@ try {
     `${allBack} of ${SAID}`,
   )
 
+  // ---- opening a space again does not archive it again --------------------
+  /*
+   * The archive cannot read what it holds, so it cannot recognise a line it
+   * already has: every copy it is handed is a copy it keeps. Coming back into a
+   * space used to hand it the whole log, so a space opened a hundred times held
+   * a hundred copies of its own history, and the server drops the oldest half
+   * when a space grows too large. What the copies pushed out was the history
+   * they were copies of.
+   */
+  const countLines = () =>
+    readdirSync(data)
+      .filter((f) => f.endsWith('.jsonl'))
+      .reduce(
+        (sum, f) => sum + readFileSync(join(data, f), 'utf8').split('\n').filter(Boolean).length,
+        0,
+      )
+
+  await erin.waitForTimeout(2000)
+  const before = countLines()
+  for (let visit = 0; visit < 3; visit++) {
+    await erin.goto('about:blank')
+    await erin.goto(floodLink)
+    await erin.waitForSelector('.space-name')
+    await erin.waitForTimeout(2500)
+  }
+  const after = countLines()
+  check(
+    'coming back into a space does not archive it all over again',
+    after === before,
+    `${before} lines before three more visits, ${after} after`,
+  )
+  await erin.context().close()
+
 } finally {
   await browser.close()
   server.kill()

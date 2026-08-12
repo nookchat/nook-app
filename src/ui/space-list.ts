@@ -7,16 +7,18 @@
  */
 
 import { newSecret, parseLink } from '../room'
-import { listRooms } from '../store/db'
+import { forgetRoom, listRooms, type RoomNote } from '../store/db'
+import { loadIdentity } from '../store/identity'
 import { clear, h } from './dom'
 import { icon } from './icons'
+import { toast } from './toast'
 
 export interface SpaceListActions {
   open(secret: string, locked?: boolean, password?: string, name?: string): void
 }
 
 export async function spaceList(actions: SpaceListActions): Promise<HTMLElement> {
-  const rooms = await listRooms()
+  const me = loadIdentity().pubkey
 
   const join = h('input', {
     type: 'text',
@@ -31,12 +33,14 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
       join.placeholder = 'That is not a code'
       return
     }
-    if (!link.locked) {
-      actions.open(link.secret)
-      return
-    }
-    const password = window.prompt('This space has a password.') ?? ''
-    if (password) actions.open(link.secret, true, password)
+    /*
+     * The password is not asked for here.
+     *
+     * Whoever opens the space asks, and only when this device does not already
+     * have it. Asking here meant being asked for the password of a space you
+     * made yourself, every time somebody pasted you its link.
+     */
+    actions.open(link.secret, link.locked ? true : undefined)
   }
   join.addEventListener('keydown', (ev) => {
     if ((ev as KeyboardEvent).key === 'Enter') go()
@@ -62,27 +66,73 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
   })
 
   const recent = h('div', { class: 'stack tight' })
-  for (const room of rooms.slice(0, 12)) {
-    recent.append(
-      h(
-        'button',
-        { class: 'rail-item', on: { click: () => actions.open(room.secret) } },
-        [
-          h('span', { class: 'grow truncate', text: room.title || 'Unnamed space' }),
-          room.locked ? h('span', { class: 'tiny faint', title: 'Needs a password' }, [icon('shield', 11)]) : null,
-          h('span', { class: 'tiny faint', text: whenLabel(room.lastSeen) }),
-        ],
-      ),
+
+  /**
+   * Take a space off this device.
+   *
+   * Only off this device. Deleting a space for everybody has to be announced,
+   * and announcing it means being in the space, so it lives in there. From out
+   * here the honest word is leave, and it is what the button says.
+   */
+  const leave = async (room: RoomNote): Promise<void> => {
+    const label = room.title || 'this space'
+    const yours = room.founder === me
+    const ok = window.confirm(
+      yours
+        ? `Leave ${label}? Its history goes from this device. The space itself stays: you made it, so open it and delete it there to close it for everybody.`
+        : `Leave ${label}? Its history goes from this device. Anybody else in it keeps theirs, and the link still works if you want back in.`,
     )
+    if (!ok) return
+    await forgetRoom(room.room)
+    toast('Left, and forgotten on this device.', 'info')
+    await paint()
   }
-  if (rooms.length === 0) {
-    recent.append(
-      h('div', { class: 'empty' }, [
-        h('div', { class: 'small', text: 'No spaces yet.' }),
-        h('div', { class: 'tiny faint', text: 'Make one, or paste an invite.' }),
-      ]),
-    )
+
+  /** Draw the list from the store, so leaving a space is visible at once. */
+  const paint = async (): Promise<void> => {
+    // A closed space keeps a note so its link says why it is gone. It is not a
+    // space any more, so it is not in the list of them.
+    const rooms = withoutShadows((await listRooms()).filter((r) => !r.closed))
+    clear(recent)
+    for (const room of rooms.slice(0, 12)) {
+      recent.append(
+        h('div', { class: 'row space-row' }, [
+          h(
+            'button',
+            {
+              class: 'rail-item grow',
+              // The lock and the password travel with the space, or the code
+              // alone derives a different room: same code, empty, and a second
+              // row in this list next time.
+              on: { click: () => actions.open(room.secret, room.locked === true, room.password ?? '') },
+            },
+            [
+              h('span', { class: 'grow truncate', text: room.title || 'Unnamed space' }),
+              room.locked
+                ? h('span', { class: 'tiny faint', title: 'Needs a password' }, [icon('shield', 11)])
+                : null,
+              h('span', { class: 'tiny faint', text: whenLabel(room.lastSeen) }),
+            ],
+          ),
+          h('button', {
+            class: 'ghost tiny-btn',
+            text: 'Leave',
+            title: 'Take this space off this device',
+            on: { click: () => void leave(room) },
+          }),
+        ]),
+      )
+    }
+    if (rooms.length === 0) {
+      recent.append(
+        h('div', { class: 'empty' }, [
+          h('div', { class: 'small', text: 'No spaces yet.' }),
+          h('div', { class: 'tiny faint', text: 'Make one, or paste an invite.' }),
+        ]),
+      )
+    }
   }
+  await paint()
 
   return h('main', {}, [
     h('div', { class: 'center-page' }, [
@@ -121,6 +171,23 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
       ]),
     ]),
   ])
+}
+
+/**
+ * Drop the empty twin a locked space used to leave behind.
+ *
+ * Opening a locked space without its password derives a different room from the
+ * same code: a real room, with a real note, holding nothing. Nothing makes one
+ * now, but the ones already made are still sitting in people's lists next to
+ * the space they are a shadow of, and clicking either was a coin toss.
+ *
+ * Only ever the nameless one, only when the space it shadows is right there
+ * with a password, and nothing is deleted: the note stays, and so does anything
+ * that was written into it.
+ */
+function withoutShadows(rooms: RoomNote[]): RoomNote[] {
+  const locked = new Set(rooms.filter((r) => r.locked && r.password).map((r) => r.secret))
+  return rooms.filter((r) => !(!r.locked && !r.title && locked.has(r.secret)))
 }
 
 function whenLabel(at: number): string {

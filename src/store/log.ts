@@ -30,6 +30,7 @@ export type EventKind =
   | 'reset'
   | 'role'
   | 'space'
+  | 'close'
 
 export type Role = 'admin' | 'member' | 'kicked'
 
@@ -116,6 +117,7 @@ export async function openEvent(raw: unknown, room: string): Promise<LogEvent | 
       'poll',
       'vote',
       'reset',
+      'close',
     ].includes(
       String(e.kind),
     )
@@ -347,6 +349,28 @@ export class RoomLog {
   }
 
   /**
+   * Whether an admin has shut the space down.
+   *
+   * The same shape as a reset and with the same honest limit. There is no
+   * server holding the room, so closing it cannot reach out and wipe anybody's
+   * disk. What it does is put a signed line in the log saying this space is
+   * finished, which every device honours by forgetting the space: it leaves the
+   * list, its history goes, and a device that syncs the line a week later does
+   * the same on the way in. Whoever exported a copy first still has that copy.
+   *
+   * Only an admin counts, for the reason a reset does: otherwise anybody who
+   * walked in could take the room away from everybody else.
+   */
+  closed(): boolean {
+    const roles = this.roles()
+    for (const e of this.all()) {
+      if (e.kind !== 'close') continue
+      if (roles.get(e.author) === 'admin') return true
+    }
+    return false
+  }
+
+  /**
    * The messages held up in each channel.
    *
    * Stated rather than toggled, the same way reactions are: a pin says on or
@@ -494,6 +518,9 @@ export class RoomLog {
       // is kept: who runs the place is worked out by walking them in order, so
       // dropping any of them changes the answer.
       if (e.kind === 'role' || e.kind === 'space' || e.kind === 'reset') live.add(e.id)
+      // And the line that closes the space, which has to outlive everything it
+      // closes: a peer that never heard it would hand the room straight back.
+      if (e.kind === 'close') live.add(e.id)
       // And every retraction, which is a tombstone rather than an event: a
       // peer offers the original again on the next sync and this refuses it.
       if (e.kind === 'retract') live.add(e.id)
@@ -540,7 +567,7 @@ export class RoomLog {
       // Somebody removed keeps what they already said and loses what came after.
       const removedAt = kicked.get(e.author)
       if (removedAt !== undefined && e.lamport > removedAt) continue
-      if (e.kind === 'role' || e.kind === 'space') continue
+      if (e.kind === 'role' || e.kind === 'space' || e.kind === 'close') continue
       if (e.kind === 'profile') {
         const name = String(e.body.name ?? '').slice(0, 24)
         if (name) names.set(e.author, name)
@@ -561,6 +588,7 @@ export class RoomLog {
           id: e.id,
           author: e.author,
           at: e.at,
+          lamport: e.lamport,
           channel: channelOf(e),
           text: question,
           replyTo: null,
@@ -597,9 +625,11 @@ export class RoomLog {
           id: e.id,
           author: e.author,
           at: e.at,
+          lamport: e.lamport,
           channel: channelOf(e),
           text: String(e.body.text ?? ''),
           replyTo: typeof e.body.replyTo === 'string' ? e.body.replyTo : null,
+          inThread: e.body.thread === true,
           edited: false,
           retracted: false,
           reactions: new Map(),
@@ -627,7 +657,7 @@ export class RoomLog {
         target.reactions.clear()
         effective?.add(e.id)
       } else if (e.kind === 'react') {
-        const emoji = String(e.body.emoji ?? '').slice(0, 8)
+        const emoji = oneEmoji(String(e.body.emoji ?? ''))
         if (!emoji) continue
         const who = target.reactions.get(emoji) ?? new Set<string>()
         /*
@@ -680,7 +710,40 @@ export class RoomLog {
       }
       m.poll.total = total
     }
-    return out.filter((m) => !m.retracted)
+
+    // How many answers each message has waiting in its thread.
+    const replies = new Map<string, number>()
+    for (const m of out) {
+      if (!m.inThread || !m.replyTo || m.retracted) continue
+      replies.set(m.replyTo, (replies.get(m.replyTo) ?? 0) + 1)
+    }
+    for (const m of out) {
+      const count = replies.get(m.id)
+      if (count) m.replies = count
+    }
+
+    const live = out.filter((m) => !m.retracted)
+    /*
+     * A thread reply belongs to its thread, not to the channel underneath it.
+     * Asking for one channel is asking for what a reader of that channel sees;
+     * asking for all of them, which is what search and compaction do, is asking
+     * for everything there is.
+     */
+    return channel ? live.filter((m) => !m.inThread) : live
+  }
+
+  /**
+   * One thread: the message it hangs off, and every answer to it in order.
+   *
+   * Flat rather than nested, which is what Discord settled on and for the same
+   * reason: a tree of replies to replies is a thing nobody can follow after the
+   * third level, and everybody who tried it went back to a flat list.
+   */
+  thread(rootId: string): Message[] {
+    const all = this.messages()
+    const root = all.find((m) => m.id === rootId)
+    if (!root) return []
+    return [root, ...all.filter((m) => m.inThread && m.replyTo === rootId)]
   }
 
   /** The latest name each key gave for itself. */
@@ -712,6 +775,51 @@ export class RoomLog {
   }
 }
 
+/**
+ * One emoji, whatever it is made of.
+ *
+ * A reaction is a single character to a reader and rarely one to a computer:
+ * a flag is two regional letters, a thumb with a skin tone is two code points,
+ * and a family is four people and three joiners. This used to keep the first
+ * eight UTF-16 units, which cut the longer ones in half and could leave half a
+ * surrogate pair behind, so the reaction that came out was not the one that
+ * went in and two devices could bucket it differently.
+ *
+ * Written out rather than handed to Intl.Segmenter on purpose. Every device has
+ * to reach the same answer or they disagree about which reactions are the same
+ * reaction, and a rule that depends on which browser is running is not a rule.
+ */
+export function oneEmoji(raw: string): string {
+  const points = [...raw]
+  if (points.length === 0) return ''
+
+  const code = (s: string): number => s.codePointAt(0) ?? 0
+  const regional = (s: string): boolean => code(s) >= 0x1f1e6 && code(s) <= 0x1f1ff
+  // A flag is a pair of regional letters and nothing else.
+  if (regional(points[0]) && points[1] && regional(points[1])) return points[0] + points[1]
+
+  let out = points[0]
+  for (let i = 1; i < points.length && out.length < 32; i++) {
+    const cp = code(points[i])
+    const skinTone = cp >= 0x1f3fb && cp <= 0x1f3ff
+    const variation = cp === 0xfe0f || cp === 0xfe0e
+    const keycap = cp === 0x20e3
+    const tag = cp >= 0xe0020 && cp <= 0xe007f
+    if (skinTone || variation || keycap || tag) {
+      out += points[i]
+      continue
+    }
+    // A zero width joiner binds whatever follows it into the same character.
+    if (cp === 0x200d && points[i + 1]) {
+      out += points[i] + points[i + 1]
+      i += 1
+      continue
+    }
+    break
+  }
+  return out
+}
+
 /** A channel name: lower case, no spaces, the way every chat app does it. */
 export function cleanChannel(raw: string): string {
   return raw
@@ -732,8 +840,22 @@ export interface Message {
   name?: string
   channel: string
   at: number
+  /** The log's own clock, which is what "newer" means when devices disagree. */
+  lamport: number
   text: string
   replyTo: string | null
+  /**
+   * Written in a thread rather than in the channel.
+   *
+   * A thread is a view over replies, not a second kind of room: the events are
+   * ordinary messages carrying the id of the one they answer. What this flag
+   * changes is where the message is drawn. Somebody who chose "reply in thread"
+   * gets it in the thread only, which is what keeps a channel readable when
+   * twenty people answer the same question.
+   */
+  inThread?: boolean
+  /** How many thread replies hang off this one. Only counted for roots. */
+  replies?: number
   edited: boolean
   retracted: boolean
   /** Held up at the top of the channel by an admin. */

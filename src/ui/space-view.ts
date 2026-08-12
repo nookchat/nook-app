@@ -42,12 +42,19 @@ import {
 import { SignalBus } from '../signal/bus'
 import type { Envelope } from '../signal/envelope'
 import { loadSettings, saveSettings, type HostSettings } from '../settings'
-import { getRoom, noteRoom } from '../store/db'
+import { mentionsMe } from '../chat'
+import { forgetRoom, getRoom, noteRoom, tombstoneRoom } from '../store/db'
 import { loadIdentity, shortKey } from '../store/identity'
 import { settingsView } from './settings-view'
 import { Archive, defaultArchive } from '../store/archive'
 import { chirpJoin, chirpLeave, chirpMessage, isNews } from './sounds'
-import { DEFAULT_CHANNEL, DEFAULT_VOICE, cleanChannel } from '../store/log'
+import {
+  DEFAULT_CHANNEL,
+  DEFAULT_VOICE,
+  cleanChannel,
+  type LogEvent,
+  type Message,
+} from '../store/log'
 import { RoomChat } from '../store/room-chat'
 import { ChatPanel } from './chat-panel'
 import { clear, copyText, fmtKbps, h, labelled } from './dom'
@@ -67,6 +74,11 @@ const RECENT_MS = 14 * 24 * 60 * 60 * 1000
 
 const STATS_MS = 2000
 
+/** How often to tell the room somebody is writing, at the very most. */
+const TYPING_EVERY_MS = 2000
+/** And how long that stays true without another word. */
+const TYPING_FOR_MS = 5000
+
 export class SpaceView {
   private readonly root: HTMLElement
   private readonly chrome: WindowChrome | null
@@ -83,7 +95,8 @@ export class SpaceView {
 
   private channel = DEFAULT_CHANNEL
   private drawQueued = false
-  private readonly locked: boolean
+  /** Whether a password went into deriving this room. Part of which room it is. */
+  readonly locked: boolean
   private readonly password: string
   /** True when this person just made the space, so they claim it. */
   private readonly fresh: boolean
@@ -92,6 +105,14 @@ export class SpaceView {
   private voice: Voice | null = null
   private stopped = false
   private timers: number[] = []
+  /** Back to the list of spaces, from the close button or from leaving. */
+  private readonly onLeave: () => void
+  /** True once this device has given the space up, so nothing writes it back. */
+  private forgotten = false
+  /** True while this device is the one closing the space down. */
+  private closing = false
+  /** True while the settings screen is up rather than the space itself. */
+  private settingsOpen = false
 
   // Sharing, when this person is the one doing it.
   private capture: ScreenCapture | null = null
@@ -121,6 +142,26 @@ export class SpaceView {
   private shareButton!: HTMLButtonElement
   private sharePanel!: HTMLDivElement
   private channelTitle!: HTMLSpanElement
+  private searchInput!: HTMLInputElement
+  private searchResults!: HTMLDivElement
+
+  /** The thread being read, if any. Its root is a message in this space. */
+  private thread: string | null = null
+  /**
+   * How far this device has read in each channel, and what it had read when the
+   * channel was opened.
+   *
+   * Two marks rather than one. The stored mark moves as you read, so the badge
+   * empties; the opening mark stays put, so the line drawn across the log stays
+   * where you left off instead of sliding down with every arrival.
+   */
+  private read: Record<string, number> = {}
+  private openedAt = 0
+  /** Who is typing, by key, and when they last said so. */
+  private readonly typing = new Map<string, { channel: string; at: number }>()
+  private lastTypingSent = 0
+  /** Unread mentions across the whole space, for the tab title. */
+  private mentions = 0
 
   constructor(
     root: HTMLElement,
@@ -139,6 +180,7 @@ export class SpaceView {
     this.password = lock.password
     this.fresh = lock.fresh === true
     this.wantedName = lock.name ?? ''
+    this.onLeave = onLeave
     chrome?.setActions({
       minimise: () => this.root.classList.toggle('rail-hidden'),
       maximise: () => this.surface?.requestFullscreen(),
@@ -164,6 +206,16 @@ export class SpaceView {
     }
 
     const identity = loadIdentity()
+    /*
+     * Write the space down before anything else touches the store.
+     *
+     * The lock and the password are known here and nowhere else, and the room
+     * id is derived from both, so a note without them sends the next visit to a
+     * different, empty room under the same code. It used to be written on the
+     * first redraw, which is late enough that closing the tab straight away
+     * left the space unopenable from the list.
+     */
+    await this.remember({})
     const note = await getRoom(this.room.id)
     const chat = new RoomChat(this.room.id, this.secret, note?.founder ?? '')
     chat.onChange = () => this.draw()
@@ -172,6 +224,9 @@ export class SpaceView {
     this.chat = chat
     this.chatPanel?.setMe(chat.me)
     this.chatPanel?.setName(chat.displayName)
+    // Where this device had got to, per channel, and where the line goes today.
+    this.read = { ...(note?.read ?? {}) }
+    this.openedAt = this.read[this.channel] ?? 0
 
     const bus = new SignalBus(this.room, this.selfId)
     const voice = new Voice(bus, this.selfId)
@@ -235,13 +290,37 @@ export class SpaceView {
     void probeHardwareEncoders(availableCodecs()).then((probe) => (this.gpu = probe))
 
     this.timers.push(window.setInterval(() => void this.tick(), STATS_MS))
+    // Coming back to the tab is reading it, so the marks move then and not
+    // while it was away.
+    document.addEventListener('visibilitychange', this.onVisible)
+    window.addEventListener('keydown', this.onShortcut)
     this.draw()
     this.status()
+  }
+
+  /** Back on screen: draw, which marks what is on it as read. */
+  private readonly onVisible = (): void => {
+    if (!document.hidden) this.draw()
+  }
+
+  /**
+   * Search is one key away, the way it is everywhere else.
+   *
+   * Held as a field so it can be taken off the window again: a listener that
+   * outlives the space it belongs to would search a room that is gone.
+   */
+  private readonly onShortcut = (ev: KeyboardEvent): void => {
+    if (!(ev.metaKey || ev.ctrlKey) || ev.key.toLowerCase() !== 'k') return
+    ev.preventDefault()
+    this.searchInput?.focus()
+    this.searchInput?.select()
   }
 
   destroy(): void {
     if (this.stopped) return
     this.stopped = true
+    document.removeEventListener('visibilitychange', this.onVisible)
+    window.removeEventListener('keydown', this.onShortcut)
     for (const t of this.timers) window.clearInterval(t)
     this.timers = []
     this.stopSharing()
@@ -331,32 +410,242 @@ export class SpaceView {
     }
   }
 
-  private async onMeshData(_from: string, raw: string): Promise<void> {
+  private async onMeshData(from: string, raw: string): Promise<void> {
+    // Somebody is writing. Not an event: it is true for four seconds and then
+    // it is not, and a log is for things that stay true.
+    if (this.takeTyping(from, raw)) return
+
     const fresh = (await this.chat?.ingest(raw)) ?? []
     if (fresh.length === 0) return
     // Somebody else said something, and said it just now rather than last week.
     if (fresh.some((e) => e.kind === 'said' && e.author !== this.chat?.me && isNews(e.at))) {
       chirpMessage()
     }
+    this.noticeMentions(fresh)
     // Pass on what was new, so a line reaches people we are not linked to.
     for (const wire of this.chat?.encode(fresh) ?? []) this.mesh?.broadcast(wire)
+    /*
+     * And to the archive, which only ever heard what this device said itself.
+     *
+     * Somebody else's message reached it only through the sweep below, on the
+     * next time somebody opened the space. Everything written between one visit
+     * and the next was held by the people who were there and by nobody who was
+     * not, which is the one thing an archive is for.
+     */
+    this.archive?.push(fresh)
+  }
+
+  // ---- typing ----
+
+  /**
+   * Say that this person is writing, at most every two seconds.
+   *
+   * It goes over the mesh rather than into the log, and it names a channel, so
+   * somebody typing in one channel does not appear to be typing in the one you
+   * are reading. Nothing is stored and nothing is signed: the worst a liar can
+   * do with it is claim to be about to say something.
+   */
+  private sayTyping(): void {
+    const now = Date.now()
+    if (now - this.lastTypingSent < TYPING_EVERY_MS) return
+    this.lastTypingSent = now
+    this.mesh?.broadcast(JSON.stringify({ t: 'typing', c: this.channel }))
+  }
+
+  /** Returns true when this was a typing note rather than a pile of events. */
+  private takeTyping(from: string, raw: string): boolean {
+    if (!raw.startsWith('{"t":"typing"')) return false
+    let note: { t?: string; c?: unknown }
+    try {
+      note = JSON.parse(raw) as { t?: string; c?: unknown }
+    } catch {
+      return false
+    }
+    if (note.t !== 'typing') return false
+    // Which person, rather than which tab: the roster is keyed by who they are.
+    const peer = this.mesh?.peers().find((p) => p.id === from)
+    const key = peer?.key || from
+    this.typing.set(key, {
+      channel: typeof note.c === 'string' ? cleanChannel(note.c) : DEFAULT_CHANNEL,
+      at: Date.now(),
+    })
+    this.showTyping()
+    return true
+  }
+
+  /** Whoever has said something in the last few seconds, in this channel. */
+  private showTyping(): void {
+    const cutoff = Date.now() - TYPING_FOR_MS
+    const names: string[] = []
+    for (const [key, note] of this.typing) {
+      if (note.at < cutoff) {
+        this.typing.delete(key)
+        continue
+      }
+      if (note.channel !== this.channel) continue
+      names.push(this.chat?.nameOf(key) || shortKey(key))
+    }
+    this.chatPanel?.setTyping(names)
+  }
+
+  // ---- unread, and being called by name ----
+
+  /**
+   * Mark this channel read up to whatever is in it now.
+   *
+   * Only what is on the screen. A channel you have not opened keeps its count,
+   * and a message that arrives while you are looking at another channel is
+   * still new when you get there.
+   */
+  private markRead(channel: string): void {
+    /*
+     * Not while the tab is put away.
+     *
+     * Visibility rather than focus. A window nobody can see is not being read,
+     * which is the case worth getting right; a window sitting visible behind
+     * another one is a coin toss either way, and focus is the reading that
+     * makes a message go unread because somebody clicked their terminal.
+     */
+    if (typeof document !== 'undefined' && document.hidden) return
+    const top = this.chat?.highWater(channel) ?? 0
+    if (top <= (this.read[channel] ?? 0)) return
+    this.read[channel] = top
+    void this.remember({ read: this.read })
+  }
+
+  /** Somebody said your name while you were reading something else. */
+  private noticeMentions(fresh: LogEvent[]): void {
+    const chat = this.chat
+    if (!chat) return
+    const names = chat.log.names()
+    for (const e of fresh) {
+      if (e.kind !== 'said' || e.author === chat.me) continue
+      if (!isNews(e.at)) continue
+      const text = String(e.body.text ?? '')
+      if (!mentionsMe(text, names, chat.me)) continue
+      const where = cleanChannel(String(e.body.channel ?? '')) || DEFAULT_CHANNEL
+      if (where === this.channel && !this.thread) continue
+      const who = chat.nameOf(e.author) || shortKey(e.author)
+      toast(`${who} mentioned you in #${where}`, 'info', 8000, {
+        label: 'Go',
+        run: () => this.openChannel(where),
+      })
+    }
+  }
+
+  // ---- threads ----
+
+  /**
+   * Open the thread hanging off a message, or close the one that is open.
+   *
+   * The thread takes over the panel rather than opening a third column. There
+   * is no room for one on a laptop beside two rails, and a thread is a
+   * conversation you are reading rather than a thing you glance at.
+   */
+  private openThread(rootId: string | null): void {
+    this.thread = rootId
+    this.chatPanel?.setThread(rootId)
+    this.closeSearch()
+    this.drawNow()
+    if (rootId) this.chatPanel?.focus()
+  }
+
+  // ---- search ----
+
+  /**
+   * Everything in this space that matches, newest first.
+   *
+   * Every channel and every thread, because "where did I say that" is the
+   * question being asked and the answer is rarely in the channel you happen to
+   * be standing in.
+   */
+  private renderSearch(): void {
+    const query = this.searchInput.value.trim().toLowerCase()
+    clear(this.searchResults)
+    this.searchResults.classList.toggle('hidden', query.length === 0)
+    if (!query || !this.chat) return
+
+    const names = this.chat.log.names()
+    const hits = this.chat.log
+      .messages()
+      .filter((m) => m.text.toLowerCase().includes(query))
+      .sort((a, b) => b.lamport - a.lamport)
+      .slice(0, 40)
+
+    if (hits.length === 0) {
+      this.searchResults.append(h('div', { class: 'tiny faint', text: 'Nothing matches that.' }))
+      return
+    }
+    this.searchResults.append(
+      h('div', {
+        class: 'tiny faint',
+        text: `${hits.length}${hits.length === 40 ? '+' : ''} in this space`,
+      }),
+    )
+    for (const m of hits) {
+      const who = names.get(m.author) || shortKey(m.author)
+      this.searchResults.append(
+        h(
+          'button',
+          {
+            class: 'search-hit',
+            title: 'Go to it',
+            on: { click: () => this.goTo(m) },
+          },
+          [
+            h('span', { class: 'tiny faint', text: `#${m.channel} · ${who}` }),
+            h('span', { class: 'truncate', text: m.text }),
+          ],
+        ),
+      )
+    }
+  }
+
+  /** Take somebody to a message, wherever it is. */
+  private goTo(m: Message): void {
+    this.closeSearch()
+    if (m.inThread && m.replyTo) this.openThread(m.replyTo)
+    else if (this.thread) this.openThread(null)
+    if (m.channel !== this.channel) this.openChannel(m.channel)
+    this.drawNow()
+    window.setTimeout(() => this.chatPanel?.jump(m.id), 40)
+  }
+
+  private closeSearch(): void {
+    this.searchInput.value = ''
+    this.searchResults.classList.add('hidden')
+    clear(this.searchResults)
   }
 
   /**
-   * Trade histories with the archive.
+   * Trade histories with the archive, once, on the way in.
    *
-   * Everything it has that we do not, then everything we have that it might
-   * not. Both directions, because an archive is a peer that happens to always
-   * be awake, and peers hand each other their history on sight.
+   * Everything it has that we do not, and then, the first time this device ever
+   * reads this archive, everything we have that it did not just hand us.
+   *
+   * That last part used to be the whole log, every single visit. The archive
+   * cannot read what it holds, so it cannot recognise a line it already has,
+   * and it kept every copy: a space opened a hundred times held a hundred
+   * copies of its own history. The server drops the oldest half when a space
+   * grows too large, so what those copies pushed out was the real history they
+   * were copies of.
    */
   private async catchUp(): Promise<void> {
     if (!this.archive?.on || !this.chat) return
+    // Nothing read from this archive yet, so what it holds is unknown and this
+    // device's history may be the only copy of some of it.
+    const first = this.archive.cursor === 0
     const found = await this.archive.fetch()
     if (found.length) {
       const fresh = await this.chat.absorb(found)
       if (fresh.length) this.draw()
     }
-    this.archive.push(this.chat.log.all())
+    if (first) {
+      // Everything it did not just give us. Reading from the top is what makes
+      // this exact rather than a guess.
+      const held = new Set(found.map((e) => e.id))
+      this.archive.push(this.chat.log.all().filter((e) => !held.has(e.id)))
+    }
     await this.remember({})
   }
 
@@ -367,7 +656,9 @@ export class SpaceView {
     this.archive = archive
     const accepted = archive.use(url)
     if (!accepted) {
-      await this.remember({})
+      // Turned off here, said out loud, so a default set later does not turn it
+      // back on behind your back.
+      await this.remember({ archive: '' })
       return true
     }
     const alive = await archive.check()
@@ -375,7 +666,7 @@ export class SpaceView {
       archive.use('')
       return false
     }
-    await this.remember({})
+    await this.remember({ archive: accepted })
     void this.catchUp()
     return true
   }
@@ -416,14 +707,50 @@ export class SpaceView {
   private drawNow(): void {
     if (this.stopped || !this.chat) return
     if (this.chatPanel) this.chatPanel.canPin = this.chat.isAdmin
-    this.chatPanel?.render(this.chat.messages(this.channel))
+    this.chatPanel?.setNames(this.chat.log.names())
+    this.chatPanel?.setReadMark(this.thread ? 0 : this.openedAt)
+    /*
+     * A thread, or the channel. The thread is the same panel showing a
+     * different slice of the same log, which is why replying, reacting,
+     * editing and pinning all work in it without a line of their own.
+     */
+    if (this.thread) {
+      const thread = this.chat.threadOf(this.thread)
+      // The root going away takes the thread with it: there is nothing left to
+      // hang it on, and a thread whose question is gone is a list of answers.
+      if (thread.length === 0) {
+        this.openThread(null)
+        return
+      }
+      this.chatPanel?.render(thread)
+      this.chatPanel?.setTitle(`Thread in #${this.channel}`)
+    } else {
+      this.chatPanel?.render(this.chat.messages(this.channel))
+      this.chatPanel?.setTitle('Chat')
+    }
     this.chatPanel?.setPresence(this.mesh?.reach ?? 1)
     this.channelTitle.textContent = `#${this.channel}`
-    const name = this.chat?.spaceName() || 'Unnamed space'
-    if (this.spaceTitle.textContent !== name) {
-      this.spaceTitle.textContent = name
-      void this.remember({ name })
+    // Whatever is on the screen counts as read.
+    this.markRead(this.channel)
+    this.showTyping()
+    /*
+     * The name, and the label shown when there is not one yet.
+     *
+     * Kept apart on purpose. Writing the label down as the title is how the
+     * list came to say "Unnamed space" for a space that has a name, and how a
+     * space that had one lost it here the moment it was opened before its
+     * history arrived.
+     */
+    const named = this.chat?.spaceName() ?? ''
+    const label = named || 'Unnamed space'
+    if (this.spaceTitle.textContent !== label) {
+      this.spaceTitle.textContent = label
+      if (named) void this.remember({ name: named })
     }
+    // Somebody with the right to do it has shut the space down. Not us: the
+    // one who pressed the button has their own path out, and it waits for the
+    // news to leave the building first.
+    if (this.chat?.isClosed && !this.closing) void this.acceptClose()
     this.renderChannels()
     this.renderVoice()
     this.renderPeople()
@@ -432,18 +759,38 @@ export class SpaceView {
   }
 
   /** Keep what this device knows about the space up to date. */
-  private async remember(patch: Partial<{ founder: string; name: string }>): Promise<void> {
-    if (!this.room) return
+  private async remember(
+    patch: Partial<{
+      founder: string
+      name: string
+      archive: string
+      read: Record<string, number>
+    }>,
+  ): Promise<void> {
+    if (!this.room || this.forgotten) return
     const existing = await getRoom(this.room.id)
     await noteRoom({
       room: this.room.id,
       secret: this.secret,
       lastSeen: Date.now(),
-      title: patch.name ?? this.chat?.spaceName() ?? existing?.title ?? '',
+      // Falsy rather than missing all the way down: an empty name is "we have
+      // not heard one yet", which must not overwrite one we heard last week.
+      title: patch.name || this.chat?.spaceName() || existing?.title || '',
       locked: this.locked,
       // Kept so a locked space asks for its password once, not every visit.
       password: this.password || existing?.password || undefined,
-      archive: this.archive?.address || undefined,
+      /*
+       * An address, or the empty string, or nothing at all, and the three mean
+       * different things. Empty is "turned off here on purpose" and has to
+       * outlast a default being set later; nothing at all is "whatever the
+       * default is". Only somebody saying so writes the empty string, which is
+       * why it arrives as a patch rather than being read off an archive that is
+       * merely not running.
+       */
+      archive: patch.archive ?? (this.archive?.address || existing?.archive),
+      // A space that was closed stays closed, however it is opened again.
+      closed: existing?.closed || undefined,
+      read: patch.read ?? existing?.read,
       archiveAt: this.archive?.cursor ?? existing?.archiveAt,
       founder: patch.founder ?? existing?.founder ?? this.chat?.founder ?? '',
     })
@@ -458,7 +805,10 @@ export class SpaceView {
       : this.watching
         ? 'Watching a shared screen'
         : `#${this.channel}`
-    this.chrome.setTitle(this.capture ? 'Sharing your screen' : `#${this.channel}`)
+    // A count of mentions rather than of messages: the tab is read out of the
+    // corner of an eye, so the number on it has to be one worth turning for.
+    const name = this.capture ? 'Sharing your screen' : `#${this.channel}`
+    this.chrome.setTitle(this.mentions ? `(${this.mentions}) ${name}` : name)
     this.chrome.setStatus([
       what,
       `${people + 1} here`,
@@ -495,8 +845,11 @@ export class SpaceView {
     this.chatPanel = new ChatPanel(loadIdentity().name, 'Chat')
     this.chatPanel.showNameField(false)
     this.chatPanel.onPoll = () => void this.newPoll()
+    this.chatPanel.onTyping = () => this.sayTyping()
+    this.chatPanel.onThread = (rootId) => this.openThread(rootId)
     this.chatPanel.actions = {
-      say: (text, replyTo) => void this.publish((c) => c.say(text, this.channel, replyTo)),
+      say: (text, replyTo, inThread) =>
+        void this.publish((c) => c.say(text, this.channel, replyTo, inThread)),
       edit: (id, text) => void this.publish((c) => c.edit(id, text)),
       react: (id, emoji, on) => void this.publish((c) => c.react(id, emoji, on)),
       retract: (id) => void this.publish((c) => c.retract(id)),
@@ -546,6 +899,20 @@ export class SpaceView {
             { class: 'grow', title: 'Your name, your ID, and the look', on: { click: () => this.openSettings() } },
             [icon('shield', 14), 'Settings'],
           ),
+          /*
+           * The way out, and the only one there was not.
+           *
+           * The caption buttons went with the title bar, and leaving went with
+           * them, so the list of spaces could be reached by editing the address
+           * bar and no other way. Nothing is given up by pressing it: the space
+           * stays on this device and the link still opens it.
+           */
+          h('button', {
+            title: 'Back to your spaces. This one stays on this device.',
+            ariaLabel: 'Your spaces',
+            class: 'icon-only',
+            on: { click: () => this.goHome() },
+          }, [icon('home', 15)]),
         ]),
       ]),
     ])
@@ -557,10 +924,33 @@ export class SpaceView {
       this.inviteBox(),
     ])
 
+    /*
+     * Search.
+     *
+     * Every event ever seen here is already on this device, so this is a scan
+     * over memory rather than a request to anybody. That is worth saying out
+     * loud: the thing a chat app usually needs a search cluster for is a loop
+     * over an array when the history belongs to you.
+     */
+    this.searchInput = h('input', {
+      type: 'text',
+      class: 'space-search',
+      ariaLabel: 'Search this space',
+      placeholder: 'Search',
+      on: {
+        input: () => this.renderSearch(),
+        keydown: (ev) => {
+          if ((ev as KeyboardEvent).key === 'Escape') this.closeSearch()
+        },
+      },
+    })
+    this.searchResults = h('div', { class: 'search-results hidden' })
+
     this.shell = h('div', { class: 'space-grid' }, [
       left,
       h('div', { class: 'space-main' }, [
-        h('div', { class: 'space-head row spread' }, [this.channelTitle]),
+        h('div', { class: 'space-head row spread' }, [this.channelTitle, this.searchInput]),
+        this.searchResults,
         this.streamBar,
         this.stage,
         this.sharePanel,
@@ -574,6 +964,7 @@ export class SpaceView {
 
   private openSettings(): void {
     clear(this.root)
+    this.settingsOpen = true
     this.root.append(
       settingsView({
         rename: (name) => this.rename(name),
@@ -584,8 +975,11 @@ export class SpaceView {
           admin: this.chat?.isAdmin === true,
           rename: () => this.renameSpace(),
           reset: () => this.resetSpace(),
+          leave: () => this.leaveSpace(),
+          remove: () => this.deleteSpace(),
         },
         back: () => {
+          this.settingsOpen = false
           clear(this.root)
           this.root.append(h('main', {}, [this.shell]))
           this.drawNow()
@@ -604,6 +998,90 @@ export class SpaceView {
     if (!name) return
     await this.publish((c) => c.setSpaceName(name))
     await this.remember({ name })
+    // The card that holds the button shows the name. Renaming from it and
+    // leaving it saying the old name is the same disagreement in one screen.
+    if (this.settingsOpen) this.openSettings()
+  }
+
+  /** Back to the list of spaces, keeping this one. */
+  private goHome(): void {
+    this.destroy()
+    this.onLeave()
+  }
+
+  /**
+   * Walk out of a space and take this device's copy with you.
+   *
+   * Local, and it says so. Nothing is announced, because leaving is nobody
+   * else's business and there is no membership list on a server to be struck
+   * off. The link keeps working, so coming back is the same click it was.
+   */
+  private async leaveSpace(): Promise<void> {
+    const name = this.chat?.spaceName() || 'this space'
+    const ok = window.confirm(
+      `Leave ${name}? Its history goes from this device. Everybody else keeps theirs, and the link still works if you want back in.`,
+    )
+    if (!ok) return
+    await this.forget(false)
+    toast('Left, and forgotten on this device.', 'info')
+  }
+
+  /**
+   * Shut a space down for everybody who reads the log.
+   *
+   * Admins only, checked here for the message and in the log for the answer:
+   * every device works out for itself whether the close was signed by somebody
+   * with the right to write it, so a close from anybody else changes nothing
+   * anywhere.
+   */
+  private async deleteSpace(): Promise<void> {
+    if (!this.chat?.isAdmin) {
+      toast('Only an admin can delete this space.', 'warn')
+      return
+    }
+    const name = this.chat.spaceName() || 'this space'
+    const ok = window.confirm(
+      `Delete ${name} for everybody? Every device in it now, and every device that syncs later, forgets the space and its history. It cannot be undone, and anybody who exported a copy first still has that copy.`,
+    )
+    if (!ok) return
+    this.closing = true
+    await this.publish((c) => c.closeSpace())
+    // A moment for the close to reach whoever is connected, since leaving takes
+    // the connections with it.
+    await new Promise((done) => window.setTimeout(done, 400))
+    await this.forget(true)
+    toast('Deleted. Everybody who is here, or who syncs later, loses it too.', 'info', 7000)
+  }
+
+  /** Somebody else deleted it while we were standing in it. */
+  private async acceptClose(): Promise<void> {
+    if (this.forgotten) return
+    await this.forget(true)
+    toast('An admin deleted this space.', 'warn', 7000)
+  }
+
+  /**
+   * Put this device's copy down and go back to the list.
+   *
+   * A space that was closed leaves a tombstone rather than nothing at all. See
+   * tombstoneRoom: forgetting it outright means the link opens a fresh empty
+   * room a minute later, which looks exactly like a space that lost everything.
+   */
+  private async forget(closed: boolean): Promise<void> {
+    if (this.forgotten) return
+    this.forgotten = true
+    const room = this.room
+    const note = room ? await getRoom(room.id) : null
+    // The close, and the roles that decide whether it counts. Nothing else.
+    const keep = (this.chat?.log.all() ?? []).filter(
+      (e) => e.kind === 'close' || e.kind === 'role',
+    )
+    this.destroy()
+    if (room) {
+      if (closed && note) await tombstoneRoom(note, keep)
+      else await forgetRoom(room.id)
+    }
+    this.onLeave()
   }
 
   private async setRole(subject: string, role: 'admin' | 'member' | 'kicked'): Promise<void> {
@@ -695,22 +1173,44 @@ export class SpaceView {
 
   private renderChannels(): void {
     clear(this.channelList)
+    // What is waiting, per channel, worked out once for the whole rail.
+    const waiting = this.chat?.unread(this.read) ?? new Map()
+    let mentions = 0
+    for (const [, count] of waiting) mentions += count.mentions
+
     for (const name of this.chat?.channels() ?? [DEFAULT_CHANNEL]) {
       const sharingHere = [...this.sharers.values()].includes(name)
+      const news = waiting.get(name)
       this.channelList.append(
         h(
           'button',
           {
-            class: `rail-item${name === this.channel ? ' on' : ''}`,
+            class: `rail-item${name === this.channel ? ' on' : ''}${news ? ' unread' : ''}`,
             on: { click: () => this.openChannel(name) },
           },
           [
             h('span', { class: 'truncate grow', text: `# ${name}` }),
             sharingHere ? h('span', { class: 'pill good', text: 'live' }) : null,
+            /*
+             * A count only when somebody used your name. The rest is a change
+             * of weight on the channel: a number on everything that moved is a
+             * number you learn to ignore, and then you ignore the one that
+             * mattered as well.
+             */
+            news?.mentions
+              ? h('span', { class: 'pill bad', text: `${news.mentions}`, title: 'You were mentioned' })
+              : null,
           ],
         ),
       )
     }
+    /*
+     * The tab carries it too, for a window that is not on top. Kept here and
+     * written by status(), which is the one place the title is set: two writers
+     * meant whichever ran last won, and the count lost.
+     */
+    this.mentions = mentions
+    this.status()
   }
 
   private renderVoice(): void {
@@ -1036,8 +1536,13 @@ export class SpaceView {
   }
 
   private openChannel(name: string): void {
-    if (name === this.channel) return
+    if (name === this.channel && !this.thread) return
     this.channel = name
+    this.thread = null
+    this.chatPanel?.setThread(null)
+    // Where the line goes, taken once on the way in. See ChatPanel.setReadMark:
+    // moving it as messages arrive rubs out the thing you came back to read.
+    this.openedAt = this.read[name] ?? 0
     // Watching follows the channel: leave whatever was on the old one, and do
     // not start anything new. Whoever is live here is offered, not applied.
     this.stopWatching()

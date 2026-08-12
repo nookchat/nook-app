@@ -29,7 +29,10 @@
     "test:denoise": "node test/denoise-check.mjs",
     "test:converge": "node test/converge-check.mjs",
     "test:agree": "node test/agree-check.mjs",
-    "test:archive": "node test/archive-check.mjs"
+    "test:archive": "node test/archive-check.mjs",
+    "test:leave": "node test/leave-check.mjs",
+    "test:emoji": "node test/emoji-check.mjs",
+    "test:chat": "node test/chat-check.mjs"
   },
   "dependencies": {
     "@jitsi/rnnoise-wasm": "^0.2.1",

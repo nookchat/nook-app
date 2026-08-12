@@ -161,7 +161,7 @@ try {
           b.textContent?.trim(),
         ),
         chat: !!document.querySelector('.chat-log'),
-        composer: !document.querySelector('input[aria-label="Write a message"]')?.disabled,
+        composer: !document.querySelector('[aria-label="Write a message"]')?.disabled,
         video: !!document.querySelector('video'),
       }))
       return seen.channels.length > 0 ? seen : null
@@ -377,8 +377,8 @@ try {
   )
   check('the viewer gets a name without being asked', viewerName.length > 2, viewerName)
 
-  await viewer.fill('input[aria-label="Write a message"]', 'hello from the viewer')
-  await viewer.press('input[aria-label="Write a message"]', 'Enter')
+  await viewer.fill('[aria-label="Write a message"]', 'hello from the viewer')
+  await viewer.press('[aria-label="Write a message"]', 'Enter')
   const hostGotLine = await waitFor(
     async () =>
       host.evaluate(() => {
@@ -390,8 +390,8 @@ try {
   )
   check('a viewer line reaches the host over the data channel', !!hostGotLine)
 
-  await host.fill('input[aria-label="Write a message"]', 'and hello back')
-  await host.press('input[aria-label="Write a message"]', 'Enter')
+  await host.fill('[aria-label="Write a message"]', 'and hello back')
+  await host.press('[aria-label="Write a message"]', 'Enter')
   const viewerGotLine = await waitFor(
     async () =>
       viewer.evaluate(() => {

@@ -145,6 +145,41 @@ try {
     forged.accepted === 0 && forged.refused > 0,
     `${forged.accepted} accepted, ${forged.refused} refused`,
   )
+
+  /*
+   * A locked space carried across whole.
+   *
+   * The room id is derived from the code and the password together, so an
+   * import that keeps four fields and drops the rest hands the new device a
+   * space it cannot open: the list offers it, the code alone derives a
+   * different and empty room, and the name in the list belongs to a room
+   * nobody can reach.
+   */
+  const carried = await fresh.evaluate(async () => {
+    const { exportAll, importBundle } = await import('/src/store/transfer.ts')
+    const { noteRoom, getRoom } = await import('/src/store/db.ts')
+    await noteRoom({
+      room: 'lockedroom',
+      secret: 'ABCDEFGH1234',
+      lastSeen: Date.now(),
+      title: 'vault',
+      locked: true,
+      password: 'hunter2',
+      founder: 'f'.repeat(64),
+      closed: undefined,
+    })
+    const bundle = JSON.stringify(await exportAll(false))
+    // A device that has never seen it: the note is removed, then read back in.
+    const { forgetRoom } = await import('/src/store/db.ts')
+    await forgetRoom('lockedroom')
+    await importBundle(bundle, false)
+    return await getRoom('lockedroom')
+  })
+  check(
+    'a locked space survives an export and an import',
+    carried?.locked === true && carried?.password === 'hunter2' && carried?.founder === 'f'.repeat(64),
+    JSON.stringify({ locked: carried?.locked, password: carried?.password, title: carried?.title }),
+  )
 } finally {
   await browser.close()
 }

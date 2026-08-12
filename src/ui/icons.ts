@@ -31,6 +31,7 @@ export type IconName =
   | 'chevron-down'
   | 'plus'
   | 'minus'
+  | 'home'
 
 const PATHS: Record<IconName, string> = {
   copy: 'M9 9.5A1.5 1.5 0 0 1 10.5 8h8A1.5 1.5 0 0 1 20 9.5v8a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 9 17.5zM5.5 16A1.5 1.5 0 0 1 4 14.5v-8A1.5 1.5 0 0 1 5.5 5h8A1.5 1.5 0 0 1 15 6.5',
@@ -58,6 +59,7 @@ const PATHS: Record<IconName, string> = {
   'chevron-down': 'M6 9.5 12 15.5 18 9.5',
   plus: 'M12 5.5v13M5.5 12h13',
   minus: 'M5.5 12h13',
+  home: 'M3.5 11.5 12 4.5l8.5 7M6 10v9.5h12V10',
 }
 
 /** Icons drawn as solid shapes rather than strokes. */

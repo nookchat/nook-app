@@ -155,6 +155,25 @@ export interface RoomNote {
    * whole lot back by the first peer it meets.
    */
   floor?: number
+  /**
+   * Set when an admin shut this space down.
+   *
+   * The history goes, the row leaves the list, and this stays, because a space
+   * that is only forgotten comes straight back: the link still opens, the room
+   * is empty, and it looks like a working space that lost everything. What is
+   * kept beside it is the signed line that closed it, so opening the link says
+   * so, and so this device can still hand the news to a peer that missed it.
+   */
+  closed?: boolean
+  /**
+   * How far this device has read in each channel, by log clock.
+   *
+   * Per device on purpose, and never sent anywhere. What you have read is not
+   * something the room needs to know, and a read mark that travelled would mean
+   * opening a channel on your phone marked it read on your laptop, which is the
+   * behaviour everybody complains about in the apps that do it.
+   */
+  read?: Record<string, number>
 }
 
 export async function getRoom(room: string): Promise<RoomNote | null> {
@@ -190,8 +209,16 @@ export async function noteRoom(note: RoomNote): Promise<void> {
  * password is wanted. The code is the only handle available at that point.
  */
 export async function findBySecret(secret: string): Promise<RoomNote | null> {
-  const all = await listRooms()
-  return all.find((r) => r.secret === secret) ?? null
+  const mine = (await listRooms()).filter((r) => r.secret === secret)
+  /*
+   * A locked space beats an unlocked one with the same code.
+   *
+   * Opening a locked space without its password used to derive a second room
+   * from the same code: a different id, an empty log, its own row in the list.
+   * That shadow is never the one anybody wants, and it is the newer of the two,
+   * so most recent first would pick exactly the wrong one.
+   */
+  return mine.find((r) => r.locked && r.password) ?? mine[0] ?? null
 }
 
 export async function listRooms(): Promise<RoomNote[]> {
@@ -207,6 +234,21 @@ export async function listRooms(): Promise<RoomNote[]> {
       resolve([])
     }
   })
+}
+
+/**
+ * Forget a space, apart from the proof that it was closed.
+ *
+ * Everything said in it goes. What is kept is the close itself and the roles
+ * that make it count, which is the smallest set of events that still answers
+ * "was this closed, and by somebody with the right to". Without them the next
+ * visit to the link finds an empty room and no explanation, and this device
+ * could not tell a peer that missed the news.
+ */
+export async function tombstoneRoom(note: RoomNote, keep: LogEvent[]): Promise<void> {
+  await forgetRoom(note.room)
+  await putEvents(keep)
+  await noteRoom({ ...note, closed: true })
 }
 
 /** Forget one room and everything said in it. */
