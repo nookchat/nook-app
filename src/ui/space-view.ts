@@ -44,10 +44,10 @@ import type { Envelope } from '../signal/envelope'
 import { loadSettings, saveSettings, type HostSettings } from '../settings'
 import { cleanName, mentionsMe } from '../chat'
 import { forgetRoom, getRoom, noteRoom, tombstoneRoom } from '../store/db'
-import { loadIdentity, saveDisplayName, shortKey } from '../store/identity'
+import { loadIdentity, saveDisplayName, shortKey, signClaim, verifyClaim } from '../store/identity'
 import { settingsView } from './settings-view'
 import { Archive, defaultArchive } from '../store/archive'
-import { chirpJoin, chirpLeave, chirpMessage, isNews } from './sounds'
+import { buzzNudge, chirpJoin, chirpLeave, chirpMessage, isNews } from './sounds'
 import {
   DEFAULT_CHANNEL,
   DEFAULT_VOICE,
@@ -94,6 +94,11 @@ interface PersonRow {
 }
 
 /** How often to tell the room somebody is writing, at the very most. */
+/** One nudge per person, or per room, this often. The 2004 ration. */
+const NUDGE_EVERY_MS = 20_000
+/** A pile of arriving nudges is one shake, not a seizure. */
+const NUDGE_COOL_MS = 5000
+
 const TYPING_EVERY_MS = 2000
 /** And how long that stays true without another word. */
 const TYPING_FOR_MS = 5000
@@ -106,6 +111,7 @@ const COMMANDS = [
   { name: 'nick', note: 'Change your name' },
   { name: 'topic', note: 'Say what this channel is for' },
   { name: 'rename', note: 'Rename this channel' },
+  { name: 'nudge', note: 'Shake somebody\u2019s window' },
   { name: 'shrug', note: '\u00af\\_(\u30c4)_/\u00af' },
   { name: 'invite', note: 'Copy the invite link' },
   { name: 'leave', note: 'Leave this space' },
@@ -174,9 +180,24 @@ export class SpaceView {
   /** Whether our own screen is on our own stage. Sharing it is not watching it. */
   private showingSelf = false
 
+  /** The newest signed move heard per admin key, so a recorded one replays as nothing. */
+  private readonly vmoveSeen = new Map<string, number>()
+  /** The last line asked of each peer, so an answer that did not help is not asked for again. */
+  private readonly pulled = new Map<string, number>()
+  /** When each person, or the room, was last nudged from here. */
+  private readonly nudgeSent = new Map<string, number>()
+  /** The last shake taken, so a pile of nudges is one shake. */
+  private lastShakeAt = 0
+  /** Whether the no-relay warning has been said for this outage. */
+  private relayWarned = false
+  private relayTimer: number | null = null
+
   // Elements redrawn in place.
   private channelList!: HTMLDivElement
   private voiceList!: HTMLDivElement
+  private stageTag!: HTMLDivElement
+  private newTextButton!: HTMLButtonElement
+  private newVoiceButton!: HTMLButtonElement
   private directList!: HTMLDivElement
   private threadList!: HTMLDivElement
   private peopleList!: HTMLDivElement
@@ -309,7 +330,10 @@ export class SpaceView {
       away: document.hidden ? true : undefined,
     })
     mesh.onData = (from, raw) => void this.onMeshData(from, raw)
-    mesh.onPeers = () => this.draw()
+    mesh.onPeers = () => {
+      this.prunePeers()
+      this.draw()
+    }
     /*
      * A new link gets our history at once, and sends us theirs for the same
      * reason. Both sides do it, so whoever has been away catches up without
@@ -317,9 +341,14 @@ export class SpaceView {
      */
     mesh.onReady = (peerId) => {
       for (const raw of chat.backfill()) mesh.sendTo(peerId, raw)
+      // And how far back we reach, so a peer that is short can ask for more.
+      mesh.sendTo(peerId, chat.summary())
     }
     bus.onMessage = (env) => void this.onSignal(env)
-    bus.onHealth = () => this.status()
+    bus.onHealth = () => {
+      this.status()
+      this.watchRelays()
+    }
     bus.start()
     mesh.start()
     this.bus = bus
@@ -337,7 +366,7 @@ export class SpaceView {
      * week catches up, and how an archive that has been away catches up itself.
      */
     if (this.room) {
-      const archive = new Archive(this.room.id, this.room.key)
+      const archive = new Archive(this.room.id, this.room.key, this.room.write)
       // What this space was told, or the default, or nothing. A space that was
       // told the empty string was turned off here on purpose and stays off.
       const wanted = note?.archive !== undefined ? note.archive : defaultArchive()
@@ -431,6 +460,28 @@ export class SpaceView {
     document.title = 'Cathode'
   }
 
+  /**
+   * Forget what is filed under sessions the mesh no longer knows.
+   *
+   * Presence rides announcements keyed by session id, and a tab that dies
+   * without a goodbye never takes its announcements back. The mesh evicts the
+   * silent session, but the live pill, the away mark and the typing note kept
+   * here stayed for ever: a ghost stream card wearing somebody's name, black
+   * when clicked. Rejoining made it worse, because the person came back under
+   * a fresh session beside their own remains.
+   *
+   * Only the cosmetic maps. The media connections are left alone on purpose:
+   * a relay outage empties the roster while a working stream keeps flowing,
+   * and cutting it for a missing announcement would turn every relay hiccup
+   * into a dropped screen. Media has its own failure handling.
+   */
+  private prunePeers(): void {
+    const alive = new Set((this.mesh?.peers() ?? []).map((p) => p.id))
+    for (const id of [...this.sharers.keys()]) if (!alive.has(id)) this.sharers.delete(id)
+    for (const id of [...this.away]) if (!alive.has(id)) this.away.delete(id)
+    for (const id of [...this.typing.keys()]) if (!alive.has(id)) this.typing.delete(id)
+  }
+
   // ---- signalling ----
 
   private async onSignal(env: Envelope): Promise<void> {
@@ -488,15 +539,28 @@ export class SpaceView {
         return
       }
       case 'ice': {
-        if (this.watchers.has(env.from)) {
+        /*
+         * An ICE line names the connection it belongs to, because one person
+         * can hold two with us at once: they watch our screen while we watch
+         * theirs. It used to route on who sent it, watchers first, and with
+         * both connections up every line of theirs fed the sharing one. The
+         * watching one starved, never connected, and drew a black rectangle
+         * until a reload emptied the watchers map. A line that does not say
+         * (an older peer) falls back to the old guess.
+         */
+        const side = typeof data.side === 'string' ? data.side : ''
+        const forViewer = side === 'host' || (side === '' && !this.watchers.has(env.from))
+        if (forViewer) {
+          if (env.from === this.watchingWho) {
+            await this.watching?.onIce(data as unknown as RTCIceCandidateInit)
+          }
+        } else if (this.watchers.has(env.from)) {
           await this.watchers.get(env.from)?.onIce(data as unknown as RTCIceCandidateInit)
-        } else if (env.from === this.watchingWho) {
-          await this.watching?.onIce(data as unknown as RTCIceCandidateInit)
         }
         return
       }
       case 'vmove': {
-        await this.onMoved(env.from, typeof data.channel === 'string' ? data.channel : '')
+        await this.onMoved(data)
         return
       }
       case 'bye': {
@@ -504,6 +568,12 @@ export class SpaceView {
         this.watchers.get(env.from)?.close()
         this.watchers.delete(env.from)
         if (env.from === this.watchingWho) this.stopWatching()
+        // And everything cosmetic filed under the session that just left, or
+        // a tab that said goodbye still leaves a live pill wearing its name.
+        this.sharers.delete(env.from)
+        this.away.delete(env.from)
+        this.typing.delete(env.from)
+        this.draw()
         return
       }
       default:
@@ -515,6 +585,8 @@ export class SpaceView {
     // Somebody is writing. Not an event: it is true for four seconds and then
     // it is not, and a log is for things that stay true.
     if (this.takeTyping(from, raw)) return
+    if (this.takeNudge(from, raw)) return
+    if (this.takeSync(from, raw)) return
 
     const fresh = (await this.chat?.ingest(raw)) ?? []
     if (fresh.length === 0) return
@@ -578,6 +650,127 @@ export class SpaceView {
       at: Date.now(),
     })
     this.showTyping()
+    return true
+  }
+
+  /**
+   * A nudge, the way the messengers of 2004 did it: the window shakes, the
+   * speaker rattles, and nothing is written down. It rides the mesh like a
+   * typing notice, because it is true for half a second and then it is not.
+   *
+   * Named, it goes to one person's devices. Bare, it goes to the room. Both
+   * ends shake, because feeling it land is what made it a nudge, and both
+   * directions are rationed, because the same year taught everybody why.
+   */
+  private sendNudge(arg: string): void {
+    const chat = this.chat
+    if (!chat || !this.mesh) return
+
+    // Whoever was named, or whoever this conversation is with, or the room.
+    let key = ''
+    const wanted = arg.trim().toLowerCase()
+    if (wanted) {
+      const found = [...this.everybody()].find(([, who]) => who.toLowerCase() === wanted)
+      if (!found) {
+        toast(`Nobody here is called ${arg.trim()}.`, 'warn')
+        return
+      }
+      key = found[0]
+    } else if (this.direct) {
+      key = this.direct
+    }
+
+    const last = this.nudgeSent.get(key || '*') ?? 0
+    if (Date.now() - last < NUDGE_EVERY_MS) {
+      toast('Easy. One nudge every twenty seconds.', 'warn')
+      return
+    }
+
+    if (key) {
+      const sessions = this.mesh.peers().filter((p) => p.key === key)
+      if (sessions.length === 0) {
+        toast('They are not here right now.', 'warn')
+        return
+      }
+      for (const p of sessions) this.mesh.sendTo(p.id, JSON.stringify({ t: 'nudge', d: 1 }))
+      toast(`You nudged ${chat.nameOf(key) || shortKey(key)}.`, 'info')
+    } else {
+      this.mesh.broadcast(JSON.stringify({ t: 'nudge', c: this.channel }))
+      toast(`You nudged #${this.channel}.`, 'info')
+    }
+    this.nudgeSent.set(key || '*', Date.now())
+    this.shake()
+    buzzNudge()
+  }
+
+  /** Returns true when this was a nudge rather than a pile of events. */
+  private takeNudge(from: string, raw: string): boolean {
+    if (!raw.startsWith('{"t":"nudge"')) return false
+    let note: { t?: string; c?: unknown; d?: unknown }
+    try {
+      note = JSON.parse(raw) as { t?: string; c?: unknown; d?: unknown }
+    } catch {
+      return false
+    }
+    if (note.t !== 'nudge') return false
+    const now = Date.now()
+    if (now - this.lastShakeAt < NUDGE_COOL_MS) return true
+    this.lastShakeAt = now
+
+    const key = this.mesh?.peers().find((p) => p.id === from)?.key || ''
+    const who = (key && this.chat?.nameOf(key)) || 'Somebody'
+    const where =
+      note.d === 1 ? 'you' : `#${typeof note.c === 'string' ? cleanChannel(note.c) : this.channel}`
+    this.shake()
+    buzzNudge()
+    toast(`${who} nudged ${where}`, 'info', 4000)
+    return true
+  }
+
+  /** The whole window jumps, briefly. MSN said it best. */
+  private shake(): void {
+    const el = document.body
+    el.classList.remove('nudged')
+    // Reading the width forces a layout, which is what lets the same
+    // animation run again on the next nudge.
+    void el.offsetWidth
+    el.classList.add('nudged')
+    window.setTimeout(() => el.classList.remove('nudged'), 700)
+  }
+
+  /**
+   * Deep history, healed by asking. Returns true when this was sync talk
+   * rather than a pile of events.
+   *
+   * The backfill on a fresh link is the newest 250 events, and that used to
+   * be the end of it: a device away longer than that stayed short for ever,
+   * because nothing ever went back for the rest. So each side says how far
+   * back it reaches, whoever is short asks for the slice below where they
+   * stop, and the answer ends with a fresh summary, so the asking repeats
+   * until the two summaries agree. Asking the same line twice means the
+   * answer did not help, and the asking stops there rather than looping.
+   */
+  private takeSync(from: string, raw: string): boolean {
+    const isHave = raw.startsWith('{"t":"have"')
+    const isPull = raw.startsWith('{"t":"pull"')
+    if (!isHave && !isPull) return false
+    const chat = this.chat
+    if (!chat) return true
+    let wire: { n?: unknown; low?: unknown; below?: unknown }
+    try {
+      wire = JSON.parse(raw) as { n?: unknown; low?: unknown; below?: unknown }
+    } catch {
+      return true
+    }
+    if (isPull && typeof wire.below === 'number') {
+      for (const out of chat.below(wire.below)) this.mesh?.sendTo(from, out)
+      this.mesh?.sendTo(from, chat.summary())
+    } else if (isHave && typeof wire.n === 'number' && typeof wire.low === 'number') {
+      const below = chat.wantPull({ n: wire.n, low: wire.low })
+      if (below === null || this.pulled.get(from) === below) return true
+      this.pulled.set(from, below)
+      this.mesh?.sendTo(from, JSON.stringify({ t: 'pull', below }))
+    }
     return true
   }
 
@@ -742,6 +935,10 @@ export class SpaceView {
       }
       case 'poll': {
         void this.newPoll(arg)
+        return true
+      }
+      case 'nudge': {
+        this.sendNudge(arg)
         return true
       }
       case 'shrug': {
@@ -1019,7 +1216,7 @@ export class SpaceView {
   /** Point this space at an archive, or at nothing. */
   async setArchive(url: string): Promise<boolean> {
     if (!this.room) return false
-    const archive = this.archive ?? new Archive(this.room.id, this.room.key)
+    const archive = this.archive ?? new Archive(this.room.id, this.room.key, this.room.write)
     this.archive = archive
     const accepted = archive.use(url)
     if (!accepted) {
@@ -1223,8 +1420,40 @@ export class SpaceView {
     this.chrome.setStatus([
       what,
       `${people} here`,
-      `${relays} relay${relays === 1 ? '' : 's'}`,
+      relays === 0 ? 'no relays' : `${relays} relay${relays === 1 ? '' : 's'}`,
     ])
+  }
+
+  /**
+   * Say it loudly when no relay answers.
+   *
+   * Blocked relays look like a broken app: the space opens from disk, the
+   * history draws, and then nobody arrives and nothing syncs, with no error
+   * anywhere. A VPN did exactly this to a real person, who spent the evening
+   * blaming the app. Ten seconds of silence from every relay is worth one
+   * loud sentence, once per outage.
+   */
+  private watchRelays(): void {
+    const open = () => this.bus?.healthList.filter((r) => r.status === 'open').length ?? 0
+    if (open() > 0) {
+      this.relayWarned = false
+      if (this.relayTimer !== null) {
+        window.clearTimeout(this.relayTimer)
+        this.relayTimer = null
+      }
+      return
+    }
+    if (this.relayWarned || this.relayTimer !== null) return
+    this.relayTimer = window.setTimeout(() => {
+      this.relayTimer = null
+      if (this.stopped || this.relayWarned || open() > 0) return
+      this.relayWarned = true
+      toast(
+        'Cathode cannot reach a signal relay, so nobody new can be found and nothing will sync. A VPN or a firewall on this network is the usual cause.',
+        'bad',
+        12_000,
+      )
+    }, 10_000)
   }
 
   // ---- layout ----
@@ -1239,6 +1468,8 @@ export class SpaceView {
     this.peopleList = h('div', { class: 'rail-list' })
     this.voiceBar = h('div', { class: 'voice-bar hidden' })
     this.stage = h('div', { class: 'stage hidden' })
+    this.stageTag = h('div', { class: 'stage-tag hidden' })
+    this.stage.append(this.stageTag)
     /*
      * The row of who is live in this channel.
      *
@@ -1287,12 +1518,18 @@ export class SpaceView {
       h('div', { class: 'rail-head space-title' }, [this.spaceTitle]),
       h('div', { class: 'rail-head' }, [
         h('span', { class: 'eyebrow', text: 'Text channels' }),
-        h('button', {
-          class: 'ghost tiny-btn',
+        /*
+         * Only the log's admins can make a channel, so only they get the
+         * button. It used to show for everybody and do nothing for most of
+         * them: the event went out, every peer ignored it, and the person who
+         * clicked was left staring at a rail that had not changed.
+         */
+        (this.newTextButton = h('button', {
+          class: 'ghost tiny-btn hidden',
           text: '+',
           title: 'Make a text channel',
           on: { click: () => void this.newChannel(false) },
-        }),
+        })),
       ]),
       this.channelList,
       h('div', { class: 'rail-head' }, [
@@ -1301,12 +1538,12 @@ export class SpaceView {
           text: 'Voice channels',
           title: 'Everybody standing in one hears everybody else.',
         }),
-        h('button', {
-          class: 'ghost tiny-btn',
+        (this.newVoiceButton = h('button', {
+          class: 'ghost tiny-btn hidden',
           text: '+',
           title: 'Make a voice channel',
           on: { click: () => void this.newChannel(true) },
-        }),
+        })),
       ]),
       this.voiceList,
       h('div', { class: 'rail-head' }, [
@@ -1650,6 +1887,7 @@ export class SpaceView {
 
   private renderChannels(): void {
     clear(this.channelList)
+    this.newTextButton.classList.toggle('hidden', !this.chat?.isAdmin)
     // What is waiting, per channel, worked out once for the whole rail.
     const waiting = this.chat?.unread(this.read) ?? new Map()
     let mentions = 0
@@ -1775,6 +2013,7 @@ export class SpaceView {
 
   private renderVoice(): void {
     clear(this.voiceList)
+    this.newVoiceButton.classList.toggle('hidden', !this.chat?.isAdmin)
     const here = this.voice?.state.channel ?? null
     for (const name of this.chat?.channels(true) ?? [DEFAULT_VOICE]) {
       const members = this.voice?.membersOf(name) ?? []
@@ -1842,7 +2081,8 @@ export class SpaceView {
     try {
       await this.voice?.join(name)
     } catch (err) {
-      toast(err instanceof Error ? err.message : String(err), 'bad')
+      // Long enough to read the way to the permission switch it names.
+      toast(err instanceof Error ? err.message : String(err), 'bad', 9000)
       return
     }
     this.announceMe()
@@ -1852,17 +2092,19 @@ export class SpaceView {
   /**
    * Somebody with the authority to has asked us to stand somewhere else.
    *
-   * Checked here rather than trusted, because the message came off a public
-   * relay: only somebody the log agrees is an admin can move anybody.
+   * The ask came off a public relay, so it carries its own proof: the admin
+   * signed the room, our key, the channel and the time with the same identity
+   * key that signs their events, and the signature is checked against the
+   * log's own idea of who is an admin. It used to lean on presence
+   * announcements instead, and an announcement is not signed, so any member
+   * could claim an admin's key in theirs and be believed.
    *
-   * That check is worth exactly what an announcement is worth, and an
-   * announcement is not signed. Anybody already in the space could claim
-   * somebody else's key in theirs and be believed by this, so the honest
-   * description is that it keeps out people who are not in the space at all,
-   * and keeps ordinary members from moving each other by accident. It is not
-   * proof. Nothing signed rests on it: events carry their own signatures and
-   * this moves nobody's messages, only where they are standing. Signing the
-   * announcement would close it, and is a separate piece of work.
+   * The time is not compared with our clock, because two machines disagree
+   * enough to break things, and that lesson is already written in
+   * signal/envelope.ts. It has to climb per admin key instead, so a recorded
+   * ask replays as nothing for as long as this tab lives. After a reload one
+   * replay of a real admin's real ask could land once more; what that buys is
+   * a toast, from somebody who was trusted to send it in the first place.
    *
    * If we are already in a voice channel the microphone is already open and
    * the move just happens. If we are not, it cannot: a browser will not open a
@@ -1870,13 +2112,21 @@ export class SpaceView {
    * does. That is a real limit, not a courtesy, and it is the honest way round
    * anyway.
    */
-  private async onMoved(from: string, raw: string): Promise<void> {
-    const channel = cleanChannel(raw)
-    if (!channel) return
+  private async onMoved(data: Record<string, unknown>): Promise<void> {
+    const asked = typeof data.channel === 'string' ? data.channel : ''
+    const by = typeof data.by === 'string' ? data.by : ''
+    const at = typeof data.at === 'number' ? data.at : 0
+    const sig = typeof data.sig === 'string' ? data.sig : ''
+    const channel = cleanChannel(asked)
+    if (!channel || !by || !sig || !this.room || !this.chat) return
 
-    const key = this.mesh?.peers().find((p) => p.id === from)?.key ?? ''
-    if (!key || this.chat?.roleOf(key) !== 'admin') return
-    const who = this.mesh?.peers().find((p) => p.id === from)?.name || 'An admin'
+    const me = loadIdentity().pubkey
+    if (!(await verifyClaim(['vmove', this.room.id, me, asked, at], sig, by))) return
+    if (this.chat.roleOf(by) !== 'admin') return
+    if (at <= (this.vmoveSeen.get(by) ?? 0)) return
+    this.vmoveSeen.set(by, at)
+
+    const who = this.chat.nameOf(by) || 'An admin'
 
     if (this.voice?.state.channel) {
       await this.voice.join(channel).catch(() => undefined)
@@ -1898,11 +2148,19 @@ export class SpaceView {
     this.draw()
   }
 
-  /** Move somebody into a voice channel. Admins only, checked on both sides. */
-  private moveTo(key: string, channel: string): void {
+  /**
+   * Move somebody into a voice channel. Admins only, and the ask is signed:
+   * the room, their key, the channel and the time, under our identity key, so
+   * the other side has proof rather than an announcement anybody could fake.
+   */
+  private async moveTo(key: string, channel: string): Promise<void> {
+    if (!this.room) return
     for (const peer of this.mesh?.peers() ?? []) {
       if (peer.key !== key) continue
-      void this.bus?.send({ type: 'vmove', to: peer.id, data: { channel } })
+      const by = loadIdentity().pubkey
+      const at = Date.now()
+      const sig = await signClaim(['vmove', this.room.id, key, channel, at])
+      void this.bus?.send({ type: 'vmove', to: peer.id, data: { channel, by, at, sig } })
       toast(`Asked them to join ${channel}`, 'good', 4000)
       return
     }
@@ -1949,6 +2207,14 @@ export class SpaceView {
       })
     }
 
+    if (here) {
+      items.push({
+        label: `Nudge ${name}`,
+        note: 'Shakes their window, the old way',
+        run: () => this.sendNudge(name),
+      })
+    }
+
     items.push({
       label: 'Copy their ID',
       note: shortKey(key),
@@ -1968,7 +2234,7 @@ export class SpaceView {
       items.push({
         label: `Move to ${standing}`,
         note: 'Asks their device to join the voice channel you are in',
-        run: () => this.moveTo(key, standing),
+        run: () => void this.moveTo(key, standing),
       })
     }
     if (role !== 'admin') {
@@ -2283,6 +2549,12 @@ export class SpaceView {
   }
 
   private async newChannel(voice: boolean): Promise<void> {
+    // The button only shows for admins, but every peer would ignore the event
+    // anyway, so say so here rather than let the click land as silence.
+    if (!this.chat?.isAdmin) {
+      toast('Only an admin can make a channel.', 'warn')
+      return
+    }
     const raw = window.prompt(voice ? 'Name the voice channel' : 'Name the channel')
     if (raw === null) return
     const name = cleanChannel(raw)
@@ -2378,7 +2650,14 @@ export class SpaceView {
       mode: this.settings.mode,
       codec: this.settings.codec,
       hardware: this.gpu.hardware,
-      send: (type, data) => void this.bus?.send({ type, to: peerId, data }),
+      // ICE says which of our two possible connections it belongs to, because
+      // this person may be watching us while we watch them. See the ice case.
+      send: (type, data) =>
+        void this.bus?.send({
+          type,
+          to: peerId,
+          data: type === 'ice' ? { ...(data as Record<string, unknown>), side: 'host' } : data,
+        }),
       onChange: () => this.draw(),
       onFailed: (reason) => toast(reason, 'bad', 8000),
       onChat: () => undefined,
@@ -2391,7 +2670,12 @@ export class SpaceView {
     this.watchingWho = from
     this.ensureSurface()
     this.watching = new ViewerPeer({
-      send: (type, data) => void this.bus?.send({ type, to: from, data }),
+      send: (type, data) =>
+        void this.bus?.send({
+          type,
+          to: from,
+          data: type === 'ice' ? { ...(data as Record<string, unknown>), side: 'viewer' } : data,
+        }),
       onStream: (stream) => {
         this.stage.classList.remove('hidden')
         this.surface?.setStream(stream)
@@ -2407,15 +2691,15 @@ export class SpaceView {
   }
 
   /** Everybody sharing in the channel we are looking at, ourselves included. */
-  private liveHere(): { id: string; name: string; you: boolean }[] {
-    const out: { id: string; name: string; you: boolean }[] = []
+  private liveHere(): { id: string; name: string; you: boolean; key: string }[] {
+    const out: { id: string; name: string; you: boolean; key: string }[] = []
     if (this.capture && this.channel) {
-      out.push({ id: this.selfId, name: 'Your screen', you: true })
+      out.push({ id: this.selfId, name: 'Your screen', you: true, key: this.chat?.me ?? '' })
     }
     for (const [id, channel] of this.sharers) {
       if (channel !== this.channel || id === this.selfId) continue
       const peer = this.mesh?.peers().find((p) => p.id === id)
-      out.push({ id, name: peer?.name || shortKey(id), you: false })
+      out.push({ id, name: peer?.name || shortKey(id), you: false, key: peer?.key ?? '' })
     }
     return out
   }
@@ -2458,6 +2742,15 @@ export class SpaceView {
     const live = this.liveHere()
     clear(this.streamBar)
     this.streamBar.classList.toggle('hidden', live.length === 0)
+
+    // The name on the picture, so a full stage always says whose screen it is.
+    const showing = this.watchingWho
+      ? `Watching ${live.find((l) => l.id === this.watchingWho)?.name ?? 'a shared screen'}`
+      : this.capture && this.showingSelf
+        ? 'Your screen, as the others see it'
+        : ''
+    this.stageTag.textContent = showing
+    this.stageTag.classList.toggle('hidden', showing === '')
     if (live.length === 0) return
 
     const watching = this.watchingWho !== null || (this.capture !== null && this.showingSelf)
@@ -2470,20 +2763,34 @@ export class SpaceView {
 
     for (const one of live) {
       const on = one.you ? this.showingSelf : this.watchingWho === one.id
-      this.streamBar.append(
-        h('button', {
+      const label = one.you
+        ? this.watchers.size > 0
+          ? `Your screen · ${this.watchers.size} watching`
+          : 'Your screen'
+        : one.name
+      const tab = h(
+        'button',
+        {
           class: `stream-tab${on ? ' on' : ''}`,
-          text: one.you ? one.name : `Watch ${one.name}`,
           title: one.you ? 'Show your own screen here' : `Put ${one.name} on your screen`,
           on: { click: () => this.watch(one.id) },
-        }),
+        },
+        [
+          avatarOf(one.key || one.id, one.name, this.chat?.avatarOf(one.key) ?? '', 18),
+          h('span', { class: 'truncate', text: label }),
+          h('span', { class: 'live-dot', title: 'Live' }),
+        ],
       )
+      // What the card means rather than what it says, for anything that has
+      // to find one without reading the copy off it.
+      tab.dataset.watch = one.you ? 'self' : 'peer'
+      this.streamBar.append(tab)
     }
 
     if (watching) {
       this.streamBar.append(
         h('button', {
-          class: 'stream-tab',
+          class: 'stream-tab quiet',
           text: 'Stop watching',
           title: 'Take it off your screen',
           on: {

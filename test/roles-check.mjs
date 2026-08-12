@@ -171,6 +171,13 @@ try {
       ev(MEMBER, 'channel', { name: 'spam' }),
     ]).channels()
 
+    // A message lists its channel only when an admin wrote it. Anybody's used
+    // to, which was a way to conjure a channel straight past the rule above.
+    const spoken = build([
+      ev(FOUNDER, 'said', { text: 'hello', channel: 'plans' }),
+      ev(MEMBER, 'said', { text: 'hello', channel: 'spam' }),
+    ]).channels()
+
     return {
       nameOk: named.spaceName() === 'Book club',
       nameStaysPut: stolenName.spaceName() !== 'Mine now',
@@ -181,6 +188,8 @@ try {
       founderSurvives: coup.roleOf(FOUNDER) === 'admin',
       adminChannel: channels.includes('plans'),
       memberChannel: channels.includes('spam') === false,
+      adminSaidChannel: spoken.includes('plans'),
+      memberSaidChannel: spoken.includes('spam') === false,
     }
   })
   check('the founder names the space', roles.nameOk)
@@ -192,6 +201,8 @@ try {
   check('but nobody can depose the founder', roles.founderSurvives)
   check('an admin makes a channel', roles.adminChannel)
   check('a member does not', roles.memberChannel)
+  check('an admin talking in a channel keeps it listed', roles.adminSaidChannel)
+  check('a member talking in one does not conjure it', roles.memberSaidChannel)
 
   // --- the order a conversation is read in ----------------------------------
   /*

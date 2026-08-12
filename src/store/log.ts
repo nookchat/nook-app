@@ -491,8 +491,8 @@ export class RoomLog {
    * from anybody else is simply ignored.
    */
   /**
-   * Every channel anybody has made here, text and voice kept apart. Both are
-   * events on this log, so a channel somebody else made turns up the same way a
+   * Every channel an admin has made here, text and voice kept apart. Both are
+   * events on this log, so a channel an admin made turns up the same way a
    * message does.
    */
   channels(voice = false): string[] {
@@ -535,7 +535,12 @@ export class RoomLog {
         if (typeof e.body.topic === 'string') topic.set(name, e.body.topic.slice(0, 140).trim())
         if (e.body.gone === true) gone.add(name)
         else gone.delete(name)
-      } else if (!voice && e.kind === 'said') {
+      } else if (!voice && e.kind === 'said' && roles.get(e.author) === 'admin') {
+        // An admin writing in a channel is as good as making it, which is what
+        // keeps a channel alive after its channel event is tidied away. Only an
+        // admin, though: anybody's message used to count, and that let any
+        // member conjure a channel by writing into it, straight past the
+        // admin-only rule above.
         names.add(channelOf(e))
       }
     }

@@ -50,6 +50,14 @@ export interface Room {
   id: string
   /** AES-GCM key for the signal envelopes. */
   key: CryptoKey
+  /**
+   * Proof, for an archive, that a writer holds the code. The room id is on
+   * every relay, so anybody watching one can learn it and could otherwise fill
+   * the archive with junk until its trim ate the real history. This token is
+   * derived from the secret like everything else, so holding the link is
+   * holding the right to write.
+   */
+  write: string
 }
 
 function concat(a: Uint8Array, b: Uint8Array): Uint8Array {
@@ -163,7 +171,15 @@ export async function deriveRoom(secret: string, password = ''): Promise<Room> {
     ['encrypt', 'decrypt'],
   )
 
-  return { secret: canonical, id, key }
+  const writeBytes = new Uint8Array(
+    await crypto.subtle.digest(
+      'SHA-256',
+      concat(stretched, enc.encode('archive')) as BufferSource,
+    ),
+  )
+  const write = hex(writeBytes)
+
+  return { secret: canonical, id, key, write }
 }
 
 /** The link the host shares. The code stays after the hash, so it is client side only. */

@@ -102,6 +102,8 @@ function wrap(event: LogEvent): Envelope {
 export class Archive {
   private readonly key: CryptoKey
   private readonly room: string
+  /** Proof we hold the code, sent with every write. See Room.write. */
+  private readonly write: string
   private url = ''
   private at = 0
   private busy = false
@@ -119,9 +121,10 @@ export class Archive {
   private sweeper: number | null = null
   private nextTry = 0
 
-  constructor(room: string, key: CryptoKey) {
+  constructor(room: string, key: CryptoKey, write: string) {
     this.room = room
     this.key = key
+    this.write = write
   }
 
   get on(): boolean {
@@ -268,11 +271,17 @@ export class Archive {
       const res = await globalThis.fetch(`${this.url}/events/${this.room}`, {
         method: 'POST',
         mode: 'cors',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', 'x-cathode-write': this.write },
         body: JSON.stringify(sealed),
       })
       if (!res.ok) {
-        this.nextTry = Date.now() + RETRY_MS
+        /*
+         * Refused outright means the room was claimed with a different token,
+         * which does not heal on its own the way an outage does. Retry rarely
+         * rather than never: an archive wiped and restarted would take a fresh
+         * claim, and a quiet loop every quarter hour costs nothing.
+         */
+        this.nextTry = Date.now() + (res.status === 403 ? RETRY_MS * 60 : RETRY_MS)
         return
       }
       // Only now, and only these. Anything added since is still waiting.

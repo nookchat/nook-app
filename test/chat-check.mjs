@@ -156,10 +156,18 @@ try {
   check('the name itself is marked', mentionMark.text === '@Bob' && mentionMark.me, JSON.stringify(mentionMark))
 
   // ---- unread -------------------------------------------------------------
-  // Bob makes a second channel and stands in it, so the first goes unread.
-  bob.once('dialog', (d) => d.accept('random'))
-  await bob.click('.rail-left button[title="Make a text channel"]')
-  await bob.waitForTimeout(800)
+  // Making channels is an admin's act, so Bob is not even offered the button.
+  const plusHidden = await bob.$eval('button[title="Make a text channel"]', (el) =>
+    el.classList.contains('hidden'),
+  )
+  check('a member is not offered the channel button', plusHidden)
+
+  // Alice makes a second channel and Bob stands in it, so the first goes unread.
+  alice.once('dialog', (d) => d.accept('random'))
+  await alice.click('.rail-left button[title="Make a text channel"]')
+  await alice.waitForFunction(() => document.querySelector('.space-head .eyebrow')?.textContent === '#random', null, { timeout: 10_000 })
+  await alice.click('.rail-left .rail-item:has-text("general")')
+  await bob.click('.rail-left .rail-item:has-text("random")')
   await bob.waitForFunction(() => document.querySelector('.space-head .eyebrow')?.textContent === '#random', null, { timeout: 10_000 })
 
   await say(alice, 'anybody about')

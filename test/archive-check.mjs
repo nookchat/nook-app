@@ -108,6 +108,31 @@ try {
     `${raw.split('\n').filter(Boolean).length} sealed lines, ${raw.length} bytes`,
   )
 
+  /*
+   * The room id is the relay topic, so a stranger can learn it without ever
+   * holding the code. Writing takes the token only the code derives, and the
+   * first real write claimed the room with it, so the stranger is refused and
+   * cannot fill the room until its trim eats the real history.
+   */
+  const room = stored[0].replace('.jsonl', '')
+  const bare = await fetch(`${ARCHIVE}/events/${room}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(['junk']),
+  })
+  check('a write without the token is refused', bare.status === 403, `${bare.status}`)
+
+  const wrong = await fetch(`${ARCHIVE}/events/${room}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-cathode-write': 'f'.repeat(64) },
+    body: JSON.stringify(['junk']),
+  })
+  check("and one with a stranger's token is refused too", wrong.status === 403, `${wrong.status}`)
+  check(
+    'and neither left a mark on the room',
+    !readFileSync(join(data, stored[0]), 'utf8').split('\n').includes('junk'),
+  )
+
   // Alice goes. Nobody in the space holds the history any more.
   await alice.context().close()
 

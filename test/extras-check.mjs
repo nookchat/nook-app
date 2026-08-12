@@ -122,6 +122,38 @@ try {
   await say(alice, '//not a command')
   check('two slashes says one', (await texts(alice)).includes('/not a command'))
 
+  // ---- nudges --------------------------------------------------------------
+  // The 2004 classic. The window shakes on both ends, and nothing is written
+  // into the log: a nudge is true for half a second and then it is not.
+  await alice.fill(BOX, '/nudge')
+  await alice.press(BOX, 'Enter')
+  const bobShaken = await bob
+    .waitForFunction(() => document.body.classList.contains('nudged'), null, { timeout: 15_000 })
+    .then(() => true)
+    .catch(() => false)
+  check('a nudge shakes the other side', bobShaken)
+
+  const aliceShaken = await alice.evaluate(
+    () =>
+      document.body.classList.contains('nudged') ||
+      [...document.querySelectorAll('.toast')].some((t) => t.textContent.includes('You nudged')),
+  )
+  check('and the side that sent it', aliceShaken)
+
+  await alice.fill(BOX, '/nudge')
+  await alice.press(BOX, 'Enter')
+  await alice.waitForTimeout(400)
+  const rationed = await alice.evaluate(() =>
+    [...document.querySelectorAll('.toast')].some((t) => t.textContent.includes('Easy')),
+  )
+  check('a second nudge straight after is rationed', rationed)
+
+  const logged = await texts(alice)
+  check(
+    'and none of it was posted to the room',
+    !logged.some((t) => t.includes('/nudge')),
+  )
+
   // ---- channel label, topic, and deleting one -----------------------------
   await say(alice, '/topic what we are doing today')
   await alice.waitForTimeout(500)

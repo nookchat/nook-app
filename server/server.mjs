@@ -26,8 +26,9 @@
  */
 
 import { createServer } from 'node:http'
-import { appendFile, mkdir, open, stat } from 'node:fs/promises'
+import { appendFile, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { createReadStream } from 'node:fs'
+import { createHash, timingSafeEqual } from 'node:crypto'
 import { createInterface } from 'node:readline'
 import { join, resolve } from 'node:path'
 
@@ -47,6 +48,40 @@ const MAX_ROOM_BYTES = Number(process.env.CATHODE_MAX_ROOM_BYTES ?? 256 * 1024 *
 await mkdir(DATA, { recursive: true })
 
 const file = (room) => join(DATA, `${room}.jsonl`)
+const tokenFile = (room) => join(DATA, `${room}.token`)
+
+/**
+ * Only somebody holding the space code may write.
+ *
+ * The room id is the relay topic, which any relay operator or wildcard
+ * subscriber can see, and junk fails no check this side because nothing here
+ * can be checked. It would still count against the room's cap, and the trim
+ * would then eat the oldest half of the real history to make room for it. So
+ * every write carries a token derived from the code, the first write claims
+ * the room with it, and every write after that has to match.
+ *
+ * The disk keeps a hash of the token rather than the token, so the file is
+ * not the credential. Claiming is first come: an attacker who learns a room
+ * id before anybody legitimate writes could claim it, and the space would
+ * simply have no archive here, which is where it started.
+ */
+async function mayWrite(room, token) {
+  if (typeof token !== 'string' || token.length === 0 || token.length > 256) return false
+  const hash = createHash('sha256').update(token).digest()
+  try {
+    // wx: claim only if unclaimed, atomically, so two first writes cannot race.
+    await writeFile(tokenFile(room), hash.toString('hex') + '\n', { flag: 'wx' })
+    return true
+  } catch (err) {
+    if (err?.code !== 'EEXIST') return false
+  }
+  try {
+    const held = Buffer.from((await readFile(tokenFile(room), 'utf8')).trim(), 'hex')
+    return held.length === hash.length && timingSafeEqual(held, hash)
+  } catch {
+    return false
+  }
+}
 
 function send(res, code, body, type = 'application/json') {
   const text = typeof body === 'string' ? body : JSON.stringify(body)
@@ -59,7 +94,7 @@ function send(res, code, body, type = 'application/json') {
      * website would be an archive that only worked for one deployment.
      */
     'access-control-allow-origin': '*',
-    'access-control-allow-headers': 'content-type',
+    'access-control-allow-headers': 'content-type,x-cathode-write',
     'access-control-allow-methods': 'GET,POST,OPTIONS',
     'cache-control': 'no-store',
   })
@@ -125,9 +160,11 @@ async function trim(room) {
   for await (const line of lines) if (line) kept.push(line)
   const half = kept.slice(Math.floor(kept.length / 2))
 
-  const handle = await open(path, 'w')
-  await handle.writeFile(half.join('\n') + (half.length ? '\n' : ''))
-  await handle.close()
+  // Written beside and renamed over, so a crash in the middle costs the trim
+  // rather than the room: rewriting in place left a truncated history behind.
+  const fresh = `${path}.trim`
+  await writeFile(fresh, half.join('\n') + (half.length ? '\n' : ''))
+  await rename(fresh, path)
   console.log(`[cathode] trimmed ${room} to ${half.length} events`)
 }
 
@@ -150,6 +187,10 @@ const server = createServer(async (req, res) => {
   }
 
   if (req.method === 'POST') {
+    if (!(await mayWrite(room, req.headers['x-cathode-write']))) {
+      return send(res, 403, { error: 'that is not the write token this room was claimed with' })
+    }
+
     let body
     try {
       body = await readBody(req)

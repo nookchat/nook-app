@@ -40,6 +40,49 @@ that alters one produces one that fails and is dropped. `test/archive-check.mjs`
 starts a real server, meddles with every byte it holds, and checks that not one
 altered event gets through.
 
+## Who may write
+
+Anybody may read, because what they read is ciphertext and the key is the
+space code. Writing is narrower. The room id is also the relay topic, so a
+stranger watching a relay learns it without ever holding the code, and junk
+appended under it would count against the room's cap until the trim ate the
+oldest half of the real history.
+
+So every write carries a token in the `x-cathode-write` header, derived from
+the space code the same way the key is. The first write claims the room with
+it and every write after that has to match, or it is refused with a 403. The
+disk keeps a hash of the token beside the room, in `<room>.token`, so the file
+is not the credential. Delete that file and the next writer claims the room
+afresh.
+
+Two consequences worth knowing:
+
+- A client from before the token cannot write to this server. It can still
+  read everything.
+- Claiming is first come. A stranger who raced the very first write would own
+  an empty room, and the space would simply have no archive here, which is
+  where it started. Attach the archive before sharing the link and the race
+  does not exist.
+
+## Put it behind TLS
+
+The server speaks plain HTTP. Run it behind a reverse proxy that terminates
+TLS (Caddy, nginx, Traefik), for two reasons:
+
+- The write token travels in a header, and plain HTTP shows it to the network.
+- The app is served over HTTPS, and a secure page may not call an insecure
+  address. Pointing a space at `http://your-server:8787` will fail in the
+  browser as mixed content. `http://localhost:8787` is the one exception
+  browsers allow, which is why local testing works without any of this.
+
+The smallest working Caddyfile:
+
+```
+archive.example.org {
+    reverse_proxy localhost:8787
+}
+```
+
 ## Settings
 
 | Variable | Default | Meaning |
@@ -54,7 +97,7 @@ altered event gets through.
 |---|---|
 | `GET /health` | Says what it is |
 | `GET /events/:room?from=N` | Lines after N, and where that leaves you |
-| `POST /events/:room` | Appends a list of sealed lines |
+| `POST /events/:room` | Appends a list of sealed lines. Needs `x-cathode-write` |
 
 A room id is 32 hex characters, derived from the space code. It gives away
 nothing about the code, and the archive cannot work backwards from it.

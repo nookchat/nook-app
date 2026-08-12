@@ -16,7 +16,7 @@
  */
 
 import { rtcConfig } from '../rtc/config'
-import { micConstraints, micSettings } from './mic'
+import { explainMicRefusal, micConstraints, micSettings } from './mic'
 import { denoise, type Denoiser } from './denoise'
 import { Talking } from './talking'
 import type { SignalBus } from '../signal/bus'
@@ -97,8 +97,10 @@ export class Voice {
         audio: micConstraints(),
         video: false,
       })
-    } catch {
-      throw new Error('Cathode could not open your microphone.')
+    } catch (err) {
+      // The browser asks on its own whenever asking is still possible. This
+      // is for when it will not: say which switch is set to no, and where.
+      throw new Error(await explainMicRefusal(err))
     }
 
     /*

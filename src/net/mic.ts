@@ -66,6 +66,41 @@ export function setMicSettings(next: MicSettings): void {
   }
 }
 
+/**
+ * Why the microphone did not open, in words that say what to do about it.
+ *
+ * The browser pops its permission ask on its own whenever the answer is not
+ * already no. When the answer is already no, nothing will pop, ever, and the
+ * one useful thing to say is where the browser keeps that switch. A missing
+ * device is its own story, and everything else stays honest and vague.
+ */
+export async function explainMicRefusal(err: unknown): Promise<string> {
+  const name = err instanceof Error ? err.name : ''
+  if (name === 'NotFoundError' || name === 'OverconstrainedError') {
+    return 'No microphone was found on this device.'
+  }
+  if (name === 'NotAllowedError' || name === 'SecurityError') {
+    try {
+      const state = await navigator.permissions.query({
+        name: 'microphone' as PermissionName,
+      })
+      if (state.state === 'denied') {
+        return (
+          'The browser has the microphone blocked for this site. ' +
+          'Click the icon by the address bar, allow the microphone, then join again.'
+        )
+      }
+    } catch {
+      /* Not every browser lets this be asked. The vaguer line below holds. */
+    }
+    return 'The microphone was refused. Join again to be asked again.'
+  }
+  if (name === 'NotReadableError') {
+    return 'Another app is holding the microphone. Close it and join again.'
+  }
+  return 'Cathode could not open your microphone.'
+}
+
 /** What to ask getUserMedia for. */
 export function micConstraints(): MediaTrackConstraints {
   const s = micSettings()

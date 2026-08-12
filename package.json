@@ -27,6 +27,7 @@
     "test:rejoin": "node test/rejoin-check.mjs",
     "test:denoise": "node test/denoise-check.mjs",
     "test:converge": "node test/converge-check.mjs",
+    "test:sync": "node test/sync-check.mjs",
     "test:agree": "node test/agree-check.mjs",
     "test:archive": "node test/archive-check.mjs",
     "test:leave": "node test/leave-check.mjs",

@@ -53,10 +53,12 @@ const BACKFILL = 250
 /** Data channels choke on very large messages, so batches stay modest. */
 const BATCH = 40
 
-interface Wire {
-  t: 'ev'
-  e: unknown[]
-}
+type Wire =
+  | { t: 'ev'; e: unknown[] }
+  /** How far back this log reaches, so a peer that is short can ask for more. */
+  | { t: 'have'; n: number; low: number }
+  /** A request for the slice at and below a line. */
+  | { t: 'pull'; below: number }
 
 export class RoomChat {
   readonly log: RoomLog
@@ -572,9 +574,24 @@ export class RoomChat {
   /** Throw away what the log no longer needs, in memory and on disk. */
   async tidy(): Promise<void> {
     this.sinceCompaction = 0
-    const { keep, drop } = compact(this.log.all(), await limitsForNow(), this.log.effective())
+    const all = this.log.all()
+    const effective = this.log.effective()
+    const { keep, drop } = compact(all, await limitsForNow(), effective)
     if (drop.length === 0) return
-    this.raiseFloor(keep)
+    /*
+     * The floor rises only when storage pressure dropped a message that still
+     * counted. It used to rise on every tidy that dropped anything, so one
+     * retraction pinned the floor at the log's own oldest message, and from
+     * then on this device refused every older event a peer offered it. That
+     * is the behaviour trimming wants and nothing else does.
+     */
+    const byId = new Map(all.map((e) => [e.id, e]))
+    const limited = drop.some((id) => {
+      if (!effective.has(id)) return false
+      const kind = byId.get(id)?.kind
+      return kind === 'said' || kind === 'poll'
+    })
+    if (limited) this.raiseFloor(keep)
     this.log.replace(keep)
     await deleteEvents(drop)
     this.onChange?.()
@@ -594,6 +611,42 @@ export class RoomChat {
   /** What a peer gets the moment the channel opens. */
   backfill(): string[] {
     return this.encode(this.log.recent(BACKFILL))
+  }
+
+  /**
+   * How far back this device reaches, sent when a link opens and again after
+   * every pull, so the other side can tell whether we hold history they lack.
+   */
+  summary(): string {
+    const all = this.log.all()
+    const wire: Wire = { t: 'have', n: all.length, low: all.length ? all[0].lamport : 0 }
+    return JSON.stringify(wire)
+  }
+
+  /**
+   * The slice below a line, as much of it as one backfill carries, for a peer
+   * whose history stops short. At and below rather than strictly below,
+   * because two events can share a lamport, and the boundary one they lack
+   * would otherwise never travel. The duplicates cost a dedup and nothing
+   * else.
+   */
+  below(lamport: number): string[] {
+    if (!Number.isFinite(lamport)) return []
+    const older = this.log.all().filter((e) => e.lamport <= lamport)
+    return this.encode(older.slice(-BACKFILL))
+  }
+
+  /**
+   * Where to ask a peer to reach back to, given how far back they say they
+   * do, or null for nowhere. A device that trimmed under storage pressure
+   * asks for nothing: it would only refuse what came back, or trim it again.
+   */
+  wantPull(theirs: { n: number; low: number }): number | null {
+    if (this.log.floor > 0) return null
+    if (theirs.n <= 0) return null
+    const mine = this.log.all()
+    const oldest = mine.length ? mine[0].lamport : Number.MAX_SAFE_INTEGER
+    return theirs.low < oldest ? oldest : null
   }
 
   /**

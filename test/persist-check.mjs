@@ -74,8 +74,8 @@ try {
   await waitFor(
     async () =>
       viewer.evaluate(() => {
-        const button = [...document.querySelectorAll('.stream-tab')].find((b) =>
-          b.textContent.startsWith('Watch'),
+        const button = [...document.querySelectorAll('.stream-tab')].find(
+          (b) => b.dataset.watch === 'peer',
         )
         if (!button) return null
         button.click()

@@ -279,8 +279,8 @@ try {
       viewer.evaluate(() => {
         const bar = document.querySelector('.stream-bar')
         if (!bar || bar.classList.contains('hidden')) return null
-        const button = [...bar.querySelectorAll('.stream-tab')].find((b) =>
-          b.textContent.startsWith('Watch'),
+        const button = [...bar.querySelectorAll('.stream-tab')].find(
+          (b) => b.dataset.watch === 'peer',
         )
         return button ? button.textContent.trim() : null
       }),
@@ -293,8 +293,8 @@ try {
   check('and nothing is on their screen until they ask', notYet)
 
   await viewer.evaluate(() => {
-    const button = [...document.querySelectorAll('.stream-tab')].find((b) =>
-      b.textContent.startsWith('Watch'),
+    const button = [...document.querySelectorAll('.stream-tab')].find(
+      (b) => b.dataset.watch === 'peer',
     )
     button?.click()
   })
@@ -424,8 +424,8 @@ try {
   await waitFor(
     async () =>
       skewed.evaluate(() => {
-        const button = [...document.querySelectorAll('.stream-tab')].find((b) =>
-          b.textContent.startsWith('Watch'),
+        const button = [...document.querySelectorAll('.stream-tab')].find(
+          (b) => b.dataset.watch === 'peer',
         )
         if (!button) return null
         button.click()

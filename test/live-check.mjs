@@ -136,8 +136,8 @@ try {
   )
 
   const first = await carol.evaluate(() => {
-    const button = [...document.querySelectorAll('.stream-tab')].find((b) =>
-      b.textContent.startsWith('Watch'),
+    const button = [...document.querySelectorAll('.stream-tab')].find(
+      (b) => b.dataset.watch === 'peer',
     )
     if (!button) return null
     const name = button.textContent.trim()
@@ -162,7 +162,7 @@ try {
   // Switch to the other one, and check the picture comes back.
   const switched = await carol.evaluate(() => {
     const off = [...document.querySelectorAll('.stream-tab')].find(
-      (b) => b.textContent.startsWith('Watch') && !b.classList.contains('on'),
+      (b) => b.dataset.watch === 'peer' && !b.classList.contains('on'),
     )
     if (!off) return null
     const name = off.textContent.trim()
@@ -201,6 +201,43 @@ try {
     'and she can take it back off again',
     stopped !== null && stopped.pressed === false,
     JSON.stringify(stopped),
+  )
+
+  // ---- both sharing, watching each other -----------------------------------
+  /*
+   * The two-connection trap. Alice and Bob are both sharing, and now each
+   * watches the other, so each pair of browsers holds two connections at
+   * once: I host yours while I view mine. Every ICE line has to land on the
+   * connection it belongs to. Routing them by sender fed both connections'
+   * lines to the hosting one, the viewing one starved, and the stage was a
+   * black rectangle until a reload emptied the watchers map.
+   */
+  const watchTheOther = async (page, name) => {
+    await page.evaluate(() => {
+      const b = [...document.querySelectorAll('.stream-tab')].find(
+        (x) => x.dataset.watch === 'peer',
+      )
+      b?.click()
+    })
+    return waitFor(
+      async () =>
+        page.evaluate(() => {
+          const tag = document.querySelector('.stage-tag')?.textContent ?? ''
+          const el = document.querySelector('video')
+          return el && el.videoWidth > 0 && !el.paused && tag.startsWith('Watching')
+            ? `${tag}, ${el.videoWidth}px`
+            : null
+        }),
+      30_000,
+      `${name} to see the other sharer's picture`,
+    )
+  }
+  const aliceSees = await watchTheOther(alice, 'Alice')
+  const bobSees = await watchTheOther(bob, 'Bob')
+  check(
+    'two sharers can watch each other at the same time',
+    !!aliceSees && !!bobSees,
+    `${aliceSees ?? 'nothing'} | ${bobSees ?? 'nothing'}`,
   )
 
   // ---- moving somebody between voice channels ------------------------------
@@ -244,6 +281,33 @@ try {
     !bobOffered.some((t) => t.startsWith('Move to')) && !bobOffered.some((t) => t.includes('admin')),
     bobOffered.join(' | ') || 'nothing',
   )
+
+  /*
+   * The move itself. Alice makes a second voice channel, stands in it, and
+   * moves Bob. The ask travels signed, Bob's device checks the signature
+   * against the log's admins, and his microphone is already open, so he lands
+   * in the new channel without being asked anything.
+   */
+  alice.once('dialog', (d) => d.accept('war-room'))
+  await alice.click('button[title="Make a voice channel"]')
+  await alice.getByRole('button', { name: 'war-room' }).first().click()
+  await alice.waitForTimeout(1500)
+
+  const bobRow = alice.locator('.rail-person', { hasText: 'Bob' })
+  await bobRow.locator('.person-more').first().evaluate((el) => el.focus())
+  await bobRow.locator('.person-more').first().click()
+  await alice.waitForSelector('.menu', { timeout: 5000 })
+  await alice.click('.menu-item:has-text("Move to war-room")')
+
+  const moved = await waitFor(
+    async () => {
+      const where = await bob.$eval('.voice-bar', (el) => el.textContent).catch(() => '')
+      return where.includes('war-room') ? where : null
+    },
+    20_000,
+    'Bob to land in the channel he was moved to',
+  )
+  check('and the move lands, signed and checked', !!moved, moved ?? 'nowhere')
 } finally {
   await browser.close()
 }

@@ -166,6 +166,30 @@ export function takeIdentity(secret: string): boolean {
   return true
 }
 
+/**
+ * Sign a claim that is not an event: a handful of fields, hashed and signed,
+ * for the messages that live on the wire and never in the log. Both sides
+ * build the same array in the same order, so JSON of it is canonical enough.
+ */
+export async function signClaim(parts: unknown[]): Promise<string> {
+  return sign(await hashParts(parts))
+}
+
+/** Check a signed claim. Anything malformed is a no, never an exception. */
+export async function verifyClaim(
+  parts: unknown[],
+  sigHex: string,
+  pubkeyHex: string,
+): Promise<boolean> {
+  return verify(await hashParts(parts), sigHex, pubkeyHex)
+}
+
+async function hashParts(parts: unknown[]): Promise<string> {
+  const bytes = new TextEncoder().encode(JSON.stringify(parts))
+  const digest = await crypto.subtle.digest('SHA-256', bytes)
+  return toHex(new Uint8Array(digest))
+}
+
 /** Sign 32 bytes of hash. Returns hex. */
 export function sign(idHex: string): string {
   if (!priv) loadIdentity()
