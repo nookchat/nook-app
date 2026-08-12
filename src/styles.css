@@ -1253,6 +1253,14 @@ details.adv[open] > summary {
   opacity: 1;
 }
 
+/* The button's footprint with nothing in it, worn by a row with no actions,
+   so the pills on every row line up in one column. */
+.person-more-gap {
+  flex: 0 0 auto;
+  width: 22px;
+  min-width: 22px;
+}
+
 @media (hover: none) {
   .person-more {
     opacity: 0.6;
@@ -1883,6 +1891,15 @@ details.adv[open] > summary {
   font-size: calc(var(--size-small) - 1px);
   border-radius: var(--pill-radius);
   color: var(--accent-text);
+}
+
+/* The way in to a stream, on the line that announced it. Gone when it ends. */
+.chat-join {
+  margin-left: 8px;
+  min-height: 24px;
+  padding: 0 12px;
+  font-size: var(--size-small);
+  border-radius: var(--pill-radius);
 }
 
 .chat-reply {

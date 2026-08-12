@@ -1753,6 +1753,8 @@ export class SpaceView {
     this.chatPanel.onThread = (rootId) => this.openThread(rootId)
     this.chatPanel.onDirect = (key) => this.openDirect(key)
     this.chatPanel.onCommand = (line) => this.runCommand(line)
+    this.chatPanel.streamLive = (key, channel) => this.sharerByKey(key, channel) !== null
+    this.chatPanel.onWatch = (key, channel) => this.joinStream(key, channel)
     this.chatPanel.onGif = () => void this.openGifPicker('')
     this.chatPanel.onSound = () => this.openBoard(this.chatPanel?.soundAnchor ?? null)
     this.chatPanel.commands = COMMANDS
@@ -2761,7 +2763,12 @@ export class SpaceView {
               )
             : null,
           row.sharing ? h('span', { class: 'pill good', text: 'live' }) : null,
-          actions.length ? more : null,
+          /*
+           * A row with nothing to offer still wears an empty slot the size of
+           * the button, so the voice and live pills line up in one column
+           * whether or not the row beside them has actions.
+           */
+          actions.length ? more : h('span', { class: 'person-more-gap' }),
         ]),
       )
     }
@@ -3105,7 +3112,7 @@ export class SpaceView {
     this.showOwnPreview()
     this.buildSharePanel()
     this.announceMe()
-    void this.publish((c) => c.say(`started sharing in #${this.channel}`, this.channel))
+    void this.publish((c) => c.sayLive(this.channel))
     this.draw()
   }
 
@@ -3157,6 +3164,33 @@ export class SpaceView {
       out.push({ id, name: peer?.name || shortKey(id), you: false, key: peer?.key ?? '' })
     }
     return out
+  }
+
+  /** The session of this person's stream in this channel, if it is still up. */
+  private sharerByKey(key: string, channel: string): string | null {
+    for (const [id, ch] of this.sharers) {
+      if (ch !== channel || id === this.selfId) continue
+      const peer = this.mesh?.peers().find((p) => p.id === id)
+      if (peer?.key === key) return id
+    }
+    return null
+  }
+
+  /**
+   * Walk in on a stream from the message that announced it.
+   *
+   * The message may be old and the reader may be standing in another channel,
+   * so this goes where the stream is first, then puts it on. The channel move
+   * takes everything else off the stage, the way walking in always does.
+   */
+  private joinStream(key: string, channel: string): void {
+    const id = this.sharerByKey(key, channel)
+    if (!id) {
+      toast('That stream has ended.', 'warn')
+      return
+    }
+    if (this.channel !== channel || this.thread || this.direct) this.openChannel(channel)
+    if (!this.watched.has(id)) this.watch(id)
   }
 
   /**

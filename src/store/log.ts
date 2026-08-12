@@ -763,6 +763,7 @@ export class RoomLog {
           replyTo: typeof e.body.replyTo === 'string' ? e.body.replyTo : null,
           inThread: e.body.thread === true,
           emote: e.body.emote === true,
+          live: e.body.live === true,
           edited: false,
           retracted: false,
           reactions: new Map(),
@@ -1050,6 +1051,15 @@ export interface Message {
   inThread?: boolean
   /** Written with /me, so it reads as an action rather than as speech. */
   emote?: boolean
+  /**
+   * Said by starting a stream.
+   *
+   * The line is an invitation to watch, and it only works as one while the
+   * screen is up: the panel asks the space whether it still is before it
+   * draws the way in. An old client draws the words alone, which still say
+   * what happened.
+   */
+  live?: boolean
   /** How many thread replies hang off this one. Only counted for roots. */
   replies?: number
   edited: boolean

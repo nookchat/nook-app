@@ -324,6 +324,21 @@ export class RoomChat {
     return this.write('said', body)
   }
 
+  /**
+   * Say that a stream just started here.
+   *
+   * An emote, so it reads as something done rather than said, and marked
+   * live so every panel can hang the way in off it while the screen is up.
+   */
+  sayLive(channel: string): Promise<LogEvent> {
+    return this.write('said', {
+      text: 'started sharing their screen',
+      channel: cleanChannel(channel) || DEFAULT_CHANNEL,
+      emote: true,
+      live: true,
+    })
+  }
+
   /** Every thread here, the one that moved last at the top. */
   threads(): ThreadInfo[] {
     const threads = this.log.threads()

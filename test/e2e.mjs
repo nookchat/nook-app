@@ -292,12 +292,24 @@ try {
   const notYet = await viewer.evaluate(() => !document.querySelector('video'))
   check('and nothing is on their screen until they ask', notYet)
 
-  await viewer.evaluate(() => {
-    const button = [...document.querySelectorAll('.stream-tab')].find(
-      (b) => b.dataset.watch === 'peer',
-    )
-    button?.click()
-  })
+  // The chat says so too, and the saying is a way in.
+  const invited = await waitFor(
+    async () =>
+      viewer.evaluate(() => {
+        const line = [...document.querySelectorAll('.chat-text.emote')].find((t) =>
+          t.textContent.includes('started sharing their screen'),
+        )
+        const button = document.querySelector('.chat-join')
+        return line && button ? button.textContent.trim() : null
+      }),
+    30_000,
+    'the chat to carry the invitation',
+  )
+  check('the chat announces the stream with a way in', invited === 'Join stream', invited ?? 'none')
+
+  // Joining goes through the message rather than the bar, so the new door is
+  // the one this run walks through. The bar was asserted just above.
+  await viewer.click('.chat-join')
 
   const playing = await waitFor(
     async () =>
@@ -519,6 +531,14 @@ try {
     'the space to carry on after the share stops',
   )
   check('the space carries on when the sharing stops', stillThere.length > 0)
+
+  // The invitation goes with the stream it invited to.
+  const buttonGone = await waitFor(
+    async () => viewer.evaluate(() => (document.querySelector('.chat-join') ? null : true)),
+    15_000,
+    'the join button to go with the stream',
+  )
+  check('the way in goes when the stream ends', buttonGone === true)
   await viewer.screenshot({ path: `${SHOTS}viewer-ended.png` })
 
   check('no console errors on the host', errors.host.length === 0, errors.host.join(' | '))

@@ -153,6 +153,11 @@ export class ChatPanel {
   onGif: (() => void) | null = null
   /** Open the soundboard. The space owns it, because it owns the wire. */
   onSound: (() => void) | null = null
+  /** Whether this person's stream is still up in this channel. The space
+      knows; the panel only asks so a dead invitation is not offered. */
+  streamLive: ((key: string, channel: string) => boolean) | null = null
+  /** Put their stream on the screen, from the message that announced it. */
+  onWatch: ((key: string, channel: string) => void) | null = null
   /** Asks the space what is behind a link. Null when nobody can answer. */
   previewFor: ((url: string) => Promise<LinkPreview | null>) | null = null
 
@@ -908,6 +913,9 @@ export class ChatPanel {
       m.edited ? 'e' : '',
       m.pinned ? 'p' : '',
       m.emote ? 'm' : '',
+      // The way in to a stream comes and goes with the stream itself, not
+      // with anything on the message, so the row must redraw when it turns.
+      m.live && m.author !== this.me && this.streamLive?.(m.author, m.channel) ? 'live' : '',
       m.replies ?? 0,
       first ? 'f' : '',
       this.canPin ? 'a' : '',
@@ -1049,6 +1057,23 @@ export class ChatPanel {
       }
       for (const src of pictures) line.append(embed(src))
       this.attachPreview(line, m.text)
+    }
+
+    /*
+     * The way in to a stream, on the line that announced it.
+     *
+     * Only while the screen is still up, and never on your own: a button that
+     * joins a stream that ended is a lie, and the sharer already has theirs.
+     */
+    if (m.live && m.author !== this.me && this.streamLive?.(m.author, m.channel)) {
+      line.append(
+        h('button', {
+          class: 'chat-join primary',
+          text: 'Join stream',
+          title: `Put ${m.name || shortKey(m.author)}’s screen on yours`,
+          on: { click: () => this.onWatch?.(m.author, m.channel) },
+        }),
+      )
     }
 
     if (m.edited) line.append(h('span', { class: 'chat-edited', text: '(edited)' }))
