@@ -68,15 +68,33 @@ export class SignalBus {
   start(): void {
     if (this.started) return
     this.started = true
-    for (const t of this.transports) {
-      t.connect(this.room.id, {
-        onWire: (wire) => void this.receive(wire),
-        onStatus: (transport, status, detail) => {
-          this.health.set(transport, { name: transport.name, status, detail })
-          this.onHealth?.(this.healthList)
-        },
-      })
-    }
+    for (const t of this.transports) this.open(t)
+  }
+
+  /**
+   * One more relay, learned after the bus was built.
+   *
+   * The archive's address comes out of the space's own notes, which are not
+   * read until the log is open, and the bus is up before that. Anything
+   * published before this one connected went out over the public relays,
+   * which is the same story as any single relay being late.
+   */
+  addRelay(transport: Transport): void {
+    if (this.transports.some((t) => t.name === transport.name)) return
+    this.transports.push(transport)
+    this.health.set(transport, { name: transport.name, status: 'idle' })
+    if (this.started) this.open(transport)
+    this.onHealth?.(this.healthList)
+  }
+
+  private open(t: Transport): void {
+    t.connect(this.room.id, {
+      onWire: (wire) => void this.receive(wire),
+      onStatus: (transport, status, detail) => {
+        this.health.set(transport, { name: transport.name, status, detail })
+        this.onHealth?.(this.healthList)
+      },
+    })
   }
 
   async send(msg: OutgoingEnvelope): Promise<void> {

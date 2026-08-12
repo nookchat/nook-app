@@ -13,6 +13,8 @@
     "test:mesh": "node test/mesh.mjs",
     "test:repro": "node test/repro.mjs",
     "test:relays": "node test/relay-probe.mjs",
+    "test:relay": "node test/relay-check.mjs",
+    "test:selfrelay": "node test/self-relay-check.mjs",
     "test:qr": "node test/qr-check.mjs",
     "test:uplink": "node test/uplink.mjs",
     "test:encoder": "node test/encoder-check.mjs",

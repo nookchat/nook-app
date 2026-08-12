@@ -39,6 +39,7 @@ import {
   type PresetId,
   type QualityPlan,
 } from '../rtc/quality'
+import { WsRelayTransport } from '../signal/ws-relay'
 import { SignalBus } from '../signal/bus'
 import type { Envelope } from '../signal/envelope'
 import { loadSettings, saveSettings, type HostSettings } from '../settings'
@@ -411,6 +412,12 @@ export class SpaceView {
       if (wanted) {
         archive.use(wanted, note?.archiveAt ?? 0)
         void this.catchUp()
+        /*
+         * The same machine carries handshakes too. The public relays stay on
+         * the roster as spares, so a space with its own archive rides its own
+         * infrastructure and survives everybody else's bad night.
+         */
+        this.bus?.addRelay(new WsRelayTransport(wanted))
       }
     }
 

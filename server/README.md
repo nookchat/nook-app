@@ -101,6 +101,21 @@ archive.example.org {
 | `POST /events/:room` | Appends a list of sealed lines. Needs `x-cathode-write` |
 | `GET /preview?url=U` | Reads a public page's OpenGraph tags, for link cards in chat |
 | `GET /gif?q=term` | GIF search via Tenor. 404 until `CATHODE_TENOR_KEY` is set |
+| `WS /relay/:room` | A signal relay. Every frame goes, unread, to everybody else in the room |
+
+## The relay
+
+The handshakes that start a space normally ride public MQTT brokers and Nostr
+relays: other people's machines, free, and occasionally all having a bad night
+at once. An archive is a machine the space already trusts, so it carries the
+handshakes too. Any space pointed at this archive uses its relay automatically;
+the public relays stay on the roster as spares. Nothing is stored and nothing
+is readable: the frames are sealed the same way they are everywhere else, and
+the room id in the path is the topic the public relays already see.
+
+The reverse proxy in front of it has to pass WebSocket upgrades through. Caddy
+does by default; nginx needs the usual `Upgrade` and `Connection` headers on
+the `/relay/` path.
 
 An archive is one of two ways to search for a GIF, and the better one when a
 space has an archive: the key sits on this machine rather than on everybody's.

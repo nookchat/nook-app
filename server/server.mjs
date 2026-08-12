@@ -436,6 +436,183 @@ const server = createServer(async (req, res) => {
   return send(res, 405, { error: 'not that way' })
 })
 
+/* =========================================================================
+   The relay.
+
+   The handshakes that start a space ride public MQTT brokers and Nostr
+   relays: other people's machines, free, and occasionally all having a bad
+   night at once. A space that already trusts this machine with its sealed
+   history can lean on it to carry its sealed handshakes too, and then a bad
+   night for the public relays is somebody else's bad night.
+
+   It is as stupid as the rest of this file. A socket joins a room; every
+   text frame it sends is handed, unread, to every other socket in the same
+   room; nothing is stored, nothing is answered. The frames are sealed by
+   the same envelope the public relays carry, and the room id in the path is
+   the same topic they see, so this learns nothing they do not.
+
+   WebSocket by hand, because the whole protocol this needs is forty lines
+   and the file's first rule is no dependencies.
+   ========================================================================= */
+
+/** Signalling frames are small. Anything bigger is not a handshake. */
+const MAX_FRAME = 128 * 1024
+/** Sockets one room may hold. A space is people, not a botnet. */
+const MAX_ROOM_SOCKETS = 64
+/** Dead sockets are found by pinging this often. */
+const PING_MS = 30_000
+
+const WS_MAGIC = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
+
+/** room id -> the sockets standing in it. */
+const relayRooms = new Map()
+
+function wsFrame(opcode, payload) {
+  const len = payload.length
+  let head
+  if (len < 126) {
+    head = Buffer.from([0x80 | opcode, len])
+  } else if (len < 65_536) {
+    head = Buffer.alloc(4)
+    head[0] = 0x80 | opcode
+    head[1] = 126
+    head.writeUInt16BE(len, 2)
+  } else {
+    head = Buffer.alloc(10)
+    head[0] = 0x80 | opcode
+    head[1] = 127
+    head.writeBigUInt64BE(BigInt(len), 2)
+  }
+  return Buffer.concat([head, payload])
+}
+
+function relayLeave(room, socket) {
+  const standing = relayRooms.get(room)
+  if (!standing) return
+  standing.delete(socket)
+  if (standing.size === 0) relayRooms.delete(room)
+}
+
+server.on('upgrade', (req, socket) => {
+  const path = (req.url ?? '').split('?')[0]
+  const m = /^\/relay\/([0-9a-f]{32})$/.exec(path)
+  const key = req.headers['sec-websocket-key']
+  if (!m || typeof key !== 'string' || !/websocket/i.test(String(req.headers.upgrade ?? ''))) {
+    socket.write('HTTP/1.1 400 Bad Request\r\n\r\n')
+    socket.destroy()
+    return
+  }
+  const room = m[1]
+  const standing = relayRooms.get(room) ?? new Set()
+  if (standing.size >= MAX_ROOM_SOCKETS) {
+    socket.write('HTTP/1.1 503 Service Unavailable\r\n\r\n')
+    socket.destroy()
+    return
+  }
+
+  const accept = createHash('sha1').update(key + WS_MAGIC).digest('base64')
+  socket.write(
+    'HTTP/1.1 101 Switching Protocols\r\n' +
+      'Upgrade: websocket\r\n' +
+      'Connection: Upgrade\r\n' +
+      `Sec-WebSocket-Accept: ${accept}\r\n\r\n`,
+  )
+  socket.setNoDelay(true)
+  standing.add(socket)
+  relayRooms.set(room, standing)
+  socket.cathodeAlive = true
+
+  const goodbye = (code) => {
+    try {
+      const reason = Buffer.alloc(2)
+      reason.writeUInt16BE(code, 0)
+      socket.write(wsFrame(8, reason))
+    } catch {
+      /* it was already gone */
+    }
+    relayLeave(room, socket)
+    socket.destroy()
+  }
+
+  /*
+   * The frames, straight off the wire. A client frame is always masked, so
+   * an unmasked one is not a browser and is shown the door, the way the RFC
+   * says. Fragmented frames are refused too: a handshake fits in one frame,
+   * and half a handshake is worth nothing.
+   */
+  let held = Buffer.alloc(0)
+  socket.on('data', (chunk) => {
+    held = Buffer.concat([held, chunk])
+    for (;;) {
+      if (held.length < 2) return
+      const fin = (held[0] & 0x80) !== 0
+      const opcode = held[0] & 0x0f
+      const masked = (held[1] & 0x80) !== 0
+      let len = held[1] & 0x7f
+      let at = 2
+      if (len === 126) {
+        if (held.length < at + 2) return
+        len = held.readUInt16BE(at)
+        at += 2
+      } else if (len === 127) {
+        if (held.length < at + 8) return
+        const big = held.readBigUInt64BE(at)
+        if (big > BigInt(MAX_FRAME)) return goodbye(1009)
+        len = Number(big)
+        at += 8
+      }
+      if (len > MAX_FRAME) return goodbye(1009)
+      if (!masked) return goodbye(1002)
+      if (held.length < at + 4 + len) return
+      const mask = held.subarray(at, at + 4)
+      const payload = held.subarray(at + 4, at + 4 + len)
+      for (let i = 0; i < payload.length; i++) payload[i] ^= mask[i & 3]
+      held = held.subarray(at + 4 + len)
+
+      if (opcode === 8) return goodbye(1000)
+      if (opcode === 9) {
+        socket.write(wsFrame(10, payload))
+        continue
+      }
+      if (opcode === 10) {
+        socket.cathodeAlive = true
+        continue
+      }
+      if (opcode !== 1 || !fin) return goodbye(1003)
+
+      const out = wsFrame(1, Buffer.from(payload))
+      for (const other of relayRooms.get(room) ?? []) {
+        if (other !== socket && !other.destroyed) other.write(out)
+      }
+    }
+  })
+
+  socket.on('close', () => relayLeave(room, socket))
+  socket.on('error', () => {
+    relayLeave(room, socket)
+    socket.destroy()
+  })
+})
+
+/* One heartbeat for every socket. A socket that never answers a ping is a
+   phone off the hook, and holding it open keeps a seat warm in the room. */
+setInterval(() => {
+  for (const standing of relayRooms.values()) {
+    for (const socket of standing) {
+      if (!socket.cathodeAlive) {
+        socket.destroy()
+        continue
+      }
+      socket.cathodeAlive = false
+      try {
+        socket.write(wsFrame(9, Buffer.alloc(0)))
+      } catch {
+        socket.destroy()
+      }
+    }
+  }
+}, PING_MS).unref()
+
 server.listen(PORT, () => {
-  console.log(`[cathode] archive on :${PORT}, keeping ciphertext in ${DATA}`)
+  console.log(`[cathode] archive on :${PORT}, keeping ciphertext in ${DATA}, relaying on /relay`)
 })
