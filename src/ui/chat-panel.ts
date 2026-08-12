@@ -25,6 +25,8 @@ export interface ChatActions {
   rename(name: string): void
   /** Hold a message up at the top of the channel, or stop holding it. */
   pin(id: string, on: boolean): void
+  /** Pick an answer to a poll. */
+  vote(id: string, choice: number): void
 }
 
 export class ChatPanel {
@@ -32,12 +34,15 @@ export class ChatPanel {
   actions: ChatActions | null = null
   /** Only an admin may pin, so only an admin is offered the button. */
   canPin = false
+  /** Asking a question is a different shape from saying something. */
+  onPoll: (() => void) | null = null
 
   private readonly log: HTMLDivElement
   private readonly pins: HTMLDivElement
   private readonly nameInput: HTMLInputElement
   private readonly textInput: HTMLInputElement
   private readonly sendButton: HTMLButtonElement
+  private readonly pollButton: HTMLButtonElement
   private readonly count: HTMLSpanElement
   private readonly replyBar: HTMLDivElement
   private readonly nameRow: HTMLDivElement
@@ -84,6 +89,13 @@ export class ChatPanel {
     })
 
     this.sendButton = h('button', { text: 'Send', on: { click: () => this.submit() } })
+    this.pollButton = h('button', {
+      class: 'ghost',
+      text: '\u2261',
+      title: 'Ask a question',
+      ariaLabel: 'Ask a question',
+      on: { click: () => this.onPoll?.() },
+    })
 
     this.nameRow = h('div', { class: 'row' }, [
       h('span', { class: 'tiny faint', text: 'You', style: { width: '26px' } }),
@@ -102,7 +114,7 @@ export class ChatPanel {
       h('div', { class: 'chat-compose stack tight' }, [
         this.replyBar,
         this.nameRow,
-        h('div', { class: 'row' }, [this.textInput, this.sendButton]),
+        h('div', { class: 'row' }, [this.textInput, this.pollButton, this.sendButton]),
       ]),
     ])
   }
@@ -196,10 +208,15 @@ export class ChatPanel {
       lastAuthor = m.replyTo ? '' : m.author
 
       const text = h('span', { class: 'chat-text' })
-      for (const node of formatText(m.text)) text.append(node)
-      line.append(text)
-
-      for (const src of imageLinks(m.text)) line.append(embed(src))
+      if (m.poll) {
+        text.append(h('strong', { text: m.poll.question }))
+        line.append(text)
+        line.append(this.pollBox(m))
+      } else {
+        for (const node of formatText(m.text)) text.append(node)
+        line.append(text)
+        for (const src of imageLinks(m.text)) line.append(embed(src))
+      }
 
       if (m.edited) line.append(h('span', { class: 'chat-edited', text: '(edited)' }))
       line.append(h('span', { class: 'chat-at', text: clockLabel(m.at) }))
@@ -255,6 +272,57 @@ export class ChatPanel {
         }),
       )
     }
+  }
+
+  /**
+   * A poll, drawn as a bar per answer.
+   *
+   * The counts are always shown, because hiding them until you vote makes
+   * people vote to see them, which is a way of getting a worse answer. The bar
+   * is the share of the votes cast; a poll nobody has answered draws no bars
+   * rather than four empty ones.
+   */
+  private pollBox(m: Message): HTMLElement {
+    const poll = m.poll!
+    const box = h('div', { class: 'poll' })
+
+    poll.options.forEach((option, i) => {
+      const count = poll.votes.get(i)?.size ?? 0
+      const share = poll.total > 0 ? Math.round((count / poll.total) * 100) : 0
+      const mine = poll.mine === i
+
+      const fill = h('div', { class: 'poll-fill' })
+      fill.style.width = `${poll.total > 0 ? share : 0}%`
+
+      box.append(
+        h(
+          'button',
+          {
+            class: `poll-option${mine ? ' on' : ''}`,
+            title: mine ? 'Your answer' : `Pick "${option}"`,
+            on: { click: () => this.actions?.vote(m.id, i) },
+          },
+          [
+            fill,
+            h('span', { class: 'poll-label truncate', text: option }),
+            h('span', { class: 'poll-count', text: poll.total > 0 ? `${count}` : '' }),
+          ],
+        ),
+      )
+    })
+
+    box.append(
+      h('div', {
+        class: 'tiny faint',
+        text:
+          poll.total === 0
+            ? 'No answers yet'
+            : `${poll.total} ${poll.total === 1 ? 'answer' : 'answers'}${
+                poll.mine === null ? '' : ', including yours'
+              }`,
+      }),
+    )
+    return box
   }
 
   private jumpTo(id: string): void {

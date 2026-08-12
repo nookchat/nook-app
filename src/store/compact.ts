@@ -46,9 +46,25 @@ function channelOf(e: LogEvent): string {
   return raw || 'general'
 }
 
+/** What a reset sweeps away, kept in step with the log's own list. */
+const CLEARABLE = new Set(['said', 'edit', 'react', 'retract', 'pin', 'poll', 'vote'])
+
 export function compact(events: LogEvent[], limits: Limits = DEFAULT_LIMITS): CompactResult {
   const ordered = [...events].sort(compare)
   const keepIds = new Set<string>()
+
+  /*
+   * The line an admin drew. Everything above it is finished with, so this is
+   * where it actually leaves the disk rather than merely stopping being shown.
+   * Only an admin's line counts, and working out who is an admin is the log's
+   * job, so this trusts the events it was given: they came from the log.
+   */
+  let cleared = 0
+  for (const e of ordered) {
+    if (e.kind !== 'reset') continue
+    const before = Number(e.body.before ?? 0)
+    if (Number.isFinite(before) && before > cleared) cleared = before
+  }
 
   const retracted = new Set<string>()
   const latestProfile = new Map<string, string>()
@@ -56,9 +72,11 @@ export function compact(events: LogEvent[], limits: Limits = DEFAULT_LIMITS): Co
   const latestEdit = new Map<string, string>()
   const latestReact = new Map<string, string>()
   const latestPin = new Map<string, string>()
+  const latestVote = new Map<string, string>()
   const messages: LogEvent[] = []
 
   for (const e of ordered) {
+    if (e.lamport < cleared && CLEARABLE.has(e.kind)) continue
     switch (e.kind) {
       case 'retract':
         retracted.add(String(e.body.target ?? ''))
@@ -81,10 +99,16 @@ export function compact(events: LogEvent[], limits: Limits = DEFAULT_LIMITS): Co
         latestPin.set(String(e.body.target ?? ''), e.id)
         break
       case 'said':
+      case 'poll':
         messages.push(e)
+        break
+      case 'vote':
+        // A vote is only worth keeping while its poll is.
+        latestVote.set(`${e.author}|${e.body.target}`, e.id)
         break
       case 'role':
       case 'space':
+      case 'reset':
         // Who is allowed to do what, and what the place is called. Both are
         // worked out by walking the log in order, so none of it can be dropped.
         keepIds.add(e.id)
@@ -124,6 +148,9 @@ export function compact(events: LogEvent[], limits: Limits = DEFAULT_LIMITS): Co
   // Edits, reactions and pins only survive alongside the message they point at.
   for (const [target, id] of latestEdit) if (liveMessages.has(target)) keepIds.add(id)
   for (const [target, id] of latestPin) if (liveMessages.has(target)) keepIds.add(id)
+  for (const [key, id] of latestVote) {
+    if (liveMessages.has(key.split('|')[1])) keepIds.add(id)
+  }
   for (const [key, id] of latestReact) {
     if (liveMessages.has(key.split('|')[1])) keepIds.add(id)
   }

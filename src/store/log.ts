@@ -25,6 +25,9 @@ export type EventKind =
   | 'profile'
   | 'channel'
   | 'pin'
+  | 'poll'
+  | 'vote'
+  | 'reset'
   | 'role'
   | 'space'
 
@@ -100,7 +103,20 @@ export async function openEvent(raw: unknown, room: string): Promise<LogEvent | 
   if (typeof e.lamport !== 'number' || !Number.isInteger(e.lamport) || e.lamport < 0) return null
   if (typeof e.at !== 'number' || !Number.isFinite(e.at)) return null
   if (
-    !['said', 'edit', 'react', 'retract', 'profile', 'channel', 'role', 'space', 'pin'].includes(
+    ![
+      'said',
+      'edit',
+      'react',
+      'retract',
+      'profile',
+      'channel',
+      'role',
+      'space',
+      'pin',
+      'poll',
+      'vote',
+      'reset',
+    ].includes(
       String(e.kind),
     )
   )
@@ -143,6 +159,15 @@ export function packEvent(e: LogEvent): WireEvent {
   return rest
 }
 
+/**
+ * The kinds a reset sweeps away.
+ *
+ * Conversation, and the things that hang off it. Not names, roles, channels or
+ * the name of the space: those describe the room rather than what was said in
+ * it, and clearing them would take the room apart rather than empty it.
+ */
+const CLEARABLE = new Set<EventKind>(['said', 'edit', 'react', 'retract', 'pin', 'poll', 'vote'])
+
 /** Deterministic on every device, with no clock involved. */
 export function compare(a: LogEvent, b: LogEvent): number {
   if (a.lamport !== b.lamport) return a.lamport - b.lamport
@@ -158,6 +183,8 @@ export function compare(a: LogEvent, b: LogEvent): number {
  */
 export class RoomLog {
   readonly room: string
+  /** Whose device this is, so "did I vote" can be answered without asking. */
+  me = ''
   private readonly byId = new Map<string, LogEvent>()
   private clock = 0
 
@@ -239,6 +266,36 @@ export class RoomLog {
       roles.set(subject, role)
     }
     return roles
+  }
+
+  /**
+   * The line an admin drew under the conversation.
+   *
+   * Nothing is deleted from anybody else's device, because nothing can be:
+   * every copy of this log belongs to whoever holds it and there is no server
+   * to tell them otherwise. What a reset does is put a line in the log saying
+   * everything before this point is finished with, and every device that reads
+   * the log honours it, stops showing what is above the line, and throws it
+   * away the next time it compacts.
+   *
+   * That is the honest limit and it is worth stating plainly: somebody who
+   * kept a copy still has a copy. A reset is for starting a room again, not
+   * for unsaying something. Retracting a message is the tool for that, and it
+   * has the same limit.
+   *
+   * Names, roles, channels and the name of the space live above the line, or a
+   * reset would take the room apart rather than empty it.
+   */
+  resetAt(): number {
+    const roles = this.roles()
+    let mark = 0
+    for (const e of this.all()) {
+      if (e.kind !== 'reset') continue
+      if (roles.get(e.author) !== 'admin') continue
+      const before = Number(e.body.before ?? 0)
+      if (Number.isFinite(before) && before > mark) mark = before
+    }
+    return mark
   }
 
   /**
@@ -356,8 +413,11 @@ export class RoomLog {
     const index = new Map<string, Message>()
     const names = new Map<string, string>()
     const kicked = this.kickedAt()
+    const cleared = this.resetAt()
 
     for (const e of this.all()) {
+      // Everything above the line an admin drew is finished with.
+      if (e.lamport < cleared && CLEARABLE.has(e.kind)) continue
       // Somebody removed keeps what they already said and loses what came after.
       const removedAt = kicked.get(e.author)
       if (removedAt !== undefined && e.lamport > removedAt) continue
@@ -368,6 +428,44 @@ export class RoomLog {
         continue
       }
       if (e.kind === 'channel') continue
+      if (e.kind === 'poll') {
+        if (channel && channelOf(e) !== channel) continue
+        const question = String(e.body.question ?? '').slice(0, 200).trim()
+        const raw = Array.isArray(e.body.options) ? e.body.options : []
+        const options = raw
+          .map((o) => String(o).slice(0, 80).trim())
+          .filter(Boolean)
+          .slice(0, 6)
+        // A poll with nothing to pick between is not a poll.
+        if (!question || options.length < 2) continue
+        const message: Message = {
+          id: e.id,
+          author: e.author,
+          at: e.at,
+          channel: channelOf(e),
+          text: question,
+          replyTo: null,
+          edited: false,
+          retracted: false,
+          reactions: new Map(),
+          poll: { question, options, votes: new Map(), mine: null, total: 0 },
+        }
+        index.set(e.id, message)
+        out.push(message)
+        continue
+      }
+      if (e.kind === 'vote') {
+        const target = index.get(String(e.body.target ?? ''))
+        if (!target?.poll) continue
+        const choice = Number(e.body.choice)
+        if (!Number.isInteger(choice) || choice < 0 || choice >= target.poll.options.length) continue
+        // One vote each. Changing your mind moves it rather than adding one.
+        for (const who of target.poll.votes.values()) who.delete(e.author)
+        const set = target.poll.votes.get(choice) ?? new Set<string>()
+        set.add(e.author)
+        target.poll.votes.set(choice, set)
+        continue
+      }
       if (e.kind === 'said') {
         if (channel && channelOf(e) !== channel) continue
         const message: Message = {
@@ -417,6 +515,13 @@ export class RoomLog {
     for (const m of out) {
       m.name = names.get(m.author) ?? ''
       m.pinned = pins.has(m.id)
+      if (!m.poll) continue
+      let total = 0
+      for (const [choice, who] of m.poll.votes) {
+        total += who.size
+        if (who.has(this.me)) m.poll.mine = choice
+      }
+      m.poll.total = total
     }
     return out.filter((m) => !m.retracted)
   }
@@ -476,5 +581,17 @@ export interface Message {
   retracted: boolean
   /** Held up at the top of the channel by an admin. */
   pinned?: boolean
+  /** Present when this message is a poll rather than a line of text. */
+  poll?: Poll
   reactions: Map<string, Set<string>>
+}
+
+export interface Poll {
+  question: string
+  options: string[]
+  /** Who voted for each option, by key. One vote each, the last one counts. */
+  votes: Map<number, Set<string>>
+  /** Which one you picked, or null. */
+  mine: number | null
+  total: number
 }

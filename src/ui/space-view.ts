@@ -45,6 +45,7 @@ import { loadSettings, saveSettings, type HostSettings } from '../settings'
 import { getRoom, noteRoom } from '../store/db'
 import { loadIdentity, shortKey } from '../store/identity'
 import { settingsView } from './settings-view'
+import { Archive } from '../store/archive'
 import { chirpJoin, chirpLeave, chirpMessage, isNews } from './sounds'
 import { DEFAULT_CHANNEL, DEFAULT_VOICE, cleanChannel } from '../store/log'
 import { RoomChat } from '../store/room-chat'
@@ -106,6 +107,7 @@ export class SpaceView {
   /** Who is sharing, and in which channel. */
   private readonly sharers = new Map<string, string>()
   private streamBar!: HTMLDivElement
+  private archive: Archive | null = null
   /** Whether our own screen is on our own stage. Sharing it is not watching it. */
   private showingSelf = false
 
@@ -202,6 +204,24 @@ export class SpaceView {
 
     chat.onLocal = (event) => {
       for (const raw of chat.encode([event])) mesh.broadcast(raw)
+      // And to the archive, if this space has one. Never waited on.
+      void this.archive?.push([event])
+    }
+
+    /*
+     * The archive, if this space was given one. It is asked once on the way in
+     * and told everything we hold, which is how a space that was empty for a
+     * week catches up, and how an archive that has been away catches up itself.
+     */
+    if (this.room) {
+      const archive = new Archive(this.room.id, this.room.key)
+      if (note?.archive) {
+        archive.use(note.archive, note.archiveAt ?? 0)
+        this.archive = archive
+        void this.catchUp()
+      } else {
+        this.archive = archive
+      }
     }
 
     // Whoever made the space claims it, once, and becomes its first admin.
@@ -321,6 +341,48 @@ export class SpaceView {
     for (const wire of this.chat?.encode(fresh) ?? []) this.mesh?.broadcast(wire)
   }
 
+  /**
+   * Trade histories with the archive.
+   *
+   * Everything it has that we do not, then everything we have that it might
+   * not. Both directions, because an archive is a peer that happens to always
+   * be awake, and peers hand each other their history on sight.
+   */
+  private async catchUp(): Promise<void> {
+    if (!this.archive?.on || !this.chat) return
+    const found = await this.archive.fetch()
+    if (found.length) {
+      const fresh = await this.chat.absorb(found)
+      if (fresh.length) this.draw()
+    }
+    await this.archive.push(this.chat.log.all())
+    await this.remember({})
+  }
+
+  /** Point this space at an archive, or at nothing. */
+  async setArchive(url: string): Promise<boolean> {
+    if (!this.room) return false
+    const archive = this.archive ?? new Archive(this.room.id, this.room.key)
+    this.archive = archive
+    const accepted = archive.use(url)
+    if (!accepted) {
+      await this.remember({})
+      return true
+    }
+    const alive = await archive.check()
+    if (!alive) {
+      archive.use('')
+      return false
+    }
+    await this.remember({})
+    void this.catchUp()
+    return true
+  }
+
+  get archiveAddress(): string {
+    return this.archive?.address ?? ''
+  }
+
   // ---- chat ----
 
   /**
@@ -380,6 +442,8 @@ export class SpaceView {
       locked: this.locked,
       // Kept so a locked space asks for its password once, not every visit.
       password: this.password || existing?.password || undefined,
+      archive: this.archive?.address || undefined,
+      archiveAt: this.archive?.cursor ?? existing?.archiveAt,
       founder: patch.founder ?? existing?.founder ?? this.chat?.founder ?? '',
     })
   }
@@ -429,12 +493,14 @@ export class SpaceView {
 
     this.chatPanel = new ChatPanel(loadIdentity().name, 'Chat')
     this.chatPanel.showNameField(false)
+    this.chatPanel.onPoll = () => void this.newPoll()
     this.chatPanel.actions = {
       say: (text, replyTo) => void this.publish((c) => c.say(text, this.channel, replyTo)),
       edit: (id, text) => void this.publish((c) => c.edit(id, text)),
       react: (id, emoji, on) => void this.publish((c) => c.react(id, emoji, on)),
       retract: (id) => void this.publish((c) => c.retract(id)),
       pin: (id, on) => void this.publish((c) => c.pin(id, on)),
+      vote: (id, choice) => void this.publish((c) => c.vote(id, choice)),
       rename: (name) => this.rename(name),
     }
     this.chatPanel.setEnabled(true)
@@ -449,6 +515,12 @@ export class SpaceView {
           text: '✎',
           title: 'Rename this space. Admins only.',
           on: { click: () => void this.renameSpace() },
+        }),
+        h('button', {
+          class: 'ghost tiny-btn',
+          text: '\u21ba',
+          title: 'Clear the history for everybody. Admins only.',
+          on: { click: () => void this.resetSpace() },
         }),
       ]),
       h('div', { class: 'rail-head' }, [
@@ -465,7 +537,7 @@ export class SpaceView {
         h('span', {
           class: 'eyebrow',
           text: 'Voice channels',
-          title: 'Presence works. Audio between people does not yet.',
+          title: 'Everybody standing in one hears everybody else.',
         }),
         h('button', {
           class: 'ghost tiny-btn',
@@ -516,6 +588,8 @@ export class SpaceView {
     this.root.append(
       settingsView({
         rename: (name) => this.rename(name),
+        archive: this.archiveAddress,
+        setArchive: (url) => this.setArchive(url),
         back: () => {
           clear(this.root)
           this.root.append(h('main', {}, [this.shell]))
@@ -962,6 +1036,51 @@ export class SpaceView {
     // Watching follows the channel: leave whatever was on the old one, and do
     // not start anything new. Whoever is live here is offered, not applied.
     this.stopWatching()
+    this.draw()
+  }
+
+  /**
+   * Ask a question.
+   *
+   * Prompts rather than a dialog, because a poll is three short answers and a
+   * question, and a form for that is more window than it is worth.
+   */
+  private async newPoll(): Promise<void> {
+    const question = window.prompt('What is the question?')?.trim()
+    if (!question) return
+    const raw = window.prompt('The answers, separated by commas.', 'Yes, No')?.trim()
+    if (!raw) return
+    const options = raw
+      .split(',')
+      .map((o) => o.trim())
+      .filter(Boolean)
+    if (options.length < 2) {
+      toast('A poll needs at least two answers.', 'warn')
+      return
+    }
+    await this.publish((c) => c.askPoll(question, options, this.channel))
+  }
+
+  /**
+   * Empty the space, for everybody.
+   *
+   * Worth being honest about in the asking, because the word reset promises
+   * more than any of this can deliver: it stops the history being shown and
+   * throws it away on every device that reads the log, and somebody who kept a
+   * copy still has a copy. Names, roles and channels stay, or this would take
+   * the room apart rather than empty it.
+   */
+  private async resetSpace(): Promise<void> {
+    const ok = window.confirm(
+      'Clear the history in this space for everybody?\n\n' +
+        'Messages, polls and pins go, on every device that is in the space or ' +
+        'joins it later. Names, channels and who runs the place stay.\n\n' +
+        'Anybody who has already saved a copy of the history keeps it. There is ' +
+        'no server to take it back from them.',
+    )
+    if (!ok) return
+    await this.publish((c) => c.reset())
+    toast('The history is cleared.', 'good')
     this.draw()
   }
 

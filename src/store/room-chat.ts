@@ -61,6 +61,7 @@ export class RoomChat {
     this.secret = secret
     const id = loadIdentity()
     this.me = id.pubkey
+    this.log.me = id.pubkey
     this.name = id.name
   }
 
@@ -163,7 +164,19 @@ export class RoomChat {
   // ---- writing ----
 
   private async write(
-    kind: 'said' | 'edit' | 'react' | 'retract' | 'profile' | 'channel' | 'role' | 'space' | 'pin',
+    kind:
+      | 'said'
+      | 'edit'
+      | 'react'
+      | 'retract'
+      | 'profile'
+      | 'channel'
+      | 'role'
+      | 'space'
+      | 'pin'
+      | 'poll'
+      | 'vote'
+      | 'reset',
     body: Record<string, unknown>,
   ): Promise<LogEvent> {
     const event = await makeEvent(this.log.room, this.me, this.log.nextLamport(), kind, body)
@@ -194,6 +207,32 @@ export class RoomChat {
 
   retract(target: string): Promise<LogEvent> {
     return this.write('retract', { target })
+  }
+
+  /** Ask a question with a fixed set of answers. */
+  askPoll(question: string, options: string[], channel: string): Promise<LogEvent> {
+    return this.write('poll', {
+      question: question.slice(0, 200),
+      options: options.slice(0, 6),
+      channel: cleanChannel(channel) || DEFAULT_CHANNEL,
+    })
+  }
+
+  /** Pick one. Voting again moves your vote rather than adding another. */
+  vote(target: string, choice: number): Promise<LogEvent> {
+    return this.write('vote', { target, choice })
+  }
+
+  /**
+   * Draw a line under everything said so far.
+   *
+   * The line is a lamport value, and the clock is derived from the wall clock,
+   * so "now" is where it goes. Everything below it stops being shown on every
+   * device that reads the log, and is thrown away the next time each of them
+   * compacts.
+   */
+  reset(): Promise<LogEvent> {
+    return this.write('reset', { before: this.log.nextLamport() })
   }
 
   /** Hold a message up at the top of its channel, or stop holding it. */
@@ -247,9 +286,19 @@ export class RoomChat {
     const wire = parsed as Partial<Wire>
     if (!wire || wire.t !== 'ev' || !Array.isArray(wire.e)) return []
     if (wire.e.length > BATCH * 4) return []
+    return this.absorb(wire.e)
+  }
 
+  /**
+   * Take a pile of events from anywhere and keep the ones that hold up.
+   *
+   * A peer, an archive, an imported file: all the same, and all checked the
+   * same way. The check is the whole point, and it is why an archive can be
+   * somebody else's machine without that mattering.
+   */
+  async absorb(candidates: unknown[]): Promise<LogEvent[]> {
     const fresh: LogEvent[] = []
-    for (const candidate of wire.e) {
+    for (const candidate of candidates) {
       const event = await openEvent(candidate, this.log.room)
       if (!event) continue
       if (this.log.add(event)) fresh.push(event)

@@ -321,6 +321,148 @@ try {
   check('and a pin can be taken back', pins.undone === false)
   check('a channel can hold more than one', pins.several === 2, `${pins.several}`)
 
+  // --- polls ----------------------------------------------------------------
+  const polls = await page.evaluate(async () => {
+    const { RoomLog } = await import('/src/store/log.ts')
+    const key = (n) => String(n).repeat(64).slice(0, 64)
+    const A = key(1)
+    const B = key(2)
+    const C = key(3)
+
+    let n = 0
+    const ev = (author, kind, body) => ({
+      id: `${++n}`.padStart(64, '0'),
+      room: 'r',
+      author,
+      lamport: n,
+      kind,
+      at: 1,
+      body,
+      sig: 'x'.repeat(128),
+    })
+    const build = (events, me = A) => {
+      const log = new RoomLog('r')
+      log.founder = A
+      log.me = me
+      for (const e of events) log.add(e)
+      return log
+    }
+
+    const ask = ev(A, 'poll', { question: 'Pizza?', options: ['Yes', 'No'], channel: 'general' })
+    const thin = ev(A, 'poll', { question: 'One?', options: ['Only'], channel: 'general' })
+
+    const votes = build([ask, ev(B, 'vote', { target: ask.id, choice: 0 }), ev(C, 'vote', { target: ask.id, choice: 1 })])
+    const poll = votes.messages('general')[0]?.poll
+
+    // B changes his mind. One vote each, so it moves rather than adds.
+    const moved = build([
+      ask,
+      ev(B, 'vote', { target: ask.id, choice: 0 }),
+      ev(B, 'vote', { target: ask.id, choice: 1 }),
+    ])
+    const after = moved.messages('general')[0]?.poll
+
+    // Out of range, which is what a hostile peer would send.
+    const silly = build([ask, ev(B, 'vote', { target: ask.id, choice: 99 })])
+    const sillyPoll = silly.messages('general')[0]?.poll
+
+    // Whether the reader voted, from their own point of view.
+    const mine = build([ask, ev(B, 'vote', { target: ask.id, choice: 1 })], B)
+    const minePoll = mine.messages('general')[0]?.poll
+
+    return {
+      asked: poll?.question === 'Pizza?' && poll.options.length === 2,
+      counted: poll?.total === 2,
+      split: [poll?.votes.get(0)?.size ?? 0, poll?.votes.get(1)?.size ?? 0],
+      movedTotal: after?.total,
+      movedTo: after?.votes.get(1)?.size ?? 0,
+      sillyTotal: sillyPoll?.total,
+      mine: minePoll?.mine,
+      thin: build([thin]).messages('general').length,
+    }
+  })
+  check('a poll is a question with answers', polls.asked)
+  check('and the answers are counted', polls.counted && polls.split[0] === 1 && polls.split[1] === 1, polls.split.join(' vs '))
+  check('changing your mind moves your vote rather than adding one', polls.movedTotal === 1 && polls.movedTo === 1)
+  check('a vote for an answer that does not exist is ignored', polls.sillyTotal === 0)
+  check('and you can see which one you picked', polls.mine === 1, `${polls.mine}`)
+  check('a poll with one answer is not a poll', polls.thin === 0)
+
+  // --- resetting a space ----------------------------------------------------
+  /*
+   * A reset draws a line rather than deleting anything, because nothing can be
+   * deleted from somebody else's device. Everything above the line stops being
+   * shown, and the room itself, meaning its name, its channels and who runs
+   * it, stays: otherwise this would take the place apart rather than empty it.
+   */
+  const reset = await page.evaluate(async () => {
+    const { RoomLog } = await import('/src/store/log.ts')
+    const { compact } = await import('/src/store/compact.ts')
+    const key = (n) => String(n).repeat(64).slice(0, 64)
+    const A = key(1)
+    const B = key(2)
+
+    let n = 0
+    const ev = (author, kind, body) => ({
+      id: `${++n}`.padStart(64, '0'),
+      room: 'r',
+      author,
+      lamport: n,
+      kind,
+      at: 1,
+      body,
+      sig: 'x'.repeat(128),
+    })
+
+    const old1 = ev(A, 'said', { text: 'before', channel: 'general' })
+    const old2 = ev(B, 'said', { text: 'also before', channel: 'general' })
+    const named = ev(A, 'space', { name: 'The place' })
+    const madeChannel = ev(A, 'channel', { name: 'plans' })
+    const promoted = ev(A, 'role', { subject: B, role: 'admin' })
+    const profile = ev(B, 'profile', { name: 'Bob' })
+    const line = ev(A, 'reset', { before: 100 })
+    const fresh = { ...ev(A, 'said', { text: 'after', channel: 'general' }), lamport: 200 }
+    const byMember = ev(B, 'reset', { before: 300 })
+
+    const build = (events) => {
+      const log = new RoomLog('r')
+      log.founder = A
+      for (const e of events) log.add(e)
+      return log
+    }
+
+    const all = [old1, old2, named, madeChannel, promoted, profile, line, fresh]
+    const after = build(all)
+    const texts = after.messages('general').map((m) => m.text)
+
+    // A member's line is not a line.
+    const ignored = build([old1, byMember]).messages('general').map((m) => m.text)
+
+    const { keep } = compact(all)
+    const kinds = keep.map((e) => e.kind).sort()
+
+    return {
+      texts,
+      name: after.spaceName(),
+      channels: after.channels(),
+      stillAdmin: after.roleOf(B) === 'admin',
+      names: [...after.names().values()],
+      ignored,
+      compacted: kinds,
+    }
+  })
+  check('a reset clears what was said before it', reset.texts.join() === 'after', reset.texts.join(' | ') || '(nothing)')
+  check('the space keeps its name', reset.name === 'The place', reset.name)
+  check('and its channels', reset.channels.includes('plans'), reset.channels.join())
+  check('and who runs it', reset.stillAdmin)
+  check('and what people are called', reset.names.includes('Bob'), reset.names.join())
+  check('a member cannot clear the room', reset.ignored.join() === 'before', reset.ignored.join(' | '))
+  check(
+    'and what was cleared leaves the disk on the next tidy',
+    reset.compacted.filter((k) => k === 'said').length === 1,
+    reset.compacted.join(),
+  )
+
   // --- pictures and GIFs ----------------------------------------------------
   const pics = await page.evaluate(async () => {
     const { imageLinks } = await import('/src/ui/chat-panel.ts')

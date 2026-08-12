@@ -137,6 +137,9 @@ export interface RoomNote {
   password?: string
   /** Pinned the first time this device saw the space, and never moved after. */
   founder?: string
+  /** An optional archive for this space, and how far through it we have read. */
+  archive?: string
+  archiveAt?: number
 }
 
 export async function getRoom(room: string): Promise<RoomNote | null> {

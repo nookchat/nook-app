@@ -25,6 +25,9 @@ import { toast } from './toast'
 export interface SettingsActions {
   rename(name: string): void
   back(): void
+  /** Where this space keeps a copy, if it keeps one. Empty means it does not. */
+  archive?: string
+  setArchive?(url: string): Promise<boolean>
 }
 
 export function settingsView(actions: SettingsActions): HTMLElement {
@@ -89,6 +92,41 @@ export function settingsView(actions: SettingsActions): HTMLElement {
     })
     return button
   }
+
+  /*
+   * The archive. Off unless somebody turns it on, and off is not a lesser
+   * mode: a space works exactly the same without one. What it adds is the one
+   * thing holding your own history cannot do, which is catch you up on
+   * something said while every single person was offline.
+   */
+  const archiveInput = h('input', {
+    type: 'text',
+    ariaLabel: 'Archive address',
+    placeholder: 'http://localhost:8787',
+    value: actions.archive ?? '',
+  })
+  const archiveState = h('div', {
+    class: 'tiny faint',
+    text: actions.archive ? `Keeping a copy at ${actions.archive}` : 'No archive. Nothing is sent anywhere.',
+  })
+  const archiveSave = h('button', {
+    text: 'Use it',
+    on: {
+      click: () => {
+        const want = archiveInput.value.trim()
+        archiveState.textContent = want ? 'Looking for it...' : 'Forgetting it...'
+        void actions.setArchive?.(want).then((ok) => {
+          if (!ok) {
+            archiveState.textContent = 'Nothing answered there. Left as it was.'
+            return
+          }
+          archiveState.textContent = want
+            ? `Keeping a copy at ${want}`
+            : 'No archive. Nothing is sent anywhere.'
+        })
+      },
+    },
+  })
 
   const file = h('input', { type: 'text', ariaLabel: 'Import a file' })
   file.type = 'file'
@@ -196,6 +234,25 @@ export function settingsView(actions: SettingsActions): HTMLElement {
             text: 'Smart removal is a neural network trained on the noises the driver cannot find: typing, a door, somebody talking behind you. It runs on the audio thread, costs about a tenth of a core, and adds ten milliseconds. The other three run in the driver and cost nothing. Leave them on for talking, and turn them off for music, where the processing hears the content as noise and fights it. A change applies the next time you join a voice channel.',
           }),
         ]),
+
+        actions.setArchive
+          ? h('div', { class: 'card stack tight' }, [
+              h('span', { class: 'eyebrow', text: 'Archive' }),
+              h('div', { class: 'row' }, [archiveInput, archiveSave]),
+              archiveState,
+              h('div', {
+                class: 'tiny faint',
+                text: 'Optional, and off by default. Everybody in a space already keeps the whole history and hands it to whoever turns up, so a space survives as long as one person who was in it comes back. The one thing that cannot do is catch you up on something said while every single person was offline. An archive is a machine that is always awake, and that is all it is.',
+              }),
+              h('details', { class: 'adv' }, [
+                h('summary', { text: 'What it can see, and what it can do' }),
+                h('div', {
+                  class: 'tiny faint',
+                  text: 'It cannot read anything. Every event is sealed with the key made from the space code before it leaves this device, and the code lives in the part of a link that a browser never sends to anybody. It cannot lie either: every event inside is signed, and is checked coming back exactly like an event from a person, so one that was altered fails and is dropped. It can forget, or refuse, and either of those leaves you with a working space and no archive. Run one with: docker compose -f server/docker-compose.yml up -d',
+                }),
+              ]),
+            ])
+          : null,
 
         h('div', { class: 'card stack tight' }, [
           h('span', { class: 'eyebrow', text: 'Your data' }),

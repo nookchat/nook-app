@@ -1,0 +1,28 @@
+# Start an archive:
+#
+#   docker compose -f server/docker-compose.yml up -d
+#
+# Then paste http://localhost:8787 into Settings, under Archive, in any space
+# you want kept. Nothing else changes: the space works exactly as it did, and
+# it keeps working if this container is stopped, moved, or thrown away.
+
+services:
+  archive:
+    build: .
+    container_name: cathode-archive
+    restart: unless-stopped
+    ports:
+      - '8787:8787'
+    volumes:
+      - archive-data:/data
+    environment:
+      # How much ciphertext one space may keep before the oldest is dropped.
+      CATHODE_MAX_ROOM_BYTES: 268435456
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:8787/health']
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+volumes:
+  archive-data:
