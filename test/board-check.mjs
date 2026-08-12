@@ -142,6 +142,56 @@ try {
     `${withText.display}, picture after the words: ${withText.above}`,
   )
 
+  // ---- a clip is a GIF that weighs less ------------------------------------
+  // A real webm, recorded here from a canvas, because a clip that fails to
+  // load takes its own frame out of the message the way a picture does.
+  const clipBytes = await alice.evaluate(async () => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 120
+    canvas.height = 80
+    const ctx = canvas.getContext('2d')
+    const stream = canvas.captureStream(20)
+    const chunks = []
+    const rec = new MediaRecorder(stream, { mimeType: 'video/webm' })
+    rec.ondataavailable = (e) => chunks.push(e.data)
+    rec.start()
+    for (let i = 0; i < 8; i += 1) {
+      ctx.fillStyle = i % 2 ? '#e67e22' : '#8e44ad'
+      ctx.fillRect(0, 0, 120, 80)
+      await new Promise((done) => setTimeout(done, 40))
+    }
+    await new Promise((done) => {
+      rec.onstop = done
+      rec.stop()
+    })
+    const buffer = await new Blob(chunks, { type: 'video/webm' }).arrayBuffer()
+    let binary = ''
+    for (const b of new Uint8Array(buffer)) binary += String.fromCharCode(b)
+    return btoa(binary)
+  })
+  await alice.route('https://example.com/dance.webm', (route) =>
+    route.fulfill({ contentType: 'video/webm', body: Buffer.from(clipBytes, 'base64') }),
+  )
+
+  await say(alice, 'https://example.com/dance.webm')
+  await alice.waitForTimeout(900)
+  const played = await alice.evaluate(() => {
+    const line = [...document.querySelectorAll('.chat-line')].pop()
+    const video = line?.querySelector('video.chat-clip')
+    if (!video) return null
+    return {
+      marked: line.classList.contains('has-picture'),
+      loop: video.loop,
+      muted: video.muted,
+      controls: video.controls,
+      started: video.currentTime > 0 || video.readyState >= 2,
+    }
+  })
+  check('a webm link becomes a clip in the message', played !== null)
+  check('drawn like a picture, with no bubble around it', played?.marked === true)
+  check('it loops, it is muted, and it has no controls', played?.loop === true && played?.muted === true && played?.controls === false)
+  check('and it plays on its own', played?.started === true)
+
   // ---- how long a message may be -------------------------------------------
   // The limit was four thousand characters of body, which a pasted stack trace
   // passes. What matters is not the number but that a message at the limit
@@ -283,8 +333,13 @@ try {
         data: [
           {
             file: {
-              hd: { gif: { url: 'https://cdn.klipy.test/hd.gif', width: 480 }, mp4: { url: 'https://cdn.klipy.test/hd.mp4', width: 480 } },
-              sm: { gif: { url: 'https://cdn.klipy.test/sm.gif', width: 120 } },
+              hd: {
+                gif: { url: 'https://cdn.klipy.test/hd.gif', width: 480 },
+                webm: { url: 'https://cdn.klipy.test/hd.webm', width: 480 },
+                mp4: { url: 'https://cdn.klipy.test/hd.mp4', width: 480 },
+                jpg: { url: 'https://cdn.klipy.test/hd.jpg', width: 640 },
+              },
+              sm: { gif: { url: 'https://cdn.klipy.test/sm.gif', width: 120 }, jpg: { url: 'https://cdn.klipy.test/sm.jpg', width: 60 } },
             },
           },
         ],
@@ -306,18 +361,22 @@ try {
     mapped.klipyAsked,
   )
   check(
-    'the widest picture is the one that gets said',
-    mapped.klipy[0]?.url === 'https://cdn.klipy.test/hd.gif',
+    'the webm is what gets said',
+    mapped.klipy[0]?.url === 'https://cdn.klipy.test/hd.webm',
     mapped.klipy[0]?.url ?? 'nothing',
   )
   check(
-    'and the narrowest is the one drawn in the grid',
+    'and the narrowest picture is drawn in the grid',
     mapped.klipy[0]?.preview === 'https://cdn.klipy.test/sm.gif',
     mapped.klipy[0]?.preview ?? 'nothing',
   )
   check(
-    'a video in the same tree is left alone',
+    'and an mp4 loses to the webm',
     !JSON.stringify(mapped.klipy).includes('.mp4'),
+  )
+  check(
+    'a still frame loses to the gif, even a wider one',
+    !JSON.stringify(mapped.klipy).includes('.jpg'),
   )
   check(
     'Tenor still answers the way it did',

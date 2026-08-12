@@ -2384,6 +2384,19 @@ input[type="text"].emoji-search {
   background: var(--surface-2);
 }
 
+/*
+ * A clip is a GIF that weighs less, so it is drawn as one: no controls, no
+ * sound, and no way to pause it, because nobody ever wanted to pause a GIF.
+ */
+.chat-clip {
+  display: block;
+  cursor: pointer;
+}
+
+.chat-clip::-webkit-media-controls {
+  display: none;
+}
+
 /* Somebody who belongs here but is not here now. */
 .rail-person.away {
   opacity: 0.55;

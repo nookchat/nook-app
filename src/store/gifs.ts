@@ -182,11 +182,20 @@ function fromGiphy(body: unknown): Gif[] {
  * Klipy hands back a tree of sizes, and the names in it are theirs to change.
  *
  * So rather than naming a path through it, every address inside one result is
- * gathered and the ones that are pictures are kept: the widest is the one that
- * gets said, the narrowest is the one drawn in the grid. A renamed size costs
- * nothing, and a size that is a video is ignored, because a chat draws a
- * picture and an mp4 is not one.
+ * gathered and sorted by what it is, then by how wide it is. A renamed size
+ * costs nothing and a size that appears tomorrow is picked up for free.
+ *
+ * What gets said is a webm where there is one, and a gif otherwise. A webm is
+ * a fraction of the weight of the same animation as a gif and the chat plays
+ * it on a loop, so it is the better thing to hand somebody. Beside both sits a
+ * jpg of the first frame, which is often the widest thing in the result: a
+ * still loses to anything that moves, whatever the widths say.
+ *
+ * The grid gets the smallest picture a plain img can draw, and falls back to
+ * the clip when a result has nothing else. The picker plays that one.
  */
+const RANK: Record<Kind, number> = { webm: 4, gif: 3, webp: 2, mp4: 1, still: 0 }
+
 function fromKlipy(body: unknown): Gif[] {
   const results = at(body, 'data', 'data')
   if (!Array.isArray(results)) return []
@@ -194,26 +203,47 @@ function fromKlipy(body: unknown): Gif[] {
     results.map((item) => {
       const found = pictures(at(item, 'file') ?? at(item, 'files') ?? item)
       if (found.length === 0) return { url: '', preview: '' }
-      const bySize = [...found].sort((a, b) => a.width - b.width)
-      return {
-        url: bySize[bySize.length - 1].url,
-        preview: bySize[0].url,
-      }
+      const best = Math.max(...found.map((p) => RANK[p.kind]))
+      const said = found
+        .filter((p) => RANK[p.kind] === best)
+        .sort((a, b) => b.width - a.width)[0]
+      // A gif or a webp is what an img can draw, and the narrowest of those is
+      // the one the grid wants. Nothing else there means the clip is the
+      // preview too, and the picker plays it rather than drawing it.
+      const drawable = found
+        .filter((p) => p.kind === 'gif' || p.kind === 'webp')
+        .sort((a, b) => a.width - b.width)[0]
+      return { url: said.url, preview: (drawable ?? said).url }
     }),
   )
 }
 
-/** Every picture address inside a nested object, with whatever width it gave. */
-function pictures(node: unknown, depth = 0): { url: string; width: number }[] {
+type Kind = 'webm' | 'gif' | 'webp' | 'mp4' | 'still'
+
+/** Whether this is a clip to be played rather than a picture to be drawn. */
+export function isClip(url: string): boolean {
+  return /\.(webm|mp4|m4v)(\?|$)/i.test(url)
+}
+
+/** Every usable address inside a nested object, with what it is and how wide. */
+function pictures(node: unknown, depth = 0): { url: string; width: number; kind: Kind }[] {
   if (depth > 5 || typeof node !== 'object' || node === null) return []
   const here = node as Record<string, unknown>
   const url = str(here.url)
-  // A width of zero still sorts, and puts an unlabelled size at the small end,
-  // which is the safe way round: a grid can survive a picture that is too big.
-  if (url && /\.(gif|webp|png|jpe?g)(\?|$)/i.test(url)) {
-    return [{ url, width: typeof here.width === 'number' ? here.width : 0 }]
+  const found = /\.(gif|webp|png|jpe?g|webm|mp4|m4v)(\?|$)/i.exec(url)
+  if (url && found) {
+    const ext = found[1].toLowerCase()
+    const kind: Kind =
+      ext === 'webm' ? 'webm'
+      : ext === 'gif' ? 'gif'
+      : ext === 'webp' ? 'webp'
+      : ext === 'mp4' || ext === 'm4v' ? 'mp4'
+      : 'still'
+    // A width of zero still sorts, and puts an unlabelled size at the small
+    // end, which is the safe way round: a grid can survive one that is too big.
+    return [{ url, width: typeof here.width === 'number' ? here.width : 0, kind }]
   }
-  const out: { url: string; width: number }[] = []
+  const out: { url: string; width: number; kind: Kind }[] = []
   for (const value of Object.values(here)) out.push(...pictures(value, depth + 1))
   return out
 }

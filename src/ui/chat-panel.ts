@@ -1697,6 +1697,20 @@ const IMAGE_PATH_RE = /\.(gif|png|jpe?g|webp|avif|apng)(\/|$)/i
 const IMAGE_QUERY_RE = /(?:^|&)(?:format|fm|ext|type)=(gif|png|jpe?g|webp|avif)(?:&|$)/i
 
 /**
+ * A short clip, drawn as a picture that moves.
+ *
+ * Every GIF service hands out a webm or an mp4 of the same animation, a
+ * fraction of the weight of the gif, and every browser plays one. So a link to
+ * one is embedded like a picture: no controls, no sound, no gesture needed to
+ * start it, and it goes round for ever, which is what a GIF is.
+ *
+ * Muted is not politeness, it is the rule: a browser refuses to start a clip
+ * with sound in it until somebody clicks the page, and a clip that will not
+ * start is a grey rectangle.
+ */
+const CLIP_RE = /\.(webm|mp4|m4v)(\?[^\s]*)?$/i
+
+/**
  * Hosts that serve pictures and nothing else, for the links that carry no
  * extension at all. Each one is matched on the whole host or on a dot before
  * it, so example.com.evil.test is not i.imgur.com.
@@ -1718,8 +1732,13 @@ const IMAGE_HOSTS = [
   'user-images.githubusercontent.com',
 ]
 
+function isClipLink(url: URL): boolean {
+  return CLIP_RE.test(url.pathname + url.search)
+}
+
 function looksLikePicture(url: URL): boolean {
   const query = url.search.replace(/^\?/, '')
+  if (isClipLink(url)) return true
   if (IMAGE_RE.test(url.pathname + url.search)) return true
   if (IMAGE_PATH_RE.test(url.pathname)) return true
   if (IMAGE_QUERY_RE.test(query)) return true
@@ -1746,18 +1765,45 @@ export function imageLinks(text: string): string[] {
 }
 
 function embed(src: string): HTMLElement {
+  const media = CLIP_RE.test(src) ? clip(src) : picture(src)
+  // A link that turns out to be neither leaves nothing behind.
+  media.addEventListener('error', () => wrap.remove(), true)
+  const wrap = h('a', { class: 'chat-image-wrap' }, [media])
+  wrap.href = src
+  wrap.target = '_blank'
+  wrap.rel = 'noopener noreferrer'
+  return wrap
+}
+
+function picture(src: string): HTMLElement {
   const img = h('img', { class: 'chat-image' })
   img.alt = 'Shared image'
   img.loading = 'lazy'
   img.referrerPolicy = 'no-referrer'
   img.src = src
-  // A link that turns out not to be a picture leaves nothing behind.
-  img.addEventListener('error', () => wrap.remove())
-  const wrap = h('a', { class: 'chat-image-wrap' }, [img])
-  wrap.href = src
-  wrap.target = '_blank'
-  wrap.rel = 'noopener noreferrer'
-  return wrap
+  return img
+}
+
+function clip(src: string): HTMLElement {
+  const video = h('video', { class: 'chat-image chat-clip', ariaLabel: 'Shared clip' })
+  video.src = src
+  video.autoplay = true
+  video.loop = true
+  video.muted = true
+  video.playsInline = true
+  video.controls = false
+  video.preload = 'auto'
+  // No referrer on the request, the same as every picture here. A video
+  // element has no property for it, so it is set as the attribute it is.
+  video.setAttribute('referrerpolicy', 'no-referrer')
+  // Safari wants the attribute as well as the property before it will start
+  // one without a click, and a paused clip is a still frame pretending to be
+  // a GIF. The play itself can be refused, and there is nothing to do about
+  // that but let the poster frame sit there.
+  video.setAttribute('muted', '')
+  video.setAttribute('playsinline', '')
+  void video.play().catch(() => undefined)
+  return video
 }
 
 function dayLabel(at: number): string {

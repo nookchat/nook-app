@@ -49,7 +49,7 @@ import { settingsView } from './settings-view'
 import { Archive, defaultArchive } from '../store/archive'
 import { buzzNudge, chirpJoin, chirpLeave, chirpMessage, isNews, speak } from './sounds'
 import { openSoundboard, playSound, soundById, soundByName, SOUNDS } from './soundboard'
-import { gifCredential, searchGifs, serviceLabel, type Gif } from '../store/gifs'
+import { gifCredential, isClip, searchGifs, serviceLabel, type Gif } from '../store/gifs'
 import {
   DEFAULT_CHANNEL,
   DEFAULT_VOICE,
@@ -2872,13 +2872,26 @@ export class SpaceView {
       if (mine !== asking || !pop.isConnected) return
       clear(grid)
       for (const g of gifs) {
-        const img = h('img', { class: 'gif-choice' })
-        img.src = g.preview
-        img.alt = ''
-        img.loading = 'lazy'
-        img.referrerPolicy = 'no-referrer'
-        img.addEventListener('click', () => send(g.url))
-        grid.append(img)
+        // Some results have no picture in them at all, only the clip. Those
+        // are played in the grid rather than left as an empty square.
+        const cell = isClip(g.preview) ? h('video', { class: 'gif-choice' }) : h('img', { class: 'gif-choice' })
+        if (cell instanceof HTMLVideoElement) {
+          cell.src = g.preview
+          cell.autoplay = true
+          cell.loop = true
+          cell.muted = true
+          cell.playsInline = true
+          cell.setAttribute('muted', '')
+          cell.setAttribute('playsinline', '')
+          void cell.play().catch(() => undefined)
+        } else {
+          cell.src = g.preview
+          cell.alt = ''
+          cell.loading = 'lazy'
+          cell.referrerPolicy = 'no-referrer'
+        }
+        cell.addEventListener('click', () => send(g.url))
+        grid.append(cell)
       }
       if (gifs.length > 0) {
         status.textContent = `${wanted ? `Results for "${wanted}"` : 'Popular now'}, from ${from}.`
