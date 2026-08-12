@@ -32,6 +32,14 @@
 import { open as unseal, seal, type Envelope } from '../signal/envelope'
 import type { LogEvent } from './log'
 
+/** What an archive says is behind a link, all of it optional. */
+export interface LinkPreview {
+  title?: string
+  description?: string
+  image?: string
+  site?: string
+}
+
 /** How many events to push in one request. */
 const BATCH = 200
 /** How long to wait before trying again after the archive said no. */
@@ -294,6 +302,66 @@ export class Archive {
     }
     // More to go, and the last round worked, so keep going.
     if (this.waiting.size > 0 && this.nextTry === 0) void this.flush()
+  }
+
+  /**
+   * What is behind a link, according to the archive.
+   *
+   * A browser cannot read another site's page, so somebody has to go and
+   * look, and the archive is the one machine the space already chose to
+   * trust with being awake. It learns which links get previewed, which is
+   * less than it already holds; a space that dislikes even that runs no
+   * archive and gets plain links. Cached per address for the tab's life, so
+   * a link seen in ten redraws is asked about once.
+   */
+  private readonly previews = new Map<string, Promise<LinkPreview | null>>()
+
+  preview(url: string): Promise<LinkPreview | null> {
+    if (!this.url) return Promise.resolve(null)
+    const held = this.previews.get(url)
+    if (held) return held
+    const asking = (async (): Promise<LinkPreview | null> => {
+      try {
+        const res = await globalThis.fetch(`${this.url}/preview?url=${encodeURIComponent(url)}`, {
+          mode: 'cors',
+        })
+        if (!res.ok) return null
+        const body = (await res.json()) as LinkPreview
+        return body && (body.title || body.description || body.image) ? body : null
+      } catch {
+        return null
+      }
+    })()
+    this.previews.set(url, asking)
+    return asking
+  }
+
+  /**
+   * GIFs matching a term, when this archive holds a Tenor key. The term
+   * reaches Tenor via the archive; an archive without a key answers nothing,
+   * and the command says where the key goes.
+   */
+  async gifs(term: string): Promise<{ url: string; preview: string }[]> {
+    if (!this.url) return []
+    try {
+      const res = await globalThis.fetch(`${this.url}/gif?q=${encodeURIComponent(term)}`, {
+        mode: 'cors',
+      })
+      if (!res.ok) return []
+      const body = (await res.json()) as { gifs?: { url?: string; preview?: string }[] }
+      return (body.gifs ?? [])
+        .filter((g) => typeof g.url === 'string' && g.url.startsWith('https://'))
+        .map((g) => ({
+          url: g.url as string,
+          preview:
+            typeof g.preview === 'string' && g.preview.startsWith('https://')
+              ? g.preview
+              : (g.url as string),
+        }))
+        .slice(0, 24)
+    } catch {
+      return []
+    }
   }
 
   /** Is anything there, and is it an archive rather than somebody's blog? */

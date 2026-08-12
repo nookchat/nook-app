@@ -90,6 +90,7 @@ archive.example.org {
 | `PORT` | `8787` | Port to listen on |
 | `CATHODE_DATA` | `./data` | Where the ciphertext goes |
 | `CATHODE_MAX_ROOM_BYTES` | `268435456` | Per space, before the oldest half is dropped |
+| `CATHODE_TENOR_KEY` | (empty) | Turns on `/gif` search for spaces using this archive. A free key comes from https://developers.google.com/tenor. Search terms reach Tenor; leave it empty and the feature stays off |
 
 ## Endpoints
 
@@ -98,6 +99,8 @@ archive.example.org {
 | `GET /health` | Says what it is |
 | `GET /events/:room?from=N` | Lines after N, and where that leaves you |
 | `POST /events/:room` | Appends a list of sealed lines. Needs `x-cathode-write` |
+| `GET /preview?url=U` | Reads a public page's OpenGraph tags, for link cards in chat |
+| `GET /gif?q=term` | GIF search via Tenor. 404 until `CATHODE_TENOR_KEY` is set |
 
 A room id is 32 hex characters, derived from the space code. It gives away
 nothing about the code, and the archive cannot work backwards from it.

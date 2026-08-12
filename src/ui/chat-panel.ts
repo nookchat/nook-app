@@ -11,6 +11,7 @@
  */
 
 import type { Message } from '../store/log'
+import type { LinkPreview } from '../store/archive'
 import { cleanName, EVERYONE, findMentions, mentionsMe } from '../chat'
 import { shortKey } from '../store/identity'
 import { clear, h } from './dom'
@@ -148,9 +149,10 @@ export class ChatPanel {
   onThread: ((rootId: string | null) => void) | null = null
   /** Open or close a private conversation. */
   onDirect: ((key: string | null) => void) | null = null
+  /** Asks the space what is behind a link. Null when nobody can answer. */
+  previewFor: ((url: string) => Promise<LinkPreview | null>) | null = null
 
   private readonly log: HTMLDivElement
-  private readonly pins: HTMLDivElement
   private readonly nameInput: HTMLInputElement
   private readonly textInput: HTMLTextAreaElement
   private readonly sendButton: HTMLButtonElement
@@ -282,7 +284,6 @@ export class ChatPanel {
       this.nameInput,
     ])
 
-    this.pins = h('div', { class: 'chat-pins hidden' })
     this.typingLine = h('div', { class: 'chat-typing hidden' })
     /*
      * The way back down.
@@ -323,7 +324,6 @@ export class ChatPanel {
 
     this.root = h('div', { class: 'chat-panel' }, [
       this.head,
-      this.pins,
       h('div', { class: 'chat-scroll' }, [this.log, this.toBottom]),
       h('div', { class: 'chat-compose stack tight' }, [
         this.typingLine,
@@ -699,13 +699,30 @@ export class ChatPanel {
   render(messages: Message[], joins: { at: number; text: string }[] = []): void {
     this.shown = messages
     const stuck = this.isAtBottom()
-    this.renderPins(messages)
 
     const byId = new Map(messages.map((m) => [m.id, m]))
-    const feed: ({ kind: 'msg'; m: Message } | { kind: 'note'; at: number; text: string })[] = [
-      ...messages.map((m) => ({ kind: 'msg' as const, m })),
-      ...joins.map((j) => ({ kind: 'note' as const, at: j.at, text: j.text })),
-    ].sort((a, b) => (a.kind === 'msg' ? a.m.at : a.at) - (b.kind === 'msg' ? b.m.at : b.at))
+    /*
+     * The messages arrive already ordered by the log, whose order every peer
+     * agrees on, and that order is not touched here. Notes about arrivals are
+     * merged in beside them by wall clock, which is all a note has. Sorting
+     * the whole feed by wall clock, which this used to do, quietly reordered
+     * messages whenever somebody's clock ran ahead, so two people could read
+     * the same argument in two different orders.
+     */
+    const feed: ({ kind: 'msg'; m: Message } | { kind: 'note'; at: number; text: string })[] = []
+    const notes = [...joins].sort((a, b) => a.at - b.at)
+    let n = 0
+    for (const m of messages) {
+      while (n < notes.length && notes[n].at <= m.at) {
+        feed.push({ kind: 'note', at: notes[n].at, text: notes[n].text })
+        n += 1
+      }
+      feed.push({ kind: 'msg', m })
+    }
+    while (n < notes.length) {
+      feed.push({ kind: 'note', at: notes[n].at, text: notes[n].text })
+      n += 1
+    }
 
     const items: { key: string; sig: string; make: () => HTMLElement }[] = []
     let lastDay = ''
@@ -901,14 +918,13 @@ export class ChatPanel {
      * A run from one person shows the name once, at the top of the run.
      *
      * The name carries a colour worked out from the key that signs the
-     * messages, so it is the same colour on every device and for everybody.
-     * Five bubbles in a row from one person with the name only above the
-     * first were hard to attribute at a glance; the colour and the side of
-     * the panel they sit on both answer it now without repeating anything.
+     * messages, so it is the same colour on every device and for everybody,
+     * your own included: every line sits on the same side now, and the
+     * colour plus the tint on your own bubbles is what tells them apart.
      */
     if (first) {
       const name = h('span', { class: 'chat-name', text: m.name || shortKey(m.author) })
-      if (!mine) name.style.color = authorColour(m.author)
+      name.style.color = authorColour(m.author)
       line.append(
         h('div', { class: 'chat-who' }, [
           avatarOf(m.author, m.name ?? '', this.avatars.get(m.author) ?? '', 18),
@@ -929,9 +945,16 @@ export class ChatPanel {
       line.append(text)
       line.append(this.pollBox(m))
     } else {
-      for (const node of formatText(m.text, this.names, this.me)) text.append(node)
-      line.append(text)
-      for (const src of imageLinks(m.text)) line.append(embed(src))
+      const pictures = imageLinks(m.text)
+      // A message that is nothing but a picture link is the picture. The
+      // address under it said the same thing worse.
+      const bare = !m.emote && pictures.length === 1 && m.text.trim() === pictures[0]
+      if (!bare) {
+        for (const node of formatText(m.text, this.names, this.me)) text.append(node)
+        line.append(text)
+      }
+      for (const src of pictures) line.append(embed(src))
+      this.attachPreview(line, m.text)
     }
 
     if (m.edited) line.append(h('span', { class: 'chat-edited', text: '(edited)' }))
@@ -984,32 +1007,55 @@ export class ChatPanel {
   // ---- internals ----
 
   /**
-   * The messages held up at the top.
+   * A card under a message that carries a link, when anybody can say what is
+   * behind it.
    *
-   * A line each, not the whole message: this is a way back to something, not a
-   * second copy of the conversation. Clicking one scrolls to it and lights it
-   * up, because a pinned message is only useful if you can get to what was
-   * said around it.
+   * A browser cannot read another site's page, so the card only exists where
+   * the space has an archive: the one machine the space already trusts to be
+   * awake goes and looks. The hook is null without one, and messages carry
+   * plain links the way they always did. The card fills in when the answer
+   * arrives; a row redrawn later asks again and is answered from the cache.
    */
-  private renderPins(messages: Message[]): void {
-    clear(this.pins)
-    const pinned = messages.filter((m) => m.pinned)
-    this.pins.classList.toggle('hidden', pinned.length === 0)
-    if (pinned.length === 0) return
-
-    this.pins.append(
-      h('span', { class: 'eyebrow', text: pinned.length === 1 ? 'Pinned' : `Pinned (${pinned.length})` }),
-    )
-    for (const m of pinned) {
-      this.pins.append(
-        h('button', {
-          class: 'chat-pin truncate',
-          title: 'Go to this message',
-          text: `${m.name || shortKey(m.author)}: ${m.text}`,
-          on: { click: () => this.jumpTo(m.id) },
-        }),
-      )
-    }
+  private attachPreview(line: HTMLElement, text: string): void {
+    if (!this.previewFor) return
+    const link = text.match(/https?:\/\/[^\s<>"')\]]+/)?.[0]
+    if (!link || imageLinks(text).includes(link)) return
+    const box = h('a', { class: 'link-card hidden' })
+    box.href = link
+    box.target = '_blank'
+    box.rel = 'noreferrer noopener'
+    line.append(box)
+    void this.previewFor(link)
+      .then((p) => {
+        if (!p || (!p.title && !p.description && !p.image)) return
+        const image = p.image && /^https?:\/\//.test(p.image) ? p.image : ''
+        if (image) {
+          const img = h('img', { class: 'link-card-img' })
+          img.alt = ''
+          img.loading = 'lazy'
+          img.referrerPolicy = 'no-referrer'
+          img.src = image
+          img.addEventListener('error', () => img.remove())
+          box.append(img)
+        }
+        let host = ''
+        try {
+          host = new URL(link).hostname
+        } catch {
+          /* the link drew a card, so it parsed once already */
+        }
+        box.append(
+          h('div', { class: 'link-card-body stack tight' }, [
+            h('div', { class: 'link-card-title truncate', text: p.title || link }),
+            p.description
+              ? h('div', { class: 'link-card-desc tiny', text: p.description })
+              : null,
+            h('div', { class: 'tiny faint truncate', text: p.site || host }),
+          ]),
+        )
+        box.classList.remove('hidden')
+      })
+      .catch(() => undefined)
   }
 
   /**
@@ -1286,8 +1332,13 @@ export class ChatPanel {
      * A line starting with a slash is an instruction rather than something to
      * say. The panel does not know what any of them mean: it hands the line to
      * whoever owns the space, and only clears the box if they took it.
+     *
+     * A slash followed by nothing, or by a space, is not an attempt at a
+     * command; it is a message that happens to start with one. It used to be
+     * scolded with "There is no /", which helped nobody say "/ 10" about a
+     * film.
      */
-    if (text.startsWith('/') && !text.startsWith('//') && !this.editing) {
+    if (/^\/[^/\s]/.test(text) && !this.editing) {
       /*
        * Emptied before the command runs, not after.
        *

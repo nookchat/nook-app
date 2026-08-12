@@ -63,7 +63,8 @@ const SHOWING = `(() => {
     ].filter(Boolean).join('+')
     return [name, body, flags, reacts, poll].join('~')
   })
-  const pins = [...document.querySelectorAll('.chat-pin')].map((b) => b.textContent.trim())
+  const pinBtn = document.querySelector('[aria-label="Pinned messages"]')
+  const pins = pinBtn && !pinBtn.classList.contains('hidden') ? [pinBtn.title] : []
   const channels = [...document.querySelectorAll('.rail-item')].map((b) => b.textContent.trim())
   return JSON.stringify({ lines, pins, channels }, null, 1)
 })()`

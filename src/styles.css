@@ -1293,8 +1293,18 @@ details.adv[open] > summary {
   flex: 0 0 auto;
   height: 46%;
   min-height: 180px;
-  display: flex;
+  /* One stream is the whole stage; two split it evenly, side by side. */
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 4px;
+}
+
+.stage-tile {
   position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
 }
 
 /* Whose screen this is, said on the picture itself. */
@@ -1504,10 +1514,6 @@ details.adv[open] > summary {
   margin-top: 2px;
 }
 
-.chat-row.mine {
-  justify-content: flex-end;
-}
-
 /* A run is one block: tight inside, with air between runs. */
 .chat-row:has(.chat-name) {
   margin-top: 10px;
@@ -1534,15 +1540,15 @@ details.adv[open] > summary {
   border-top-left-radius: 12px;
 }
 
+/*
+ * Your own lines sit on the same side as everybody else's, the way a room
+ * reads rather than the way a phone does. The tint alone says which are
+ * yours: two columns made every conversation a tennis match to read, and it
+ * put half the text far from the names.
+ */
 .chat-line.mine {
   background: color-mix(in srgb, var(--accent) 20%, var(--surface));
   border-color: color-mix(in srgb, var(--accent) 26%, var(--line-soft));
-  border-radius: 12px;
-  border-top-right-radius: 4px;
-}
-
-.chat-line.mine.runs-on {
-  border-top-right-radius: 12px;
 }
 
 .chat-line:hover {
@@ -1635,11 +1641,14 @@ details.adv[open] > summary {
  */
 .chat-actions {
   position: absolute;
-  top: 2px;
+  /* Centred on the bubble, so the hand travels the same both ways. */
+  top: 50%;
+  transform: translateY(-50%);
   left: 100%;
   margin-left: 8px;
   display: flex;
-  gap: 2px;
+  align-items: center;
+  gap: 3px;
   opacity: 0;
   pointer-events: none;
   transition: opacity 90ms linear;
@@ -1651,13 +1660,6 @@ details.adv[open] > summary {
   pointer-events: auto;
 }
 
-.chat-row.mine .chat-actions {
-  left: auto;
-  right: 100%;
-  margin-left: 0;
-  margin-right: 8px;
-}
-
 /* No pointer to hover with: show them, quietly. */
 @media (hover: none) {
   .chat-actions {
@@ -1667,10 +1669,10 @@ details.adv[open] > summary {
 }
 
 .chat-actions button {
-  min-height: 16px;
-  height: 16px;
-  padding: 0 4px;
-  font-size: calc(var(--size-small) - 2px);
+  min-height: 26px;
+  height: 26px;
+  padding: 0 7px;
+  font-size: var(--size-small);
   border-radius: var(--radius-sm);
 }
 
@@ -2378,35 +2380,6 @@ input[type="text"].emoji-search {
 }
 
 /* The messages held up at the top of a channel. */
-.chat-pins {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 5px 7px;
-  border-bottom: 1px solid var(--line);
-  background: var(--surface-2);
-  max-height: 96px;
-  overflow-y: auto;
-}
-
-.chat-pin {
-  display: block;
-  width: 100%;
-  text-align: left;
-  border: none;
-  background: transparent;
-  box-shadow: none;
-  color: var(--fg-dim);
-  padding: 2px 4px;
-  font-size: 11px;
-  min-height: 0;
-}
-
-.chat-pin:hover:not(:disabled) {
-  background: var(--surface);
-  color: var(--fg);
-  border-color: transparent;
-}
 
 /*
  * Pinned, said in a word on the message.
@@ -2420,6 +2393,88 @@ input[type="text"].emoji-search {
  */
 .chat-line.pinned {
   border-color: var(--line);
+}
+
+/* The GIF picker: a grid one click from being said. */
+.gif-pop {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 96px;
+  z-index: 40;
+  width: min(540px, calc(100vw - 24px));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--panel-radius);
+  box-shadow: var(--shadow);
+}
+
+.gif-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 6px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.gif-choice {
+  width: 100%;
+  height: 90px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.gif-choice:hover {
+  outline: 2px solid var(--accent);
+}
+
+/* What is behind a link, said on a card under the message that carries it. */
+.link-card {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  max-width: 420px;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  text-decoration: none;
+  color: var(--fg);
+}
+
+.link-card:hover {
+  border-color: var(--accent);
+}
+
+.link-card-img {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  flex: 0 0 auto;
+}
+
+.link-card-body {
+  min-width: 0;
+}
+
+.link-card-title {
+  font-weight: 600;
+  font-size: var(--size-small);
+}
+
+.link-card-desc {
+  color: var(--fg-dim);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .chat-pinned-mark {

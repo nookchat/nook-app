@@ -241,6 +241,15 @@ The waiting screen names the cause instead of spinning:
 | `Z`     | Cycle fit, fill, actual size    |
 | `0`     | Reset the zoom                  |
 | `+` `-` | Zoom in and out                 |
+| `Esc`   | Take every stream off your screen. In fullscreen it also leaves fullscreen |
 
 Double click switches between fit and actual size. Control plus the wheel, or a
 trackpad pinch, zooms anywhere.
+
+## Keyboard, anywhere in a space
+
+| Key                     | Action                                     |
+| ----------------------- | ------------------------------------------ |
+| `Ctrl`/`Cmd`+`Shift`+`M` | Mute or unmute your microphone in voice    |
+| `Ctrl`/`Cmd`+`K`        | Search this space                          |
+| `Ctrl`/`Cmd`+`1`-`9`    | Jump to a channel, in the order of the rail |

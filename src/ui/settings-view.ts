@@ -43,6 +43,8 @@ export interface SettingsActions {
     leave(): Promise<void>
     /** Closed for everybody who reads the log. Admins only. */
     remove(): Promise<void>
+    /** Whoever has been removed, and the way back in for each of them. */
+    removed?: { key: string; name: string; restore(): void }[]
   }
 }
 
@@ -478,6 +480,35 @@ export function settingsView(actions: SettingsActions): HTMLElement {
                     class: 'tiny faint',
                     text: 'Clearing takes the messages, polls and pins off every device that is in the space or joins later. Names, channels and who runs it stay. Anybody who already saved a copy keeps it: there is no server to take it back from.',
                   })
+                : null,
+
+              /*
+               * Whoever has been removed. They are off the members list
+               * entirely, because removed should look removed, so the way to
+               * let one back in has to live somewhere. It is here, with the
+               * other rare admin acts. The row disappears as soon as it is
+               * used, without waiting for the log to come back around.
+               */
+              actions.space.admin && actions.space.removed?.length
+                ? h('div', { class: 'stack tight' }, [
+                    h('span', { class: 'eyebrow', text: 'Removed people' }),
+                    ...actions.space.removed.map((p) => {
+                      const row = h('div', { class: 'row spread' }, [
+                        h('span', { class: 'truncate tiny', text: p.name, title: `ID ${p.key}` }),
+                        h('button', {
+                          class: 'small',
+                          text: 'Let them back in',
+                          on: {
+                            click: () => {
+                              p.restore()
+                              row.remove()
+                            },
+                          },
+                        }),
+                      ])
+                      return row
+                    }),
+                  ])
                 : null,
 
               /*

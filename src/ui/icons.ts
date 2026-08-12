@@ -36,9 +36,12 @@ export type IconName =
   | 'more'
   | 'menu'
   | 'people'
+  | 'pin'
 
 const PATHS: Record<IconName, string> = {
   copy: 'M9 9.5A1.5 1.5 0 0 1 10.5 8h8A1.5 1.5 0 0 1 20 9.5v8a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 9 17.5zM5.5 16A1.5 1.5 0 0 1 4 14.5v-8A1.5 1.5 0 0 1 5.5 5h8A1.5 1.5 0 0 1 15 6.5',
+  // A pushpin: the head, the shoulder it hangs from, and the point.
+  pin: 'M9 4h6M10 4.5 9 11l-2.5 2.5h11L15 11l-1-6.5M12 13.5V20',
   check: 'M20 6.5 9.5 17 4.5 12',
   // Three eyes drawn as rings, plus a few loose modules. The even odd fill rule
   // is what turns the inner square of each eye into a hole.

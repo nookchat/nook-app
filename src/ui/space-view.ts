@@ -111,6 +111,7 @@ const COMMANDS = [
   { name: 'nick', note: 'Change your name' },
   { name: 'topic', note: 'Say what this channel is for' },
   { name: 'rename', note: 'Rename this channel' },
+  { name: 'gif', note: 'Look for a GIF to send' },
   { name: 'nudge', note: 'Shake somebody\u2019s window' },
   { name: 'shrug', note: '\u00af\\_(\u30c4)_/\u00af' },
   { name: 'invite', note: 'Copy the invite link' },
@@ -130,7 +131,6 @@ export class SpaceView {
   private mesh: Mesh | null = null
   private chat: RoomChat | null = null
   private chatPanel: ChatPanel | null = null
-  private surface: VideoSurface | null = null
 
   private channel = DEFAULT_CHANNEL
   private drawQueued = false
@@ -170,20 +170,27 @@ export class SpaceView {
   private gpu: HardwareProbe = NO_HARDWARE
   private readonly uplink = new UplinkMeter()
 
-  // Watching, when somebody else is.
-  private watching: ViewerPeer | null = null
-  private watchingWho: string | null = null
+  /**
+   * Watching, when other people are sharing. One entry per screen on the
+   * stage, our own preview included under our own session id, so two streams
+   * split the stage rather than fighting over it. The preview entry has no
+   * peer, because our own screen does not cross the network to reach us.
+   */
+  private readonly watched = new Map<
+    string,
+    { peer: ViewerPeer | null; surface: VideoSurface; tile: HTMLElement; tag: HTMLElement }
+  >()
   /** Who is sharing, and in which channel. */
   private readonly sharers = new Map<string, string>()
   private streamBar!: HTMLDivElement
   private archive: Archive | null = null
-  /** Whether our own screen is on our own stage. Sharing it is not watching it. */
-  private showingSelf = false
 
   /** The newest signed move heard per admin key, so a recorded one replays as nothing. */
   private readonly vmoveSeen = new Map<string, number>()
   /** The last line asked of each peer, so an answer that did not help is not asked for again. */
   private readonly pulled = new Map<string, number>()
+  /** Which streams each session says it is watching, from their announcements. */
+  private readonly watchingBy = new Map<string, string[]>()
   /** When each person, or the room, was last nudged from here. */
   private readonly nudgeSent = new Map<string, number>()
   /** The last shake taken, so a pile of nudges is one shake. */
@@ -195,7 +202,6 @@ export class SpaceView {
   // Elements redrawn in place.
   private channelList!: HTMLDivElement
   private voiceList!: HTMLDivElement
-  private stageTag!: HTMLDivElement
   private newTextButton!: HTMLButtonElement
   private newVoiceButton!: HTMLButtonElement
   private directList!: HTMLDivElement
@@ -209,6 +215,7 @@ export class SpaceView {
   private channelTitle!: HTMLDivElement
   private searchInput!: HTMLInputElement
   private searchResults!: HTMLDivElement
+  private pinsButton!: HTMLButtonElement
   private channelsButton!: HTMLButtonElement
   private peopleButton!: HTMLButtonElement
   /** Which rail is showing over the conversation, on a narrow screen. */
@@ -258,7 +265,7 @@ export class SpaceView {
     this.onLeave = onLeave
     chrome?.setActions({
       minimise: () => this.root.classList.toggle('rail-hidden'),
-      maximise: () => this.surface?.requestFullscreen(),
+      maximise: () => [...this.watched.values()][0]?.surface.requestFullscreen(),
       close: () => {
         this.destroy()
         onLeave()
@@ -267,7 +274,13 @@ export class SpaceView {
   }
 
   get isLive(): boolean {
-    return this.capture !== null || this.watching !== null
+    return this.capture !== null || this.watchingAnyone()
+  }
+
+  /** Whether any screen but our own preview is on the stage. */
+  private watchingAnyone(): boolean {
+    for (const id of this.watched.keys()) if (id !== this.selfId) return true
+    return false
   }
 
   async start(): Promise<void> {
@@ -317,6 +330,10 @@ export class SpaceView {
       // Who this is, so the roster is a list of people rather than of tabs.
       key: identity.pubkey,
       sharing: this.capture ? this.channel : undefined,
+      // Whose streams are on this screen, so everybody can say who is watching.
+      watching: this.watchingAnyone()
+        ? [...this.watched.keys()].filter((id) => id !== this.selfId)
+        : undefined,
       voice: this.voice?.state.channel ?? undefined,
       /*
        * Whether this tab is on screen.
@@ -423,6 +440,36 @@ export class SpaceView {
       this.showRail(null)
       return
     }
+    /*
+     * Escape takes the stream off your screen. In fullscreen the browser
+     * spends the same press on leaving fullscreen, and both happen at once,
+     * which is what pressing escape on a fullscreen stream means: out.
+     * Not while writing, though, where escape already means "put that down",
+     * and not while a menu is up, where it means "close that".
+     */
+    if (ev.key === 'Escape' && this.watched.size > 0) {
+      const target = ev.target as HTMLElement | null
+      const writing = target?.closest('input, textarea, [contenteditable]') != null
+      const menuOpen = document.querySelector('.menu') !== null
+      if (!writing && !menuOpen) {
+        this.stopWatching()
+        this.draw()
+        return
+      }
+    }
+    // The microphone, from anywhere, including the middle of a sentence.
+    if ((ev.metaKey || ev.ctrlKey) && ev.shiftKey && ev.key.toLowerCase() === 'm') {
+      ev.preventDefault()
+      const state = this.voice?.state
+      if (!state?.channel) {
+        toast('You are not in a voice channel.', 'warn', 2500)
+        return
+      }
+      this.voice?.setMuted(!state.muted)
+      toast(state.muted ? 'Microphone on.' : 'Microphone muted.', 'info', 2000)
+      this.draw()
+      return
+    }
     if (!(ev.metaKey || ev.ctrlKey)) return
     if (ev.key.toLowerCase() === 'k') {
       ev.preventDefault()
@@ -450,13 +497,11 @@ export class SpaceView {
     this.timers = []
     this.stopSharing()
     this.voice?.dispose()
-    this.watching?.close()
-    this.watching = null
+    this.stopWatching()
     this.mesh?.stop()
     const bus = this.bus
     this.bus = null
     if (bus) window.setTimeout(() => bus.stop(), 200)
-    this.surface?.destroy()
     document.title = 'Cathode'
   }
 
@@ -480,6 +525,10 @@ export class SpaceView {
     for (const id of [...this.sharers.keys()]) if (!alive.has(id)) this.sharers.delete(id)
     for (const id of [...this.away]) if (!alive.has(id)) this.away.delete(id)
     for (const id of [...this.typing.keys()]) if (!alive.has(id)) this.typing.delete(id)
+    for (const id of [...this.watchingBy.keys()]) if (!alive.has(id)) this.watchingBy.delete(id)
+    // A reload used to leave your old session standing in the voice channel
+    // for ever, because nothing ever took a dead session's standing back.
+    this.voice?.prune(alive)
   }
 
   // ---- signalling ----
@@ -503,6 +552,20 @@ export class SpaceView {
         if (sharing) this.sharers.set(env.from, sharing)
         else this.sharers.delete(env.from)
         if (was !== sharing) this.draw()
+        // Which streams they are watching, so a stream can say who is there.
+        // A string still counts, from a tab that has not reloaded since this
+        // became a list.
+        const eyesRaw = data.watching
+        const eyes =
+          typeof eyesRaw === 'string'
+            ? [eyesRaw]
+            : Array.isArray(eyesRaw)
+              ? eyesRaw.filter((x): x is string => typeof x === 'string').slice(0, 12)
+              : []
+        const hadEyes = (this.watchingBy.get(env.from) ?? []).join()
+        if (eyes.length) this.watchingBy.set(env.from, eyes)
+        else this.watchingBy.delete(env.from)
+        if (hadEyes !== eyes.join()) this.draw()
         // Somebody is sharing in the channel we are looking at, so ask to watch.
         /*
          * Somebody starting to share does not put their screen on yours.
@@ -513,8 +576,12 @@ export class SpaceView {
          * The row of who is live is the offer; watching is a click.
          */
         if (was !== sharing) this.draw()
-        // Whoever stopped, stop watching. Nobody is put on in their place.
-        if (!sharing && env.from === this.watchingWho) this.stopWatching()
+        // Whoever stopped comes off the stage. Nobody is put on in their place.
+        if (!sharing && this.watched.has(env.from)) {
+          this.dropTile(env.from)
+          this.announceMe()
+          this.draw()
+        }
         return
       }
       case 'hello': {
@@ -526,12 +593,11 @@ export class SpaceView {
         return
       }
       case 'offer': {
-        // Only from whoever we asked. With two people sharing at once, the
-        // other one's offer would otherwise pull the screen out from under
-        // the one being watched.
-        if (this.watchingWho && env.from !== this.watchingWho) return
-        if (!this.watching) this.startWatching(env.from)
-        await this.watching?.onOffer(data as unknown as RTCSessionDescriptionInit)
+        // Only from somebody we asked. Anybody else's offer cannot put a
+        // picture on this screen, asked for or not.
+        await this.watched
+          .get(env.from)
+          ?.peer?.onOffer(data as unknown as RTCSessionDescriptionInit)
         return
       }
       case 'answer': {
@@ -551,9 +617,9 @@ export class SpaceView {
         const side = typeof data.side === 'string' ? data.side : ''
         const forViewer = side === 'host' || (side === '' && !this.watchers.has(env.from))
         if (forViewer) {
-          if (env.from === this.watchingWho) {
-            await this.watching?.onIce(data as unknown as RTCIceCandidateInit)
-          }
+          await this.watched
+            .get(env.from)
+            ?.peer?.onIce(data as unknown as RTCIceCandidateInit)
         } else if (this.watchers.has(env.from)) {
           await this.watchers.get(env.from)?.onIce(data as unknown as RTCIceCandidateInit)
         }
@@ -567,12 +633,13 @@ export class SpaceView {
         this.voice?.forget(env.from)
         this.watchers.get(env.from)?.close()
         this.watchers.delete(env.from)
-        if (env.from === this.watchingWho) this.stopWatching()
+        if (this.watched.has(env.from)) this.dropTile(env.from)
         // And everything cosmetic filed under the session that just left, or
         // a tab that said goodbye still leaves a live pill wearing its name.
         this.sharers.delete(env.from)
         this.away.delete(env.from)
         this.typing.delete(env.from)
+        this.watchingBy.delete(env.from)
         this.draw()
         return
       }
@@ -941,6 +1008,10 @@ export class SpaceView {
         this.sendNudge(arg)
         return true
       }
+      case 'gif': {
+        void this.openGifPicker(arg)
+        return true
+      }
       case 'shrug': {
         /*
          * The arm and both underscores are escaped for the formatter, or it
@@ -1302,6 +1373,17 @@ export class SpaceView {
       this.chatPanel?.render(this.chat.messages(this.channel))
       this.chatPanel?.setTitle('Chat')
     }
+    // The pushpin shows when the channel on screen has something pinned.
+    const pinnedHere =
+      this.direct || this.thread
+        ? 0
+        : this.chat.messages(this.channel).filter((m) => m.pinned).length
+    this.pinsButton.classList.toggle('hidden', pinnedHere === 0)
+    if (pinnedHere > 0) {
+      this.pinsButton.title =
+        pinnedHere === 1 ? 'One pinned message' : `${pinnedHere} pinned messages`
+    }
+
     // The header says what the rail says: the label an admin chose, and the
     // line about what the channel is for when there is one.
     const here = this.chat.channelInfo().find((c) => c.name === this.channel)
@@ -1410,13 +1492,13 @@ export class SpaceView {
     const people = this.hereNow()
     const what = this.capture
       ? 'Sharing your screen'
-      : this.watching
+      : this.watchingAnyone()
         ? 'Watching a shared screen'
         : `#${this.channel}`
-    // A count of mentions rather than of messages: the tab is read out of the
-    // corner of an eye, so the number on it has to be one worth turning for.
+    // The app first, then where you are. A count of mentions rather than of
+    // messages: the number on a tab has to be one worth turning for.
     const name = this.capture ? 'Sharing your screen' : `#${this.channel}`
-    this.chrome.setTitle(this.mentions ? `(${this.mentions}) ${name}` : name)
+    this.chrome.setTitle(`Cathode | ${this.mentions ? `(${this.mentions}) ` : ''}${name}`)
     this.chrome.setStatus([
       what,
       `${people} here`,
@@ -1468,8 +1550,6 @@ export class SpaceView {
     this.peopleList = h('div', { class: 'rail-list' })
     this.voiceBar = h('div', { class: 'voice-bar hidden' })
     this.stage = h('div', { class: 'stage hidden' })
-    this.stageTag = h('div', { class: 'stage-tag hidden' })
-    this.stage.append(this.stageTag)
     /*
      * The row of who is live in this channel.
      *
@@ -1507,6 +1587,9 @@ export class SpaceView {
       vote: (id, choice) => void this.publish((c) => c.vote(id, choice)),
       rename: (name) => this.rename(name),
     }
+    // Cards under links, where the space has an archive to go and look.
+    this.chatPanel.previewFor = (url) =>
+      this.archive?.on ? this.archive.preview(url) : Promise.resolve(null)
     this.chatPanel.setEnabled(true)
 
     // Empty rather than a guess. The name arrives with the log.
@@ -1601,6 +1684,21 @@ export class SpaceView {
      * loud: the thing a chat app usually needs a search cluster for is a loop
      * over an array when the history belongs to you.
      */
+    /*
+     * The pins, behind a pushpin rather than pinned over the room.
+     *
+     * They used to be a strip above the conversation, every one of them, all
+     * the time, which taxed every reader to save a rare looker-up a click.
+     * The pushpin appears when this channel has pins and opens the list.
+     */
+    this.pinsButton = h('button', {
+      class: 'ghost icon-only hidden',
+      ariaLabel: 'Pinned messages',
+      title: 'Pinned in this channel',
+      on: { click: () => this.openPins() },
+    })
+    this.pinsButton.append(icon('pin', 15))
+
     this.searchInput = h('input', {
       type: 'text',
       class: 'space-search',
@@ -1651,6 +1749,7 @@ export class SpaceView {
         h('div', { class: 'space-head row spread' }, [
           this.channelsButton,
           this.channelTitle,
+          this.pinsButton,
           this.searchInput,
           this.peopleButton,
         ]),
@@ -1681,6 +1780,15 @@ export class SpaceView {
           reset: () => this.resetSpace(),
           leave: () => this.leaveSpace(),
           remove: () => this.deleteSpace(),
+          // Removed people live here rather than in the rail, with the one
+          // thing an admin can still do about them.
+          removed: [...(this.chat?.roles() ?? new Map<string, string>())]
+            .filter(([, role]) => role === 'kicked')
+            .map(([key]) => ({
+              key,
+              name: this.chat?.nameOf(key) || shortKey(key),
+              restore: () => void this.setRole(key, 'member'),
+            })),
         },
         back: () => {
           this.settingsOpen = false
@@ -2411,6 +2519,13 @@ export class SpaceView {
       }
 
       const role = roles.get(row.key) ?? 'member'
+      /*
+       * Somebody removed is removed: they do not stand in the list wearing a
+       * label. Letting them back in lives in the space settings, where the
+       * rare admin act belongs. Your own row stays even then, so being removed
+       * is something you can see rather than infer.
+       */
+      if (role === 'kicked' && !row.you) continue
       const label = row.name || shortKey(row.key)
       const actions = this.actionsFor(row.key, role, row.you, row.here)
       const more = h('button', {
@@ -2452,7 +2567,8 @@ export class SpaceView {
             role === 'admin'
               ? h('span', { class: 'crown', title: 'Runs this space' }, [icon('crown', 12)])
               : null,
-            role === 'kicked' ? h('span', { class: 'tiny faint', text: 'removed' }) : null,
+            role === 'kicked' ? h('span', { class: 'tiny faint', text: 'removed' }) : null, // your own row only
+
           ]),
           row.voice
             ? h(
@@ -2469,6 +2585,97 @@ export class SpaceView {
         ]),
       )
     }
+  }
+
+  /**
+   * A grid of GIFs matching a term, one click from being said.
+   *
+   * The search runs through the archive, which is the only party that can
+   * hold a Tenor key without publishing it, so the command explains itself
+   * when there is no archive or the archive has no key. The click sends the
+   * plain https link; the chat already draws a lone picture link as the
+   * picture, so the link is the whole payload and nothing new travels.
+   */
+  private async openGifPicker(term: string): Promise<void> {
+    const wanted = term.trim()
+    if (!wanted) {
+      toast('Say what to look for: /gif dancing cat', 'warn')
+      return
+    }
+    if (!this.archive?.on) {
+      toast('GIF search needs an archive. Paste one under Settings, Archive.', 'warn', 6000)
+      return
+    }
+    const gifs = await this.archive.gifs(wanted)
+    if (gifs.length === 0) {
+      toast(
+        'Nothing found. An archive without a Tenor key finds nothing; see server/README.md.',
+        'warn',
+        7000,
+      )
+      return
+    }
+
+    const grid = h('div', { class: 'gif-grid' })
+    const pop = h('div', { class: 'gif-pop' }, [
+      h('div', { class: 'row spread' }, [
+        h('span', { class: 'eyebrow', text: `GIFs for "${wanted}"` }),
+        h('button', {
+          class: 'ghost tiny-btn',
+          text: '×',
+          ariaLabel: 'Close the GIF picker',
+          on: { click: () => done() },
+        }),
+      ]),
+      grid,
+    ])
+    const onKey = (ev: KeyboardEvent): void => {
+      if (ev.key === 'Escape') {
+        ev.stopPropagation()
+        done()
+      }
+    }
+    const onAway = (ev: PointerEvent): void => {
+      if (!pop.contains(ev.target as Node)) done()
+    }
+    const done = (): void => {
+      pop.remove()
+      window.removeEventListener('keydown', onKey, true)
+      window.removeEventListener('pointerdown', onAway, true)
+    }
+    window.addEventListener('keydown', onKey, true)
+    window.addEventListener('pointerdown', onAway, true)
+
+    for (const g of gifs) {
+      const img = h('img', { class: 'gif-choice' })
+      img.src = g.preview
+      img.alt = ''
+      img.loading = 'lazy'
+      img.referrerPolicy = 'no-referrer'
+      img.addEventListener('click', () => {
+        done()
+        const direct = this.direct
+        if (direct) void this.publish((c) => c.sayDirect(direct, g.url))
+        else void this.publish((c) => c.say(g.url, this.channel))
+      })
+      grid.append(img)
+    }
+    document.body.append(pop)
+  }
+
+  /** The pinned messages of this channel, as a list that goes to each one. */
+  private openPins(): void {
+    const chat = this.chat
+    if (!chat) return
+    const pinned = chat.messages(this.channel).filter((m) => m.pinned)
+    openMenu(
+      this.pinsButton,
+      pinned.map((m) => ({
+        label: m.text.slice(0, 60) || 'a message with no text',
+        note: m.name || shortKey(m.author),
+        run: () => this.goTo(m),
+      })),
+    )
   }
 
   private openChannel(name: string): void {
@@ -2580,7 +2787,7 @@ export class SpaceView {
     this.shareButton.classList.toggle('primary', !sharing)
     this.sharePanel.classList.toggle('hidden', !sharing)
     // The stage is only up for something you chose to put on it.
-    this.stage.classList.toggle('hidden', !(sharing && this.showingSelf) && !this.watching)
+    this.stage.classList.toggle('hidden', this.watched.size === 0)
     this.renderStreams()
   }
 
@@ -2636,9 +2843,7 @@ export class SpaceView {
     this.mixer?.close()
     this.mixer = null
     this.outStream = null
-    this.showingSelf = false
-    this.surface?.setStream(null)
-    this.stage.classList.add('hidden')
+    this.dropTile(this.selfId)
     this.announceMe()
   }
 
@@ -2666,30 +2871,6 @@ export class SpaceView {
     void peer.setPlan(this.plan(this.watchers.size))
   }
 
-  private startWatching(from: string): void {
-    this.watchingWho = from
-    this.ensureSurface()
-    this.watching = new ViewerPeer({
-      send: (type, data) =>
-        void this.bus?.send({
-          type,
-          to: from,
-          data: type === 'ice' ? { ...(data as Record<string, unknown>), side: 'viewer' } : data,
-        }),
-      onStream: (stream) => {
-        this.stage.classList.remove('hidden')
-        this.surface?.setStream(stream)
-        void this.surface?.tryUnmute().then((got) => {
-          if (!got) this.surface?.setSoundPrompt(() => void this.surface?.tryUnmute())
-        })
-      },
-      onChange: () => this.draw(),
-      onFailed: (reason) => toast(reason, 'bad', 8000),
-      onChat: () => undefined,
-      onChatReady: () => undefined,
-    })
-  }
-
   /** Everybody sharing in the channel we are looking at, ourselves included. */
   private liveHere(): { id: string; name: string; you: boolean; key: string }[] {
     const out: { id: string; name: string; you: boolean; key: string }[] = []
@@ -2705,31 +2886,100 @@ export class SpaceView {
   }
 
   /**
-   * Watch one of the people sharing here.
+   * Put somebody's stream on the stage, or take it back off.
    *
-   * Switching is a full stop and start: the connection carries one screen and
-   * a different screen is a different connection. Asking is a hello, and the
-   * offer comes back the same way it does for the first one.
+   * A second stream splits the stage rather than replacing the first: each
+   * one is its own connection, its own surface, and its own tile. Asking is
+   * a hello, and the offer comes back per connection, the same way it does
+   * for the first one.
    */
   private watch(peerId: string): void {
-    if (peerId === this.selfId && this.capture) {
-      this.stopWatching()
-      this.showOwnPreview()
+    if (this.watched.has(peerId)) {
+      this.dropTile(peerId)
+      this.announceMe()
       this.draw()
       return
     }
-    if (peerId === this.watchingWho) return
-    this.stopWatching()
     if (peerId === this.selfId) {
       // Your own screen is already on this device. No round trip for it.
-      this.showingSelf = true
+      if (!this.outStream) return
+      const entry = this.addTile(peerId)
+      entry.surface.setStream(this.outStream)
       this.draw()
       return
     }
-    this.showingSelf = false
-    this.watchingWho = peerId
+    const entry = this.addTile(peerId)
+    entry.peer = new ViewerPeer({
+      send: (type, data) =>
+        void this.bus?.send({
+          type,
+          to: peerId,
+          data: type === 'ice' ? { ...(data as Record<string, unknown>), side: 'viewer' } : data,
+        }),
+      onStream: (stream) => {
+        entry.surface.setStream(stream)
+        void entry.surface.tryUnmute().then((got) => {
+          if (!got) entry.surface.setSoundPrompt(() => void entry.surface.tryUnmute())
+        })
+      },
+      onChange: () => this.draw(),
+      onFailed: (reason) => toast(reason, 'bad', 8000),
+      onChat: () => undefined,
+      onChatReady: () => undefined,
+    })
     void this.bus?.send({ type: 'hello', to: peerId })
+    // Say so at once, so the sharer's "watched by" line moves when you do.
+    this.announceMe()
     this.draw()
+  }
+
+  /** A screen's place on the stage: a surface, and the line saying whose it is. */
+  private addTile(id: string): {
+    peer: ViewerPeer | null
+    surface: VideoSurface
+    tile: HTMLElement
+    tag: HTMLElement
+  } {
+    const surface = new VideoSurface({ muted: true, showVolume: true })
+    const tag = h('div', { class: 'stage-tag' })
+    const tile = h('div', { class: 'stage-tile' }, [surface.root, tag])
+    this.stage.append(tile)
+    const entry = { peer: null as ViewerPeer | null, surface, tile, tag }
+    this.watched.set(id, entry)
+    this.stage.classList.remove('hidden')
+    return entry
+  }
+
+  private dropTile(id: string): void {
+    const entry = this.watched.get(id)
+    if (!entry) return
+    entry.peer?.close()
+    entry.surface.destroy()
+    entry.tile.remove()
+    this.watched.delete(id)
+    if (this.watched.size === 0) this.stage.classList.add('hidden')
+  }
+
+  /** Who has a session's stream on their screen, by name, newest announcement wins. */
+  private watcherNames(sharer: string): string[] {
+    const peers = this.mesh?.peers() ?? []
+    const names = new Set<string>()
+    const note = (session: string): void => {
+      const p = peers.find((x) => x.id === session)
+      names.add(p ? p.name || shortKey(p.key || session) : shortKey(session))
+    }
+    for (const [session, targets] of this.watchingBy) {
+      if (targets.includes(sharer) && session !== this.selfId) note(session)
+    }
+    // For our own stream the connections themselves are the surer answer.
+    if (sharer === this.selfId) for (const id of this.watchers.keys()) note(id)
+    return [...names]
+  }
+
+  /** A few names in full, and a count for the rest. */
+  private fewNames(names: string[]): string {
+    if (names.length <= 3) return names.join(', ')
+    return `${names.slice(0, 3).join(', ')} +${names.length - 3}`
   }
 
   /**
@@ -2743,17 +2993,25 @@ export class SpaceView {
     clear(this.streamBar)
     this.streamBar.classList.toggle('hidden', live.length === 0)
 
-    // The name on the picture, so a full stage always says whose screen it is.
-    const showing = this.watchingWho
-      ? `Watching ${live.find((l) => l.id === this.watchingWho)?.name ?? 'a shared screen'}`
-      : this.capture && this.showingSelf
-        ? 'Your screen, as the others see it'
-        : ''
-    this.stageTag.textContent = showing
-    this.stageTag.classList.toggle('hidden', showing === '')
+    // The name on every picture, so a split stage says whose screen each one
+    // is, and who else is standing in front of it.
+    for (const [id, entry] of this.watched) {
+      if (id === this.selfId) {
+        const eyes = this.watcherNames(this.selfId)
+        entry.tag.textContent = eyes.length
+          ? `Your screen · watched by ${this.fewNames(eyes)}`
+          : 'Your screen, as the others see it'
+      } else {
+        const whose = live.find((l) => l.id === id)?.name ?? 'a shared screen'
+        const others = this.watcherNames(id)
+        entry.tag.textContent = others.length
+          ? `Watching ${whose}, with ${this.fewNames(others)}`
+          : `Watching ${whose}`
+      }
+    }
     if (live.length === 0) return
 
-    const watching = this.watchingWho !== null || (this.capture !== null && this.showingSelf)
+    const watching = this.watched.size > 0
     this.streamBar.append(
       h('span', {
         class: 'eyebrow',
@@ -2762,17 +3020,20 @@ export class SpaceView {
     )
 
     for (const one of live) {
-      const on = one.you ? this.showingSelf : this.watchingWho === one.id
+      const on = this.watched.has(one.id)
       const label = one.you
         ? this.watchers.size > 0
           ? `Your screen · ${this.watchers.size} watching`
           : 'Your screen'
         : one.name
+      const eyes = this.watcherNames(one.id)
       const tab = h(
         'button',
         {
           class: `stream-tab${on ? ' on' : ''}`,
-          title: one.you ? 'Show your own screen here' : `Put ${one.name} on your screen`,
+          title:
+            (one.you ? 'Show your own screen here' : `Put ${one.name} on your screen`) +
+            (eyes.length ? `. Watching: ${eyes.join(', ')}` : ''),
           on: { click: () => this.watch(one.id) },
         },
         [
@@ -2792,10 +3053,9 @@ export class SpaceView {
         h('button', {
           class: 'stream-tab quiet',
           text: 'Stop watching',
-          title: 'Take it off your screen',
+          title: 'Take every stream off your screen. Escape does the same.',
           on: {
             click: () => {
-              this.showingSelf = false
               this.stopWatching()
               this.draw()
             },
@@ -2805,28 +3065,18 @@ export class SpaceView {
     }
   }
 
+  /** Everything off the stage at once, our own preview included. */
   private stopWatching(): void {
-    this.watching?.close()
-    this.watching = null
-    this.watchingWho = null
-    if (!this.capture) {
-      this.surface?.setStream(null)
-      this.stage.classList.add('hidden')
-    }
-  }
-
-  private ensureSurface(): void {
-    if (this.surface) return
-    this.surface = new VideoSurface({ muted: true, showVolume: true })
-    this.stage.append(this.surface.root)
+    const was = this.watchingAnyone()
+    for (const id of [...this.watched.keys()]) this.dropTile(id)
+    if (was) this.announceMe()
   }
 
   /** Your own screen, on your own stage, so you can see what you are giving away. */
   private showOwnPreview(): void {
-    this.showingSelf = true
-    this.ensureSurface()
-    this.surface?.setStream(this.outStream)
-    this.stage.classList.remove('hidden')
+    const held = this.watched.get(this.selfId)
+    if (held) held.surface.setStream(this.outStream)
+    else this.watch(this.selfId)
   }
 
   private plan(watchers: number): QualityPlan {
@@ -2859,9 +3109,10 @@ export class SpaceView {
       for (const peer of peers) await peer.setPlan(plan)
       this.renderSharePanel(plan, peers.length)
     }
-    if (this.watching) {
-      const s = await this.watching.sample()
-      this.surface?.setBadges([
+    for (const [id, entry] of this.watched) {
+      if (id === this.selfId || !entry.peer) continue
+      const s = await entry.peer.sample()
+      entry.surface.setBadges([
         { text: fmtKbps(s.kbps) },
         { text: `${s.width}x${s.height}` },
         { text: `${s.fps} fps` },

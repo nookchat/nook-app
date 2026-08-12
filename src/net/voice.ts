@@ -184,6 +184,25 @@ export class Voice {
     this.talking.remove(peerId)
   }
 
+  /**
+   * Drop standings for sessions the mesh no longer knows.
+   *
+   * Standing rides announcements, and a tab that dies without a goodbye never
+   * takes its announcement back, so its owner stood in the channel for ever,
+   * including your own last session after a reload. A live call is proof
+   * enough to stay: a relay outage empties the roster while the audio keeps
+   * flowing, and this must not hang up on it.
+   */
+  prune(alive: Set<string>): void {
+    let changed = false
+    for (const id of [...this.standing.keys()]) {
+      if (alive.has(id) || this.calls.has(id)) continue
+      this.standing.delete(id)
+      changed = true
+    }
+    if (changed) this.onChange?.()
+  }
+
   async handle(env: Envelope): Promise<void> {
     const data = (env.data ?? {}) as Record<string, unknown>
     switch (env.type) {

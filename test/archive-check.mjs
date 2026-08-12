@@ -32,7 +32,9 @@ const check = (name, ok, detail = '') => {
 
 const data = mkdtempSync(join(tmpdir(), 'cathode-archive-'))
 const server = spawn('node', ['server/server.mjs'], {
-  env: { ...process.env, PORT: String(PORT), CATHODE_DATA: data },
+  // PREVIEW_LOCAL, because the page this test asks about has nowhere to live
+  // but localhost, which the preview endpoint rightly refuses in real life.
+  env: { ...process.env, PORT: String(PORT), CATHODE_DATA: data, CATHODE_PREVIEW_LOCAL: '1' },
   stdio: ['ignore', 'pipe', 'pipe'],
 })
 server.stdout.on('data', (b) => process.env.LOUD && console.log('  [server]', String(b).trim()))
@@ -320,6 +322,44 @@ try {
   )
   await erin.context().close()
 
+  // ---- link previews --------------------------------------------------------
+  // A message with a link grows a card only because the archive goes and
+  // looks. Here is a page worth a card, and what the archive reads off it.
+  const { createServer } = await import('node:http')
+  const site = createServer((req, res) => {
+    res.writeHead(200, { 'content-type': 'text/html' })
+    res.end(
+      '<html><head><title>Fallback</title>' +
+        '<meta property="og:title" content="A page worth a card">' +
+        '<meta property="og:description" content="What it is about">' +
+        '<meta property="og:image" content="/cover.png">' +
+        '<meta property="og:site_name" content="Example">' +
+        '</head><body>hello</body></html>',
+    )
+  })
+  await new Promise((ready) => site.listen(0, ready))
+  const sitePort = site.address().port
+  const pageUrl = `http://localhost:${sitePort}/page`
+  const preview = await (
+    await fetch(`${ARCHIVE}/preview?url=${encodeURIComponent(pageUrl)}`)
+  ).json()
+  check(
+    "the archive reads a link on the room's behalf",
+    preview.title === 'A page worth a card' &&
+      preview.description === 'What it is about' &&
+      preview.site === 'Example',
+    JSON.stringify(preview),
+  )
+  check(
+    'and makes the picture an absolute address',
+    preview.image === `http://localhost:${sitePort}/cover.png`,
+    preview.image ?? '(none)',
+  )
+  site.close()
+
+  // No Tenor key on this archive, so /gif answers honestly rather than 500ing.
+  const gifless = await fetch(`${ARCHIVE}/gif?q=cats`)
+  check('gif search without a key says so', gifless.status === 404, `${gifless.status}`)
 } finally {
   await browser.close()
   server.kill()

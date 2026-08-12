@@ -159,8 +159,8 @@ try {
     `${first}, ${watchingFirst ?? 0}px wide`,
   )
 
-  // Switch to the other one, and check the picture comes back.
-  const switched = await carol.evaluate(() => {
+  // Pick the other one as well, and the stage splits instead of switching.
+  const second = await carol.evaluate(() => {
     const off = [...document.querySelectorAll('.stream-tab')].find(
       (b) => b.dataset.watch === 'peer' && !b.classList.contains('on'),
     )
@@ -169,23 +169,22 @@ try {
     off.click()
     return name
   })
-  check('the other one can be picked', !!switched, switched ?? 'nothing to pick')
+  check('the other one can be picked as well', !!second, second ?? 'nothing to pick')
 
-  const watchingSecond = await waitFor(
+  const split = await waitFor(
     async () =>
       carol.evaluate(() => {
-        const el = document.querySelector('video')
-        const on = document.querySelector('.stream-tab.on')?.textContent.trim() ?? ''
-        return el && el.videoWidth > 0 && !el.paused && on ? { w: el.videoWidth, on } : null
+        const tiles = [...document.querySelectorAll('.stage-tile video')]
+        const playing = tiles.filter((el) => el.videoWidth > 0 && !el.paused)
+        const pressed = document.querySelectorAll('.stream-tab.on').length
+        return playing.length === 2 && pressed === 2
+          ? `${playing.length} pictures, ${pressed} cards pressed`
+          : null
       }),
     30_000,
-    'the second stream to arrive',
+    'both streams to be on screen at once',
   )
-  check(
-    'and switching to it brings a picture back',
-    !!watchingSecond && watchingSecond.on === switched,
-    watchingSecond ? `${watchingSecond.on}, ${watchingSecond.w}px wide` : 'no picture',
-  )
+  check('and the stage splits to show both at once', !!split, split ?? 'no split')
 
   // And a way back off it again.
   const stopped = await carol.evaluate(async () => {
@@ -222,11 +221,15 @@ try {
     return waitFor(
       async () =>
         page.evaluate(() => {
-          const tag = document.querySelector('.stage-tag')?.textContent ?? ''
-          const el = document.querySelector('video')
-          return el && el.videoWidth > 0 && !el.paused && tag.startsWith('Watching')
-            ? `${tag}, ${el.videoWidth}px`
-            : null
+          // Their own preview is a tile too, so look for the watched one.
+          for (const tile of document.querySelectorAll('.stage-tile')) {
+            const tag = tile.querySelector('.stage-tag')?.textContent ?? ''
+            const el = tile.querySelector('video')
+            if (tag.startsWith('Watching') && el && el.videoWidth > 0 && !el.paused) {
+              return `${tag}, ${el.videoWidth}px`
+            }
+          }
+          return null
         }),
       30_000,
       `${name} to see the other sharer's picture`,
