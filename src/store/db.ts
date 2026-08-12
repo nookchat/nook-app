@@ -137,7 +137,14 @@ export interface RoomNote {
   password?: string
   /** Pinned the first time this device saw the space, and never moved after. */
   founder?: string
-  /** An optional archive for this space, and how far through it we have read. */
+  /**
+   * This space's own archive, when it has been given one, and how far through
+   * it we have read.
+   *
+   * Absent means "whatever the default is". An empty string means somebody
+   * turned it off here on purpose, which has to outlast a default being set
+   * later, so the two are kept apart rather than folded into one falsy value.
+   */
   archive?: string
   archiveAt?: number
 }

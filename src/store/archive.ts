@@ -34,12 +34,48 @@ import type { LogEvent } from './log'
 
 /** How many events to push in one request. */
 const BATCH = 200
+/** How long to wait before trying again after the archive said no. */
+const RETRY_MS = 15_000
+/** Sweep for anything that never made it, this often. */
+const SWEEP_MS = 60_000
 
 export interface ArchiveConfig {
   /** Where it lives, or empty for no archive at all. */
   url: string
   /** How many lines of it we have already read. */
   at: number
+}
+
+/**
+ * The archive every new space uses, unless it is told otherwise.
+ *
+ * Set once. Asking somebody to paste the same address into every space they
+ * ever open is asking them to forget, and a history that is kept for some of
+ * your spaces and not others is worse than one you know you do not have.
+ *
+ * A space that has been given its own address keeps it, including the empty
+ * one: turning the archive off for a single space has to survive the default
+ * being on.
+ */
+const DEFAULT_KEY = 'cathode.archive.v1'
+
+export function defaultArchive(): string {
+  try {
+    return clean(localStorage.getItem(DEFAULT_KEY) ?? '')
+  } catch {
+    return ''
+  }
+}
+
+export function setDefaultArchive(raw: string): string {
+  const url = clean(raw)
+  try {
+    if (url) localStorage.setItem(DEFAULT_KEY, url)
+    else localStorage.removeItem(DEFAULT_KEY)
+  } catch {
+    /* the choice lasts for this session only */
+  }
+  return url
 }
 
 function clean(raw: string): string {
@@ -69,6 +105,19 @@ export class Archive {
   private url = ''
   private at = 0
   private busy = false
+  /**
+   * Everything written that the archive has not confirmed.
+   *
+   * This used to be nothing at all: push refused to run while another push was
+   * in flight and dropped what it had been given, so anything said during a
+   * slow request was archived nowhere. A network that hiccuped lost the same
+   * way. It kept a history with holes in it and never said so, which is worse
+   * than keeping none, because the holes are invisible until you need what was
+   * in them.
+   */
+  private readonly waiting = new Map<string, LogEvent>()
+  private sweeper: number | null = null
+  private nextTry = 0
 
   constructor(room: string, key: CryptoKey) {
     this.room = room
@@ -89,7 +138,35 @@ export class Archive {
     if (next !== this.url) this.at = 0
     else this.at = at
     this.url = next
+    if (this.url) this.startSweeping()
+    else this.stopSweeping()
     return this.url
+  }
+
+  /**
+   * Keep trying, quietly, for as long as this space is open.
+   *
+   * Every event is offered the moment it is written, and the ones that did not
+   * get through are offered again on a timer. Nothing is ever given up on
+   * while the space is open, and nothing is ever waited on either.
+   */
+  private startSweeping(): void {
+    if (this.sweeper !== null) return
+    this.sweeper = window.setInterval(() => void this.flush(), SWEEP_MS)
+  }
+
+  private stopSweeping(): void {
+    if (this.sweeper !== null) window.clearInterval(this.sweeper)
+    this.sweeper = null
+  }
+
+  dispose(): void {
+    this.stopSweeping()
+  }
+
+  /** How many events are still waiting to be kept. Zero is the healthy answer. */
+  get pending(): number {
+    return this.waiting.size
   }
 
   /** How far through we have read, so the next visit starts where this ended. */
@@ -130,31 +207,53 @@ export class Archive {
   }
 
   /**
-   * Hand it some events. Never blocks anything and never reports failure,
-   * because a space with an archive that is down is a space, and telling
-   * somebody their message did not reach a machine they forgot they set up
-   * helps nobody.
+   * Hand it some events.
+   *
+   * Queues rather than sends. Nothing is dropped for being inconvenient: an
+   * event written during a slow request waits for the next one instead of
+   * vanishing, which is the difference between a history and a history with
+   * holes in it.
+   *
+   * Never blocks anything and never reports failure, because a space whose
+   * archive is down is still a space, and telling somebody their message did
+   * not reach a machine they set up last month helps nobody.
    */
-  async push(events: LogEvent[]): Promise<void> {
-    if (!this.url || events.length === 0 || this.busy) return
+  push(events: LogEvent[]): void {
+    if (!this.url || events.length === 0) return
+    for (const event of events) this.waiting.set(event.id, event)
+    void this.flush()
+  }
+
+  /** Try to empty the queue. Safe to call at any time, from anywhere. */
+  async flush(): Promise<void> {
+    if (!this.url || this.busy || this.waiting.size === 0) return
+    if (Date.now() < this.nextTry) return
     this.busy = true
     try {
-      for (let i = 0; i < events.length; i += BATCH) {
-        const sealed = await Promise.all(
-          events.slice(i, i + BATCH).map((e) => seal(this.key, wrap(e))),
-        )
-        await globalThis.fetch(`${this.url}/events/${this.room}`, {
-          method: 'POST',
-          mode: 'cors',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(sealed),
-        })
+      // A copy, so anything written while this runs joins the next round
+      // rather than being lost or sent twice.
+      const batch = [...this.waiting.values()].slice(0, BATCH)
+      const sealed = await Promise.all(batch.map((e) => seal(this.key, wrap(e))))
+      const res = await globalThis.fetch(`${this.url}/events/${this.room}`, {
+        method: 'POST',
+        mode: 'cors',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(sealed),
+      })
+      if (!res.ok) {
+        this.nextTry = Date.now() + RETRY_MS
+        return
       }
+      // Only now, and only these. Anything added since is still waiting.
+      for (const event of batch) this.waiting.delete(event.id)
+      this.nextTry = 0
     } catch {
-      // Next time.
+      this.nextTry = Date.now() + RETRY_MS
     } finally {
       this.busy = false
     }
+    // More to go, and the last round worked, so keep going.
+    if (this.waiting.size > 0 && this.nextTry === 0) void this.flush()
   }
 
   /** Is anything there, and is it an archive rather than somebody's blog? */

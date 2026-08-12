@@ -177,6 +177,91 @@ try {
     fooled.said === false && fooled.lines === 0,
     `${fooled.lines} of ${lines.length} altered events got through`,
   )
+
+  // ---- nothing written is ever quietly not kept ---------------------------
+  /*
+   * The bug this guards. push refused to run while another push was in flight
+   * and threw away what it had been given, so anything said during a slow
+   * request was archived nowhere, and a network that hiccuped lost the same
+   * way. It kept a history with holes in it and never said so, which is worse
+   * than keeping none: the holes are invisible until you need what was in them.
+   *
+   * Twenty lines in one go, with no pause at all. Sealing an event is
+   * asynchronous, so several are always in the air together and the queue is
+   * genuinely contended. Spacing them out by even a few milliseconds is enough
+   * for a request to localhost to finish between each one, which is why the
+   * first version of this check passed against the broken code.
+   */
+  const dave = await open('Dave')
+  await dave.evaluate(
+    () => (document.querySelector('input[aria-label="Space name"]').value = 'Flood'),
+  )
+  await dave.getByRole('button', { name: 'New space' }).click()
+  await dave.waitForTimeout(2500)
+  const floodLink = dave.url()
+  await attach(dave)
+
+  const SAID = 20
+  await dave.evaluate((n) => {
+    const input = document.querySelector('[aria-label="Write a message"]')
+    for (let i = 1; i <= n; i++) {
+      input.focus()
+      input.value = `line ${i}`
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    }
+  }, SAID)
+
+  // Wait for the queue to drain rather than for a fixed time.
+  const drained = await (async () => {
+    for (let i = 0; i < 60; i++) {
+      const room = readdirSync(data).filter((f) => f.endsWith('.jsonl'))
+      const total = room.reduce(
+        (sum, f) => sum + readFileSync(join(data, f), 'utf8').split('\n').filter(Boolean).length,
+        0,
+      )
+      if (total >= SAID) return total
+      await new Promise((r) => setTimeout(r, 500))
+    }
+    return -1
+  })()
+  check(
+    'nothing said in a hurry is quietly not kept',
+    drained >= SAID,
+    `${drained} events archived, ${SAID} messages sent`,
+  )
+
+  // And they are all there when somebody who was never present asks for them.
+  await dave.context().close()
+  const erin = await open('Erin')
+  await erin.goto(floodLink)
+  await erin.reload()
+  await erin.waitForTimeout(1200)
+  await attach(erin)
+
+  const allBack = await (async () => {
+    for (let i = 0; i < 60; i++) {
+      const seen = await erin.evaluate((n) => {
+        const text = document.querySelector('.chat-log')?.textContent ?? ''
+        let found = 0
+        for (let k = 1; k <= n; k++) if (text.includes(`line ${k}`)) found++
+        return found
+      }, SAID)
+      if (seen >= SAID) return seen
+      await erin.waitForTimeout(500)
+    }
+    return await erin.evaluate((n) => {
+      const text = document.querySelector('.chat-log')?.textContent ?? ''
+      let found = 0
+      for (let k = 1; k <= n; k++) if (text.includes(`line ${k}`)) found++
+      return found
+    }, SAID)
+  })()
+  check(
+    'and every one of them reaches somebody who was never there',
+    allBack === SAID,
+    `${allBack} of ${SAID}`,
+  )
+
 } finally {
   await browser.close()
   server.kill()

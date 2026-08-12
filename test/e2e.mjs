@@ -146,13 +146,29 @@ try {
     link,
   )
 
-  // Chat is the app, so it is there before anybody shares anything.
-  const room = await host.evaluate(() => ({
-    channels: Array.from(document.querySelectorAll('.rail-item')).map((b) => b.textContent?.trim()),
-    chat: !!document.querySelector('.chat-log'),
-    composer: !document.querySelector('input[aria-label="Write a message"]')?.disabled,
-    video: !!document.querySelector('video'),
-  }))
+  /*
+   * Chat is the app, so it is there before anybody shares anything.
+   *
+   * Waited for rather than sampled. The invite code and the channel rail are
+   * drawn from different things and do not appear in the same frame, so
+   * reading the rail the instant the code turns up caught it empty now and
+   * then, and reported a missing channel list that was about to exist.
+   */
+  const room = await waitFor(
+    async () => {
+      const seen = await host.evaluate(() => ({
+        channels: Array.from(document.querySelectorAll('.rail-item')).map((b) =>
+          b.textContent?.trim(),
+        ),
+        chat: !!document.querySelector('.chat-log'),
+        composer: !document.querySelector('input[aria-label="Write a message"]')?.disabled,
+        video: !!document.querySelector('video'),
+      }))
+      return seen.channels.length > 0 ? seen : null
+    },
+    15_000,
+    'the space to finish drawing itself',
+  )
   check(
     'a space opens with channels and a working chat, with no stream',
     room.channels.some((c) => c?.includes('general')) && room.chat && room.composer && !room.video,

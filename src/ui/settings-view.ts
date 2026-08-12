@@ -15,6 +15,7 @@ import { cleanName } from '../chat'
 import { loadIdentity, saveDisplayName, shortKey } from '../store/identity'
 import { setSounds, soundsOn } from './sounds'
 import { micSettings, setMicSettings, type MicSettings } from '../net/mic'
+import { defaultArchive, setDefaultArchive } from '../store/archive'
 import { copyText, fmtBytes, h } from './dom'
 import { storagePressure } from '../store/compact'
 import { download, exportAll, importBundle } from '../store/transfer'
@@ -28,6 +29,13 @@ export interface SettingsActions {
   /** Where this space keeps a copy, if it keeps one. Empty means it does not. */
   archive?: string
   setArchive?(url: string): Promise<boolean>
+  /** The space itself, when settings was opened from inside one. */
+  space?: {
+    name: string
+    admin: boolean
+    rename(): Promise<void>
+    reset(): Promise<void>
+  }
 }
 
 export function settingsView(actions: SettingsActions): HTMLElement {
@@ -109,12 +117,25 @@ export function settingsView(actions: SettingsActions): HTMLElement {
     class: 'tiny faint',
     text: actions.archive ? `Keeping a copy at ${actions.archive}` : 'No archive. Nothing is sent anywhere.',
   })
+  /*
+   * Use this one everywhere. Pasting the same address into every space anybody
+   * ever opens is asking them to forget one, and a history kept for some of
+   * your spaces and not others is worse than knowing you have none.
+   */
+  const rememberBox = h('input', { type: 'checkbox', ariaLabel: 'Use this archive for every space' })
+  rememberBox.checked = defaultArchive() !== ''
+  const rememberRow = h('label', { class: 'row tiny' }, [
+    rememberBox,
+    h('span', { text: 'Use this for every space, including new ones' }),
+  ])
+
   const archiveSave = h('button', {
     text: 'Use it',
     on: {
       click: () => {
         const want = archiveInput.value.trim()
         archiveState.textContent = want ? 'Looking for it...' : 'Forgetting it...'
+        setDefaultArchive(rememberBox.checked ? want : '')
         void actions.setArchive?.(want).then((ok) => {
           if (!ok) {
             archiveState.textContent = 'Nothing answered there. Left as it was.'
@@ -235,11 +256,50 @@ export function settingsView(actions: SettingsActions): HTMLElement {
           }),
         ]),
 
+        /*
+         * The space itself, which is where anybody would look for it.
+         *
+         * These used to be two small buttons beside the space name in the
+         * corner of the rail, which is where you put something you expect
+         * people to press by accident. Renaming a room and emptying it are
+         * both rare and one of them cannot be undone.
+         */
+        actions.space
+          ? h('div', { class: 'card stack tight' }, [
+              h('span', { class: 'eyebrow', text: 'This space' }),
+              h('div', { class: 'share-code', text: actions.space.name }),
+              actions.space.admin
+                ? h('div', { class: 'row' }, [
+                    h('button', {
+                      class: 'grow',
+                      text: 'Rename it',
+                      on: { click: () => void actions.space?.rename() },
+                    }),
+                    h('button', {
+                      class: 'danger',
+                      text: 'Clear the history',
+                      on: { click: () => void actions.space?.reset() },
+                    }),
+                  ])
+                : h('div', {
+                    class: 'tiny faint',
+                    text: 'Renaming this space and clearing its history are for whoever runs it.',
+                  }),
+              actions.space.admin
+                ? h('div', {
+                    class: 'tiny faint',
+                    text: 'Clearing takes the messages, polls and pins off every device that is in the space or joins later. Names, channels and who runs it stay. Anybody who already saved a copy keeps it: there is no server to take it back from.',
+                  })
+                : null,
+            ])
+          : null,
+
         actions.setArchive
           ? h('div', { class: 'card stack tight' }, [
               h('span', { class: 'eyebrow', text: 'Archive' }),
               h('div', { class: 'row' }, [archiveInput, archiveSave]),
               archiveState,
+              rememberRow,
               h('div', {
                 class: 'tiny faint',
                 text: 'Optional, and off by default. Everybody in a space already keeps the whole history and hands it to whoever turns up, so a space survives as long as one person who was in it comes back. The one thing that cannot do is catch you up on something said while every single person was offline. An archive is a machine that is always awake, and that is all it is.',

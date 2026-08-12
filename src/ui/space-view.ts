@@ -24,7 +24,7 @@ import { AudioMixer } from '../media/mixer'
 import { Mesh } from '../net/mesh'
 import { Voice } from '../net/voice'
 import { UplinkMeter } from '../net/uplink'
-import { deriveRoom, formatSecret, newPeerId, roomLink, shortLink, type Room } from '../room'
+import { deriveRoom, formatSecret, newPeerId, roomLink, type Room } from '../room'
 import { HostPeer } from '../rtc/host-peer'
 import { ViewerPeer } from '../rtc/viewer-peer'
 import { NO_HARDWARE, probeHardwareEncoders, type HardwareProbe } from '../rtc/hardware'
@@ -45,7 +45,7 @@ import { loadSettings, saveSettings, type HostSettings } from '../settings'
 import { getRoom, noteRoom } from '../store/db'
 import { loadIdentity, shortKey } from '../store/identity'
 import { settingsView } from './settings-view'
-import { Archive } from '../store/archive'
+import { Archive, defaultArchive } from '../store/archive'
 import { chirpJoin, chirpLeave, chirpMessage, isNews } from './sounds'
 import { DEFAULT_CHANNEL, DEFAULT_VOICE, cleanChannel } from '../store/log'
 import { RoomChat } from '../store/room-chat'
@@ -205,7 +205,7 @@ export class SpaceView {
     chat.onLocal = (event) => {
       for (const raw of chat.encode([event])) mesh.broadcast(raw)
       // And to the archive, if this space has one. Never waited on.
-      void this.archive?.push([event])
+      this.archive?.push([event])
     }
 
     /*
@@ -215,12 +215,13 @@ export class SpaceView {
      */
     if (this.room) {
       const archive = new Archive(this.room.id, this.room.key)
-      if (note?.archive) {
-        archive.use(note.archive, note.archiveAt ?? 0)
-        this.archive = archive
+      // What this space was told, or the default, or nothing. A space that was
+      // told the empty string was turned off here on purpose and stays off.
+      const wanted = note?.archive !== undefined ? note.archive : defaultArchive()
+      this.archive = archive
+      if (wanted) {
+        archive.use(wanted, note?.archiveAt ?? 0)
         void this.catchUp()
-      } else {
-        this.archive = archive
       }
     }
 
@@ -355,7 +356,7 @@ export class SpaceView {
       const fresh = await this.chat.absorb(found)
       if (fresh.length) this.draw()
     }
-    await this.archive.push(this.chat.log.all())
+    this.archive.push(this.chat.log.all())
     await this.remember({})
   }
 
@@ -508,21 +509,9 @@ export class SpaceView {
     this.spaceTitle = h('span', { class: 'space-name truncate', text: 'Unnamed space' })
 
     const left = h('div', { class: 'rail rail-left' }, [
-      h('div', { class: 'rail-head space-title' }, [
-        this.spaceTitle,
-        h('button', {
-          class: 'ghost tiny-btn',
-          text: '✎',
-          title: 'Rename this space. Admins only.',
-          on: { click: () => void this.renameSpace() },
-        }),
-        h('button', {
-          class: 'ghost tiny-btn',
-          text: '\u21ba',
-          title: 'Clear the history for everybody. Admins only.',
-          on: { click: () => void this.resetSpace() },
-        }),
-      ]),
+      // Just the name. Renaming and clearing live in settings, where a thing
+      // you do rarely and cannot undo belongs.
+      h('div', { class: 'rail-head space-title' }, [this.spaceTitle]),
       h('div', { class: 'rail-head' }, [
         h('span', { class: 'eyebrow', text: 'Text channels' }),
         h('button', {
@@ -590,6 +579,12 @@ export class SpaceView {
         rename: (name) => this.rename(name),
         archive: this.archiveAddress,
         setArchive: (url) => this.setArchive(url),
+        space: {
+          name: this.chat?.spaceName() || 'Unnamed space',
+          admin: this.chat?.isAdmin === true,
+          rename: () => this.renameSpace(),
+          reset: () => this.resetSpace(),
+        },
         back: () => {
           clear(this.root)
           this.root.append(h('main', {}, [this.shell]))
@@ -640,16 +635,26 @@ export class SpaceView {
     const qr = h('button', { class: 'icon-only', title: 'Show a QR code', ariaLabel: 'Show a QR code' })
     qr.append(icon('qr', 14))
     qr.addEventListener('click', () => this.showQr())
+    /*
+     * The code, and two ways to hand it over. Nothing else.
+     *
+     * It used to explain itself underneath: the link in full, and a line about
+     * sending the password separately. Both were true and neither was needed
+     * every time you looked at the corner of the window. The code is the
+     * thing; a lock on it says the rest.
+     */
     return h('div', { class: 'stack tight' }, [
-      h('span', { class: 'eyebrow', text: 'Invite' }),
+      h('div', { class: 'row spread' }, [
+        h('span', { class: 'eyebrow', text: 'Invite' }),
+        this.locked
+          ? h('span', {
+              class: 'tiny faint',
+              title: 'This space has a password. Send it separately from the link.',
+              text: 'locked',
+            })
+          : null,
+      ]),
       code,
-      h('div', { class: 'share-link truncate', text: shortLink(this.secret, this.locked) }),
-      this.locked
-        ? h('div', {
-            class: 'tiny faint',
-            text: 'This space has a password. Send it separately from the link.',
-          })
-        : null,
       h('div', { class: 'row' }, [copy, qr]),
     ])
   }
