@@ -47,7 +47,9 @@ import { forgetRoom, getRoom, noteRoom, tombstoneRoom } from '../store/db'
 import { loadIdentity, saveDisplayName, shortKey, signClaim, verifyClaim } from '../store/identity'
 import { settingsView } from './settings-view'
 import { Archive, defaultArchive } from '../store/archive'
-import { buzzNudge, chirpJoin, chirpLeave, chirpMessage, isNews } from './sounds'
+import { buzzNudge, chirpJoin, chirpLeave, chirpMessage, isNews, speak } from './sounds'
+import { openSoundboard, playSound, soundById, soundByName, SOUNDS } from './soundboard'
+import { keyService, searchGifs, type Gif } from '../store/gifs'
 import {
   DEFAULT_CHANNEL,
   DEFAULT_VOICE,
@@ -99,6 +101,14 @@ const NUDGE_EVERY_MS = 20_000
 /** A pile of arriving nudges is one shake, not a seizure. */
 const NUDGE_COOL_MS = 5000
 
+/** One sound this often, from here and from each other person. */
+const SOUND_EVERY_MS = 1500
+
+/** One spoken line this often, and the same ration taken of each sender. */
+const TTS_EVERY_MS = 5000
+/** The most a voice will be made to read in one go. */
+const TTS_MAX_CHARS = 280
+
 const TYPING_EVERY_MS = 2000
 /** And how long that stays true without another word. */
 const TYPING_FOR_MS = 5000
@@ -112,7 +122,9 @@ const COMMANDS = [
   { name: 'topic', note: 'Say what this channel is for' },
   { name: 'rename', note: 'Rename this channel' },
   { name: 'gif', note: 'Look for a GIF to send' },
+  { name: 'sound', note: 'Play a noise for everybody' },
   { name: 'nudge', note: 'Shake somebody\u2019s window' },
+  { name: 'tts', note: 'Say it out loud' },
   { name: 'shrug', note: '\u00af\\_(\u30c4)_/\u00af' },
   { name: 'invite', note: 'Copy the invite link' },
   { name: 'leave', note: 'Leave this space' },
@@ -195,6 +207,14 @@ export class SpaceView {
   private readonly nudgeSent = new Map<string, number>()
   /** The last shake taken, so a pile of nudges is one shake. */
   private lastShakeAt = 0
+  /** When the last sound was played from here. */
+  private soundSentAt = 0
+  /** When each person was last allowed to make a noise here. */
+  private readonly soundHeard = new Map<string, number>()
+  /** When the last spoken line left here. */
+  private ttsSentAt = 0
+  /** When each sender was last given the floor, so a flood is not a filibuster. */
+  private readonly ttsHeard = new Map<string, number>()
   /** Whether the no-relay warning has been said for this outage. */
   private relayWarned = false
   private relayTimer: number | null = null
@@ -653,6 +673,8 @@ export class SpaceView {
     // it is not, and a log is for things that stay true.
     if (this.takeTyping(from, raw)) return
     if (this.takeNudge(from, raw)) return
+    if (this.takeSound(from, raw)) return
+    if (this.takeSpoken(from, raw)) return
     if (this.takeSync(from, raw)) return
 
     const fresh = (await this.chat?.ingest(raw)) ?? []
@@ -768,6 +790,143 @@ export class SpaceView {
     this.nudgeSent.set(key || '*', Date.now())
     this.shake()
     buzzNudge()
+  }
+
+  /**
+   * The soundboard: a noise everybody hears at once.
+   *
+   * What crosses the wire is the name of a sound, not a sound. Every window
+   * builds the noise itself out of oscillators, which is why this costs the
+   * same as saying "hi" and cannot be used to push a file at the room.
+   *
+   * It goes nowhere near the log. A noise is true for one second and a log is
+   * for things that stay true, so somebody who arrives later finds the room
+   * as quiet as it actually is now.
+   *
+   * Nothing is said in the channel either. The toast names who pressed it,
+   * which is enough to know who to blame, and leaves no scrollback to clear.
+   */
+  private sendSound(id: string): void {
+    const sound = soundById(id)
+    if (!sound) return
+    const now = Date.now()
+    if (now - this.soundSentAt < SOUND_EVERY_MS) {
+      toast('One sound at a time.', 'warn')
+      return
+    }
+    this.soundSentAt = now
+
+    // The note goes out either way. Muting yourself is not muting the room,
+    // and a mute that silently swallowed the press would look broken.
+    if (this.direct) {
+      const key = this.direct
+      for (const p of this.mesh?.peers().filter((p) => p.key === key) ?? []) {
+        this.mesh?.sendTo(p.id, JSON.stringify({ t: 'sound', s: sound.id, d: 1 }))
+      }
+    } else {
+      this.mesh?.broadcast(JSON.stringify({ t: 'sound', s: sound.id, c: this.channel }))
+    }
+
+    if (!playSound(sound.id)) {
+      toast(`${sound.label} went out. Your own sounds are off in Settings.`, 'info', 4000)
+    }
+  }
+
+  /** Returns true when this was a sound rather than a pile of events. */
+  private takeSound(from: string, raw: string): boolean {
+    if (!raw.startsWith('{"t":"sound"')) return false
+    let note: { t?: string; s?: unknown }
+    try {
+      note = JSON.parse(raw) as { t?: string; s?: unknown }
+    } catch {
+      return false
+    }
+    if (note.t !== 'sound') return false
+    // A name from a newer version of the board. Nothing to play, and nothing
+    // worth saying about it.
+    const sound = typeof note.s === 'string' ? soundById(note.s) : null
+    if (!sound) return true
+
+    // Their ration, kept again here, because it was their client that promised
+    // to keep it and a modified client promises nothing.
+    const key = this.mesh?.peers().find((p) => p.id === from)?.key || from
+    const now = Date.now()
+    if (now - (this.soundHeard.get(key) ?? 0) < SOUND_EVERY_MS) return true
+    this.soundHeard.set(key, now)
+
+    if (playSound(sound.id)) {
+      const who = (key && this.chat?.nameOf(key)) || 'Somebody'
+      toast(`${who} played ${sound.label} ${sound.emoji}`, 'info', 3000)
+    }
+    return true
+  }
+
+  /** The board itself, hung off whichever button asked for it. */
+  private openBoard(anchor: HTMLElement | null): void {
+    const button = anchor ?? this.chatPanel?.soundAnchor
+    if (!button) return
+    openSoundboard({ anchor: button, onPick: (id) => this.sendSound(id) })
+  }
+
+  /**
+   * A line said out loud as well as written down.
+   *
+   * The text goes into the log like any other message, so somebody who was
+   * away can still read it. A small note rides the mesh beside it, and every
+   * window that catches the note reads the line in the browser's own voice,
+   * this one included, because hearing it land is the point. In a private
+   * conversation the note goes only to that person's devices.
+   *
+   * Rationed like the nudge, at both ends, because a voice that cannot be
+   * interrupted is a worse nuisance than a shaking window.
+   */
+  private sendSpoken(arg: string): void {
+    const chat = this.chat
+    if (!chat || !this.mesh) return
+    const text = arg.trim().slice(0, TTS_MAX_CHARS)
+    if (!text) {
+      toast('Say what to speak: /tts hello everybody', 'warn')
+      return
+    }
+    if (Date.now() - this.ttsSentAt < TTS_EVERY_MS) {
+      toast('Easy. One spoken line every five seconds.', 'warn')
+      return
+    }
+    this.ttsSentAt = Date.now()
+
+    if (this.direct) {
+      const key = this.direct
+      const sessions = this.mesh.peers().filter((p) => p.key === key)
+      for (const p of sessions) this.mesh.sendTo(p.id, JSON.stringify({ t: 'tts', x: text }))
+      void this.publish((c) => c.sayDirect(key, text))
+    } else {
+      this.mesh.broadcast(JSON.stringify({ t: 'tts', c: this.channel, x: text }))
+      void this.publish((c) => c.say(text, this.channel))
+    }
+    speak(text)
+  }
+
+  /** Returns true when this was a spoken line rather than a pile of events. */
+  private takeSpoken(from: string, raw: string): boolean {
+    if (!raw.startsWith('{"t":"tts"')) return false
+    let note: { t?: string; x?: unknown }
+    try {
+      note = JSON.parse(raw) as { t?: string; x?: unknown }
+    } catch {
+      return false
+    }
+    if (note.t !== 'tts') return false
+    if (typeof note.x !== 'string') return true
+
+    // The sender's ration, enforced again here, because it is their client
+    // that promised to keep it.
+    const key = this.mesh?.peers().find((p) => p.id === from)?.key || from
+    const now = Date.now()
+    if (now - (this.ttsHeard.get(key) ?? 0) < TTS_EVERY_MS) return true
+    this.ttsHeard.set(key, now)
+
+    speak(note.x.slice(0, TTS_MAX_CHARS))
+    return true
   }
 
   /** Returns true when this was a nudge rather than a pile of events. */
@@ -1008,8 +1167,27 @@ export class SpaceView {
         this.sendNudge(arg)
         return true
       }
+      case 'tts': {
+        this.sendSpoken(arg)
+        return true
+      }
       case 'gif': {
         void this.openGifPicker(arg)
+        return true
+      }
+      case 'sound': {
+        // No name opens the board. A name plays it, which is what somebody
+        // who already knows the board wants and is faster than opening it.
+        if (!arg) {
+          this.openBoard(null)
+          return true
+        }
+        const sound = soundByName(arg)
+        if (!sound) {
+          toast(`No sound called ${arg}. There is: ${SOUNDS.map((s) => s.id).join(', ')}`, 'warn', 7000)
+          return true
+        }
+        this.sendSound(sound.id)
         return true
       }
       case 'shrug': {
@@ -1575,6 +1753,8 @@ export class SpaceView {
     this.chatPanel.onThread = (rootId) => this.openThread(rootId)
     this.chatPanel.onDirect = (key) => this.openDirect(key)
     this.chatPanel.onCommand = (line) => this.runCommand(line)
+    this.chatPanel.onGif = () => void this.openGifPicker('')
+    this.chatPanel.onSound = () => this.openBoard(this.chatPanel?.soundAnchor ?? null)
     this.chatPanel.commands = COMMANDS
     this.chatPanel.actions = {
       say: (text, replyTo, inThread) =>
@@ -2588,47 +2768,67 @@ export class SpaceView {
   }
 
   /**
-   * A grid of GIFs matching a term, one click from being said.
+   * Where a search goes.
    *
-   * The search runs through the archive, which is the only party that can
-   * hold a Tenor key without publishing it, so the command explains itself
-   * when there is no archive or the archive has no key. The click sends the
-   * plain https link; the chat already draws a lone picture link as the
-   * picture, so the link is the whole payload and nothing new travels.
+   * Your own key first, because it is the one most people have: it is kept in
+   * this browser, it works with no server at all, and a space that never runs
+   * an archive can still find a GIF. The archive second, because when a space
+   * does have one it is the better shape, holding the key on one machine
+   * rather than on everybody's.
+   *
+   * Nothing third. A picker that opens and says what is missing beats a toast
+   * that flashes past somebody who was looking at the grid.
+   */
+  private async findGifs(term: string): Promise<{ gifs: Gif[]; from: string }> {
+    if (keyService()) {
+      return { gifs: await searchGifs(term), from: keyService() === 'tenor' ? 'Tenor' : 'Giphy' }
+    }
+    // The archive answers a term. It has nothing to say about an empty one,
+    // so an empty box waits rather than asking a question with no question.
+    if (this.archive?.on) {
+      return { gifs: term.trim() ? await this.archive.gifs(term) : [], from: 'the archive' }
+    }
+    return { gifs: [], from: '' }
+  }
+
+  /**
+   * A grid of GIFs, one click from being said.
+   *
+   * The box stays open and searches again on every pause in typing, because
+   * the first word rarely finds the right GIF and closing the picker to type
+   * /gif again is the reason nobody used this.
+   *
+   * The click sends the plain https link. The chat already draws a lone
+   * picture link as the picture, so the link is the whole payload and nothing
+   * new travels.
    */
   private async openGifPicker(term: string): Promise<void> {
-    const wanted = term.trim()
-    if (!wanted) {
-      toast('Say what to look for: /gif dancing cat', 'warn')
-      return
-    }
-    if (!this.archive?.on) {
-      toast('GIF search needs an archive. Paste one under Settings, Archive.', 'warn', 6000)
-      return
-    }
-    const gifs = await this.archive.gifs(wanted)
-    if (gifs.length === 0) {
-      toast(
-        'Nothing found. An archive without a Tenor key finds nothing; see server/README.md.',
-        'warn',
-        7000,
-      )
-      return
-    }
-
     const grid = h('div', { class: 'gif-grid' })
-    const pop = h('div', { class: 'gif-pop' }, [
+    const status = h('div', { class: 'tiny faint' })
+    const box = h('input', {
+      type: 'text',
+      class: 'gif-search',
+      placeholder: 'Search GIFs',
+      ariaLabel: 'Search GIFs',
+      value: term.trim(),
+    })
+
+    const pop = h('div', { class: 'gif-pop', role: 'dialog', ariaLabel: 'GIFs' }, [
       h('div', { class: 'row spread' }, [
-        h('span', { class: 'eyebrow', text: `GIFs for "${wanted}"` }),
+        h('span', { class: 'eyebrow', text: 'GIFs' }),
         h('button', {
           class: 'ghost tiny-btn',
           text: '×',
+          title: 'Close',
           ariaLabel: 'Close the GIF picker',
           on: { click: () => done() },
         }),
       ]),
+      box,
       grid,
+      status,
     ])
+
     const onKey = (ev: KeyboardEvent): void => {
       if (ev.key === 'Escape') {
         ev.stopPropagation()
@@ -2638,7 +2838,9 @@ export class SpaceView {
     const onAway = (ev: PointerEvent): void => {
       if (!pop.contains(ev.target as Node)) done()
     }
+    let timer: number | null = null
     const done = (): void => {
+      if (timer !== null) window.clearTimeout(timer)
       pop.remove()
       window.removeEventListener('keydown', onKey, true)
       window.removeEventListener('pointerdown', onAway, true)
@@ -2646,21 +2848,79 @@ export class SpaceView {
     window.addEventListener('keydown', onKey, true)
     window.addEventListener('pointerdown', onAway, true)
 
-    for (const g of gifs) {
-      const img = h('img', { class: 'gif-choice' })
-      img.src = g.preview
-      img.alt = ''
-      img.loading = 'lazy'
-      img.referrerPolicy = 'no-referrer'
-      img.addEventListener('click', () => {
-        done()
-        const direct = this.direct
-        if (direct) void this.publish((c) => c.sayDirect(direct, g.url))
-        else void this.publish((c) => c.say(g.url, this.channel))
-      })
-      grid.append(img)
+    const send = (url: string): void => {
+      done()
+      const direct = this.direct
+      if (direct) void this.publish((c) => c.sayDirect(direct, url))
+      else void this.publish((c) => c.say(url, this.channel))
     }
+
+    /*
+     * One search at a time, and only the newest one draws.
+     *
+     * Typing "cat" fires three searches and they can come back in any order,
+     * so the answer to a question nobody is asking any more is dropped rather
+     * than painted over the answer to the one that is.
+     */
+    let asking = 0
+    const run = async (): Promise<void> => {
+      const mine = ++asking
+      const wanted = box.value.trim()
+      status.textContent = 'Looking...'
+      const { gifs, from } = await this.findGifs(wanted)
+      if (mine !== asking || !pop.isConnected) return
+      clear(grid)
+      for (const g of gifs) {
+        const img = h('img', { class: 'gif-choice' })
+        img.src = g.preview
+        img.alt = ''
+        img.loading = 'lazy'
+        img.referrerPolicy = 'no-referrer'
+        img.addEventListener('click', () => send(g.url))
+        grid.append(img)
+      }
+      if (gifs.length > 0) {
+        status.textContent = `${wanted ? `Results for "${wanted}"` : 'Popular now'}, from ${from}.`
+        return
+      }
+      clear(status)
+      status.append(...this.gifTrouble(wanted, from))
+    }
+
+    box.addEventListener('input', () => {
+      if (timer !== null) window.clearTimeout(timer)
+      timer = window.setTimeout(() => void run(), 400)
+    })
+    box.addEventListener('keydown', (ev) => {
+      const key = (ev as KeyboardEvent).key
+      if (key !== 'Enter') return
+      ev.preventDefault()
+      if (timer !== null) window.clearTimeout(timer)
+      void run()
+    })
+
     document.body.append(pop)
+    box.focus()
+    await run()
+  }
+
+  /** Why the grid is empty, said in the box rather than in a toast. */
+  private gifTrouble(wanted: string, from: string): (string | Node)[] {
+    if (from === '') {
+      return [
+        'GIF search needs a key, and there is nowhere here to keep one for you. ',
+        'Paste your own under Settings, GIFs: it stays in this browser and is never said in a space. ',
+        'A space with an archive can hold one instead, for everybody at once.',
+      ]
+    }
+    if (!wanted) {
+      return from === 'the archive'
+        ? ['Type what to look for.']
+        : ['Nothing came back. Type what to look for.']
+    }
+    return from === 'the archive'
+      ? [`Nothing for "${wanted}". An archive with no Tenor key finds nothing; see server/README.md.`]
+      : [`Nothing for "${wanted}". Check the key under Settings, GIFs, if this keeps happening.`]
   }
 
   /** The pinned messages of this channel, as a list that goes to each one. */

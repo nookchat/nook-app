@@ -36,6 +36,16 @@ export function setSounds(on: boolean): void {
   }
 }
 
+/**
+ * The one audio context, shared.
+ *
+ * A browser gives a page a small number of these and never takes one back, so
+ * the soundboard borrows this one rather than opening a second.
+ */
+export function sharedAudio(): AudioContext | null {
+  return audio()
+}
+
 function audio(): AudioContext | null {
   if (context) return context
   try {
@@ -160,4 +170,20 @@ export function buzzNudge(): void {
 /** True when the event is recent enough to be worth a noise. */
 export function isNews(at: number): boolean {
   return Date.now() - at < NEWS_MS
+}
+
+/**
+ * A line read aloud in the browser's own voice. Not run through the shared
+ * throttle: a spoken line is asked for by name and rationed by its own rule
+ * at the caller, the same deal the nudge has.
+ */
+export function speak(text: string): void {
+  if (!soundsOn()) return
+  const line = text.trim()
+  if (!line) return
+  try {
+    window.speechSynthesis.speak(new SpeechSynthesisUtterance(line))
+  } catch {
+    /* a page without a voice stays quiet */
+  }
 }

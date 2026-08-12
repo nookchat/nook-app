@@ -154,6 +154,29 @@ try {
     !logged.some((t) => t.includes('/nudge')),
   )
 
+  // ---- spoken lines ---------------------------------------------------------
+  // /tts posts the line like a message and reads it aloud on the other side.
+  // The voice itself is stubbed: a test rig has no speakers worth trusting.
+  await bob.evaluate(() => {
+    window.__spoken = []
+    window.speechSynthesis.speak = (u) => window.__spoken.push(u.text)
+  })
+  await say(alice, '/tts hello out there')
+  const bobHeard = await bob
+    .waitForFunction(() => window.__spoken.includes('hello out there'), null, { timeout: 15_000 })
+    .then(() => true)
+    .catch(() => false)
+  check('/tts is read aloud on the other side', bobHeard)
+  check('and the line is written down too', (await texts(alice)).includes('hello out there'))
+
+  await alice.fill(BOX, '/tts too soon')
+  await alice.press(BOX, 'Enter')
+  await alice.waitForTimeout(400)
+  const ttsRationed = await alice.evaluate(() =>
+    [...document.querySelectorAll('.toast')].some((t) => t.textContent.includes('Easy')),
+  )
+  check('a second spoken line straight after is rationed', ttsRationed)
+
   // ---- channel label, topic, and deleting one -----------------------------
   await say(alice, '/topic what we are doing today')
   await alice.waitForTimeout(500)

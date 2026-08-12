@@ -16,6 +16,7 @@ import { loadIdentity, saveDisplayName, shortKey } from '../store/identity'
 import { setSounds, soundsOn } from './sounds'
 import { micSettings, setMicSettings, type MicSettings } from '../net/mic'
 import { defaultArchive, setDefaultArchive } from '../store/archive'
+import { gifKey, keyService, setGifKey } from '../store/gifs'
 import { clear, copyText, fmtBytes, h } from './dom'
 import { openEmojiPicker, quickReactions, setQuickReactions } from './emoji'
 import { avatarOf } from './chat-panel'
@@ -155,6 +156,46 @@ export function settingsView(actions: SettingsActions): HTMLElement {
             ? `Keeping a copy at ${want}`
             : 'No archive. Nothing is sent anywhere.'
         })
+      },
+    },
+  })
+
+  /*
+   * A key for GIF search, kept here and used from here.
+   *
+   * Tenor and Giphy both want a key and neither gives one away in the page,
+   * so a chat with no server has two honest choices: an archive holds the key
+   * for the room, or you hold your own. This is the second, and it is the one
+   * that works for a space with no archive, which is most of them.
+   *
+   * Which service it belongs to is read off the key. A Tenor key is a Google
+   * API key and every Google API key starts with AIza, so one box takes both
+   * and there is no menu to get wrong.
+   */
+  const gifInput = h('input', {
+    type: 'text',
+    ariaLabel: 'GIF search key',
+    placeholder: 'Tenor or Giphy key',
+    value: gifKey(),
+  })
+  const gifState = h('div', { class: 'tiny faint' })
+  const sayGifState = (): void => {
+    const service = keyService(gifInput.value)
+    gifState.textContent =
+      service === 'tenor'
+        ? 'Searching with your Tenor key. It stays in this browser.'
+        : service === 'giphy'
+          ? 'Searching with your Giphy key. It stays in this browser.'
+          : 'No key. GIF search falls back to the archive, if this space has one with a key.'
+  }
+  sayGifState()
+  const gifSave = h('button', {
+    text: 'Save',
+    on: {
+      click: () => {
+        setGifKey(gifInput.value)
+        sayGifState()
+        toast(gifInput.value.trim() ? 'GIF key saved.' : 'GIF key cleared.', 'good')
       },
     },
   })
@@ -540,6 +581,16 @@ export function settingsView(actions: SettingsActions): HTMLElement {
               }),
             ])
           : null,
+
+        h('div', { class: 'card stack tight' }, [
+          h('span', { class: 'eyebrow', text: 'GIFs' }),
+          h('div', { class: 'row' }, [gifInput, gifSave]),
+          gifState,
+          h('div', {
+            class: 'tiny faint',
+            text: 'Optional. Tenor and Giphy both hand out a free key, and one of them is what /gif searches with. The key is kept in this browser, is never said in a space, and is never sent anywhere except to the service it belongs to. What that service is told is the word you searched for, which is the whole deal being made and is why this is off until you fill it in.',
+          }),
+        ]),
 
         actions.setArchive
           ? h('div', { class: 'card stack tight' }, [

@@ -2357,6 +2357,43 @@ input[type="text"].emoji-search {
   padding: 0 5px;
 }
 
+/*
+ * A picture is not in a bubble.
+ *
+ * A bubble is drawn around words. Around a picture it is a second border and
+ * a tint on a thing that already has an edge, and on a tinted bubble of your
+ * own it puts a colour behind whatever is transparent in the picture. So the
+ * line drops its bubble the moment it carries one.
+ */
+.chat-line.has-picture {
+  background: transparent;
+  border-color: transparent;
+  padding: 0 2px 2px;
+}
+
+.chat-line.has-picture:hover {
+  border-color: transparent;
+}
+
+/* Words in the same message keep a bubble, on their own, above the picture. */
+.chat-line.has-picture .chat-text.boxed {
+  display: inline-block;
+  padding: 5px 10px 6px;
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  border-top-left-radius: 4px;
+}
+
+.chat-line.runs-on.has-picture .chat-text.boxed {
+  border-top-left-radius: 12px;
+}
+
+.chat-line.mine.has-picture .chat-text.boxed {
+  background: color-mix(in srgb, var(--accent) 20%, var(--surface));
+  border-color: color-mix(in srgb, var(--accent) 26%, var(--line-soft));
+}
+
 /* A picture posted in the chat. Capped so one GIF cannot own the channel. */
 .chat-image-wrap {
   display: block;
@@ -2413,6 +2450,11 @@ input[type="text"].emoji-search {
   box-shadow: var(--shadow);
 }
 
+input[type="text"].gif-search {
+  width: 100%;
+  font-size: var(--size-small);
+}
+
 .gif-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
@@ -2431,6 +2473,61 @@ input[type="text"].emoji-search {
 
 .gif-choice:hover {
   outline: 2px solid var(--accent);
+}
+
+/*
+ * The soundboard: buttons big enough to hit in a hurry, because that is when
+ * a soundboard gets used.
+ */
+.sound-pop {
+  position: fixed;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: min(330px, calc(100vw - 24px));
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+}
+
+.sound-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.sound-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px;
+  background: var(--raised, var(--surface));
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.sound-cell:hover {
+  border-color: var(--accent);
+}
+
+.sound-cell:active {
+  transform: translateY(1px);
+}
+
+.sound-emoji {
+  font-size: 20px;
+  line-height: 1.1;
+}
+
+.sound-name {
+  font-size: var(--size-tiny, 11px);
+  color: var(--muted, inherit);
+  text-align: center;
 }
 
 /* What is behind a link, said on a card under the message that carries it. */

@@ -154,6 +154,7 @@ src/
     compact.ts        keeping the log small without losing what counted
     archive.ts        the optional always awake peer, and what it is not trusted with
     transfer.ts       export and import, verified event by event
+    gifs.ts           GIF search: your own key here, or the archive's
   net/
     mesh.ts           everybody connected to everybody, and who offers to whom
     voice.ts          voice channels, mic.ts denoise.ts talking.ts around them
@@ -182,6 +183,7 @@ src/
     space-list.ts     the opening screen, and leaving a space
     chat-panel.ts     the conversation, drawn as nodes and never as HTML
     emoji.ts          the set, the picker, and what a quick reaction is
+    soundboard.ts     twelve noises built out of oscillators, played for the room
     menu.ts           the popover behind every ellipsis
     avatar.ts         a picture, shrunk until it fits inside one event
     notify.ts         the browser's own notifications, and their honest limit
@@ -198,6 +200,7 @@ test/
   extras-check.mjs    markdown, slash commands, private messages, avatars
   polish-check.mjs    redraw cost, thread list, search filters, contrast
   emoji-check.mjs     the picker, and what one emoji is made of
+  board-check.mjs     the soundboard, GIF search, and pictures out of the bubble
   leave-check.mjs     leaving, deleting, and one code meaning one room
   roles-check.mjs     who may do what, and what a member may not
   agree-check.mjs     three browsers typing at once, ending up identical

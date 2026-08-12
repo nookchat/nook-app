@@ -34,7 +34,8 @@
     "test:emoji": "node test/emoji-check.mjs",
     "test:chat": "node test/chat-check.mjs",
     "test:extras": "node test/extras-check.mjs",
-    "test:polish": "node test/polish-check.mjs"
+    "test:polish": "node test/polish-check.mjs",
+    "test:board": "node test/board-check.mjs"
   },
   "dependencies": {
     "@jitsi/rnnoise-wasm": "^0.2.1",

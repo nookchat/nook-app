@@ -102,5 +102,11 @@ archive.example.org {
 | `GET /preview?url=U` | Reads a public page's OpenGraph tags, for link cards in chat |
 | `GET /gif?q=term` | GIF search via Tenor. 404 until `CATHODE_TENOR_KEY` is set |
 
+An archive is one of two ways to search for a GIF, and the better one when a
+space has an archive: the key sits on this machine rather than on everybody's.
+The other way needs no archive at all. Anybody can paste their own Tenor or
+Giphy key under Settings, GIFs, and their browser searches with it directly.
+The picker looks for that key first and falls back to the archive.
+
 A room id is 32 hex characters, derived from the space code. It gives away
 nothing about the code, and the archive cannot work backwards from it.

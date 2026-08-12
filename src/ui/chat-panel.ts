@@ -149,6 +149,10 @@ export class ChatPanel {
   onThread: ((rootId: string | null) => void) | null = null
   /** Open or close a private conversation. */
   onDirect: ((key: string | null) => void) | null = null
+  /** Look for a GIF. The space owns the search, because it owns the key. */
+  onGif: (() => void) | null = null
+  /** Open the soundboard. The space owns it, because it owns the wire. */
+  onSound: (() => void) | null = null
   /** Asks the space what is behind a link. Null when nobody can answer. */
   previewFor: ((url: string) => Promise<LinkPreview | null>) | null = null
 
@@ -157,6 +161,8 @@ export class ChatPanel {
   private readonly textInput: HTMLTextAreaElement
   private readonly sendButton: HTMLButtonElement
   private readonly emojiButton: HTMLButtonElement
+  private readonly gifButton: HTMLButtonElement
+  private readonly soundButton: HTMLButtonElement
   private readonly replyBar: HTMLDivElement
   private readonly nameRow: HTMLDivElement
   private readonly typingLine: HTMLDivElement
@@ -279,6 +285,28 @@ export class ChatPanel {
       },
     })
 
+    /*
+     * The two things beside the emoji button.
+     *
+     * Both were only reachable by typing a slash command, which is a way of
+     * saying they were reachable by the people who already knew about them.
+     * A button is how anybody else finds out they exist.
+     */
+    this.gifButton = h('button', {
+      class: 'ghost tiny-btn',
+      text: 'GIF',
+      title: 'Find a GIF',
+      ariaLabel: 'Find a GIF',
+      on: { click: () => this.onGif?.() },
+    })
+    this.soundButton = h('button', {
+      class: 'ghost',
+      text: '🔊',
+      title: 'Soundboard',
+      ariaLabel: 'Soundboard',
+      on: { click: () => this.onSound?.() },
+    })
+
     this.nameRow = h('div', { class: 'row' }, [
       h('span', { class: 'tiny faint', text: 'You', style: { width: '26px' } }),
       this.nameInput,
@@ -329,13 +357,24 @@ export class ChatPanel {
         this.typingLine,
         this.replyBar,
         this.nameRow,
-        h('div', { class: 'row' }, [this.textInput, this.emojiButton, this.sendButton]),
+        h('div', { class: 'row' }, [
+          this.textInput,
+          this.gifButton,
+          this.soundButton,
+          this.emojiButton,
+          this.sendButton,
+        ]),
       ]),
     ])
   }
 
   get currentName(): string {
     return this.name
+  }
+
+  /** What the soundboard hangs off, for the times it is opened by command. */
+  get soundAnchor(): HTMLElement {
+    return this.soundButton
   }
 
   setMe(pubkey: string): void {
@@ -949,7 +988,17 @@ export class ChatPanel {
       // A message that is nothing but a picture link is the picture. The
       // address under it said the same thing worse.
       const bare = !m.emote && pictures.length === 1 && m.text.trim() === pictures[0]
+      /*
+       * A picture is not in the bubble.
+       *
+       * The bubble is drawn around words, and around a picture it is a border
+       * and a tint on something that already has edges of its own. So the
+       * line loses its bubble as soon as it carries one, and any words in the
+       * same message keep theirs on their own box above the picture.
+       */
+      if (pictures.length > 0) line.classList.add('has-picture')
       if (!bare) {
+        if (pictures.length > 0) text.classList.add('boxed')
         for (const node of formatText(m.text, this.names, this.me)) text.append(node)
         line.append(text)
       }
@@ -1578,11 +1627,56 @@ function formatLine(text: string, names?: Map<string, string>, me = ''): Node[] 
  * gives you a direct link, and it plays because the browser plays it: an
  * animated GIF needs no player and no permission.
  *
- * Only https, and only paths that end in a picture. A link is still a request
- * to somebody else's server, which tells them you are here, so this never
- * follows one that is not obviously a picture.
+ * Only https, and only links that are obviously a picture. A link is still a
+ * request to somebody else's server, which tells them you are here, so this
+ * never follows one that could be a page.
+ *
+ * "Obviously a picture" used to mean the address ended in .png or .gif, and
+ * that turned out to be too strict: a PNG from Twitter ends in ?format=png,
+ * one from an image host often ends in nothing at all, and every one of them
+ * drew as a bare link beside a GIF that drew as a picture. So there are now
+ * three ways to be a picture, in order of how sure each one is.
+ *
+ * A wrong guess costs nothing visible. A picture that fails to load takes its
+ * own frame out of the message, which leaves the link that was there anyway.
  */
-const IMAGE_RE = /\.(gif|png|jpe?g|webp|avif)(\?[^\s]*)?$/i
+
+/** Ends in a picture: the plain case, with or without a query after it. */
+const IMAGE_RE = /\.(gif|png|jpe?g|webp|avif|apng|bmp|svg)(\?[^\s]*)?$/i
+/** The extension is in the path but the address carries on past it. */
+const IMAGE_PATH_RE = /\.(gif|png|jpe?g|webp|avif|apng)(\/|$)/i
+/** The picture is named in the query: ?format=png, ?fm=jpg, ?ext=gif. */
+const IMAGE_QUERY_RE = /(?:^|&)(?:format|fm|ext|type)=(gif|png|jpe?g|webp|avif)(?:&|$)/i
+
+/**
+ * Hosts that serve pictures and nothing else, for the links that carry no
+ * extension at all. Each one is matched on the whole host or on a dot before
+ * it, so example.com.evil.test is not i.imgur.com.
+ */
+const IMAGE_HOSTS = [
+  'i.imgur.com',
+  'pbs.twimg.com',
+  'i.redd.it',
+  'preview.redd.it',
+  'cdn.discordapp.com',
+  'media.discordapp.net',
+  'media.tenor.com',
+  'c.tenor.com',
+  'media.giphy.com',
+  'i.giphy.com',
+  'i.ibb.co',
+  'files.catbox.moe',
+  'images.unsplash.com',
+  'user-images.githubusercontent.com',
+]
+
+function looksLikePicture(url: URL): boolean {
+  const query = url.search.replace(/^\?/, '')
+  if (IMAGE_RE.test(url.pathname + url.search)) return true
+  if (IMAGE_PATH_RE.test(url.pathname)) return true
+  if (IMAGE_QUERY_RE.test(query)) return true
+  return IMAGE_HOSTS.includes(url.hostname.toLowerCase())
+}
 
 export function imageLinks(text: string): string[] {
   const out: string[] = []
@@ -1596,7 +1690,7 @@ export function imageLinks(text: string): string[] {
       continue
     }
     if (url.protocol !== 'https:') continue
-    if (!IMAGE_RE.test(url.pathname + url.search)) continue
+    if (!looksLikePicture(url)) continue
     if (!out.includes(raw)) out.push(raw)
     if (out.length === 4) break // a wall of pictures is somebody else's problem
   }
