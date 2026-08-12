@@ -22,12 +22,23 @@
 
   --fg: #e7eaef;
   --fg-dim: #b6bcc7;
-  --fg-faint: #7f8794;
+  /* Lifted to clear 4.5:1 against every surface it is drawn on. It was #7f8794,
+     which measured 4.4 on the cards: legible, and a fail. */
+  --fg-faint: #8d95a3;
   --fg-disabled: #565d68;
   --heading: #8b94a1;
 
-  --accent: #5b7cfa;
+  /*
+   * Two of them, because one colour cannot do both jobs and pass.
+   *
+   * The fill is dark enough that white text on it clears 4.5 to 1, and the text
+   * one is light enough to clear the same against the surfaces it is drawn on.
+   * It was a single mid indigo, which measured 3.7 under the white on every
+   * primary button and 4.5 as text: legible either way, and a fail one way.
+   */
+  --accent: #4f6ae8;
   --accent-fg: #ffffff;
+  --accent-text: #93a6ff;
   /* What is selected is raised rather than painted: an accent behind every
      channel you happen to be standing in is an accent that stops meaning
      anything. */
@@ -36,7 +47,9 @@
 
   --good: #3fb950;
   --warn: #d29922;
-  --bad: #f85149;
+  /* Light enough to clear 4.5 to 1 on the raised surfaces too, where an unread
+     badge sits on a hovered row. It was #f85149, which measured 4.3 there. */
+  --bad: #ff6b63;
   --progress: linear-gradient(90deg, var(--accent), #7d95fb);
 
   --field-bg: #131519;
@@ -801,7 +814,7 @@ kbd {
 details.adv > summary {
   cursor: pointer;
   font-size: var(--size-small);
-  color: var(--accent);
+  color: var(--accent-text);
   padding: 2px 0;
   list-style: none;
   display: flex;
@@ -1581,7 +1594,7 @@ details.adv[open] > summary {
 }
 
 .chat-text a {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 /*
@@ -1819,7 +1832,7 @@ details.adv[open] > summary {
 /* ---------- mentions, threads, unread, typing ---------- */
 
 .mention {
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: bold;
   border-radius: 3px;
   padding: 0 2px;
@@ -1870,7 +1883,7 @@ details.adv[open] > summary {
   padding: 0 6px;
   font-size: calc(var(--size-small) - 1px);
   border-radius: var(--pill-radius);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .chat-reply {
@@ -2537,4 +2550,14 @@ input[type="text"].emoji-search {
     padding: 0 12px;
     font-size: var(--size-small);
   }
+}
+
+/* The camera, while it is looking for a linking code. */
+.scan-video {
+  width: 100%;
+  max-height: 220px;
+  object-fit: cover;
+  background: #000;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
 }

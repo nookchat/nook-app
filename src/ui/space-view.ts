@@ -57,7 +57,7 @@ import {
   type Message,
 } from '../store/log'
 import { RoomChat } from '../store/room-chat'
-import { ChatPanel } from './chat-panel'
+import { ChatPanel, imageLinks } from './chat-panel'
 import { clear, copyText, fmtKbps, h, labelled } from './dom'
 import { icon } from './icons'
 import { openMenu, type MenuItem } from './menu'
@@ -178,6 +178,7 @@ export class SpaceView {
   private channelList!: HTMLDivElement
   private voiceList!: HTMLDivElement
   private directList!: HTMLDivElement
+  private threadList!: HTMLDivElement
   private peopleList!: HTMLDivElement
   private voiceBar!: HTMLDivElement
   private shell!: HTMLElement
@@ -865,7 +866,10 @@ export class SpaceView {
    * conversation you are reading rather than a thing you glance at.
    */
   private openThread(rootId: string | null): void {
+    this.showRail(null)
+    this.chatPanel?.keepDraft()
     this.thread = rootId
+    this.chatPanel?.useDraft(rootId ? `thread:${rootId}` : this.channel)
     this.chatPanel?.setThread(rootId)
     this.closeSearch()
     this.drawNow()
@@ -882,20 +886,61 @@ export class SpaceView {
    * be standing in.
    */
   private renderSearch(): void {
-    const query = this.searchInput.value.trim().toLowerCase()
+    const raw = this.searchInput.value.trim()
     clear(this.searchResults)
-    this.searchResults.classList.toggle('hidden', query.length === 0)
-    if (!query || !this.chat) return
+    this.searchResults.classList.toggle('hidden', raw.length === 0)
+    if (!raw || !this.chat) return
+
+    /*
+     * from: in: has: and the words.
+     *
+     * Worth having because the question is rarely "where is this word": it is
+     * "what did she say in that channel about the release", and the three
+     * filters are the difference between forty hits and four. Anything that is
+     * not a filter is a word to look for, so a stray colon costs nothing.
+     */
+    const filters = { from: '', in: '', has: '' }
+    const words: string[] = []
+    for (const part of raw.split(/\s+/)) {
+      const at = part.indexOf(':')
+      const key = at === -1 ? '' : part.slice(0, at).toLowerCase()
+      const value = at === -1 ? '' : part.slice(at + 1).toLowerCase()
+      if (value && (key === 'from' || key === 'in' || key === 'has')) filters[key] = value
+      else words.push(part.toLowerCase())
+    }
+    const query = words.join(' ')
 
     const names = this.chat.log.names()
+    const channels = this.chat.channelInfo()
     const hits = this.chat.log
       .messages()
-      .filter((m) => m.text.toLowerCase().includes(query))
+      .filter((m) => {
+        if (query && !m.text.toLowerCase().includes(query)) return false
+        if (filters.from) {
+          const who = (names.get(m.author) ?? '').toLowerCase()
+          if (!who.startsWith(filters.from) && !m.author.startsWith(filters.from)) return false
+        }
+        if (filters.in) {
+          const label = (channels.find((c) => c.name === m.channel)?.label ?? m.channel).toLowerCase()
+          if (!m.channel.startsWith(filters.in) && !label.startsWith(filters.in)) return false
+        }
+        if (filters.has === 'link' && !/https?:\/\//.test(m.text)) return false
+        if (filters.has === 'image' && imageLinks(m.text).length === 0) return false
+        if (filters.has === 'code' && !m.text.includes('`')) return false
+        if (filters.has === 'poll' && !m.poll) return false
+        return true
+      })
       .sort((a, b) => b.lamport - a.lamport)
       .slice(0, 40)
 
     if (hits.length === 0) {
-      this.searchResults.append(h('div', { class: 'tiny faint', text: 'Nothing matches that.' }))
+      this.searchResults.append(
+        h('div', { class: 'tiny faint', text: 'Nothing matches that.' }),
+        h('div', {
+          class: 'tiny faint',
+          text: 'Try from:alice, in:general, has:link, has:image, has:code, has:poll.',
+        }),
+      )
       return
     }
     this.searchResults.append(
@@ -1090,6 +1135,7 @@ export class SpaceView {
     // news to leave the building first.
     if (this.chat?.isClosed && !this.closing) void this.acceptClose()
     this.renderChannels()
+    this.renderThreads()
     this.renderDirects()
     this.renderVoice()
     this.renderPeople()
@@ -1189,6 +1235,7 @@ export class SpaceView {
     this.channelList = h('div', { class: 'rail-list' })
     this.voiceList = h('div', { class: 'rail-list' })
     this.directList = h('div', { class: 'rail-list' })
+    this.threadList = h('div', { class: 'rail-list' })
     this.peopleList = h('div', { class: 'rail-list' })
     this.voiceBar = h('div', { class: 'voice-bar hidden' })
     this.stage = h('div', { class: 'stage hidden' })
@@ -1234,7 +1281,7 @@ export class SpaceView {
     // Empty rather than a guess. The name arrives with the log.
     this.spaceTitle = h('span', { class: 'space-name truncate', text: '' })
 
-    const left = h('div', { class: 'rail rail-left' }, [
+    const left = h('div', { class: 'rail rail-left', role: 'navigation', ariaLabel: 'Channels, threads and conversations' }, [
       // Just the name. Renaming and clearing live in settings, where a thing
       // you do rarely and cannot undo belongs.
       h('div', { class: 'rail-head space-title' }, [this.spaceTitle]),
@@ -1262,6 +1309,10 @@ export class SpaceView {
         }),
       ]),
       this.voiceList,
+      h('div', { class: 'rail-head' }, [
+        h('span', { class: 'eyebrow', text: 'Threads', title: 'Conversations hanging off a message' }),
+      ]),
+      this.threadList,
       h('div', { class: 'rail-head' }, [
         h('span', {
           class: 'eyebrow',
@@ -1298,7 +1349,7 @@ export class SpaceView {
       ]),
     ])
 
-    const right = h('div', { class: 'rail rail-right' }, [
+    const right = h('div', { class: 'rail rail-right', role: 'complementary', ariaLabel: 'Who is here' }, [
       h('div', { class: 'rail-head' }, [h('span', { class: 'eyebrow', text: 'Members' })]),
       this.peopleList,
       h('div', { class: 'grow' }),
@@ -1318,6 +1369,7 @@ export class SpaceView {
       class: 'space-search',
       ariaLabel: 'Search this space',
       placeholder: 'Search',
+      title: 'Words to look for, and from: in: has: to narrow it down',
       on: {
         input: () => this.renderSearch(),
         keydown: (ev) => {
@@ -1423,6 +1475,9 @@ export class SpaceView {
     this.railOpen = which
     this.shell.classList.toggle('rail-left-open', which === 'left')
     this.shell.classList.toggle('rail-right-open', which === 'right')
+    // A button that opens a drawer says whether the drawer is open.
+    this.channelsButton?.setAttribute('aria-expanded', String(which === 'left'))
+    this.peopleButton?.setAttribute('aria-expanded', String(which === 'right'))
   }
 
   /** Back to the list of spaces, keeping this one. */
@@ -1643,6 +1698,46 @@ export class SpaceView {
      */
     this.mentions = mentions
     this.status()
+  }
+
+  /**
+   * The threads in this space, the one that moved last at the top.
+   *
+   * A thread could only be found from the message it hangs off, which works for
+   * ten minutes and not for tomorrow. Four of them here, because this is a way
+   * back to a conversation rather than a second inbox.
+   */
+  private renderThreads(): void {
+    clear(this.threadList)
+    const threads = this.chat?.threads() ?? []
+    if (threads.length === 0) {
+      this.threadList.append(
+        h('div', {
+          class: 'tiny faint',
+          style: { padding: '2px 7px' },
+          text: 'None yet. Answer a message in a thread to start one.',
+        }),
+      )
+      return
+    }
+    for (const thread of threads.slice(0, 6)) {
+      const mark = this.read[thread.root.channel] ?? 0
+      const fresh = thread.newest > mark && thread.root.author !== this.chat?.me
+      this.threadList.append(
+        h(
+          'button',
+          {
+            class: `rail-item${this.thread === thread.root.id ? ' on' : ''}${fresh ? ' unread' : ''}`,
+            title: `${thread.root.name || shortKey(thread.root.author)}: ${thread.root.text}`,
+            on: { click: () => this.openThread(thread.root.id) },
+          },
+          [
+            h('span', { class: 'truncate grow', text: thread.root.text || 'a message' }),
+            h('span', { class: 'pill', text: `${thread.replies}` }),
+          ],
+        ),
+      )
+    }
   }
 
   /** The people you have written to privately, most recent first. */

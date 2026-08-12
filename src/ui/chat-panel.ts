@@ -204,7 +204,21 @@ export class ChatPanel {
   constructor(initialName: string, title = 'Chat') {
     this.name = initialName
 
-    this.log = h('div', { class: 'chat-log' })
+    /*
+     * A log, announced politely.
+     *
+     * Reconciliation is what makes this safe: only what is new is added to the
+     * DOM, so a screen reader is told about the message that arrived rather
+     * than read the whole conversation again every time anybody speaks.
+     */
+    this.log = h('div', {
+      class: 'chat-log',
+      role: 'log',
+      ariaLabel: 'Conversation',
+      tabIndex: 0,
+    })
+    this.log.setAttribute('aria-live', 'polite')
+    this.log.setAttribute('aria-relevant', 'additions')
     this.replyBar = h('div', { class: 'chat-replying hidden' })
 
     this.nameInput = h('input', {
@@ -665,12 +679,26 @@ export class ChatPanel {
 
   /** What is on screen, so up-arrow knows what your last message was. */
   private shown: Message[] = []
+  /** What is drawn, by key, so a redraw can leave most of it alone. */
+  private readonly rows = new Map<string, { el: HTMLElement; sig: string }>()
 
-  /** Draw the whole conversation. Cheap enough at chat sizes, and always right. */
+  /**
+   * Draw the conversation, touching only what changed.
+   *
+   * It used to clear the log and build every message again on every change, so
+   * one arriving line re-created the whole channel: a few hundred milliseconds
+   * at a few thousand messages, and worse than the cost, it wiped whatever you
+   * were in the middle of. Selecting text to copy it, with anybody else typing,
+   * lost the selection the moment they sent.
+   *
+   * So every row carries a key and a signature of everything drawn in it. A row
+   * whose signature has not changed is left exactly where it is, untouched, and
+   * a new message is one insert. That is also what makes the log safe to
+   * announce to a screen reader: only what is new is new.
+   */
   render(messages: Message[], joins: { at: number; text: string }[] = []): void {
     this.shown = messages
     const stuck = this.isAtBottom()
-    clear(this.log)
     this.renderPins(messages)
 
     const byId = new Map(messages.map((m) => [m.id, m]))
@@ -679,13 +707,18 @@ export class ChatPanel {
       ...joins.map((j) => ({ kind: 'note' as const, at: j.at, text: j.text })),
     ].sort((a, b) => (a.kind === 'msg' ? a.m.at : a.at) - (b.kind === 'msg' ? b.m.at : b.at))
 
+    const items: { key: string; sig: string; make: () => HTMLElement }[] = []
     let lastDay = ''
     let lastAuthor = ''
     let drawnUnread = false
 
     for (const item of feed) {
       if (item.kind === 'note') {
-        this.log.append(h('div', { class: 'chat-line system', text: item.text }))
+        items.push({
+          key: `note:${item.at}:${item.text}`,
+          sig: item.text,
+          make: () => h('div', { class: 'chat-line system', text: item.text }),
+        })
         lastAuthor = ''
         continue
       }
@@ -694,7 +727,12 @@ export class ChatPanel {
       if (day !== lastDay) {
         lastDay = day
         lastAuthor = ''
-        this.log.append(h('div', { class: 'chat-day', text: dayLabel(m.at) }))
+        const label = dayLabel(m.at)
+        items.push({
+          key: `day:${day}`,
+          sig: label,
+          make: () => h('div', { class: 'chat-day', text: label }),
+        })
       }
 
       /*
@@ -707,158 +745,240 @@ export class ChatPanel {
       if (!drawnUnread && this.readMark > 0 && m.lamport > this.readMark && m.author !== this.me) {
         drawnUnread = true
         lastAuthor = ''
-        this.log.append(
-          h('div', { class: 'chat-new' }, [h('span', { text: 'New' })]),
-        )
-      }
-
-      const mine = m.author === this.me
-      const at = h('span', { class: 'chat-at', text: clockLabel(m.at) })
-      const line = h('div', {
-        class:
-          `chat-line${mine ? ' mine' : ''}${m.pinned ? ' pinned' : ''}` +
-          `${mentionsMe(m.text, this.names, this.me) ? ' calls-me' : ''}`,
-      })
-      line.dataset.id = m.id
-      // The bubble sits in a row, and the row is what the actions hang off, so
-      // they are beside the message rather than on top of the end of it.
-      const row = h('div', { class: `chat-row${mine ? ' mine' : ''}` }, [line])
-      /*
-       * On a touch screen there is no hovering, so the actions are asked for by
-       * tapping the message. One at a time: opening a second closes the first,
-       * which is what a pointer does for free.
-       */
-      line.addEventListener('click', (ev) => {
-        if (window.matchMedia('(hover: hover)').matches) return
-        const target = ev.target as HTMLElement
-        if (target.closest('button, a, .spoiler')) return
-        const open = row.classList.contains('acting')
-        for (const other of this.log.querySelectorAll('.chat-row.acting')) {
-          other.classList.remove('acting')
-        }
-        row.classList.toggle('acting', !open)
-      })
-
-      /*
-       * What this answers, unless the answer is standing inside the thread it
-       * belongs to. Quoting the message at the top of the pane above every
-       * reply to it says nothing anybody cannot see.
-       */
-      if (m.replyTo && m.replyTo !== this.threadRoot) {
-        const parent = byId.get(m.replyTo)
-        line.append(
-          h('button', {
-            class: 'chat-reply truncate',
-            title: parent ? 'Go to what this answers' : 'That message is no longer here',
-            text: parent
-              ? `${parent.name || shortKey(parent.author)}: ${parent.text.slice(0, 60)}`
-              : 'a message that is gone',
-            on: { click: () => parent && this.jumpTo(parent.id) },
-          }),
-        )
-      }
-      if (this.threadRoot && m.id === this.threadRoot) line.classList.add('thread-root')
-
-      /*
-       * A run from one person shows the name once, at the top of the run.
-       *
-       * The name carries a colour worked out from the key that signs the
-       * messages, so it is the same colour on every device and for everybody.
-       * Five bubbles in a row from one person with the name only above the
-       * first were hard to attribute at a glance; the colour and the side of
-       * the panel they sit on both answer it now without repeating anything.
-       */
-      if (m.author !== lastAuthor) {
-        const name = h('span', { class: 'chat-name', text: m.name || shortKey(m.author) })
-        if (!mine) name.style.color = authorColour(m.author)
-        line.append(
-          h('div', { class: 'chat-who' }, [
-            avatarOf(m.author, m.name ?? '', this.avatars.get(m.author) ?? '', 18),
-            name,
-            m.pinned ? pinMark() : null,
-          ]),
-        )
-      } else {
-        at.classList.add('on-hover')
-        if (m.pinned) line.append(h('div', { class: 'chat-who' }, [pinMark()]))
-        line.classList.add('runs-on')
-      }
-      lastAuthor = m.replyTo ? '' : m.author
-
-      const text = h('span', { class: `chat-text${m.emote ? ' emote' : ''}` })
-      if (m.emote) text.append(document.createTextNode(`${m.name || shortKey(m.author)} `))
-      if (m.poll) {
-        text.append(h('strong', { text: m.poll.question }))
-        line.append(text)
-        line.append(this.pollBox(m))
-      } else {
-        for (const node of formatText(m.text, this.names, this.me)) text.append(node)
-        line.append(text)
-        for (const src of imageLinks(m.text)) line.append(embed(src))
-      }
-
-      if (m.edited) line.append(h('span', { class: 'chat-edited', text: '(edited)' }))
-      line.append(at)
-
-      // The way into a thread, and the count of what is waiting in it.
-      if (!this.threadRoot && m.replies) {
-        line.append(
-          h('button', {
-            class: 'chat-thread',
-            text: `${m.replies} ${m.replies === 1 ? 'reply' : 'replies'}`,
-            title: 'Open this thread',
-            on: { click: () => this.onThread?.(m.id) },
-          }),
-        )
-      }
-
-      if (m.reactions.size) {
-        const reacts = h('div', { class: 'chat-reacts' })
-        for (const [emoji, who] of m.reactions) {
-          reacts.append(
-            h('button', {
-              class: `chat-react${who.has(this.me) ? ' on' : ''}`,
-              text: `${emoji} ${who.size}`,
-              title: who.has(this.me) ? 'Take yours back' : 'React with this too',
-              on: { click: () => this.actions?.react(m.id, emoji, !who.has(this.me)) },
-            }),
-          )
-        }
-        // One more, on the end of the ones already there, which is where
-        // somebody about to add a different one is already looking.
-        const more = h('button', {
-          class: 'chat-react add',
-          text: '+',
-          title: 'React with something else',
-          ariaLabel: 'React with something else',
-          on: { click: () => this.reactWith(m, more) },
+        items.push({
+          key: 'new',
+          sig: `new:${m.id}`,
+          make: () => h('div', { class: 'chat-new' }, [h('span', { text: 'New' })]),
         })
-        reacts.append(more)
-        line.append(reacts)
       }
 
-      // Hung off the bubble rather than off the row, so they sit against the
-      // message they act on however wide it is.
-      line.append(this.rowActions(m, mine))
-      this.log.append(row)
+      const first = m.author !== lastAuthor
+      lastAuthor = m.replyTo ? '' : m.author
+      items.push({
+        key: `m:${m.id}`,
+        sig: this.signature(m, first, byId),
+        make: () => this.messageRow(m, first, byId),
+      })
 
       // In a thread, a rule under the question it hangs off. What follows is
       // the answers, and they read as answers rather than as more questions.
       if (this.threadRoot && m.id === this.threadRoot) {
         const count = messages.length - 1
-        this.log.append(
-          h('div', { class: 'chat-new thread' }, [
-            h('span', {
-              text: count === 0 ? 'No replies yet' : `${count} ${count === 1 ? 'reply' : 'replies'}`,
-            }),
-          ]),
-        )
+        const text = count === 0 ? 'No replies yet' : `${count} ${count === 1 ? 'reply' : 'replies'}`
+        items.push({
+          key: 'thread-rule',
+          sig: text,
+          make: () => h('div', { class: 'chat-new thread' }, [h('span', { text })]),
+        })
         lastAuthor = ''
       }
     }
 
+    this.reconcile(items)
     if (stuck) this.log.scrollTop = this.log.scrollHeight
     this.showJump()
+  }
+
+  /**
+   * Everything about a message that ends up on the screen, as one string.
+   *
+   * If this misses something, that something stops updating, so it is written
+   * beside the thing that draws it and holds every value that drawing reads.
+   */
+  private signature(m: Message, first: boolean, byId: Map<string, Message>): string {
+    const reactions = [...m.reactions]
+      .map(([emoji, who]) => `${emoji}${who.size}${who.has(this.me) ? '*' : ''}`)
+      .sort()
+      .join(',')
+    const poll = m.poll
+      ? `${m.poll.question}|${m.poll.options.join(',')}|${m.poll.total}|${m.poll.mine}|${[...m.poll.votes]
+          .map(([choice, who]) => `${choice}:${who.size}`)
+          .sort()
+          .join(',')}`
+      : ''
+    const parent = m.replyTo ? byId.get(m.replyTo) : null
+    return [
+      m.text,
+      m.name ?? '',
+      this.avatars.get(m.author) ?? '',
+      m.at,
+      m.edited ? 'e' : '',
+      m.pinned ? 'p' : '',
+      m.emote ? 'm' : '',
+      m.replies ?? 0,
+      first ? 'f' : '',
+      this.canPin ? 'a' : '',
+      mentionsMe(m.text, this.names, this.me) ? 'c' : '',
+      this.threadRoot === m.id ? 'root' : '',
+      parent ? `${parent.name ?? ''}:${parent.text.slice(0, 60)}` : m.replyTo ? 'gone' : '',
+      reactions,
+      poll,
+    ].join('\u0001')
+  }
+
+  /**
+   * Line the log up with what it should be showing.
+   *
+   * Anything whose signature still matches is left alone, which means its
+   * selection, its scroll, its open menu and its half finished animation all
+   * survive. The rest is inserted, moved or removed.
+   */
+  private reconcile(items: { key: string; sig: string; make: () => HTMLElement }[]): void {
+    const wanted = new Set(items.map((i) => i.key))
+    for (const [key, held] of this.rows) {
+      if (wanted.has(key)) continue
+      held.el.remove()
+      this.rows.delete(key)
+    }
+
+    let at = 0
+    for (const item of items) {
+      let held = this.rows.get(item.key)
+      if (!held || held.sig !== item.sig) {
+        const el = item.make()
+        el.dataset.key = item.key
+        held?.el.remove()
+        held = { el, sig: item.sig }
+        this.rows.set(item.key, held)
+      }
+      const current = this.log.childNodes[at]
+      if (current !== held.el) this.log.insertBefore(held.el, current ?? null)
+      at += 1
+    }
+    while (this.log.childNodes.length > items.length) this.log.lastChild?.remove()
+  }
+
+  /** One message, drawn. */
+  private messageRow(m: Message, first: boolean, byId: Map<string, Message>): HTMLElement {
+    const mine = m.author === this.me
+    const at = h('span', { class: 'chat-at', text: clockLabel(m.at) })
+    const line = h('div', {
+      class:
+        `chat-line${mine ? ' mine' : ''}${m.pinned ? ' pinned' : ''}` +
+        `${mentionsMe(m.text, this.names, this.me) ? ' calls-me' : ''}`,
+    })
+    line.dataset.id = m.id
+    // The bubble sits in a row, and the row is what the actions hang off, so
+    // they are beside the message rather than on top of the end of it.
+    const row = h('div', { class: `chat-row${mine ? ' mine' : ''}` }, [line])
+    /*
+     * On a touch screen there is no hovering, so the actions are asked for by
+     * tapping the message. One at a time: opening a second closes the first,
+     * which is what a pointer does for free.
+     */
+    line.addEventListener('click', (ev) => {
+      if (window.matchMedia('(hover: hover)').matches) return
+      const target = ev.target as HTMLElement
+      if (target.closest('button, a, .spoiler')) return
+      const open = row.classList.contains('acting')
+      for (const other of this.log.querySelectorAll('.chat-row.acting')) {
+        other.classList.remove('acting')
+      }
+      row.classList.toggle('acting', !open)
+    })
+
+    /*
+     * What this answers, unless the answer is standing inside the thread it
+     * belongs to. Quoting the message at the top of the pane above every
+     * reply to it says nothing anybody cannot see.
+     */
+    if (m.replyTo && m.replyTo !== this.threadRoot) {
+      const parent = byId.get(m.replyTo)
+      line.append(
+        h('button', {
+          class: 'chat-reply truncate',
+          title: parent ? 'Go to what this answers' : 'That message is no longer here',
+          text: parent
+            ? `${parent.name || shortKey(parent.author)}: ${parent.text.slice(0, 60)}`
+            : 'a message that is gone',
+          on: { click: () => parent && this.jumpTo(parent.id) },
+        }),
+      )
+    }
+    if (this.threadRoot && m.id === this.threadRoot) line.classList.add('thread-root')
+
+    /*
+     * A run from one person shows the name once, at the top of the run.
+     *
+     * The name carries a colour worked out from the key that signs the
+     * messages, so it is the same colour on every device and for everybody.
+     * Five bubbles in a row from one person with the name only above the
+     * first were hard to attribute at a glance; the colour and the side of
+     * the panel they sit on both answer it now without repeating anything.
+     */
+    if (first) {
+      const name = h('span', { class: 'chat-name', text: m.name || shortKey(m.author) })
+      if (!mine) name.style.color = authorColour(m.author)
+      line.append(
+        h('div', { class: 'chat-who' }, [
+          avatarOf(m.author, m.name ?? '', this.avatars.get(m.author) ?? '', 18),
+          name,
+          m.pinned ? pinMark() : null,
+        ]),
+      )
+    } else {
+      at.classList.add('on-hover')
+      if (m.pinned) line.append(h('div', { class: 'chat-who' }, [pinMark()]))
+      line.classList.add('runs-on')
+    }
+
+    const text = h('span', { class: `chat-text${m.emote ? ' emote' : ''}` })
+    if (m.emote) text.append(document.createTextNode(`${m.name || shortKey(m.author)} `))
+    if (m.poll) {
+      text.append(h('strong', { text: m.poll.question }))
+      line.append(text)
+      line.append(this.pollBox(m))
+    } else {
+      for (const node of formatText(m.text, this.names, this.me)) text.append(node)
+      line.append(text)
+      for (const src of imageLinks(m.text)) line.append(embed(src))
+    }
+
+    if (m.edited) line.append(h('span', { class: 'chat-edited', text: '(edited)' }))
+    line.append(at)
+
+    // The way into a thread, and the count of what is waiting in it.
+    if (!this.threadRoot && m.replies) {
+      line.append(
+        h('button', {
+          class: 'chat-thread',
+          text: `${m.replies} ${m.replies === 1 ? 'reply' : 'replies'}`,
+          title: 'Open this thread',
+          on: { click: () => this.onThread?.(m.id) },
+        }),
+      )
+    }
+
+    if (m.reactions.size) {
+      const reacts = h('div', { class: 'chat-reacts' })
+      for (const [emoji, who] of m.reactions) {
+        reacts.append(
+          h('button', {
+            class: `chat-react${who.has(this.me) ? ' on' : ''}`,
+            text: `${emoji} ${who.size}`,
+            title: who.has(this.me) ? 'Take yours back' : 'React with this too',
+            on: { click: () => this.actions?.react(m.id, emoji, !who.has(this.me)) },
+          }),
+        )
+      }
+      // One more, on the end of the ones already there, which is where
+      // somebody about to add a different one is already looking.
+      const more = h('button', {
+        class: 'chat-react add',
+        text: '+',
+        title: 'React with something else',
+        ariaLabel: 'React with something else',
+        on: { click: () => this.reactWith(m, more) },
+      })
+      reacts.append(more)
+      line.append(reacts)
+    }
+
+    // Hung off the bubble rather than off the row, so they sit against the
+    // message they act on however wide it is.
+    line.append(this.rowActions(m, mine))
+    return row
+
   }
 
   // ---- internals ----

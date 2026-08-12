@@ -4,7 +4,10 @@ let host: HTMLDivElement | null = null
 
 function container(): HTMLDivElement {
   if (!host) {
-    host = h('div', { class: 'toasts' })
+    // Said out loud as well as shown. A toast that only exists visually is a
+    // message somebody using a screen reader never receives.
+    host = h('div', { class: 'toasts', role: 'status' })
+    host.setAttribute('aria-live', 'polite')
     document.body.append(host)
   }
   return host

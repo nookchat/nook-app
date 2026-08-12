@@ -23,6 +23,7 @@ import {
   RoomLog,
   type ChannelInfo,
   type LogEvent,
+  type ThreadInfo,
   type Message,
 } from './log'
 
@@ -311,6 +312,14 @@ export class RoomChat {
     if (replyTo && inThread) body.thread = true
     if (emote) body.emote = true
     return this.write('said', body)
+  }
+
+  /** Every thread here, the one that moved last at the top. */
+  threads(): ThreadInfo[] {
+    const threads = this.log.threads()
+    const names = this.log.names()
+    for (const t of threads) t.root.name = names.get(t.root.author) ?? t.root.name ?? ''
+    return threads
   }
 
   /** One thread, root first. */

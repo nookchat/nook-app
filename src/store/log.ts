@@ -826,6 +826,29 @@ export class RoomLog {
   }
 
   /**
+   * Every thread in the space, the busiest end first.
+   *
+   * A thread is discoverable from the message it hangs off and nowhere else,
+   * which is fine for the ten minutes after it starts and useless the next day.
+   */
+  threads(): ThreadInfo[] {
+    const all = this.messages()
+    const out: ThreadInfo[] = []
+    for (const root of all) {
+      if (!root.replies) continue
+      let last = root.at
+      let newest = root.lamport
+      for (const m of all) {
+        if (!m.inThread || m.replyTo !== root.id) continue
+        if (m.at > last) last = m.at
+        if (m.lamport > newest) newest = m.lamport
+      }
+      out.push({ root, replies: root.replies, last, newest })
+    }
+    return out.sort((a, b) => b.last - a.last)
+  }
+
+  /**
    * One thread: the message it hangs off, and every answer to it in order.
    *
    * Flat rather than nested, which is what Discord settled on and for the same
@@ -937,6 +960,15 @@ export function cleanChannel(raw: string): string {
 function channelOf(e: LogEvent): string {
   const raw = cleanChannel(String(e.body.channel ?? ''))
   return raw || DEFAULT_CHANNEL
+}
+
+export interface ThreadInfo {
+  root: Message
+  replies: number
+  /** When the last answer landed, by wall clock, for ordering a list. */
+  last: number
+  /** And by log clock, so "new since I read" means the same everywhere. */
+  newest: number
 }
 
 export interface ChannelInfo {

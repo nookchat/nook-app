@@ -129,6 +129,43 @@ export function forgetShared(): void {
   shared.clear()
 }
 
+/**
+ * The private key, for putting on a screen so another device can take it.
+ *
+ * The only place in the app that reads it back out, and it is called from one
+ * button behind one question. Empty when the browser has nowhere to keep it,
+ * which is a session that cannot be linked anywhere anyway.
+ */
+export function secretForLinking(): string {
+  try {
+    const stored = localStorage.getItem(PRIV_KEY) ?? ''
+    return /^[0-9a-f]{64}$/.test(stored) ? stored : ''
+  } catch {
+    return ''
+  }
+}
+
+/**
+ * Become somebody else, on this device.
+ *
+ * Everything worked out from the old key goes with it: the public key, and
+ * every shared key derived for a private conversation. They are held in memory
+ * for speed and would otherwise answer for the person who has just left.
+ */
+export function takeIdentity(secret: string): boolean {
+  if (!/^[0-9a-f]{64}$/.test(secret)) return false
+  try {
+    localStorage.setItem(PRIV_KEY, secret)
+  } catch {
+    return false
+  }
+  priv = null
+  pub = ''
+  forgetShared()
+  loadIdentity()
+  return true
+}
+
 /** Sign 32 bytes of hash. Returns hex. */
 export function sign(idHex: string): string {
   if (!priv) loadIdentity()

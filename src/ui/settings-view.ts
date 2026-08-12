@@ -21,6 +21,7 @@ import { openEmojiPicker, quickReactions, setQuickReactions } from './emoji'
 import { avatarOf } from './chat-panel'
 import { loadAvatar, saveAvatar, squareThumb } from './avatar'
 import { askNotify, notifyState, stopNotify } from './notify'
+import { scanLinkCode, showLinkCode } from './link-device'
 import { storagePressure } from '../store/compact'
 import { download, exportAll, importBundle } from '../store/transfer'
 import { icon } from './icons'
@@ -528,6 +529,38 @@ export function settingsView(actions: SettingsActions): HTMLElement {
               ]),
             ])
           : null,
+
+        /*
+         * A second device is a second person unless the key goes with you.
+         * Exporting a file and carrying it across works and nobody does it.
+         */
+        h('div', { class: 'card stack tight' }, [
+          h('span', { class: 'eyebrow', text: 'Your other devices' }),
+          h('div', { class: 'row' }, [
+            h('button', {
+              class: 'grow',
+              text: 'Show a linking code',
+              title: 'Put your key on screen as a QR code for another device to read',
+              on: { click: () => showLinkCode() },
+            }),
+            h('button', {
+              text: 'Take over from a code',
+              title: 'Read a code from another device and become that person here',
+              on: {
+                click: () =>
+                  scanLinkCode((linked) => {
+                    if (linked.name) saveDisplayName(linked.name)
+                    toast('This device is you now. Starting again.', 'info', 5000)
+                    window.setTimeout(() => window.location.reload(), 1200)
+                  }),
+              },
+            }),
+          ]),
+          h('div', {
+            class: 'tiny faint',
+            text: 'Your name and your messages belong to a key kept on this device. Show the code on the device that has it, read it with the one that does not, and both are you. Anybody who photographs that code becomes you, so it clears itself after a minute.',
+          }),
+        ]),
 
         h('div', { class: 'card stack tight' }, [
           h('span', { class: 'eyebrow', text: 'Your data' }),

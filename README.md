@@ -185,6 +185,7 @@ src/
     menu.ts           the popover behind every ellipsis
     avatar.ts         a picture, shrunk until it fits inside one event
     notify.ts         the browser's own notifications, and their honest limit
+    link-device.ts    your key as a QR code, and a camera to read one
     settings-view.ts  your name, your key, your data, and this space
     shell.ts          the frame: where a screen mounts, and the status bar
     icons.ts          the stroked icon set
@@ -195,6 +196,7 @@ test/
   e2e.mjs             host and viewer, end to end, 34 checks
   chat-check.mjs      typing, unread, mentions, search, threads, multi-line
   extras-check.mjs    markdown, slash commands, private messages, avatars
+  polish-check.mjs    redraw cost, thread list, search filters, contrast
   emoji-check.mjs     the picker, and what one emoji is made of
   leave-check.mjs     leaving, deleting, and one code meaning one room
   roles-check.mjs     who may do what, and what a member may not
