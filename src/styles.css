@@ -1292,17 +1292,115 @@ details.adv[open] > summary {
   min-height: 120px;
 }
 
+/* The two buttons that call the rails in. Only on a screen without room. */
+.rail-button {
+  display: none;
+  flex: 0 0 auto;
+}
+
+.rail-scrim {
+  display: none;
+}
+
+/*
+ * A phone.
+ *
+ * One column, all of it conversation. The rails slide in over the top when
+ * they are asked for and go away the moment anything in them is used, because
+ * a channel list covering the room you just picked is a list you have to
+ * dismiss twice. They used to sit stacked above the conversation with a third
+ * of the height each, on a screen with no height to spare.
+ */
 @media (max-width: 780px) {
   .space-grid {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .rail-button {
+    display: inline-flex;
   }
 
   .rail {
-    max-height: 34dvh;
+    position: absolute;
+    z-index: 40;
+    top: 0;
+    bottom: 0;
+    width: min(78vw, 300px);
+    max-height: none;
+    border: 0;
+    box-shadow: var(--shadow);
+    transition: transform 160ms ease;
+    padding-top: max(10px, env(safe-area-inset-top));
+  }
+
+  .rail-left {
+    left: 0;
+    transform: translateX(-101%);
   }
 
   .rail-right {
+    display: flex;
+    right: 0;
+    transform: translateX(101%);
+  }
+
+  .space-grid.rail-left-open .rail-left,
+  .space-grid.rail-right-open .rail-right {
+    transform: none;
+  }
+
+  .space-grid.rail-left-open .rail-scrim,
+  .space-grid.rail-right-open .rail-scrim {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 30;
+    background: rgb(0 0 0 / 45%);
+  }
+
+  .space-main {
+    padding: 8px 10px 10px;
+  }
+
+  /* Room to read: a message may take nearly the width, and what you can do
+     with it is asked for by tapping rather than reserved beside it. */
+  .chat-line {
+    max-width: 88%;
+  }
+
+  /* Thumbs, not pointers. */
+  .space-head {
+    gap: 6px;
+  }
+
+  input[type="text"].space-search {
+    width: 34%;
+    min-width: 90px;
+  }
+
+  .chat-compose {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .chat-compose textarea,
+  .chat-compose button {
+    min-height: 36px;
+  }
+
+  .status-bar {
+    gap: 10px;
+    padding: 5px 10px;
+  }
+}
+
+/* Anything narrower than a phone held in one hand. */
+@media (max-width: 420px) {
+  .chat-line {
+    max-width: 94%;
+  }
+
+  .status-bar .status-cell:not(.grow) {
     display: none;
   }
 }
@@ -1376,13 +1474,10 @@ details.adv[open] > summary {
   position: relative;
   display: flex;
   margin-top: 2px;
-  padding-right: 46px;
 }
 
 .chat-row.mine {
   justify-content: flex-end;
-  padding-right: 0;
-  padding-left: 46px;
 }
 
 /* A run is one block: tight inside, with air between runs. */
@@ -1397,7 +1492,8 @@ details.adv[open] > summary {
 .chat-line {
   position: relative;
   min-width: 0;
-  max-width: 82%;
+  /* Room for the actions beside it, on the narrowest panel this has. */
+  max-width: min(82%, calc(100% - 108px));
   width: fit-content;
   padding: 5px 10px 6px;
   background: var(--surface);
@@ -1497,10 +1593,23 @@ details.adv[open] > summary {
  * always there and always reachable now; what hovering changes is whether you
  * can see them.
  */
+/*
+ * Beside the bubble, not out at the edge of the panel.
+ *
+ * They used to be pinned to the far side of the row, which on a short message
+ * left them stranded halfway across the panel with nothing between them and the
+ * thing they act on. They hang off the bubble now: on its right for somebody
+ * else's message, on its left for your own, always a few pixels away from it
+ * whatever width it is.
+ *
+ * The bubble's width is capped with room for them left over, so they can never
+ * be pushed off the edge and clipped by the scroller.
+ */
 .chat-actions {
   position: absolute;
-  right: 2px;
   top: 2px;
+  left: 100%;
+  margin-left: 8px;
   display: flex;
   gap: 2px;
   opacity: 0;
@@ -1515,8 +1624,10 @@ details.adv[open] > summary {
 }
 
 .chat-row.mine .chat-actions {
-  right: auto;
-  left: 2px;
+  left: auto;
+  right: 100%;
+  margin-left: 0;
+  margin-right: 8px;
 }
 
 /* No pointer to hover with: show them, quietly. */
@@ -2395,4 +2506,35 @@ input[type="text"].emoji-search {
   flex: 0 0 auto;
   font-variant-numeric: tabular-nums;
   color: var(--fg-dim);
+}
+
+/*
+ * What you can do with a message, on a screen with no pointer.
+ *
+ * Under the message rather than beside it. Beside it is right when there is
+ * room, and on a phone a wide bubble leaves none: the buttons would hang off
+ * the edge and be clipped by the scroller. Asked for by tapping the message,
+ * because there is no hovering here, and big enough to hit with a thumb.
+ */
+@media (max-width: 780px) {
+  .chat-actions {
+    position: static;
+    margin: 6px 0 0;
+    height: 0;
+    overflow: hidden;
+    gap: 5px;
+  }
+
+  .chat-row.acting .chat-actions {
+    height: auto;
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .chat-actions button {
+    min-height: 30px;
+    height: 30px;
+    padding: 0 12px;
+    font-size: var(--size-small);
+  }
 }

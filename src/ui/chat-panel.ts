@@ -140,7 +140,7 @@ export class ChatPanel {
   actions: ChatActions | null = null
   /** Only an admin may pin, so only an admin is offered the button. */
   canPin = false
-  /** Asking a question is a different shape from saying something. */
+  /** Asking a question is a different shape from saying something. See /poll. */
   onPoll: (() => void) | null = null
   /** Somebody is writing. Throttled by the caller, which owns the wire. */
   onTyping: (() => void) | null = null
@@ -154,7 +154,6 @@ export class ChatPanel {
   private readonly nameInput: HTMLInputElement
   private readonly textInput: HTMLTextAreaElement
   private readonly sendButton: HTMLButtonElement
-  private readonly pollButton: HTMLButtonElement
   private readonly emojiButton: HTMLButtonElement
   private readonly replyBar: HTMLDivElement
   private readonly nameRow: HTMLDivElement
@@ -249,13 +248,6 @@ export class ChatPanel {
     })
 
     this.sendButton = h('button', { text: 'Send', on: { click: () => this.submit() } })
-    this.pollButton = h('button', {
-      class: 'ghost',
-      text: '\u2261',
-      title: 'Ask a question',
-      ariaLabel: 'Ask a question',
-      on: { click: () => this.onPoll?.() },
-    })
     this.emojiButton = h('button', {
       class: 'ghost',
       text: '\u263a',
@@ -323,12 +315,7 @@ export class ChatPanel {
         this.typingLine,
         this.replyBar,
         this.nameRow,
-        h('div', { class: 'row' }, [
-          this.textInput,
-          this.emojiButton,
-          this.pollButton,
-          this.sendButton,
-        ]),
+        h('div', { class: 'row' }, [this.textInput, this.emojiButton, this.sendButton]),
       ]),
     ])
   }
@@ -736,6 +723,21 @@ export class ChatPanel {
       // The bubble sits in a row, and the row is what the actions hang off, so
       // they are beside the message rather than on top of the end of it.
       const row = h('div', { class: `chat-row${mine ? ' mine' : ''}` }, [line])
+      /*
+       * On a touch screen there is no hovering, so the actions are asked for by
+       * tapping the message. One at a time: opening a second closes the first,
+       * which is what a pointer does for free.
+       */
+      line.addEventListener('click', (ev) => {
+        if (window.matchMedia('(hover: hover)').matches) return
+        const target = ev.target as HTMLElement
+        if (target.closest('button, a, .spoiler')) return
+        const open = row.classList.contains('acting')
+        for (const other of this.log.querySelectorAll('.chat-row.acting')) {
+          other.classList.remove('acting')
+        }
+        row.classList.toggle('acting', !open)
+      })
 
       /*
        * What this answers, unless the answer is standing inside the thread it
@@ -835,7 +837,9 @@ export class ChatPanel {
         line.append(reacts)
       }
 
-      row.append(this.rowActions(m, mine))
+      // Hung off the bubble rather than off the row, so they sit against the
+      // message they act on however wide it is.
+      line.append(this.rowActions(m, mine))
       this.log.append(row)
 
       // In a thread, a rule under the question it hangs off. What follows is

@@ -34,6 +34,8 @@ export type IconName =
   | 'home'
   | 'crown'
   | 'more'
+  | 'menu'
+  | 'people'
 
 const PATHS: Record<IconName, string> = {
   copy: 'M9 9.5A1.5 1.5 0 0 1 10.5 8h8A1.5 1.5 0 0 1 20 9.5v8a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 9 17.5zM5.5 16A1.5 1.5 0 0 1 4 14.5v-8A1.5 1.5 0 0 1 5.5 5h8A1.5 1.5 0 0 1 15 6.5',
@@ -66,6 +68,8 @@ const PATHS: Record<IconName, string> = {
   // crown is a smudge with a hole in it.
   crown: 'M4 8.5l3.6 3L12 5l4.4 6.5 3.6-3-1.6 8.5H5.6zM5.6 19.5h12.8v1.6H5.6z',
   more: 'M6 12h.01M12 12h.01M18 12h.01',
+  menu: 'M4 7h16M4 12h16M4 17h16',
+  people: 'M9 11.5a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4zM3 19.5c0-3 2.7-4.8 6-4.8s6 1.8 6 4.8M16 5.4a3.2 3.2 0 0 1 0 6.2M17.5 14.9c2.1.5 3.5 1.9 3.5 4.6',
 }
 
 /** Icons drawn as solid shapes rather than strokes. */

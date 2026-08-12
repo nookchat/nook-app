@@ -102,6 +102,7 @@ const TYPING_FOR_MS = 5000
 const COMMANDS = [
   { name: 'me', note: 'Say what you are doing' },
   { name: 'dm', note: 'Write to one person' },
+  { name: 'poll', note: 'Ask a question with answers' },
   { name: 'nick', note: 'Change your name' },
   { name: 'topic', note: 'Say what this channel is for' },
   { name: 'rename', note: 'Rename this channel' },
@@ -186,6 +187,10 @@ export class SpaceView {
   private channelTitle!: HTMLDivElement
   private searchInput!: HTMLInputElement
   private searchResults!: HTMLDivElement
+  private channelsButton!: HTMLButtonElement
+  private peopleButton!: HTMLButtonElement
+  /** Which rail is showing over the conversation, on a narrow screen. */
+  private railOpen: 'left' | 'right' | null = null
 
   /** The thread being read, if any. Its root is a message in this space. */
   private thread: string | null = null
@@ -382,6 +387,12 @@ export class SpaceView {
    * outlives the space it belongs to would search a room that is gone.
    */
   private readonly onShortcut = (ev: KeyboardEvent): void => {
+    // A drawer over the conversation goes away on escape, before anything else
+    // gets a look at the key.
+    if (ev.key === 'Escape' && this.railOpen) {
+      this.showRail(null)
+      return
+    }
     if (!(ev.metaKey || ev.ctrlKey)) return
     if (ev.key.toLowerCase() === 'k') {
       ev.preventDefault()
@@ -728,6 +739,10 @@ export class SpaceView {
         void this.publish((c) => c.say(arg, this.channel, null, false, true))
         return true
       }
+      case 'poll': {
+        void this.newPoll(arg)
+        return true
+      }
       case 'shrug': {
         /*
          * The arm and both underscores are escaped for the formatter, or it
@@ -813,6 +828,7 @@ export class SpaceView {
    * different place for what you write to go.
    */
   private openDirect(key: string | null): void {
+    this.showRail(null)
     this.chatPanel?.keepDraft()
     this.direct = key
     this.thread = null
@@ -1311,10 +1327,44 @@ export class SpaceView {
     })
     this.searchResults = h('div', { class: 'search-results hidden' })
 
+    /*
+     * The two rails are drawers on a phone.
+     *
+     * There is not room for three columns on a screen four hundred pixels wide,
+     * and the old answer was to stack the channel list on top of the
+     * conversation and give it a third of the height for ever. These slide in
+     * over the conversation when they are asked for, and go away again when
+     * anything in them is used.
+     */
+    const scrim = h('div', {
+      class: 'rail-scrim',
+      on: { click: () => this.showRail(null) },
+    })
+    this.channelsButton = h('button', {
+      class: 'ghost icon-only rail-button',
+      ariaLabel: 'Channels and settings',
+      title: 'Channels, voice, and settings',
+      on: { click: () => this.showRail(this.railOpen === 'left' ? null : 'left') },
+    })
+    this.channelsButton.append(icon('menu', 16))
+    this.peopleButton = h('button', {
+      class: 'ghost icon-only rail-button',
+      ariaLabel: 'Who is here',
+      title: 'Who is here, and the invite',
+      on: { click: () => this.showRail(this.railOpen === 'right' ? null : 'right') },
+    })
+    this.peopleButton.append(icon('people', 16))
+
     this.shell = h('div', { class: 'space-grid loading' }, [
+      scrim,
       left,
       h('div', { class: 'space-main' }, [
-        h('div', { class: 'space-head row spread' }, [this.channelTitle, this.searchInput]),
+        h('div', { class: 'space-head row spread' }, [
+          this.channelsButton,
+          this.channelTitle,
+          this.searchInput,
+          this.peopleButton,
+        ]),
         this.searchResults,
         this.streamBar,
         this.stage,
@@ -1366,6 +1416,13 @@ export class SpaceView {
     // The card that holds the button shows the name. Renaming from it and
     // leaving it saying the old name is the same disagreement in one screen.
     if (this.settingsOpen) this.openSettings()
+  }
+
+  /** Slide a rail in over the conversation, or put both away. */
+  private showRail(which: 'left' | 'right' | null): void {
+    this.railOpen = which
+    this.shell.classList.toggle('rail-left-open', which === 'left')
+    this.shell.classList.toggle('rail-right-open', which === 'right')
   }
 
   /** Back to the list of spaces, keeping this one. */
@@ -2054,6 +2111,7 @@ export class SpaceView {
   }
 
   private openChannel(name: string): void {
+    this.showRail(null)
     if (name === this.channel && !this.thread && !this.direct) return
     this.chatPanel?.keepDraft()
     this.channel = name
@@ -2077,10 +2135,23 @@ export class SpaceView {
    * Prompts rather than a dialog, because a poll is three short answers and a
    * question, and a form for that is more window than it is worth.
    */
-  private async newPoll(): Promise<void> {
-    const question = window.prompt('What is the question?')?.trim()
+  /**
+   * Ask a question with a fixed set of answers.
+   *
+   * There is no button for it any more. A poll is a rare thing to write and it
+   * had a permanent seat next to the message box, which is a lot of furniture
+   * for something most people press once a month. It is /poll now, and the
+   * whole thing can be written on one line:
+   *
+   *   /poll Tea or coffee? tea, coffee, neither
+   */
+  private async newPoll(line = ''): Promise<void> {
+    const mark = line.search(/[?]/)
+    let question = mark === -1 ? '' : line.slice(0, mark + 1).trim()
+    let raw = mark === -1 ? '' : line.slice(mark + 1).trim()
+    if (!question) question = window.prompt('What is the question?', line)?.trim() ?? ''
     if (!question) return
-    const raw = window.prompt('The answers, separated by commas.', 'Yes, No')?.trim()
+    if (!raw) raw = window.prompt('The answers, separated by commas.', 'Yes, No')?.trim() ?? ''
     if (!raw) return
     const options = raw
       .split(',')
