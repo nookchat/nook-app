@@ -158,6 +158,8 @@ export class SpaceView {
    */
   private read: Record<string, number> = {}
   private openedAt = 0
+  /** Which peers have said their tab is in the background, by session id. */
+  private readonly away = new Set<string>()
   /** Who is typing, by key, and when they last said so. */
   private readonly typing = new Map<string, { channel: string; at: number }>()
   private lastTypingSent = 0
@@ -240,6 +242,16 @@ export class SpaceView {
       key: identity.pubkey,
       sharing: this.capture ? this.channel : undefined,
       voice: this.voice?.state.channel ?? undefined,
+      /*
+       * Whether this tab is on screen.
+       *
+       * Presence is not one bit. Somebody with the space open in a tab they
+       * are not looking at is here in the sense that their device answers and
+       * not in the sense that matters, which is whether they will read what you
+       * write. Green and orange say the difference; being connected at all is
+       * what the dot being there says.
+       */
+      away: document.hidden ? true : undefined,
     })
     mesh.onData = (from, raw) => void this.onMeshData(from, raw)
     mesh.onPeers = () => this.draw()
@@ -301,7 +313,17 @@ export class SpaceView {
 
   /** Back on screen: draw, which marks what is on it as read. */
   private readonly onVisible = (): void => {
-    if (!document.hidden) this.draw()
+    /*
+     * Say so at once, in both directions.
+     *
+     * The roster is drawn from announcements that go out every few seconds, so
+     * without this, coming back to the tab left you orange to everybody else
+     * for as long as it took the next one to leave, and going away left you
+     * green for the same. A change in whether you are looking is exactly the
+     * moment worth spending a message on.
+     */
+    this.announceMe()
+    this.draw()
   }
 
   /**
@@ -347,6 +369,11 @@ export class SpaceView {
       case 'announce': {
         const standing = typeof data.voice === 'string' ? cleanChannel(data.voice) : ''
         this.voice?.noteAnnounce(env.from, standing || null)
+        // Their tab is behind something else, or it is not.
+        const wasAway = this.away.has(env.from)
+        if (data.away === true) this.away.add(env.from)
+        else this.away.delete(env.from)
+        if (wasAway !== this.away.has(env.from)) this.draw()
         const sharing = typeof data.sharing === 'string' ? cleanChannel(data.sharing) : ''
         const was = this.sharers.get(env.from)
         if (sharing) this.sharers.set(env.from, sharing)
@@ -518,7 +545,9 @@ export class SpaceView {
   private noticeMentions(fresh: LogEvent[]): void {
     const chat = this.chat
     if (!chat) return
-    const names = chat.log.names()
+    // The same list the panel draws with, so a mention of somebody who has just
+    // arrived is noticed as well as marked.
+    const names = this.everybody()
     for (const e of fresh) {
       if (e.kind !== 'said' || e.author === chat.me) continue
       if (!isNews(e.at)) continue
@@ -708,7 +737,7 @@ export class SpaceView {
   private drawNow(): void {
     if (this.stopped || !this.chat) return
     if (this.chatPanel) this.chatPanel.canPin = this.chat.isAdmin
-    this.chatPanel?.setNames(this.chat.log.names())
+    this.chatPanel?.setNames(this.everybody())
     this.chatPanel?.setReadMark(this.thread ? 0 : this.openedAt)
     /*
      * A thread, or the channel. The thread is the same panel showing a
@@ -756,6 +785,23 @@ export class SpaceView {
     this.renderPeople()
     this.renderShareButton()
     this.status()
+  }
+
+  /**
+   * Everybody worth naming, by key.
+   *
+   * The log knows whoever has ever written a profile here. The mesh knows who
+   * is connected right now, which includes somebody who joined a moment ago and
+   * whose profile is still on its way. Both, so a person who is plainly in the
+   * room can be tagged as soon as they are in it.
+   */
+  private everybody(): Map<string, string> {
+    const names = new Map(this.chat?.log.names() ?? [])
+    for (const peer of this.mesh?.peers() ?? []) {
+      if (!peer.key || !peer.name) continue
+      if (!names.has(peer.key)) names.set(peer.key, peer.name)
+    }
+    return names
   }
 
   /** Keep what this device knows about the space up to date. */
@@ -1364,6 +1410,25 @@ export class SpaceView {
     const items: MenuItem[] = []
     const name = chat.nameOf(key) || shortKey(key)
 
+    /*
+     * Tag them, from the list of who is here.
+     *
+     * Typing an @ and picking from the list works and is faster once you know
+     * it is there. This is for the other half of the time: you are looking at
+     * the person in the members list, and the thing you want is to say their
+     * name to the room.
+     */
+    if (chat.nameOf(key)) {
+      items.push({
+        label: `Mention ${name}`,
+        note: 'Puts @' + name + ' in the message you are writing',
+        run: () => {
+          this.chatPanel?.insert(`@${name} `)
+          this.chatPanel?.focus()
+        },
+      })
+    }
+
     items.push({
       label: 'Copy their ID',
       note: shortKey(key),
@@ -1447,6 +1512,8 @@ export class SpaceView {
       sharing: boolean
       voice: string | null
       you: boolean
+      /** Here, but with this space behind whatever they are actually doing. */
+      away: boolean
     }
 
     const chat = this.chat
@@ -1465,6 +1532,7 @@ export class SpaceView {
         sharing: false,
         voice: null,
         you: false,
+        away: false,
         ...was,
         ...patch,
       })
@@ -1496,6 +1564,7 @@ export class SpaceView {
       here: true,
       ready: true,
       you: true,
+      away: typeof document !== 'undefined' && document.hidden,
       sharing: this.capture !== null,
       voice: this.voice?.state.channel ?? null,
       talking: this.voice?.isTalking(this.selfId) ?? false,
@@ -1512,6 +1581,7 @@ export class SpaceView {
         name: peer.name || rows.get(key)?.name || '',
         here: true,
         ready: peer.ready,
+        away: this.away.has(peer.id),
         sharing: this.sharers.has(peer.id),
         voice: this.voice?.whereIs(peer.id) ?? null,
         talking: this.voice?.isTalking(peer.id) ?? false,
@@ -1560,7 +1630,22 @@ export class SpaceView {
 
       this.peopleList.append(
         h('div', { class: `rail-person${row.here ? '' : ' away'}`, title: `ID ${row.key}` }, [
-          row.here ? h('i', { class: `dot ${row.ready ? 'good' : 'warn'}` }) : null,
+          /*
+           * Green: here and reading. Orange: here with the tab put away.
+           * Hollow: their device answers but the link between us is not up yet,
+           * which is a second or two on the way in and is worth showing rather
+           * than pretending either of the other two.
+           */
+          row.here
+            ? h('i', {
+                class: `dot ${!row.ready ? 'idle' : row.away ? 'warn' : 'good'}`,
+                title: !row.ready
+                  ? 'Connecting'
+                  : row.away
+                    ? 'Here, but looking at something else'
+                    : 'Here',
+              })
+            : null,
           h('div', { class: 'grow row', style: { minWidth: '0' } }, [
             h('span', { class: 'truncate', text: row.you ? `${label} (you)` : label }),
             /*

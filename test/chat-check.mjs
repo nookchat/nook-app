@@ -308,6 +308,78 @@ try {
     return !!mine?.querySelector('.person-more')
   })
   check('and your own row has no menu at all', onSelf === false)
+
+  // Tagging somebody from the list of who is here.
+  await menuFor(alice, 'Bob')
+  await alice.click('.menu-item:has-text("Mention Bob")')
+  await alice.waitForTimeout(300)
+  const composed = await alice.inputValue(BOX)
+  check('a person can be tagged from the members list', composed === '@Bob ', JSON.stringify(composed))
+  await alice.fill(BOX, '')
+
+  // ---- who is here, and who is only technically here ----------------------
+  const dots = (page) =>
+    page.$$eval('.rail-person', (els) =>
+      els.map((e) => ({
+        who: e.textContent.trim(),
+        state: [...(e.querySelector('.dot')?.classList ?? [])].filter((c) => c !== 'dot').join(''),
+      })),
+    )
+
+  const awake = await alice
+    .waitForFunction(() => document.querySelectorAll('.rail-person .dot.good').length >= 2, null, {
+      timeout: 30_000,
+    })
+    .then(() => true)
+    .catch(() => false)
+  check('everybody looking at the space is green', awake, JSON.stringify(await dots(alice)))
+
+  /*
+   * Put Bob's tab behind something else. The page cannot be genuinely hidden
+   * from a test driver, so the property it reads is replaced and the event it
+   * listens for is fired, which is the same thing from the app's side.
+   */
+  const setHidden = (page, hidden) =>
+    page.evaluate((h) => {
+      Object.defineProperty(document, 'hidden', { value: h, configurable: true })
+      Object.defineProperty(document, 'visibilityState', {
+        value: h ? 'hidden' : 'visible',
+        configurable: true,
+      })
+      document.dispatchEvent(new Event('visibilitychange'))
+    }, hidden)
+
+  await setHidden(bob, true)
+  const wentAway = await alice
+    .waitForFunction(
+      () => {
+        const row = [...document.querySelectorAll('.rail-person')].find((e) =>
+          e.textContent.includes('Bob'),
+        )
+        return row?.querySelector('.dot.warn') !== null && row?.querySelector('.dot.warn') !== undefined
+      },
+      null,
+      { timeout: 20_000 },
+    )
+    .then(() => true)
+    .catch(() => false)
+  check('a tab put away turns orange for everybody else', wentAway, JSON.stringify(await dots(alice)))
+
+  await setHidden(bob, false)
+  const cameBack = await alice
+    .waitForFunction(
+      () => {
+        const row = [...document.querySelectorAll('.rail-person')].find((e) =>
+          e.textContent.includes('Bob'),
+        )
+        return !!row?.querySelector('.dot.good')
+      },
+      null,
+      { timeout: 20_000 },
+    )
+    .then(() => true)
+    .catch(() => false)
+  check('and green again the moment they come back', cameBack, JSON.stringify(await dots(alice)))
 } catch (err) {
   check('the run finished', false, err instanceof Error ? err.message : String(err))
 }
