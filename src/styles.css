@@ -80,8 +80,8 @@
 
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --size: 14px;
-  --size-small: 12.5px;
+  --size: 16px;
+  --size-small: 13.5px;
 
   color-scheme: dark;
 }
@@ -1499,24 +1499,28 @@ details.adv[open] > summary {
 }
 
 /*
- * A message is a bubble, and the bubble is what makes a run of five from one
- * person readable.
+ * A message is a plain line of text, the way a log reads.
  *
- * It was a flat line of text with the name at the front, so a run showed the
- * name once at the top and the four underneath belonged to nobody in
- * particular. What tells you who is talking now is three things at once: the
- * side of the panel, the colour of the name above the run, and the fact that
- * each message is plainly its own object.
+ * It was a bubble, and the bubble earned its keep when the type was small:
+ * each message plainly its own object. At reading size the chrome is most of
+ * what a short line is made of, so it is gone. What tells you who is talking
+ * is the coloured name above the run and the air between runs; what tells you
+ * which line you are on is the tint the row takes under the pointer.
  */
 .chat-row {
   position: relative;
   display: flex;
-  margin-top: 2px;
+  margin-top: 3px;
+  border-radius: 6px;
+}
+
+.chat-row:hover {
+  background: var(--surface);
 }
 
 /* A run is one block: tight inside, with air between runs. */
 .chat-row:has(.chat-name) {
-  margin-top: 10px;
+  margin-top: 14px;
 }
 
 .chat-log > .chat-row:first-child {
@@ -1527,40 +1531,18 @@ details.adv[open] > summary {
   position: relative;
   min-width: 0;
   /* Room for the actions beside it, on the narrowest panel this has. */
-  max-width: min(82%, calc(100% - 108px));
+  max-width: calc(100% - 108px);
   width: fit-content;
-  padding: 5px 10px 6px;
-  background: var(--surface);
-  border: 1px solid var(--line-soft);
-  border-radius: 12px;
-  border-top-left-radius: 4px;
+  padding: 0 2px;
+  line-height: 1.5;
 }
 
-.chat-line.runs-on {
-  border-top-left-radius: 12px;
-}
-
-/*
- * Your own lines sit on the same side as everybody else's, the way a room
- * reads rather than the way a phone does. The tint alone says which are
- * yours: two columns made every conversation a tennis match to read, and it
- * put half the text far from the names.
- */
-.chat-line.mine {
-  background: color-mix(in srgb, var(--accent) 20%, var(--surface));
-  border-color: color-mix(in srgb, var(--accent) 26%, var(--line-soft));
-}
-
-.chat-line:hover {
-  border-color: var(--line);
-}
-
-/* Who wrote it, above the first bubble of their run. */
+/* Who wrote it, above the first line of their run. */
 .chat-who {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-bottom: 1px;
+  gap: 8px;
+  margin-bottom: 2px;
 }
 
 /*
@@ -1572,17 +1554,15 @@ details.adv[open] > summary {
  */
 .chat-name {
   font-weight: 600;
-  font-size: calc(var(--size-small) - 0.5px);
+  font-size: calc(var(--size) - 1px);
   color: var(--fg);
 }
 
-/* A note about the room rather than something somebody said. Not a bubble. */
+/* A note about the room rather than something somebody said. */
 .chat-line.system {
   max-width: 100%;
   color: var(--fg-faint);
   font-style: italic;
-  background: transparent;
-  border-color: transparent;
   padding-left: 2px;
 }
 
@@ -1669,10 +1649,10 @@ details.adv[open] > summary {
 }
 
 .chat-actions button {
-  min-height: 26px;
-  height: 26px;
-  padding: 0 7px;
-  font-size: var(--size-small);
+  min-height: 30px;
+  height: 30px;
+  padding: 0 9px;
+  font-size: var(--size);
   border-radius: var(--radius-sm);
 }
 
@@ -1684,9 +1664,9 @@ details.adv[open] > summary {
 }
 
 .chat-react {
-  min-height: 17px;
-  padding: 0 5px;
-  font-size: calc(var(--size-small) - 1px);
+  min-height: 22px;
+  padding: 0 7px;
+  font-size: var(--size-small);
   border-radius: var(--pill-radius);
 }
 
@@ -2220,8 +2200,14 @@ input[type="text"].emoji-search {
   flex: 0 0 auto;
 }
 
+/* The glyph buttons beside the box: a face and a speaker earn a bigger cut
+   than the word "GIF", which is already a word. */
+.chat-compose button.ghost:not(.tiny-btn) {
+  font-size: 20px;
+}
+
 .chat-compose textarea {
-  font-size: var(--size-small);
+  font-size: var(--size);
   /* Grown by the panel to fit what is in it, then it scrolls. */
   min-height: var(--btn-h);
   max-height: 116px;
@@ -2357,41 +2343,9 @@ input[type="text"].emoji-search {
   padding: 0 5px;
 }
 
-/*
- * A picture is not in a bubble.
- *
- * A bubble is drawn around words. Around a picture it is a second border and
- * a tint on a thing that already has an edge, and on a tinted bubble of your
- * own it puts a colour behind whatever is transparent in the picture. So the
- * line drops its bubble the moment it carries one.
- */
-.chat-line.has-picture {
-  background: transparent;
-  border-color: transparent;
-  padding: 0 2px 2px;
-}
-
-.chat-line.has-picture:hover {
-  border-color: transparent;
-}
-
-/* Words in the same message keep a bubble, on their own, above the picture. */
+/* Words in the same message sit on their own line, above the picture. */
 .chat-line.has-picture .chat-text.boxed {
-  display: inline-block;
-  padding: 5px 10px 6px;
-  background: var(--surface);
-  border: 1px solid var(--line-soft);
-  border-radius: 12px;
-  border-top-left-radius: 4px;
-}
-
-.chat-line.runs-on.has-picture .chat-text.boxed {
-  border-top-left-radius: 12px;
-}
-
-.chat-line.mine.has-picture .chat-text.boxed {
-  background: color-mix(in srgb, var(--accent) 20%, var(--surface));
-  border-color: color-mix(in srgb, var(--accent) 26%, var(--line-soft));
+  display: block;
 }
 
 /* A picture posted in the chat. Capped so one GIF cannot own the channel. */

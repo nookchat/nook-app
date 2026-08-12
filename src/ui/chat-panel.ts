@@ -914,7 +914,7 @@ export class ChatPanel {
         `${mentionsMe(m.text, this.names, this.me) ? ' calls-me' : ''}`,
     })
     line.dataset.id = m.id
-    // The bubble sits in a row, and the row is what the actions hang off, so
+    // The line sits in a row, and the row is what the actions hang off, so
     // they are beside the message rather than on top of the end of it.
     const row = h('div', { class: `chat-row${mine ? ' mine' : ''}` }, [line])
     /*
@@ -958,15 +958,15 @@ export class ChatPanel {
      *
      * The name carries a colour worked out from the key that signs the
      * messages, so it is the same colour on every device and for everybody,
-     * your own included: every line sits on the same side now, and the
-     * colour plus the tint on your own bubbles is what tells them apart.
+     * your own included: every line sits on the same side and wears no
+     * bubble now, and the coloured name is what tells the runs apart.
      */
     if (first) {
       const name = h('span', { class: 'chat-name', text: m.name || shortKey(m.author) })
       name.style.color = authorColour(m.author)
       line.append(
         h('div', { class: 'chat-who' }, [
-          avatarOf(m.author, m.name ?? '', this.avatars.get(m.author) ?? '', 18),
+          avatarOf(m.author, m.name ?? '', this.avatars.get(m.author) ?? '', 24),
           name,
           m.pinned ? pinMark() : null,
         ]),
@@ -989,12 +989,10 @@ export class ChatPanel {
       // address under it said the same thing worse.
       const bare = !m.emote && pictures.length === 1 && m.text.trim() === pictures[0]
       /*
-       * A picture is not in the bubble.
+       * A picture stands apart from the words.
        *
-       * The bubble is drawn around words, and around a picture it is a border
-       * and a tint on something that already has edges of its own. So the
-       * line loses its bubble as soon as it carries one, and any words in the
-       * same message keep theirs on their own box above the picture.
+       * Any words in the same message sit on their own line above it, so the
+       * picture is not jammed into the middle of a sentence.
        */
       if (pictures.length > 0) line.classList.add('has-picture')
       if (!bare) {
@@ -1046,7 +1044,7 @@ export class ChatPanel {
       line.append(reacts)
     }
 
-    // Hung off the bubble rather than off the row, so they sit against the
+    // Hung off the line rather than off the row, so they sit against the
     // message they act on however wide it is.
     line.append(this.rowActions(m, mine))
     return row
