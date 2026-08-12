@@ -32,6 +32,8 @@ export type IconName =
   | 'plus'
   | 'minus'
   | 'home'
+  | 'crown'
+  | 'more'
 
 const PATHS: Record<IconName, string> = {
   copy: 'M9 9.5A1.5 1.5 0 0 1 10.5 8h8A1.5 1.5 0 0 1 20 9.5v8a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 9 17.5zM5.5 16A1.5 1.5 0 0 1 4 14.5v-8A1.5 1.5 0 0 1 5.5 5h8A1.5 1.5 0 0 1 15 6.5',
@@ -60,10 +62,14 @@ const PATHS: Record<IconName, string> = {
   plus: 'M12 5.5v13M5.5 12h13',
   minus: 'M5.5 12h13',
   home: 'M3.5 11.5 12 4.5l8.5 7M6 10v9.5h12V10',
+  // Five points and a band. Filled, because at thirteen pixels an outlined
+  // crown is a smudge with a hole in it.
+  crown: 'M4 8.5l3.6 3L12 5l4.4 6.5 3.6-3-1.6 8.5H5.6zM5.6 19.5h12.8v1.6H5.6z',
+  more: 'M6 12h.01M12 12h.01M18 12h.01',
 }
 
 /** Icons drawn as solid shapes rather than strokes. */
-const FILLED = new Set<IconName>(['qr', 'stop'])
+const FILLED = new Set<IconName>(['qr', 'stop', 'crown'])
 
 export function icon(name: IconName, size = 18): SVGSVGElement {
   const ns = 'http://www.w3.org/2000/svg'
@@ -82,7 +88,7 @@ export function icon(name: IconName, size = 18): SVGSVGElement {
     path.setAttribute('fill-rule', 'evenodd')
   } else {
     path.setAttribute('stroke', 'currentColor')
-    path.setAttribute('stroke-width', '1.7')
+    path.setAttribute('stroke-width', name === 'more' ? '2.6' : '1.7')
     path.setAttribute('stroke-linecap', 'round')
     path.setAttribute('stroke-linejoin', 'round')
   }

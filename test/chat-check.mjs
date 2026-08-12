@@ -262,6 +262,52 @@ try {
   // ---- polish -------------------------------------------------------------
   const grouped = await alice.$$eval('.chat-at.on-hover', (els) => els.length)
   check('a run from one person shows one clock, not five', grouped > 0, `${grouped} hidden`)
+
+  // ---- who runs the place, and what you can do about people ---------------
+  const crowns = await alice.$$eval('.rail-person', (els) =>
+    els.map((e) => ({ who: e.textContent.trim(), crown: !!e.querySelector('.crown') })),
+  )
+  check(
+    'the admin wears a crown rather than the word',
+    crowns.filter((c) => c.crown).length === 1 && crowns.every((c) => !c.who.includes('admin')),
+    JSON.stringify(crowns),
+  )
+
+  const menuFor = async (page, who) => {
+    const more = page.locator('.rail-person', { hasText: who }).locator('.person-more')
+    await more.first().evaluate((el) => el.focus())
+    await more.first().click()
+    await page.waitForSelector('.menu', { timeout: 5000 })
+    // The label only. A note sits in a second span with no separator between
+    // them, so textContent runs the two together.
+    return page.$$eval('.menu-item', (els) =>
+      els.map((e) => e.querySelector('span')?.textContent?.trim() ?? ''),
+    )
+  }
+
+  const onBob = await menuFor(alice, 'Bob')
+  check(
+    'one ellipsis opens everything an admin can do about somebody',
+    onBob.some((t) => t === 'Make an admin') && onBob.some((t) => t.startsWith('Remove')),
+    onBob.join(' | '),
+  )
+  await alice.keyboard.press('Escape')
+  check('escape closes it', (await alice.$('.menu')) === null)
+
+  const onAlice = await menuFor(bob, 'Alice')
+  check(
+    'a member is offered nothing that changes anybody',
+    !onAlice.some((t) => t.includes('admin') || t.startsWith('Remove')),
+    onAlice.join(' | '),
+  )
+  await bob.keyboard.press('Escape')
+
+  // Your own row has nothing to offer, so it has no button either.
+  const onSelf = await alice.$$eval('.rail-person', (els) => {
+    const mine = els.find((e) => e.textContent.includes('(you)'))
+    return !!mine?.querySelector('.person-more')
+  })
+  check('and your own row has no menu at all', onSelf === false)
 } catch (err) {
   check('the run finished', false, err instanceof Error ? err.message : String(err))
 }

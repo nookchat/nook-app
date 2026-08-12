@@ -59,6 +59,7 @@ import { RoomChat } from '../store/room-chat'
 import { ChatPanel } from './chat-panel'
 import { clear, copyText, fmtKbps, h, labelled } from './dom'
 import { icon } from './icons'
+import { openMenu, type MenuItem } from './menu'
 import { qrSvg } from './qr'
 import type { WindowChrome } from './shell'
 import { toast } from './toast'
@@ -1348,6 +1349,74 @@ export class SpaceView {
     toast('They are not here right now.', 'warn', 4000)
   }
 
+  /**
+   * What you may do about somebody, in words.
+   *
+   * Worked out fresh when the menu opens rather than when the row is drawn, so
+   * a menu cannot offer to promote somebody who was promoted while it sat
+   * there. An empty list means there is nothing to offer, and then there is no
+   * button either: an ellipsis that opens nothing is a promise the interface
+   * does not keep.
+   */
+  private actionsFor(key: string, role: string, you: boolean, here: boolean): MenuItem[] {
+    const chat = this.chat
+    if (!chat || you) return []
+    const items: MenuItem[] = []
+    const name = chat.nameOf(key) || shortKey(key)
+
+    items.push({
+      label: 'Copy their ID',
+      note: shortKey(key),
+      run: () => {
+        void copyText(key).then((ok) =>
+          toast(ok ? 'ID copied.' : 'Could not copy the ID.', ok ? 'info' : 'warn'),
+        )
+      },
+    })
+
+    if (!chat.isAdmin) return items
+
+    const standing = this.voice?.state.channel
+    // Move them into the voice channel we are standing in. Only when we are in
+    // one, because "move them here" needs a here, and only while they are about.
+    if (here && standing) {
+      items.push({
+        label: `Move to ${standing}`,
+        note: 'Asks their device to join the voice channel you are in',
+        run: () => this.moveTo(key, standing),
+      })
+    }
+    if (role !== 'admin') {
+      items.push({
+        label: 'Make an admin',
+        note: 'They can rename, pin, clear and remove people',
+        run: () => void this.setRole(key, 'admin'),
+      })
+    } else if (key !== chat.founder) {
+      items.push({
+        label: 'Take admin away',
+        run: () => void this.setRole(key, 'member'),
+      })
+    }
+    if (role === 'kicked') {
+      items.push({
+        label: 'Let them back in',
+        run: () => void this.setRole(key, 'member'),
+      })
+    } else if (key !== chat.founder) {
+      items.push({
+        label: `Remove ${name}`,
+        note: 'Everything they write after this is ignored by everybody',
+        danger: true,
+        run: () => {
+          if (!window.confirm(`Remove ${name} from this space?`)) return
+          void this.setRole(key, 'kicked')
+        },
+      })
+    }
+    return items
+  }
+
   /** One announcement carries the name, what we are sharing, and where we stand. */
   private announceMe(): void {
     this.mesh?.announce()
@@ -1383,7 +1452,6 @@ export class SpaceView {
     const chat = this.chat
     const names = chat?.log.names() ?? new Map<string, string>()
     const roles = chat?.roles() ?? new Map<string, string>()
-    const iAmAdmin = chat?.isAdmin === true
     const rows = new Map<string, Row>()
 
     const put = (key: string, patch: Partial<Row>): void => {
@@ -1481,12 +1549,32 @@ export class SpaceView {
 
       const role = roles.get(row.key) ?? 'member'
       const label = row.name || shortKey(row.key)
+      const actions = this.actionsFor(row.key, role, row.you, row.here)
+      const more = h('button', {
+        class: 'ghost tiny-btn person-more',
+        title: `What you can do about ${label}`,
+        ariaLabel: `Actions for ${label}`,
+        on: { click: () => openMenu(more, this.actionsFor(row.key, role, row.you, row.here)) },
+      })
+      more.append(icon('more', 14))
+
       this.peopleList.append(
         h('div', { class: `rail-person${row.here ? '' : ' away'}`, title: `ID ${row.key}` }, [
           row.here ? h('i', { class: `dot ${row.ready ? 'good' : 'warn'}` }) : null,
-          h('div', { class: 'grow', style: { minWidth: '0' } }, [
-            h('div', { class: 'truncate', text: row.you ? `${label} (you)` : label }),
-            role === 'member' ? null : h('div', { class: 'tiny faint', text: role }),
+          h('div', { class: 'grow row', style: { minWidth: '0' } }, [
+            h('span', { class: 'truncate', text: row.you ? `${label} (you)` : label }),
+            /*
+             * A crown, rather than the word admin under the name.
+             *
+             * It was a second line of text per person, which made the list of
+             * who is here twice as tall to say a thing about one of them. The
+             * title carries the word for anybody hovering, and for a screen
+             * reader.
+             */
+            role === 'admin'
+              ? h('span', { class: 'crown', title: 'Runs this space' }, [icon('crown', 12)])
+              : null,
+            role === 'kicked' ? h('span', { class: 'tiny faint', text: 'removed' }) : null,
           ]),
           row.voice
             ? h(
@@ -1499,36 +1587,7 @@ export class SpaceView {
               )
             : null,
           row.sharing ? h('span', { class: 'pill good', text: 'live' }) : null,
-          /*
-           * Move them into the voice channel we are standing in. Only offered
-           * when we are in one, because "move them here" needs a here.
-           */
-          iAmAdmin && !row.you && row.here && this.voice?.state.channel
-            ? h('button', {
-                class: 'ghost tiny-btn',
-                text: '\u2192',
-                title: `Move them into ${this.voice.state.channel}`,
-                on: {
-                  click: () => this.moveTo(row.key, this.voice?.state.channel ?? ''),
-                },
-              })
-            : null,
-          iAmAdmin && !row.you && role !== 'admin'
-            ? h('button', {
-                class: 'ghost tiny-btn',
-                text: '\u2191',
-                title: 'Make an admin',
-                on: { click: () => void this.setRole(row.key, 'admin') },
-              })
-            : null,
-          iAmAdmin && !row.you && role !== 'kicked' && row.key !== chat?.founder
-            ? h('button', {
-                class: 'ghost tiny-btn',
-                text: '\u2715',
-                title: 'Remove from this space',
-                on: { click: () => void this.setRole(row.key, 'kicked') },
-              })
-            : null,
+          actions.length ? more : null,
         ]),
       )
     }

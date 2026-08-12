@@ -209,28 +209,41 @@ try {
   await bob.getByRole('button', { name: 'lounge' }).first().click()
   await bob.waitForTimeout(2000)
 
-  const canMove = await waitFor(
-    async () =>
-      alice.evaluate(() =>
-        [...document.querySelectorAll('.rail-person button')].some(
-          (b) => b.title.startsWith('Move them into'),
-        ),
-      ),
-    20_000,
-    'the move button to appear for the admin',
-  )
-  check('an admin standing in a voice channel can move people to it', !!canMove)
+  /*
+   * The actions live behind the ellipsis on somebody's row now, so the check
+   * opens the menu and reads what it offers, which is what a person does.
+   */
+  const menuFor = async (page, who) => {
+    const row = page.locator('.rail-person', { hasText: who })
+    const more = row.locator('.person-more')
+    if ((await more.count()) === 0) return []
+    await more.first().evaluate((el) => el.focus())
+    await more.first().click()
+    await page.waitForSelector('.menu', { timeout: 5000 })
+    const items = await page.$$eval('.menu-item', (els) =>
+      els.map((e) => e.textContent.trim().split('\n')[0]),
+    )
+    await page.keyboard.press('Escape')
+    return items
+  }
 
-  // Bob is a member, so his attempt has to be refused by the far side.
-  const refused = await carol.evaluate(async () => {
-    const before = document.querySelectorAll('.toast').length
-    return { before }
-  })
-  const bobTried = await bob.evaluate(() => {
-    const dbg = document.querySelectorAll('.rail-person button')
-    return [...dbg].some((b) => b.title.startsWith('Move them into'))
-  })
-  check('a member is never offered it', bobTried === false, `${refused.before} toasts before`)
+  const canMove = await waitFor(
+    async () => {
+      const items = await menuFor(alice, 'Bob')
+      return items.some((t) => t.startsWith('Move to')) ? items : null
+    },
+    20_000,
+    'the move action to appear for the admin',
+  )
+  check('an admin standing in a voice channel can move people to it', !!canMove, (canMove ?? []).join(' | '))
+
+  // Bob is a member, so he is offered nothing that changes anybody else.
+  const bobOffered = await menuFor(bob, 'Alice')
+  check(
+    'a member is never offered it',
+    !bobOffered.some((t) => t.startsWith('Move to')) && !bobOffered.some((t) => t.includes('admin')),
+    bobOffered.join(' | ') || 'nothing',
+  )
 } finally {
   await browser.close()
 }

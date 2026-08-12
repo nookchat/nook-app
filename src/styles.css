@@ -1151,9 +1151,47 @@ details.adv[open] > summary {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 2px 7px;
+  padding: 3px 4px 3px 7px;
+  border-radius: var(--radius-sm);
   font-size: var(--size-small);
   color: var(--fg-dim);
+}
+
+.rail-person:hover {
+  background: var(--surface-2);
+}
+
+/* Whoever runs the place, said in one glyph on the same line as their name. */
+.crown {
+  flex: 0 0 auto;
+  display: inline-flex;
+  color: var(--warn);
+}
+
+/*
+ * The way in to what you can do about somebody.
+ *
+ * Faint until the row is under the pointer, and always there for a keyboard,
+ * which is the same bargain the actions on a message make.
+ */
+.person-more {
+  flex: 0 0 auto;
+  width: 22px;
+  min-width: 22px;
+  min-height: 20px;
+  padding: 0;
+  opacity: 0;
+}
+
+.rail-person:hover .person-more,
+.person-more:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .person-more {
+    opacity: 0.6;
+  }
 }
 
 .rail-foot {
@@ -1511,6 +1549,58 @@ details.adv[open] > summary {
 .rail-item.unread {
   color: var(--fg);
   font-weight: bold;
+}
+
+/* ---------- menus ---------- */
+
+.menu {
+  position: fixed;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  min-width: 190px;
+  max-width: 280px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+}
+
+.menu-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  text-align: left;
+  min-height: 0;
+  padding: 5px 8px;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  border-radius: var(--radius-sm);
+  font-weight: 400;
+}
+
+.menu-item:hover:not(:disabled),
+.menu-item:focus-visible {
+  background: var(--surface-2);
+  border-color: transparent;
+}
+
+.menu-item.danger {
+  color: var(--bad);
+}
+
+.menu-item.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--bad) 16%, var(--surface-2));
+}
+
+/* The note under a label explains it; it is not a second label. */
+.menu-item .tiny {
+  white-space: normal;
+  line-height: 1.3;
 }
 
 /* ---------- mention autocomplete ---------- */
