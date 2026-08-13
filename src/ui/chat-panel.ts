@@ -208,7 +208,7 @@ export class ChatPanel {
   private suggestions: HTMLDivElement | null = null
   private suggestAt = -1
   /** Which kind of list is up, because Enter means different things to them. */
-  private suggestKind: 'mention' | 'command' | null = null
+  private suggestKind: 'mention' | 'command' | 'name' | null = null
   /**
    * What was half typed in each channel.
    *
@@ -222,7 +222,7 @@ export class ChatPanel {
   /** Told when a slash command is typed. Returns true when it handled it. */
   onCommand: ((line: string) => boolean) | null = null
   /** The commands offered while typing a slash. */
-  commands: { name: string; note: string }[] = []
+  commands: { name: string; note: string; takesName?: boolean }[] = []
 
   constructor(initialName: string, title = 'Chat') {
     this.name = initialName
@@ -695,7 +695,9 @@ export class ChatPanel {
   /** The commands, while the line being written is one. */
   private suggestCommands(): boolean {
     const value = this.textInput.value
-    if (!value.startsWith('/') || value.startsWith('//') || /\s/.test(value)) return false
+    if (!value.startsWith('/') || value.startsWith('//') || /\n/.test(value)) return false
+    const space = value.indexOf(' ')
+    if (space !== -1) return this.suggestPerson(value, space)
     const wanted = value.slice(1).toLowerCase()
     const hits = this.commands.filter((c) => c.name.startsWith(wanted))
     if (hits.length === 0) {
@@ -736,6 +738,57 @@ export class ChatPanel {
     return true
   }
 
+  /**
+   * The people, while the word being written is the name a command wants.
+   *
+   * A command like /nudge or /dm is answered by a name spelled exactly, and
+   * the room is the only place that spelling lives, so the box offers it the
+   * same way it offers a mention. No at sign goes in: the command wants the
+   * name itself.
+   *
+   * Returns false when this is not that, so an @ later in the same line is
+   * still a mention.
+   */
+  private suggestPerson(value: string, space: number): boolean {
+    const command = this.commands.find((c) => c.name === value.slice(1, space).toLowerCase())
+    if (!command?.takesName) return false
+    const caret = this.textInput.selectionStart ?? 0
+    const start = space + 1
+    if (caret < start) return false
+    // What has been typed of the name, which may be nothing yet. Taking it up
+    // to the caret rather than to the next space is what lets a name with a
+    // space in it finish itself.
+    const fragment = value.slice(start, caret)
+    if (fragment.length > 32) return false
+
+    const wanted = fragment.toLowerCase()
+    const hits = [...this.names]
+      .filter(([key, name]) => name && key !== this.me && name.toLowerCase().startsWith(wanted))
+      .map(([, name]) => name)
+      .slice(0, 6)
+    if (hits.length === 0) return false
+
+    this.suggestAt = start
+    this.suggestKind = 'name'
+    const list = this.suggestions ?? h('div', { class: 'mention-pop' })
+    clear(list)
+    hits.forEach((name, i) => {
+      list.append(
+        h('button', {
+          class: `mention-option${i === 0 ? ' on' : ''}`,
+          text: name,
+          on: { mousedown: (ev) => { ev.preventDefault(); this.takeName(name) } },
+        }),
+      )
+    })
+    if (!this.suggestions) {
+      this.suggestions = list
+      document.body.append(list)
+    }
+    placeNear(list, this.textInput)
+    return true
+  }
+
   private onSuggestKey(ev: KeyboardEvent): boolean {
     const list = this.suggestions
     if (!list) return false
@@ -761,10 +814,12 @@ export class ChatPanel {
     if (ev.key === 'Enter' || ev.key === 'Tab') {
       const chosen = options[at === -1 ? 0 : at]
       const label = chosen?.querySelector('span')?.textContent ?? chosen?.textContent ?? ''
-      if (label.startsWith('/')) {
+      if (this.suggestKind === 'command') {
         this.textInput.value = `${label} `
         this.closeSuggestions()
         this.grow()
+      } else if (label && this.suggestKind === 'name') {
+        this.takeName(label)
       } else if (label) {
         this.takeSuggestion(label)
       }
@@ -785,6 +840,23 @@ export class ChatPanel {
     const head = input.value.slice(0, this.suggestAt)
     const tail = input.value.slice(caret)
     const insert = `@${name} `
+    input.value = head + insert + tail
+    const at = head.length + insert.length
+    input.setSelectionRange(at, at)
+    this.closeSuggestions()
+    input.focus()
+    this.grow()
+  }
+
+  /** Put a name where a command wants one, with the space that follows it. */
+  private takeName(name: string): void {
+    const input = this.textInput
+    const caret = input.selectionStart ?? 0
+    const head = input.value.slice(0, this.suggestAt)
+    const tail = input.value.slice(caret)
+    // The space after the name is what a command reads as the end of it,
+    // unless there is already one there.
+    const insert = tail.startsWith(' ') ? name : `${name} `
     input.value = head + insert + tail
     const at = head.length + insert.length
     input.setSelectionRange(at, at)

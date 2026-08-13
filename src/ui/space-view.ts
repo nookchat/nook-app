@@ -114,17 +114,23 @@ const TYPING_EVERY_MS = 2000
 /** And how long that stays true without another word. */
 const TYPING_FOR_MS = 5000
 
-/** What a slash offers. The panel lists them; runCommand is what they mean. */
+/**
+ * What a slash offers. The panel lists them; runCommand is what they mean.
+ *
+ * takesName marks the ones whose first word is somebody in the room, so the
+ * panel can finish the spelling. These are the commands that answer a wrong
+ * name with "nobody here is called that", which is a thing worth never seeing.
+ */
 const COMMANDS = [
   { name: 'me', note: 'Say what you are doing' },
-  { name: 'dm', note: 'Write to one person' },
+  { name: 'dm', note: 'Write to one person', takesName: true },
   { name: 'poll', note: 'Ask a question with answers' },
   { name: 'nick', note: 'Change your name' },
   { name: 'topic', note: 'Say what this channel is for' },
   { name: 'rename', note: 'Rename this channel' },
   { name: 'gif', note: 'Look for a GIF to send' },
   { name: 'sound', note: 'Play a noise for everybody' },
-  { name: 'nudge', note: 'Shake somebody\u2019s window' },
+  { name: 'nudge', note: 'Shake somebody\u2019s window', takesName: true },
   { name: 'tts', note: 'Say it out loud' },
   { name: 'shrug', note: '\u00af\\_(\u30c4)_/\u00af' },
   { name: 'invite', note: 'Copy the invite link' },
@@ -1236,14 +1242,23 @@ export class SpaceView {
       }
       case 'dm':
       case 'msg': {
-        const names = this.everybody()
-        const wanted = arg.split(' ')[0]?.toLowerCase() ?? ''
-        const found = [...names].find(([, who]) => who.toLowerCase() === wanted)
+        /*
+         * The longest name this line starts with, rather than its first word,
+         * because plenty of people are called two words and the box will now
+         * spell those out for you.
+         */
+        const wanted = arg.toLowerCase()
+        const found = [...this.everybody()]
+          .filter(([, who]) => {
+            const low = who.toLowerCase()
+            return low !== '' && (wanted === low || wanted.startsWith(`${low} `))
+          })
+          .sort((a, b) => b[1].length - a[1].length)[0]
         if (!found) {
-          toast(`Nobody here is called ${wanted || 'that'}.`, 'warn')
+          toast(`Nobody here is called ${arg.split(' ')[0] || 'that'}.`, 'warn')
           return true
         }
-        const text = arg.slice(wanted.length).trim()
+        const text = arg.slice(found[1].length).trim()
         this.openDirect(found[0])
         if (text) void this.publish((c) => c.sayDirect(found[0], text))
         return true

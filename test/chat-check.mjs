@@ -155,6 +155,29 @@ try {
   }))
   check('the name itself is marked', mentionMark.text === '@Bob' && mentionMark.me, JSON.stringify(mentionMark))
 
+  // ---- names after a command ----------------------------------------------
+  // A command that wants a person wants it spelled the way the room has it,
+  // so the box offers the spelling rather than answering with "nobody here is
+  // called that".
+  await alice.fill(BOX, '')
+  await alice.click(BOX)
+  await alice.keyboard.type('/nudge Bo')
+  await alice.waitForSelector('.mention-pop', { timeout: 5000 })
+  const named = await alice.$$eval('.mention-option', (els) => els.map((e) => e.textContent))
+  check('a command that wants a person offers the people', named.includes('Bob'), named.join())
+
+  await alice.keyboard.press('Tab')
+  const filled = await alice.inputValue(BOX)
+  check('and picking one writes the whole name', filled === '/nudge Bob ', JSON.stringify(filled))
+
+  // A command that wants no name says nothing, and neither does the message
+  // half of one that does.
+  await alice.fill(BOX, '/me Bo')
+  await alice.waitForTimeout(300)
+  const quiet = await alice.$$eval('.mention-option', (els) => els.length)
+  check('a command that wants no name offers nothing', quiet === 0, `${quiet}`)
+  await alice.fill(BOX, '')
+
   // ---- unread -------------------------------------------------------------
   // Making channels is an admin's act, so Bob is not even offered the button.
   const plusHidden = await bob.$eval('button[title="Make a text channel"]', (el) =>
