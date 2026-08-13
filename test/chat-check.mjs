@@ -170,6 +170,15 @@ try {
   const filled = await alice.inputValue(BOX)
   check('and picking one writes the whole name', filled === '/nudge Bob ', JSON.stringify(filled))
 
+  // The other spelling of a command offers the same people.
+  await alice.fill(BOX, '')
+  await alice.click(BOX)
+  await alice.keyboard.type('/msg Bo')
+  await alice.waitForSelector('.mention-pop', { timeout: 5000 })
+  const aliased = await alice.$$eval('.mention-option', (els) => els.map((e) => e.textContent))
+  check('the other spelling of a command offers them too', aliased.includes('Bob'), aliased.join())
+  await alice.keyboard.press('Escape')
+
   // A command that wants no name says nothing, and neither does the message
   // half of one that does.
   await alice.fill(BOX, '/me Bo')
@@ -276,6 +285,18 @@ try {
   await alice.waitForTimeout(400)
   const empty = await alice.$eval('.search-results', (el) => el.textContent)
   check('and says so when there is nothing', empty.includes('Nothing matches'), empty)
+
+  // The from: filter is a person too, so it offers the people.
+  await alice.fill('input[aria-label="Search this space"]', '')
+  await alice.click('input[aria-label="Search this space"]')
+  await alice.keyboard.type('from:Bo')
+  await alice.waitForSelector('.mention-pop', { timeout: 5000 })
+  const searchNames = await alice.$$eval('.mention-option', (els) => els.map((e) => e.textContent))
+  check('the from: filter offers the people', searchNames.includes('Bob'), searchNames.join())
+
+  await alice.keyboard.press('Tab')
+  const filter = await alice.inputValue('input[aria-label="Search this space"]')
+  check('and picking one writes the filter', filter === 'from:Bob ', JSON.stringify(filter))
   await alice.fill('input[aria-label="Search this space"]', '')
 
   // ---- quick reactions ----------------------------------------------------

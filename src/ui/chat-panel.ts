@@ -222,7 +222,7 @@ export class ChatPanel {
   /** Told when a slash command is typed. Returns true when it handled it. */
   onCommand: ((line: string) => boolean) | null = null
   /** The commands offered while typing a slash. */
-  commands: { name: string; note: string; takesName?: boolean }[] = []
+  commands: { name: string; note: string; takesName?: boolean; also?: string[] }[] = []
 
   constructor(initialName: string, title = 'Chat') {
     this.name = initialName
@@ -750,7 +750,10 @@ export class ChatPanel {
    * still a mention.
    */
   private suggestPerson(value: string, space: number): boolean {
-    const command = this.commands.find((c) => c.name === value.slice(1, space).toLowerCase())
+    // The other spelling of a command is the same command, so /msg offers what
+    // /dm offers rather than nothing at all.
+    const typed = value.slice(1, space).toLowerCase()
+    const command = this.commands.find((c) => c.name === typed || c.also?.includes(typed))
     if (!command?.takesName) return false
     const caret = this.textInput.selectionStart ?? 0
     const start = space + 1

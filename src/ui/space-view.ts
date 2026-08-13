@@ -64,6 +64,7 @@ import { ChatPanel, imageLinks } from './chat-panel'
 import { clear, copyText, fmtKbps, h, labelled } from './dom'
 import { icon } from './icons'
 import { openMenu, type MenuItem } from './menu'
+import { placeNear } from './emoji'
 import { avatarOf } from './chat-panel'
 import { loadAvatar } from './avatar'
 import { qrSvg } from './qr'
@@ -123,7 +124,7 @@ const TYPING_FOR_MS = 5000
  */
 const COMMANDS = [
   { name: 'me', note: 'Say what you are doing' },
-  { name: 'dm', note: 'Write to one person', takesName: true },
+  { name: 'dm', note: 'Write to one person', takesName: true, also: ['msg'] },
   { name: 'poll', note: 'Ask a question with answers' },
   { name: 'nick', note: 'Change your name' },
   { name: 'topic', note: 'Say what this channel is for' },
@@ -242,6 +243,8 @@ export class SpaceView {
   private channelTitle!: HTMLDivElement
   private searchInput!: HTMLInputElement
   private searchResults!: HTMLDivElement
+  /** The name list under the search box, while from: is being written. */
+  private searchNames: HTMLDivElement | null = null
   private pinsButton!: HTMLButtonElement
   private channelsButton!: HTMLButtonElement
   private peopleButton!: HTMLButtonElement
@@ -1450,6 +1453,104 @@ export class SpaceView {
     this.searchInput.value = ''
     this.searchResults.classList.add('hidden')
     clear(this.searchResults)
+    this.closeSearchNames()
+  }
+
+  /**
+   * The people, while from: is being written in the search box.
+   *
+   * The same offer the chat box makes when a command wants a person, because
+   * the question is the same one: how does the room spell them. What goes in
+   * is the first word of the name, which is all a filter split on spaces can
+   * hold, and it is enough because from: matches the start of a name.
+   */
+  private suggestSearchNames(): void {
+    const input = this.searchInput
+    const caret = input.selectionStart ?? input.value.length
+    const word = /\S*$/.exec(input.value.slice(0, caret))?.[0] ?? ''
+    const asked = /^from:(.*)$/i.exec(word)
+    if (!asked) {
+      this.closeSearchNames()
+      return
+    }
+
+    const wanted = asked[1].toLowerCase()
+    const hits = [...this.everybody().values()]
+      .filter((who) => who && who.toLowerCase().startsWith(wanted))
+      .slice(0, 6)
+    if (hits.length === 0) {
+      this.closeSearchNames()
+      return
+    }
+
+    const list = this.searchNames ?? h('div', { class: 'mention-pop' })
+    clear(list)
+    hits.forEach((who, i) => {
+      list.append(
+        h('button', {
+          class: `mention-option${i === 0 ? ' on' : ''}`,
+          text: who,
+          // The blur a click causes would close the list before the pick, so
+          // the pick happens on the way down.
+          on: { mousedown: (ev) => { ev.preventDefault(); this.takeSearchName(who) } },
+        }),
+      )
+    })
+    if (!this.searchNames) {
+      this.searchNames = list
+      document.body.append(list)
+    }
+    placeNear(list, input)
+  }
+
+  /** Arrows, Enter, Tab and Escape, while that list is up. */
+  private onSearchKey(ev: KeyboardEvent): boolean {
+    const list = this.searchNames
+    if (!list) return false
+    const options = [...list.querySelectorAll('.mention-option')]
+    const at = options.findIndex((el) => el.classList.contains('on'))
+    if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+      const next = (at + (ev.key === 'ArrowDown' ? 1 : options.length - 1)) % options.length
+      options[at]?.classList.remove('on')
+      options[next]?.classList.add('on')
+      ev.preventDefault()
+      return true
+    }
+    if (ev.key === 'Enter' || ev.key === 'Tab') {
+      const chosen = options[at === -1 ? 0 : at]
+      const who = chosen?.textContent ?? ''
+      if (who) this.takeSearchName(who)
+      ev.preventDefault()
+      return true
+    }
+    // Escape puts the list down first, which leaves the search you typed alone.
+    if (ev.key === 'Escape') {
+      this.closeSearchNames()
+      ev.preventDefault()
+      return true
+    }
+    return false
+  }
+
+  private takeSearchName(who: string): void {
+    const input = this.searchInput
+    const caret = input.selectionStart ?? input.value.length
+    const head = input.value.slice(0, caret)
+    const start = head.length - (/\S*$/.exec(head)?.[0].length ?? 0)
+    const tail = input.value.slice(caret)
+    // A filter is one word, so a name of two takes the first of them.
+    const insert = `from:${who.split(' ')[0]}${tail.startsWith(' ') ? '' : ' '}`
+    input.value = input.value.slice(0, start) + insert + tail
+    const at = start + insert.length
+    input.setSelectionRange(at, at)
+    this.closeSearchNames()
+    input.focus()
+    this.renderSearch()
+  }
+
+  private closeSearchNames(): void {
+    this.searchNames?.remove()
+    this.searchNames = null
   }
 
   /**
@@ -1910,10 +2011,15 @@ export class SpaceView {
       placeholder: 'Search',
       title: 'Words to look for, and from: in: has: to narrow it down',
       on: {
-        input: () => this.renderSearch(),
+        input: () => {
+          this.renderSearch()
+          this.suggestSearchNames()
+        },
         keydown: (ev) => {
+          if (this.onSearchKey(ev as KeyboardEvent)) return
           if ((ev as KeyboardEvent).key === 'Escape') this.closeSearch()
         },
+        blur: () => this.closeSearchNames(),
       },
     })
     this.searchResults = h('div', { class: 'search-results hidden' })
