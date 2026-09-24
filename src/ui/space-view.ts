@@ -22,7 +22,7 @@ import { checkSupport, hostBlocker } from '../diagnostics'
 import { captureScreen, CaptureError, type ScreenCapture } from '../media/capture'
 import { AudioMixer } from '../media/mixer'
 import type { Mesh } from '../net/mesh'
-import { Voice } from '../net/voice'
+import type { Voice } from '../net/voice'
 import { UplinkMeter } from '../net/uplink'
 import { formatSecret, roomLink, setLinkSecret, type Room } from '../room'
 import { HostPeer } from '../rtc/host-peer'
@@ -47,10 +47,11 @@ import { addServer, bookFor } from '../store/server-spaces'
 import type { SpaceRuntime } from '../space/runtime'
 import { spaces } from '../space/registry'
 import { spaceFace, switcherButton } from './space-switcher'
-import { filesFor } from '../space/runtime'
+import { filesFor, isCallChannel } from '../space/runtime'
+import { voiceDock } from './call'
 import { gifs as serverGifs, preview, serverHasGifs } from '../net/server-api'
 import { loadIdentity, saveDisplayName, shortKey, signClaim, verifyClaim } from '../store/identity'
-import { chirpJoin, chirpLeave, chirpMessage, isNews, speak } from './sounds'
+import { chirpMessage, isNews, speak } from './sounds'
 import { openSoundboard, playSound, soundById, soundByName, SOUNDS } from './soundboard'
 import { gifCredential, isClip, searchGifs, serviceLabel, type Gif } from '../store/gifs'
 import {
@@ -165,6 +166,8 @@ export class SpaceView {
   readonly server: string
   private spaceTitle!: HTMLSpanElement
   private spaceFace!: HTMLSpanElement
+  /** Voice running in another space, with the way to end it. */
+  private dock: { root: HTMLElement; stop(): void } = { root: h('div', { class: 'hidden' }), stop: () => undefined }
   private voice: Voice | null = null
   private stopped = false
   private timers: number[] = []
@@ -347,10 +350,8 @@ export class SpaceView {
     void fetchIce(this.server).then((ice) => {
       if (!this.stopped) useServedIce(ice.iceServers, ice.relayOnly)
     })
-    const voice = new Voice(space.bus, this.selfId)
-    voice.onChange = () => this.draw()
-    voice.onArrival = (arrived) => (arrived ? chirpJoin() : chirpLeave())
-    this.voice = voice
+    // Voice belongs to the space, so a call carries on when this screen goes.
+    this.voice = space.voice
 
     // What this screen adds to who you are: what you share, watch and stand in.
     space.extras = () => ({
@@ -359,11 +360,11 @@ export class SpaceView {
       watching: this.watchingAnyone()
         ? [...this.watched.keys()].filter((id) => id !== this.selfId)
         : undefined,
-      voice: this.voice?.state.channel ?? undefined,
     })
 
     this.unlisten.push(
       space.on('changed', () => this.draw()),
+      space.on('voice', () => this.draw()),
       space.on('signal', (env) => void this.onSignal(env)),
       space.on('data', (from, raw) => void this.onMeshData(from, raw)),
       space.on('peers', () => {
@@ -475,8 +476,8 @@ export class SpaceView {
     for (const t of this.timers) window.clearInterval(t)
     this.timers = []
     this.stopSharing()
-    this.voice?.dispose()
     this.stopWatching()
+    this.dock.stop()
     // The space keeps running; this screen just stops listening to it, and
     // stops saying you are sharing or standing in voice.
     for (const off of this.unlisten) off()
@@ -510,22 +511,17 @@ export class SpaceView {
     for (const id of [...this.away]) if (!alive.has(id)) this.away.delete(id)
     for (const id of [...this.typing.keys()]) if (!alive.has(id)) this.typing.delete(id)
     for (const id of [...this.watchingBy.keys()]) if (!alive.has(id)) this.watchingBy.delete(id)
-    // A reload used to leave your old session standing in the voice channel
-    // for ever, because nothing ever took a dead session's standing back.
-    this.voice?.prune(alive)
   }
 
   // ---- signalling ----
 
   private async onSignal(env: Envelope): Promise<void> {
     await this.mesh?.handle(env)
-    await this.voice?.handle(env)
 
     const data = (env.data ?? {}) as Record<string, unknown>
     switch (env.type) {
       case 'announce': {
-        const standing = typeof data.voice === 'string' ? cleanChannel(data.voice) : ''
-        this.voice?.noteAnnounce(env.from, standing || null)
+        // Where they stand in voice is the space's to track: see space/runtime.ts.
         // Their tab is behind something else, or it is not.
         const wasAway = this.away.has(env.from)
         if (data.away === true) this.away.add(env.from)
@@ -614,7 +610,6 @@ export class SpaceView {
         return
       }
       case 'bye': {
-        this.voice?.forget(env.from)
         this.watchers.get(env.from)?.close()
         this.watchers.delete(env.from)
         if (this.watched.has(env.from)) this.dropTile(env.from)
@@ -1597,6 +1592,8 @@ export class SpaceView {
 
   private renderShell(): void {
     clear(this.root)
+    this.dock.stop()
+    this.dock = voiceDock(this.space)
 
     this.channelList = h('div', { class: 'rail-list' })
     this.voiceList = h('div', { class: 'rail-list' })
@@ -1748,6 +1745,7 @@ export class SpaceView {
       this.voiceList,
       this.threadList,
       ]),
+      this.dock.root,
       this.voiceBar,
       me,
     ])
@@ -2258,7 +2256,9 @@ export class SpaceView {
           h('span', { class: 'voice-bar-state' }, [h('i', { class: 'dot good' }), 'Voice connected']),
           h('span', {
             class: 'tiny faint truncate',
-            text: `${state.channel} · ${(this.voice?.connected ?? 0) + 1} in`,
+            text: isCallChannel(state.channel)
+              ? `Call with ${this.chat?.nameOf(this.space.call?.with ?? '') || 'somebody'}`
+              : `${state.channel} · ${(this.voice?.connected ?? 0) + 1} in`,
           }),
         ]),
         h(
@@ -2292,7 +2292,7 @@ export class SpaceView {
   private async joinVoice(name: string): Promise<void> {
     if (this.voice?.state.channel === name) return
     try {
-      await this.voice?.join(name)
+      await this.space.joinVoice(name)
     } catch (err) {
       // Long enough to read the way to the permission switch it names.
       toast(err instanceof Error ? err.message : String(err), 'bad', 9000)
@@ -2355,10 +2355,20 @@ export class SpaceView {
     })
   }
 
+  /** Ring somebody, and go to your conversation with them, where the call shows. */
+  private async callPerson(key: string): Promise<void> {
+    try {
+      await this.space.startCall(key)
+      this.openDirect(key)
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'The call could not start.', 'warn', 6000)
+    }
+  }
+
   private leaveVoice(): void {
     // A screen is shared with the call, so it goes when you do.
     if (this.capture) this.stopSharing()
-    this.voice?.leave()
+    this.space.leaveVoice()
     this.announceMe()
     this.draw()
   }
@@ -2410,6 +2420,13 @@ export class SpaceView {
       note: 'Privately, sealed to the two of you',
       run: () => this.openDirect(key),
     })
+    if (here) {
+      items.push({
+        label: `Call ${name}`,
+        note: 'A voice call, just the two of you',
+        run: () => void this.callPerson(key),
+      })
+    }
 
     if (chat.nameOf(key)) {
       items.push({
@@ -2656,7 +2673,13 @@ export class SpaceView {
         : row.voice
           ? h('span', { class: `person-doing${row.talking ? ' talking' : ''}` }, [
               icon('volume-low', 11),
-              row.talking ? `Talking in ${row.voice}` : `In ${row.voice}`,
+              isCallChannel(row.voice)
+                ? row.talking
+                  ? 'Talking in a call'
+                  : 'In a call'
+                : row.talking
+                  ? `Talking in ${row.voice}`
+                  : `In ${row.voice}`,
             ])
           : null
 

@@ -50,12 +50,14 @@ export function hasTurn(): boolean {
   return TURN_SERVERS.length > 0 || served.length > 0
 }
 
-export function rtcConfig(): RTCConfiguration {
+/** For the space on show, or for the servers and rule a given space was handed. */
+export function rtcConfig(servers: RTCIceServer[] = served, only = relayOnly): RTCConfiguration {
+  const relay = only && servers.length > 0
   return {
-    iceServers: [...STUN_SERVERS, ...TURN_SERVERS, ...served],
+    iceServers: [...STUN_SERVERS, ...TURN_SERVERS, ...servers],
     // Relay only hides every address from everybody, and costs the server
     // the bandwidth of every call. The server decides. See server/README.md.
-    iceTransportPolicy: relayOnly ? 'relay' : 'all',
+    iceTransportPolicy: relay ? 'relay' : 'all',
     bundlePolicy: 'max-bundle',
     rtcpMuxPolicy: 'require',
     iceCandidatePoolSize: 0,

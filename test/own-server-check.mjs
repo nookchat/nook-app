@@ -17,6 +17,7 @@
 
 import { spawn } from 'node:child_process'
 import { chromium } from 'playwright-core'
+import { nameEveryone } from './named.mjs'
 import { startServer } from './pg.mjs'
 
 const CHROME =
@@ -40,6 +41,7 @@ const vite = spawn('npx', ['vite', '--port', String(PAGE_PORT), '--strictPort'],
 await new Promise((ready) => vite.stdout.on('data', (b) => /Local:/.test(String(b)) && ready()))
 
 const browser = await chromium.launch({ executablePath: CHROME, headless: process.env.HEADED !== '1' })
+nameEveryone(browser)
 
 async function person(name) {
   const page = await (await browser.newContext()).newPage()

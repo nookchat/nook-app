@@ -114,7 +114,13 @@ try {
   watch(host, 'host')
   await host.addInitScript(DISPLAY_STUB)
   await host.goto(APP_URL, { waitUntil: 'domcontentloaded' })
-  // The list is read from IndexedDB, so it arrives a beat after the page.
+
+  // Somebody new is asked what to call them before anything else.
+  await host.waitForSelector('input[aria-label="Your name"]', { timeout: 10_000 })
+  const emptyStops = await host.evaluate(() => document.querySelector('.welcome-go')?.disabled === true)
+  check('somebody new is asked for a name first, and cannot go on without one', emptyStops)
+  await host.fill('input[aria-label="Your name"]', 'Hana Host')
+  await host.keyboard.press('Enter')
   await host.getByRole('button', { name: 'New space' }).waitFor({ timeout: 10_000 })
 
   // The app opens on the spaces you have been in, not on a screen picker.
@@ -242,7 +248,17 @@ try {
   watch(viewer, 'viewer')
   await viewer.goto(link, { waitUntil: 'domcontentloaded' })
 
-  check('an invite link drops you straight into the space', true)
+  // Somebody arriving on an invite is asked too, and then goes straight in.
+  await viewer.waitForSelector('input[aria-label="Your name"]', { timeout: 10_000 })
+  const invitedWords = await viewer.evaluate(() => ({
+    title: document.querySelector('.welcome-title')?.textContent ?? '',
+    go: document.querySelector('.welcome-go')?.textContent ?? '',
+  }))
+  check('an invite asks for a name before joining', invitedWords.go === 'Join', JSON.stringify(invitedWords))
+  await viewer.fill('input[aria-label="Your name"]', 'Vic Viewer')
+  await viewer.click('.welcome-go')
+  await viewer.waitForSelector('.space-name', { timeout: 15_000 })
+  check('and then drops you straight into the space', true)
 
   // The server tells each of them the other is here.
   const meshUp = await waitFor(
@@ -377,7 +393,16 @@ try {
   const viewerName = await viewer.evaluate(
     () => document.querySelector('input[aria-label="Your name in the chat"]')?.value ?? '',
   )
-  check('the viewer gets a name without being asked', viewerName.length > 2, viewerName)
+  check('the viewer is called what they chose', viewerName === 'Vic Viewer', viewerName)
+  const hostSeen = await waitFor(
+    async () =>
+      viewer.evaluate(() =>
+        [...document.querySelectorAll('.rail-person')].some((r) => r.textContent.includes('Hana Host')) ? true : null,
+      ),
+    10_000,
+    'the host to be listed by the name they chose',
+  )
+  check('and everybody else is too', hostSeen === true)
 
   await viewer.fill('[aria-label="Write a message"]', 'hello from the viewer')
   await viewer.press('[aria-label="Write a message"]', 'Enter')

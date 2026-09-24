@@ -38,6 +38,10 @@ export interface MicSettings {
    * fixes is the common one and the cost is a tenth of a core.
    */
   smart: boolean
+  /** The microphone to use, by the browser's id for it. Empty is the system's own choice. */
+  input?: string
+  /** Where voices come out, the same way. Empty is the system's own choice. */
+  output?: string
 }
 
 const DEFAULTS: MicSettings = { echo: true, denoise: true, gain: true, smart: true }
@@ -52,6 +56,8 @@ export function micSettings(): MicSettings {
       denoise: saved.denoise !== false,
       gain: saved.gain !== false,
       smart: saved.smart !== false,
+      input: typeof saved.input === 'string' ? saved.input : '',
+      output: typeof saved.output === 'string' ? saved.output : '',
     }
   } catch {
     return { ...DEFAULTS }
@@ -108,6 +114,28 @@ export function micConstraints(): MediaTrackConstraints {
     echoCancellation: s.echo,
     noiseSuppression: s.denoise,
     autoGainControl: s.gain,
+    // Ideal rather than exact: a microphone that was unplugged falls back to the next, not to silence.
+    ...(s.input ? { deviceId: { ideal: s.input } } : {}),
+  }
+}
+
+/** Send what an element plays to the chosen speaker, where the browser can. */
+export function playOn(el: HTMLMediaElement): void {
+  const output = micSettings().output
+  const media = el as HTMLMediaElement & { setSinkId?: (id: string) => Promise<void> }
+  if (output && media.setSinkId) void media.setSinkId(output).catch(() => undefined)
+}
+
+/** The microphones and speakers this device has, with names once the page may see them. */
+export async function audioDevices(): Promise<{ inputs: MediaDeviceInfo[]; outputs: MediaDeviceInfo[] }> {
+  try {
+    const all = await navigator.mediaDevices.enumerateDevices()
+    return {
+      inputs: all.filter((d) => d.kind === 'audioinput' && d.deviceId !== 'communications'),
+      outputs: all.filter((d) => d.kind === 'audiooutput' && d.deviceId !== 'communications'),
+    }
+  } catch {
+    return { inputs: [], outputs: [] }
   }
 }
 

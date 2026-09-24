@@ -10,6 +10,7 @@
  */
 
 import { chromium } from 'playwright-core'
+import { nameEveryone } from './named.mjs'
 import { sql, startServer } from './pg.mjs'
 
 const APP_URL = process.argv[2] ?? 'http://localhost:5173/'
@@ -31,6 +32,7 @@ let a = await startServer(8811, cluster(A, B))
 const b = await startServer(8812, cluster(B, A))
 
 const browser = await chromium.launch({ executablePath: CHROME, headless: process.env.HEADED !== '1' })
+nameEveryone(browser)
 const BOX = '[aria-label="Write a message"]'
 
 async function person(name) {

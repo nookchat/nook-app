@@ -10,6 +10,7 @@
  */
 
 import { chromium } from 'playwright-core'
+import { nameEveryone } from './named.mjs'
 
 const APP_URL = process.argv[2] ?? 'http://localhost:5173/'
 const COUNT = Number(process.argv[3] ?? 3000)
@@ -17,6 +18,7 @@ const CHROME =
   process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 
 const browser = await chromium.launch({ executablePath: CHROME, headless: true })
+nameEveryone(browser)
 const page = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage()
 await page.goto(APP_URL)
 await page.evaluate(() => localStorage.setItem('cathode.name.v1', 'Speedy'))

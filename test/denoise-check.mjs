@@ -12,6 +12,7 @@
  */
 
 import { chromium } from 'playwright-core'
+import { nameEveryone } from './named.mjs'
 
 const APP_URL = process.argv[2] ?? 'http://localhost:5173/'
 const CHROME =
@@ -28,6 +29,7 @@ const browser = await chromium.launch({
   headless: process.env.HEADED !== '1',
   args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
 })
+nameEveryone(browser)
 const page = await browser.newPage()
 page.on('console', (m) => console.log(`  [page ${m.type()}]`, m.text()))
 page.on('pageerror', (e) => console.log('  [page error]', String(e)))

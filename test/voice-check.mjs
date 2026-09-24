@@ -10,6 +10,7 @@
  */
 
 import { chromium } from 'playwright-core'
+import { nameEveryone } from './named.mjs'
 
 const APP_URL = process.argv[2] ?? 'http://localhost:5173/'
 const CHROME =
@@ -37,6 +38,7 @@ const browser = await chromium.launch({
   headless: process.env.HEADED !== '1',
   args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
 })
+nameEveryone(browser)
 
 try {
   // Separate contexts, so the two people have separate identities.
@@ -107,6 +109,38 @@ try {
   )
   check('and the caller hears them back', heardBack > 0, `${heardBack} inbound streams`)
 
+  /*
+   * A live track is not sound. What arrives is measured: the element playing
+   * it has to be playing, and what comes out of it louder than silence. The
+   * fake microphone beeps, so a second of listening hears something.
+   */
+  const loudness = (page) =>
+    page.evaluate(async () => {
+      const sink = [...document.querySelectorAll('audio.voice-sink')].find((a) => a.srcObject)
+      if (!sink) return { playing: false, peak: 0 }
+      const ctx = new AudioContext()
+      await ctx.resume()
+      const analyser = ctx.createAnalyser()
+      ctx.createMediaStreamSource(sink.srcObject).connect(analyser)
+      const data = new Float32Array(analyser.fftSize)
+      let peak = 0
+      const end = performance.now() + 2500
+      while (performance.now() < end) {
+        analyser.getFloatTimeDomainData(data)
+        for (const v of data) peak = Math.max(peak, Math.abs(v))
+        await new Promise((r) => setTimeout(r, 50))
+      }
+      await ctx.close()
+      return { playing: !sink.paused, peak: Math.round(peak * 1000) / 1000 }
+    })
+  const twoHears = await loudness(two)
+  const oneHears = await loudness(one)
+  check(
+    'and what arrives is sound, playing, both ways',
+    twoHears.playing && twoHears.peak > 0.01 && oneHears.playing && oneHears.peak > 0.01,
+    `${JSON.stringify(twoHears)} ${JSON.stringify(oneHears)}`,
+  )
+
   const seenByOne = await waitFor(
     async () =>
       one.evaluate(() => document.querySelectorAll('.voice-member').length || null),
@@ -172,12 +206,8 @@ try {
   ).catch(() => 0)
   check('somebody making a noise is shown as talking', lit > 0, `${lit} lit`)
 
-  await one.evaluate(() => {
-    const button = [...document.querySelectorAll('button')].find((b) =>
-      /^mute$/i.test(b.getAttribute('aria-label') ?? b.textContent ?? ''),
-    )
-    button?.click()
-  })
+  // The space's own voice bar, not the dock, which is for voice somewhere else.
+  await one.click('.voice-bar:not(.voice-dock) button[aria-label="Mute"]')
   await one.waitForTimeout(1500)
   const afterMute = await one.evaluate(() => {
     const rows = [...document.querySelectorAll('.voice-member')]

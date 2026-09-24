@@ -6,7 +6,7 @@
 import { cleanName } from '../chat'
 import { SELF_HOSTING_URL, checkServer, serverTag, serverUrl, setDefaultServer } from '../backend'
 import { health } from '../net/server-api'
-import { micSettings, setMicSettings, type MicSettings } from '../net/mic'
+import { micSettings, setMicSettings } from '../net/mic'
 import { gifCredential, GIF_SERVICES, setGifCredential, type GifService } from '../store/gifs'
 import { loadIdentity, saveDisplayName, shortKey } from '../store/identity'
 import { addServer, knownServers, newSpaceServer, ownServers } from '../store/server-spaces'
@@ -19,6 +19,7 @@ import { scanLinkCode, showLinkCode } from './link-device'
 import { askNotify, notifyState, stopNotify } from './notify'
 import { setSounds, soundsOn } from './sounds'
 import { toast } from './toast'
+import { voiceSettings } from './voice-settings'
 
 /** The guide to running a server, in the repository. */
 
@@ -312,7 +313,7 @@ export function settingsView(actions: SettingsActions): HTMLElement {
   })
   paintNotify()
 
-  const mic = (key: keyof MicSettings, label: string, about: string): HTMLButtonElement =>
+  const mic = (key: 'echo' | 'denoise' | 'gain' | 'smart', label: string, about: string): HTMLButtonElement =>
     toggle(label, () => micSettings()[key], (next) => setMicSettings({ ...micSettings(), [key]: next }), about)
 
   const quick = h('div', { class: 'row quick-slots' })
@@ -419,17 +420,21 @@ export function settingsView(actions: SettingsActions): HTMLElement {
         spaceCard,
 
         card(
-          'Preferences',
-          h('div', { class: 'switch-list' }, [
-            notifyButton,
-            toggle('Sounds', soundsOn, setSounds, 'A chirp for new messages, and the soundboard'),
-          ]),
-          h('span', { class: 'eyebrow', text: 'Microphone' }),
+          'Voice',
+          voiceSettings(),
           h('div', { class: 'switch-list' }, [
             mic('smart', 'Noise removal', 'Takes out keyboards, fans and dogs'),
             mic('denoise', 'Noise suppression', "The browser's own, lighter filter"),
             mic('echo', 'Echo cancellation', 'Stops others hearing themselves through your speakers'),
             mic('gain', 'Auto volume', 'Keeps your voice at a steady level'),
+          ]),
+        ),
+
+        card(
+          'Preferences',
+          h('div', { class: 'switch-list' }, [
+            notifyButton,
+            toggle('Sounds', soundsOn, setSounds, 'A chirp for new messages, and the soundboard'),
           ]),
           h('span', { class: 'eyebrow', text: 'Quick reactions' }),
           quick,

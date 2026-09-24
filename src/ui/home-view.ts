@@ -18,6 +18,7 @@ import { filesFor, type SpaceRuntime } from '../space/runtime'
 import { ROOMS_CHANGED } from '../store/notes'
 import type { WindowChrome } from './shell'
 import { homeFace, switcherButton } from './space-switcher'
+import { callControls, voiceDock } from './call'
 
 export interface HomeActions {
   /** The home page itself: your spaces, and making or joining one. */
@@ -61,6 +62,9 @@ export class HomeView {
   private stopped = false
   private drawQueued = false
   private unlisten: (() => void) | null = null
+  /** The call button and strip of the conversation on show, and the way to stop them listening. */
+  private callBits: { stop(): void } | null = null
+  private readonly dock = voiceDock(null)
 
   constructor(root: HTMLElement, chrome: WindowChrome, actions: HomeActions, open: DirectRef | null = null) {
     this.root = root
@@ -90,6 +94,7 @@ export class HomeView {
         h('div', { class: 'rail-head' }, [h('span', { class: 'eyebrow', text: 'Direct messages' })]),
         this.list,
       ]),
+      this.dock.root,
       me,
     ])
     this.shell = h('div', { class: 'space-grid home-grid-shell members-hidden' }, [left, this.main])
@@ -108,6 +113,8 @@ export class HomeView {
   destroy(): void {
     this.stopped = true
     this.unlisten?.()
+    this.callBits?.stop()
+    this.dock.stop()
   }
 
   private drawMe(me: HTMLElement): void {
@@ -158,6 +165,8 @@ export class HomeView {
   /** Show a conversation, or the home page when there is none. */
   private async show(ref: DirectRef | null): Promise<void> {
     this.panel?.keepDraft()
+    this.callBits?.stop()
+    this.callBits = null
     this.open = ref
     this.shell.classList.toggle('dm-open', ref !== null)
     if (!ref) {
@@ -196,7 +205,9 @@ export class HomeView {
       h('span', { class: 'channel-name' }, [h('span', { class: 'truncate', text: space.chat.nameOf(ref.key) || shortKey(ref.key) })]),
       h('span', { class: 'channel-topic truncate', text: `in ${space.chat.spaceName() || 'a space'}` }),
     ])
-    this.main.replaceChildren(h('div', { class: 'space-head row' }, [back, title]), panel.root)
+    const call = callControls(space, ref.key)
+    this.callBits = call
+    this.main.replaceChildren(h('div', { class: 'space-head row' }, [back, title, call.button]), call.strip, panel.root)
     panel.useDraft(`dm:${ref.room}:${ref.key}`)
     this.drawConversation()
     this.drawList()

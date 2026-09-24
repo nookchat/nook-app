@@ -17,6 +17,7 @@
  */
 
 import { chromium } from 'playwright-core'
+import { nameEveryone } from './named.mjs'
 import { hostAndShare, joinAndWatch } from './share.mjs'
 
 const FPS = Number(process.argv[2] ?? 60)
@@ -100,10 +101,12 @@ for (const codec of CODECS) {
     headless: process.env.HEADED !== '1',
     args: ['--use-fake-ui-for-media-stream'],
   })
+  nameEveryone(hostBrowser)
   const viewerBrowser = await chromium.launch({
     executablePath: CHROME,
     headless: process.env.HEADED !== '1',
   })
+  nameEveryone(viewerBrowser)
   const hostCdp = await hostBrowser.newBrowserCDPSession()
 
   const host = await (await hostBrowser.newContext()).newPage()

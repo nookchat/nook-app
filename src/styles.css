@@ -182,6 +182,96 @@ main {
   overflow-x: hidden;
 }
 
+/* ---------- the first visit ---------- */
+
+.welcome {
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  background: var(--bg);
+}
+
+.welcome-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: min(400px, 100%);
+  padding: 32px 28px 28px;
+  border-radius: 20px;
+  background: var(--pane);
+  box-shadow: var(--shadow);
+}
+
+.welcome-title {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--fg);
+}
+
+.welcome-text {
+  margin-top: -8px;
+  color: var(--fg-dim);
+  line-height: 1.5;
+}
+
+.welcome-picture {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0 2px;
+}
+
+/* The face is the button: a picture of you is added by pressing it. */
+.welcome-face {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  min-height: 72px;
+  padding: 0;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.welcome-face:hover:not(:disabled) {
+  background: transparent;
+  filter: brightness(1.1);
+}
+
+.welcome-face .avatar {
+  font-size: 26px;
+}
+
+.welcome-face-edit {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--fg);
+  box-shadow: 0 0 0 3px var(--pane);
+}
+
+.welcome-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.welcome-field input {
+  min-height: 42px;
+  font-size: 15px;
+}
+
+.welcome-go {
+  min-height: 44px;
+}
+
 /* ---------- the switcher ---------- */
 
 /*
@@ -2544,18 +2634,6 @@ input[type="text"].space-search {
   padding: 28px 18px 14px;
 }
 
-.chat-intro-mark {
-  display: grid;
-  place-items: center;
-  width: 64px;
-  height: 64px;
-  margin-bottom: 6px;
-  border-radius: 50%;
-  background: var(--surface-2);
-  color: var(--fg);
-  box-shadow: var(--glow);
-}
-
 .chat-intro-title {
   font-size: 26px;
   font-weight: 800;
@@ -3194,6 +3272,172 @@ input[type="text"].space-search {
 .att-audio {
   width: min(380px, 100%);
   height: 36px;
+}
+
+/* ---------- calls between two people ---------- */
+
+/* Somebody calling: over everything, until it is answered or it stops. */
+.call-card {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  z-index: 96;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: min(420px, calc(100vw - 24px));
+  padding: 14px 14px 14px 16px;
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: var(--shadow), 0 0 0 1px color-mix(in srgb, var(--good) 35%, transparent);
+  transform: translateX(-50%);
+  animation: ring-in 220ms var(--ease);
+}
+
+@keyframes ring-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -12px);
+  }
+}
+
+.call-card .avatar {
+  animation: live-pulse 1.6s ease-in-out infinite;
+}
+
+.call-words {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 2px;
+}
+
+.call-name {
+  color: var(--fg);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.call-answer,
+.call-decline {
+  flex: 0 0 auto;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  border-radius: 50%;
+  color: #fff;
+}
+
+.call-answer {
+  background: var(--good);
+  color: #04140a;
+}
+
+.call-answer:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--good) 85%, #fff);
+}
+
+.call-decline {
+  background: var(--live);
+}
+
+.call-decline:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--live) 85%, #fff);
+}
+
+.call-decline.small-round {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  min-height: 34px;
+}
+
+/* Over a direct conversation, while calling or in a call. */
+.call-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 12px 0;
+  padding: 6px 6px 6px 14px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--good) 8%, var(--face));
+}
+
+.call-strip:not(.live) .dot {
+  animation: live-pulse 1.2s ease-in-out infinite;
+}
+
+.call-strip-words {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--fg);
+  font-weight: 600;
+  font-size: 13.5px;
+}
+
+.voice-dock {
+  border-top: 1px solid var(--line-soft);
+}
+
+/* ---------- settings, voice ---------- */
+
+.field-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.field-label {
+  flex: 0 0 96px;
+  color: var(--fg-dim);
+  font-size: 13.5px;
+}
+
+.field-row select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.mic-test {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.meter {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.meter > i {
+  display: block;
+  width: 0%;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--good);
+  transition: width 60ms linear;
+}
+
+.relay-result {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--fg-dim);
+  line-height: 1.45;
+}
+
+.relay-result .dot {
+  margin-top: 6px;
+  flex: 0 0 auto;
 }
 
 /* ---------- the picture viewer ---------- */

@@ -13,6 +13,7 @@
  */
 
 import { chromium } from 'playwright-core'
+import { nameEveryone } from './named.mjs'
 import { hostAndShare, joinAndWatch } from './share.mjs'
 
 const FPS = Number(process.argv[2] ?? 60)
@@ -86,6 +87,7 @@ const browser = await chromium.launch({
   headless: process.env.HEADED !== '1',
   args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
 })
+nameEveryone(browser)
 
 const rows = []
 

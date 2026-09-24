@@ -15,6 +15,7 @@
  */
 
 import { chromium } from 'playwright-core'
+import { nameEveryone } from './named.mjs'
 
 const APP_URL = process.argv[2] ?? 'http://localhost:5173/'
 const CHROME =
@@ -35,6 +36,7 @@ const browser = await chromium.launch({
     '--allow-running-insecure-content',
   ],
 })
+nameEveryone(browser)
 
 /**
  * What this device is showing, as one comparable string.

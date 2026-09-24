@@ -127,6 +127,27 @@ export function chirpLeave(): void {
   ])
 }
 
+/**
+ * Somebody is calling: four notes, again and again, until it is answered,
+ * declined or given up. Gives back the way to stop it.
+ */
+export function ring(): () => void {
+  if (!soundsOn()) return () => undefined
+  const ctx = audio()
+  if (!ctx) return () => undefined
+  if (ctx.state === 'suspended') void ctx.resume().catch(() => undefined)
+  const once = (): void => {
+    const t = ctx.currentTime
+    note(660, t, 0.16, 0.06)
+    note(880, t + 0.18, 0.16, 0.06)
+    note(660, t + 0.36, 0.16, 0.06)
+    note(880, t + 0.54, 0.24, 0.06)
+  }
+  once()
+  const timer = window.setInterval(once, 2400)
+  return () => window.clearInterval(timer)
+}
+
 /** True when the event is recent enough to be worth a noise. */
 export function isNews(at: number): boolean {
   return Date.now() - at < NEWS_MS

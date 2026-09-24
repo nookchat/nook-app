@@ -11,6 +11,7 @@
  */
 
 import { chromium } from 'playwright-core'
+import { nameEveryone } from './named.mjs'
 import { sql, startServer } from './pg.mjs'
 
 const APP_URL = process.argv[2] ?? 'http://localhost:5173/'
@@ -29,6 +30,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 const started = await startServer(PORT)
 const db = (text, params) => sql(started.database, text, params)
 const browser = await chromium.launch({ executablePath: CHROME, headless: process.env.HEADED !== '1' })
+nameEveryone(browser)
 const BOX = '[aria-label="Write a message"]'
 const SAID = 'said while nobody was listening'
 

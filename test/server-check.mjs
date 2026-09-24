@@ -11,6 +11,7 @@
  */
 
 import { chromium } from 'playwright-core'
+import { nameEveryone } from './named.mjs'
 import { startServer } from './pg.mjs'
 import { join } from 'node:path'
 
@@ -38,6 +39,7 @@ const browser = await chromium.launch({
   headless: process.env.HEADED !== '1',
   args: [`--host-resolver-rules=${DARK.map((h) => `MAP ${h} ~NOTFOUND`).join(', ')}`],
 })
+nameEveryone(browser)
 
 const BOX = '[aria-label="Write a message"]'
 const wait = (ms) => new Promise((ok) => setTimeout(ok, ms))

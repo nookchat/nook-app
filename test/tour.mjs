@@ -11,6 +11,7 @@
  */
 
 import { chromium } from 'playwright-core'
+import { nameEveryone } from './named.mjs'
 import { mkdirSync } from 'node:fs'
 
 const APP_URL = process.argv[2] ?? 'http://localhost:5173/'
@@ -38,6 +39,7 @@ const browser = await chromium.launch({
   headless: process.env.HEADED !== '1',
   args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
 })
+nameEveryone(browser)
 const BOX = '[aria-label="Write a message"]'
 const wait = (ms) => new Promise((ok) => setTimeout(ok, ms))
 const shot = (page, name, full = false) => page.screenshot({ path: `${OUT}${name}.png`, fullPage: full })

@@ -31,12 +31,20 @@ with voice does it.
   actions under them: Invite people, Space settings, Leave space. A dot on it
   says there is news in another space, and a red count says somebody
   mentioned you or sent you a direct message.
+- **The first visit** asks for the name people will see, and a picture if you
+  want one, before anything else, on the home page or on an invite. You can
+  change both in Settings.
 - **Home** has your direct messages from every space, the way Discord does it.
   A direct message is still kept in the log of the space where you met, sealed
   so only the two of you can read it.
 - **The space menu**, behind the space name, has Invite people, Settings, and
   Leave space.
 - **Search** is an icon beside the people icon, and opens into a box.
+- **Calls**: the phone in a direct conversation, or Call in somebody's menu,
+  rings them wherever they are in the app. Only the two of you can be in it.
+- **Voice keeps going** while you read another space, Home or Settings; the
+  foot of the channels says where you are talking, with mute and leave. You
+  are in one call at a time, and joining and leaving make a sound.
 - **Voice**: click a voice channel to join it. The voice bar has the
   microphone, Share screen, and Leave. Somebody who is sharing has a LIVE badge
   in the voice channel, and a click on it watches them.
@@ -209,6 +217,9 @@ src/
   media/              the screen picker, the microphone, and the mix
   ui/
     home-view.ts      Home: direct messages from every space
+    welcome.ts        the first visit: your name, and a picture
+    call.ts           a call ringing, the strip over a conversation, the voice dock
+    voice-settings.ts microphone and speaker, a microphone test, a relay test
     space-view.ts     a space: channels, voice, sharing, search, people
     space-list.ts     the home page: your spaces, making and joining one
     chat-panel.ts     the conversation, drawn as nodes and never as HTML
@@ -228,6 +239,7 @@ test/
   tamper-check.mjs    what the server cannot read, and forged lines refused
   own-server-check.mjs  a page with no server: adding yours, joining from an invite
   files-check.mjs     pictures, a video and a file: sent, sealed, copied, opened
+  call-check.mjs      voice off screen, a call rung and answered, kept private, hung up
   cluster-check.mjs   two servers, two databases, one cluster
   failover-check.mjs  people carrying on when their server dies
   chat-check.mjs      typing, unread, mentions, search, threads

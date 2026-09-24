@@ -1117,7 +1117,6 @@ export class ChatPanel {
         sig: `${intro.title}|${intro.text}`,
         make: () =>
           h('div', { class: 'chat-intro' }, [
-            h('span', { class: 'chat-intro-mark' }, [icon(this.directWith ? 'people' : 'hash', 30)]),
             h('div', { class: 'chat-intro-title', text: intro.title }),
             h('div', { class: 'chat-intro-text', text: intro.text }),
           ]),

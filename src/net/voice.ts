@@ -16,7 +16,7 @@
  */
 
 import { rtcConfig } from '../rtc/config'
-import { explainMicRefusal, micConstraints, micSettings } from './mic'
+import { explainMicRefusal, micConstraints, micSettings, playOn } from './mic'
 import { denoise, type Denoiser } from './denoise'
 import { Talking } from './talking'
 import type { SignalBus } from '../signal/bus'
@@ -32,7 +32,16 @@ export interface VoiceState {
 export class Voice {
   onChange: (() => void) | null = null
   /** Somebody walked into, or out of, the channel we are standing in. */
-  onArrival: ((arrived: boolean) => void) | null = null
+  onArrival: ((arrived: boolean, peerId: string) => void) | null = null
+  /** A connection to somebody could not be made, even with the relay. Said once per person per channel. */
+  onFailed: ((peerId: string) => void) | null = null
+  /**
+   * Who may connect to us in a channel. Null lets anybody standing there in,
+   * which is what a space's voice channel is. A call between two people says
+   * no to everybody else, so knowing its name is not a way into it.
+   */
+  admit: ((peerId: string, channel: string) => boolean) | null = null
+  private readonly failed = new Set<string>()
 
   private readonly bus: SignalBus
   private readonly selfId: string
@@ -49,9 +58,12 @@ export class Voice {
 
   private timer: number | null = null
 
-  constructor(bus: SignalBus, selfId: string) {
+  private readonly config: () => RTCConfiguration
+
+  constructor(bus: SignalBus, selfId: string, config: () => RTCConfiguration = () => rtcConfig()) {
     this.bus = bus
     this.selfId = selfId
+    this.config = config
     this.talking.onChange = () => this.onChange?.()
     this.timer = window.setInterval(() => this.retry(), 5000)
   }
@@ -115,6 +127,7 @@ export class Voice {
     }
     this.channel = channel
     this.muted = false
+    this.failed.clear()
     // Our own level comes off the cleaned microphone, which is what the others
     // hear, so the light matches what they get rather than what the room does.
     this.talking.add(this.selfId, this.mic)
@@ -166,10 +179,10 @@ export class Voice {
     // Somebody arrived in our channel, or left it.
     if (this.channel && voice === this.channel) {
       this.considerCall(from)
-      this.onArrival?.(true)
+      this.onArrival?.(true, from)
     }
     if (was === this.channel && voice !== this.channel) {
-      this.onArrival?.(false)
+      this.onArrival?.(false, from)
       this.calls.get(from)?.close()
       this.calls.delete(from)
       this.talking.remove(from)
@@ -208,6 +221,7 @@ export class Voice {
     switch (env.type) {
       case 'voffer': {
         if (!this.channel || !this.mic) return
+        if (this.admit && !this.admit(env.from, this.channel)) return
         /*
          * Answer anybody who calls while we are standing somewhere. Requiring
          * their announcement first looked tidier and dropped the call whenever
@@ -236,6 +250,7 @@ export class Voice {
 
   private considerCall(peerId: string): void {
     if (peerId === this.selfId || !this.channel || !this.mic) return
+    if (this.admit && !this.admit(peerId, this.channel)) return
     if (this.selfId >= peerId) return // they call us
     const existing = this.calls.get(peerId)
     if (existing && !existing.stale()) return
@@ -254,10 +269,15 @@ export class Voice {
   private call(peerId: string, weOffer: boolean): Call {
     const existing = this.calls.get(peerId)
     if (existing) return existing
-    const call = new Call(this.mic!, weOffer, {
+    const call = new Call(this.mic!, weOffer, this.config(), {
       send: (type, data) => void this.bus.send({ type, to: peerId, data }),
       onChange: () => this.onChange?.(),
       onAudio: (stream) => this.talking.add(peerId, stream),
+      onFailed: () => {
+        if (this.failed.has(peerId)) return
+        this.failed.add(peerId)
+        this.onFailed?.(peerId)
+      },
     })
     this.calls.set(peerId, call)
     return call
@@ -269,6 +289,8 @@ interface CallHooks {
   onChange: () => void
   /** Their voice, once it starts arriving, so its level can be watched. */
   onAudio: (stream: MediaStream) => void
+  /** It could not be made at all. */
+  onFailed: () => void
 }
 
 /** One voice connection to one person: our microphone out, theirs in. */
@@ -290,10 +312,10 @@ class Call {
   private hasRemote = false
   private closed = false
 
-  constructor(mic: MediaStream, weOffer: boolean, hooks: CallHooks) {
+  constructor(mic: MediaStream, weOffer: boolean, config: RTCConfiguration, hooks: CallHooks) {
     this.hooks = hooks
     this.mic = mic
-    this.pc = new RTCPeerConnection(rtcConfig())
+    this.pc = new RTCPeerConnection(config)
 
     /*
      * Only the caller adds a transceiver up front.
@@ -321,6 +343,7 @@ class Call {
     this.sink.autoplay = true
     this.sink.className = 'voice-sink'
     document.body.append(this.sink)
+    playOn(this.sink)
 
     this.pc.ontrack = (ev) => {
       const stream = ev.streams[0] ?? new MediaStream([ev.track])
@@ -333,7 +356,10 @@ class Call {
     }
     this.pc.onconnectionstatechange = () => {
       this.live = this.pc.connectionState === 'connected'
-      if (this.pc.connectionState === 'failed') this.close()
+      if (this.pc.connectionState === 'failed') {
+        hooks.onFailed()
+        this.close()
+      }
       hooks.onChange()
     }
   }

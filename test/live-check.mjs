@@ -12,6 +12,7 @@
  */
 
 import { chromium } from 'playwright-core'
+import { nameEveryone } from './named.mjs'
 
 const APP_URL = process.argv[2] ?? 'http://localhost:5173/'
 const CHROME =
@@ -59,6 +60,7 @@ const browser = await chromium.launch({
     '--allow-running-insecure-content',
   ],
 })
+nameEveryone(browser)
 
 try {
   const open = async (name) => {
@@ -306,7 +308,7 @@ try {
 
   const moved = await waitFor(
     async () => {
-      const where = await bob.$eval('.voice-bar', (el) => el.textContent).catch(() => '')
+      const where = await bob.$eval('.voice-bar:not(.voice-dock)', (el) => el.textContent).catch(() => '')
       return where.includes('war-room') ? where : null
     },
     20_000,

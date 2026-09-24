@@ -20,6 +20,8 @@ import { cleanName, sillyName } from '../chat'
 
 const PRIV_KEY = 'cathode.identity.v1'
 const NAME_KEY = 'cathode.name.v1'
+/** The name this device made up, so a name that is still that one is known not to be chosen. */
+const MADE_UP_KEY = 'cathode.name.auto.v1'
 
 export interface Identity {
   /** Hex x-only public key. This is who you are. */
@@ -78,8 +80,24 @@ export function loadDisplayName(): string {
     /* private mode */
   }
   const fresh = sillyName()
-  saveDisplayName(fresh)
+  try {
+    localStorage.setItem(NAME_KEY, fresh)
+    localStorage.setItem(MADE_UP_KEY, fresh)
+  } catch {
+    /* the name lasts for this session only */
+  }
   return fresh
+}
+
+/** A name somebody chose, as against none yet or one this device made up. */
+export function nameChosen(): boolean {
+  try {
+    const name = cleanName(localStorage.getItem(NAME_KEY) ?? '')
+    return !!name && name !== localStorage.getItem(MADE_UP_KEY)
+  } catch {
+    // Nowhere to keep one, so asking would ask every time.
+    return true
+  }
 }
 
 export function saveDisplayName(name: string): void {
@@ -87,6 +105,7 @@ export function saveDisplayName(name: string): void {
   if (!clean) return
   try {
     localStorage.setItem(NAME_KEY, clean)
+    localStorage.removeItem(MADE_UP_KEY)
   } catch {
     /* the name lasts for this session only */
   }

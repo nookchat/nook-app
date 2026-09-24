@@ -60,6 +60,7 @@ export type IconName =
   | 'file'
   | 'music'
   | 'chevron-right'
+  | 'phone'
 
 const PATHS: Record<IconName, string> = {
   copy: 'M9 9.5A1.5 1.5 0 0 1 10.5 8h8A1.5 1.5 0 0 1 20 9.5v8a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 9 17.5zM5.5 16A1.5 1.5 0 0 1 4 14.5v-8A1.5 1.5 0 0 1 5.5 5h8A1.5 1.5 0 0 1 15 6.5',
@@ -127,6 +128,8 @@ const PATHS: Record<IconName, string> = {
   // Two notes on a beam.
   music: 'M9 18V6l10-2v12M9 18a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0zM19 16a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z',
   'chevron-right': 'M9.5 6 15.5 12l-6 6',
+  // A handset.
+  phone: 'M6.8 3.8h2.4l1.5 4-2 1.3a11 11 0 0 0 6.2 6.2l1.3-2 4 1.5v2.4a2 2 0 0 1-2.1 2A16 16 0 0 1 4.8 5.9a2 2 0 0 1 2-2.1z',
 }
 
 /** Icons drawn as solid shapes rather than strokes. */

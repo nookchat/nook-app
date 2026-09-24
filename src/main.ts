@@ -13,10 +13,11 @@ import { clearLink, readLink, setLinkSecret } from './room'
 import { spaces } from './space/registry'
 import { newSpaceServer } from './store/server-spaces'
 import type { SpaceRuntime } from './space/runtime'
-import { shortKey } from './store/identity'
+import { nameChosen, shortKey } from './store/identity'
 import { findSpace } from './store/spaces'
 import { clear } from './ui/dom'
 import { HomeView, type DirectRef } from './ui/home-view'
+import { installCalls } from './ui/call'
 import { notify } from './ui/notify'
 import { createWindow, type WindowChrome } from './ui/shell'
 import { chirpMessage, isNews } from './ui/sounds'
@@ -177,15 +178,23 @@ spaces.fresh.add((space, events) => {
   }
 })
 
-// Every space you are in, running, before anything is drawn from them.
-void spaces.load()
-
 const linked = readLink()
-if (linked) {
-  void enter(linked.secret, linked.locked, '', false, '', linked.server)
-} else {
-  void showHome()
+
+// A call can come in from any space, whatever is on screen.
+installCalls((space, key) => void showHome({ room: space.room.id, key }))
+
+async function start(): Promise<void> {
+  // Somebody new says what to call them before any space hears a name at all.
+  if (!nameChosen()) {
+    const { welcome } = await import('./ui/welcome')
+    await welcome(mount, linked !== null)
+  }
+  // Every space you are in, running, before anything is drawn from them.
+  void spaces.load()
+  if (linked) void enter(linked.secret, linked.locked, '', false, '', linked.server)
+  else void showHome()
 }
+void start()
 
 /*
  * A link that arrives while the app is already open: the code lives in the

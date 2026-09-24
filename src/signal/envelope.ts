@@ -29,6 +29,10 @@ export type MsgType =
   | 'vice'
   | 'vmove' // an admin moving somebody between voice channels
   | 'mdata' // a mesh line carried by the relay, for a space on a server
+  | 'ring' // a call between two people: ringing them
+  | 'ring-no' // declined
+  | 'ring-busy' // already on a call
+  | 'ring-stop' // the caller gave up
 
 export interface Envelope {
   v: 1

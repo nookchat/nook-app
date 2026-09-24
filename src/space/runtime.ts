@@ -10,7 +10,11 @@
  */
 
 import { deriveRoom, newPeerId, type Room } from '../room'
-import { serverTag } from '../backend'
+import { fetchIce, serverTag } from '../backend'
+import { Voice } from '../net/voice'
+import { rtcConfig } from '../rtc/config'
+import { cleanChannel } from '../store/log'
+import { chirpJoin, chirpLeave } from '../ui/sounds'
 import { Channel, connectionTo } from '../net/connection'
 import { SpaceFiles } from '../net/files'
 import { Mesh } from '../net/mesh'
@@ -46,6 +50,47 @@ export interface OpenSpace {
   name?: string
 }
 
+/** How long a call rings before it is given up on. */
+const RING_MS = 30_000
+
+/**
+ * A call between two people: a voice channel only they may stand in, named
+ * at random so nobody could guess it and, because of `admit`, useless to
+ * anybody who learned it.
+ */
+export interface CallState {
+  id: string
+  channel: string
+  /** The other person's key. */
+  with: string
+  outgoing: boolean
+  /** Both are in it. */
+  live: boolean
+  since: number
+}
+
+/** Somebody calling this device, until it is answered, declined or given up. */
+export interface Ringing {
+  id: string
+  from: string
+  session: string
+}
+
+export const isCallChannel = (channel: string | null): boolean => !!channel && channel.startsWith('call-')
+
+/** Every space running, so joining voice in one leaves it everywhere else. */
+const running = new Set<SpaceRuntime>()
+
+/** What the call screens listen to: rings, ends, and failures, from any space. */
+export type CallNews =
+  | { kind: 'ringing' | 'rang-out' | 'changed'; space: SpaceRuntime }
+  | { kind: 'ended'; space: SpaceRuntime; reason: string }
+  | { kind: 'failed'; space: SpaceRuntime; peer: string }
+
+export function callNews(news: CallNews): void {
+  window.dispatchEvent(new CustomEvent<CallNews>('cathode:call', { detail: news }))
+}
+
 export class SpaceRuntime {
   readonly secret: string
   readonly locked: boolean
@@ -59,6 +104,16 @@ export class SpaceRuntime {
   channel!: Channel
   bus!: SignalBus
   mesh!: Mesh
+  /**
+   * Voice, for as long as the space runs rather than for as long as it is on
+   * screen: a call carries on while you read another space, or Home.
+   */
+  voice!: Voice
+  call: CallState | null = null
+  ringing: Ringing | null = null
+  private ice: { iceServers: RTCIceServer[]; relayOnly: boolean } = { iceServers: [], relayOnly: false }
+  private ringTimer = 0
+  private voiceWas: string | null = null
   /** What this device knows about the space: its name, how far you have read. */
   note: RoomNote | null = null
   /** Resolves once the space is running and its history has been read. */
@@ -76,6 +131,7 @@ export class SpaceRuntime {
     peers: new Set<() => void>(),
     fresh: new Set<(events: LogEvent[]) => void>(),
     status: new Set<() => void>(),
+    voice: new Set<() => void>(),
   }
 
   private stopped = false
@@ -86,6 +142,7 @@ export class SpaceRuntime {
     this.locked = open.locked
     this.password = open.password
     this.server = open.server
+    running.add(this)
     this.ready = this.start(open)
   }
 
@@ -123,20 +180,55 @@ export class SpaceRuntime {
       key: identity.pubkey,
       // Whether this tab is on screen: here, or here and looking elsewhere.
       away: document.hidden ? true : undefined,
+      voice: this.voice?.state.channel ?? undefined,
       ...this.extras(),
     })
     mesh.onData = (from, raw) => this.emit('data', from, raw)
-    mesh.onPeers = () => this.emit('peers')
+    mesh.onPeers = () => {
+      this.voice?.prune(new Set(mesh.peers().map((p) => p.id)))
+      this.emit('peers')
+    }
     bus.onMessage = (env) => {
       mesh.handle(env)
-      if (env.type === 'announce') this.presence.set(env.from, env)
-      if (env.type === 'bye') this.presence.delete(env.from)
+      if (env.type === 'announce') {
+        this.presence.set(env.from, env)
+        const said = (env.data ?? {}) as Record<string, unknown>
+        const standing = typeof said.voice === 'string' ? cleanChannel(said.voice) : ''
+        this.voice?.noteAnnounce(env.from, standing || null)
+      }
+      if (env.type === 'bye') {
+        this.presence.delete(env.from)
+        this.voice?.forget(env.from)
+      }
+      void this.voice?.handle(env)
+      this.callSignal(env)
       this.emit('signal', env)
     }
     bus.onHealth = () => this.emit('status')
     chat.onLocal = (event) => void channel.put([event])
     this.bus = bus
     this.mesh = mesh
+
+    // The relay for calls, fetched now and not waited for: nothing needs it until somebody talks.
+    void fetchIce(this.server).then((ice) => (this.ice = ice))
+    const voice = new Voice(bus, this.selfId, () => rtcConfig(this.ice.iceServers, this.ice.relayOnly))
+    voice.admit = (peer, channel) => !isCallChannel(channel) || (!!this.call && this.keyOf(peer) === this.call.with)
+    voice.onArrival = (arrived, peer) => {
+      if (arrived) chirpJoin()
+      else chirpLeave()
+      this.callArrival(arrived, peer)
+    }
+    voice.onFailed = (peer) => callNews({ kind: 'failed', space: this, peer })
+    voice.onChange = () => {
+      const now = voice.state.channel
+      if (now !== this.voiceWas) {
+        this.voiceWas = now
+        mesh.announce()
+      }
+      this.emit('voice')
+      callNews({ kind: 'changed', space: this })
+    }
+    this.voice = voice
     bus.start()
     mesh.start()
     document.addEventListener('visibilitychange', this.onVisible)
@@ -169,7 +261,7 @@ export class SpaceRuntime {
     this.emit('fresh', fresh)
   }
 
-  private emit(what: 'changed' | 'peers' | 'status'): void
+  private emit(what: 'changed' | 'peers' | 'status' | 'voice'): void
   private emit(what: 'signal', env: Envelope): void
   private emit(what: 'data', from: string, raw: string): void
   private emit(what: 'fresh', events: LogEvent[]): void
@@ -254,9 +346,178 @@ export class SpaceRuntime {
   }
 
   /** Stop: leave the space's channel and take nothing further. */
+  // ---- voice ----
+
+  /**
+   * Stand in a voice channel here, and in no other space's. Must run from a
+   * click, because it opens the microphone.
+   */
+  async joinVoice(channel: string): Promise<void> {
+    if (this.voice.state.channel === channel) return
+    for (const other of running) if (other !== this && other.voice?.state.channel) other.leaveVoice()
+    if (this.call && this.call.channel !== channel) this.endCall()
+    await this.voice.join(channel)
+    chirpJoin()
+  }
+
+  leaveVoice(): void {
+    if (this.call) {
+      this.endCall()
+      return
+    }
+    if (!this.voice?.state.channel) return
+    this.voice.leave()
+    chirpLeave()
+  }
+
+  private keyOf(session: string): string {
+    return this.mesh?.peers().find((p) => p.id === session)?.key ?? ''
+  }
+
+  private sessionsOf(key: string): string[] {
+    return (this.mesh?.peers() ?? []).filter((p) => p.key === key && p.id !== this.selfId).map((p) => p.id)
+  }
+
+  /** Whether somebody could be rung right now: some tab of theirs is here. */
+  reachable(key: string): boolean {
+    return this.sessionsOf(key).length > 0
+  }
+
+  // ---- calls between two people ----
+
+  /** Ring somebody. From a click: it opens the microphone at once, so it is ready when they answer. */
+  async startCall(key: string): Promise<void> {
+    const sessions = this.sessionsOf(key)
+    if (sessions.length === 0) throw new Error('They are not here right now, so they cannot be called.')
+    const id = [...crypto.getRandomValues(new Uint8Array(8))].map((b) => b.toString(16).padStart(2, '0')).join('')
+    this.call = { id, channel: `call-${id}`, with: key, outgoing: true, live: false, since: Date.now() }
+    try {
+      await this.joinVoice(this.call.channel)
+    } catch (err) {
+      this.call = null
+      throw err
+    }
+    const me = this.chat.me
+    for (const session of sessions) void this.bus.send({ type: 'ring', to: session, data: { call: id, by: me } })
+    this.ringTimer = window.setTimeout(() => {
+      if (this.call?.id === id && !this.call.live) this.endCall('No answer.')
+    }, RING_MS)
+    callNews({ kind: 'changed', space: this })
+  }
+
+  /** Pick up. From a click, for the microphone. */
+  async answer(): Promise<void> {
+    const ring = this.ringing
+    if (!ring) return
+    this.clearRinging()
+    this.call = { id: ring.id, channel: `call-${ring.id}`, with: ring.from, outgoing: false, live: false, since: Date.now() }
+    try {
+      await this.joinVoice(this.call.channel)
+    } catch (err) {
+      this.call = null
+      void this.bus.send({ type: 'ring-no', to: ring.session, data: { call: ring.id } })
+      throw err
+    }
+    // The caller has been waiting in it all along, so they never arrive: they are simply there.
+    if (this.otherIsIn(this.call)) {
+      this.call.live = true
+      this.call.since = Date.now()
+    }
+    callNews({ kind: 'changed', space: this })
+  }
+
+  /** Whether the other person of a call is standing in it, by their key, not by whoever else walked in. */
+  private otherIsIn(call: CallState): boolean {
+    return this.voice.membersOf(call.channel).some((id) => id !== this.selfId && this.keyOf(id) === call.with)
+  }
+
+  decline(): void {
+    const ring = this.ringing
+    if (!ring) return
+    this.clearRinging()
+    void this.bus.send({ type: 'ring-no', to: ring.session, data: { call: ring.id } })
+  }
+
+  /** Put the phone down, whether or not the other end ever picked up. */
+  endCall(reason = ''): void {
+    const call = this.call
+    if (!call) return
+    this.call = null
+    window.clearTimeout(this.ringTimer)
+    // Still ringing on their end: stop it there too.
+    if (call.outgoing && !call.live) {
+      for (const session of this.sessionsOf(call.with)) void this.bus?.send({ type: 'ring-stop', to: session, data: { call: call.id } })
+    }
+    if (this.voice?.state.channel === call.channel) {
+      this.voice.leave()
+      chirpLeave()
+    }
+    callNews({ kind: 'ended', space: this, reason })
+  }
+
+  private clearRinging(): void {
+    if (!this.ringing) return
+    this.ringing = null
+    window.clearTimeout(this.ringTimer)
+    callNews({ kind: 'rang-out', space: this })
+  }
+
+  /** The other person walked into the call, or out of it. */
+  private callArrival(arrived: boolean, session: string): void {
+    const call = this.call
+    if (!call || this.voice.state.channel !== call.channel || this.keyOf(session) !== call.with) return
+    if (arrived) {
+      call.live = true
+      call.since = Date.now()
+      window.clearTimeout(this.ringTimer)
+      callNews({ kind: 'changed', space: this })
+    } else if (!this.otherIsIn(call)) {
+      this.endCall('Call ended.')
+    }
+  }
+
+  private callSignal(env: Envelope): void {
+    const data = (env.data ?? {}) as Record<string, unknown>
+    const id = typeof data.call === 'string' && /^[0-9a-f]{16}$/.test(data.call) ? data.call : ''
+    if (!id) return
+    switch (env.type) {
+      case 'ring': {
+        // Only from who it says it is from: the key their own presence names.
+        const by = typeof data.by === 'string' ? data.by : ''
+        if (!by || this.keyOf(env.from) !== by) return
+        if (this.call || this.ringing || this.voice.state.channel) {
+          void this.bus.send({ type: 'ring-busy', to: env.from, data: { call: id } })
+          return
+        }
+        this.ringing = { id, from: by, session: env.from }
+        this.ringTimer = window.setTimeout(() => {
+          if (this.ringing?.id === id) this.clearRinging()
+        }, RING_MS)
+        callNews({ kind: 'ringing', space: this })
+        return
+      }
+      case 'ring-no':
+      case 'ring-busy': {
+        if (this.call?.outgoing && this.call.id === id && !this.call.live && this.keyOf(env.from) === this.call.with) {
+          this.endCall(env.type === 'ring-busy' ? 'They are on another call.' : 'They declined.')
+        }
+        return
+      }
+      case 'ring-stop': {
+        if (this.ringing?.id === id && this.ringing.session === env.from) this.clearRinging()
+        return
+      }
+      default:
+        return
+    }
+  }
+
   stop(): void {
     if (this.stopped) return
     this.stopped = true
+    running.delete(this)
+    this.endCall()
+    this.voice?.dispose()
     document.removeEventListener('visibilitychange', this.onVisible)
     this.mesh?.stop()
     const bus = this.bus

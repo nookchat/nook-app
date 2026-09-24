@@ -9,6 +9,7 @@
  */
 
 import { chromium } from 'playwright-core'
+import { nameEveryone } from './named.mjs'
 
 const APP_URL = process.argv[2] ?? 'http://localhost:5173/'
 const CHROME =
@@ -28,6 +29,7 @@ const CASES = [
 ]
 
 const browser = await chromium.launch({ executablePath: CHROME, headless: true })
+nameEveryone(browser)
 const page = await (await browser.newContext()).newPage()
 await page.goto(APP_URL, { waitUntil: 'domcontentloaded' })
 

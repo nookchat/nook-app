@@ -117,6 +117,30 @@ The servers trust each other with encrypted data only. None of them can read a
 message or forge one: every message is signed by the person who wrote it and
 checked by every device.
 
+## When calls do not connect
+
+Open Cathode, **Settings, Voice**:
+
+1. **Test microphone.** The bar moves when you talk. If it does not, pick
+   another microphone above it.
+2. **Hear yourself.** You hear your own voice. If you do not, pick another
+   speaker.
+3. **Test connection.** It asks each of your servers for its relay (TURN) and
+   checks the relay answers.
+
+If the relay does not answer, calls on that server carry no sound, because by
+default every call goes through the relay (`CATHODE_TURN_ONLY=1`). Check:
+
+- Ports 3478 (TCP and UDP) and 49160–49260 (UDP) are open in the firewall,
+  and in any cloud firewall in front of the machine.
+- `CATHODE_TURN_URLS` names your domain, and `CATHODE_TURN_SECRET` is set.
+- The `cathode-turn` container is running: `docker ps`, and
+  `docker logs cathode-turn`.
+
+To let calls go direct while you fix the relay, set `CATHODE_TURN_ONLY=0` and
+restart. Calls then work on most networks, and each person in a call can see
+the other's address.
+
 ## Backups
 
 Messages are in Postgres, and files are in the `cathode-data` volume. Back up

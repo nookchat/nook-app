@@ -10,6 +10,7 @@
  */
 
 import { chromium } from 'playwright-core'
+import { nameEveryone } from './named.mjs'
 import { hostAndShare, joinAndWatch } from './share.mjs'
 
 const APP_URL = process.argv[2] ?? 'http://localhost:5173/'
@@ -62,12 +63,14 @@ const hostBrowser = await chromium.launch({
   headless: process.env.HEADED !== '1',
   args: ['--use-fake-ui-for-media-stream'],
 })
+nameEveryone(hostBrowser)
 // A viewer with no HEVC at all, the way an older or a Linux machine looks.
 const viewerBrowser = await chromium.launch({
   executablePath: CHROME,
   headless: process.env.HEADED !== '1',
   args: ['--disable-features=PlatformHEVCDecoderSupport,WebRtcAllowH265Receive'],
 })
+nameEveryone(viewerBrowser)
 
 try {
   const host = await (await hostBrowser.newContext()).newPage()

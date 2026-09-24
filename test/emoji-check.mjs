@@ -11,6 +11,7 @@
  */
 
 import { chromium } from 'playwright-core'
+import { nameEveryone } from './named.mjs'
 
 const APP_URL = process.argv[2] ?? 'http://localhost:5173/'
 const CHROME =
@@ -29,6 +30,7 @@ const browser = await chromium.launch({
   // last check here needs two browsers to actually reach each other.
   args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
 })
+nameEveryone(browser)
 
 const REACT = '.chat-row button[aria-label="React to this message"]'
 

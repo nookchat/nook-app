@@ -17,6 +17,7 @@ import { createHash } from 'node:crypto'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { chromium } from 'playwright-core'
+import { nameEveryone } from './named.mjs'
 import { sql, startServer } from './pg.mjs'
 
 const APP_URL = process.argv[2] ?? 'http://localhost:5173/'
@@ -61,6 +62,7 @@ const browser = await chromium.launch({
   headless: process.env.HEADED !== '1',
   args: ['--autoplay-policy=no-user-gesture-required'],
 })
+nameEveryone(browser)
 
 async function person(name) {
   const context = await browser.newContext({ acceptDownloads: true, viewport: { width: 1280, height: 860 } })
