@@ -18,7 +18,7 @@ import { forgetSpace, listSpaces } from '../store/spaces'
 import { loadIdentity } from '../store/identity'
 import { spaces } from '../space/registry'
 import { clear, h } from './dom'
-import { icon, logo } from './icons'
+import { icon } from './icons'
 import { hideShadows, initials, spaceHue } from './space-switcher'
 import { toast } from './toast'
 
@@ -152,7 +152,6 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
   return h('main', { class: 'home' }, [
     h('div', { class: 'home-page' }, [
       h('header', { class: 'home-hero' }, [
-        h('span', { class: 'home-mark' }, [logo(40)]),
         h('div', { class: 'stack tight' }, [
           h('h1', { class: 'home-title', text: 'Cathode' }),
           h('div', { class: 'home-tag', text: 'Chat, voice and screen sharing. End to end encrypted.' }),

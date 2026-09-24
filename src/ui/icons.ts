@@ -140,32 +140,3 @@ export function icon(name: IconName, size = 18): SVGSVGElement {
   svg.append(path)
   return svg
 }
-
-/**
- * The mark: a screen with a beam across it, the way a cathode ray tube drew
- * its one line. Drawn in two parts so the beam can take the accent while the
- * screen takes the text colour.
- */
-export function logo(size = 28): SVGSVGElement {
-  const ns = 'http://www.w3.org/2000/svg'
-  const svg = document.createElementNS(ns, 'svg')
-  svg.setAttribute('viewBox', '0 0 32 32')
-  svg.setAttribute('width', String(size))
-  svg.setAttribute('height', String(size))
-  svg.setAttribute('fill', 'none')
-  svg.setAttribute('aria-hidden', 'true')
-  svg.classList.add('logo')
-  const screen = document.createElementNS(ns, 'rect')
-  for (const [k, v] of Object.entries({ x: '3', y: '5', width: '26', height: '20', rx: '6' })) {
-    screen.setAttribute(k, v)
-  }
-  screen.setAttribute('class', 'logo-screen')
-  const beam = document.createElementNS(ns, 'path')
-  beam.setAttribute('d', 'M8 16.5h4.2l2.3-5 3 9 2.3-4H24')
-  beam.setAttribute('class', 'logo-beam')
-  const stand = document.createElementNS(ns, 'path')
-  stand.setAttribute('d', 'M12 29h8')
-  stand.setAttribute('class', 'logo-screen')
-  svg.append(screen, beam, stand)
-  return svg
-}

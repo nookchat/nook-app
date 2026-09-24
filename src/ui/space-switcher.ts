@@ -21,7 +21,7 @@ import { ROOMS_CHANGED, type RoomNote } from '../store/notes'
 import { listSpaces } from '../store/spaces'
 import { spaces } from '../space/registry'
 import { h } from './dom'
-import { icon, logo } from './icons'
+import { icon } from './icons'
 import { openMenu, type MenuEntry } from './menu'
 import type { Navigation } from './shell'
 
@@ -92,9 +92,9 @@ export function spaceFace(room: string, title: string, size = 28): HTMLElement {
   return face
 }
 
-/** Home's tile, the mark. */
+/** Home's tile, a house. */
 export function homeFace(size = 28): HTMLElement {
-  const face = h('span', { class: 'space-face home' }, [logo(Math.round(size * 0.72))])
+  const face = h('span', { class: 'space-face home' }, [icon('home', Math.round(size * 0.6))])
   face.style.setProperty('--size', `${size}px`)
   return face
 }

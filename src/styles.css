@@ -260,20 +260,6 @@ main {
   border-radius: 12px;
 }
 
-/* The mark: the screen in the text colour, the beam in the accent. */
-.logo .logo-screen {
-  stroke: currentColor;
-  stroke-width: 2.2;
-  stroke-linecap: round;
-}
-
-.logo .logo-beam {
-  stroke: var(--accent);
-  stroke-width: 2.4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
 /* ---------- status line ---------- */
 
 /*
@@ -809,18 +795,6 @@ main.home {
   gap: 18px;
 }
 
-.home-mark {
-  display: grid;
-  place-items: center;
-  width: 68px;
-  height: 68px;
-  flex: 0 0 auto;
-  border-radius: 20px;
-  background: var(--surface-2);
-  color: var(--fg);
-  box-shadow: var(--glow), inset 0 0 0 1px var(--line-soft);
-}
-
 .home-title {
   font-size: 34px;
   font-weight: 800;
@@ -943,12 +917,6 @@ main.home {
 
   .home-title {
     font-size: 28px;
-  }
-
-  .home-mark {
-    width: 56px;
-    height: 56px;
-    border-radius: 17px;
   }
 
 }
@@ -3341,8 +3309,6 @@ input[type="text"].space-search {
 /* ---------- search ---------- */
 
 input[type="text"].space-search {
-  width: 180px;
-  max-width: 40%;
   font-size: var(--size-small);
   min-height: calc(var(--btn-h) - 3px);
 }
