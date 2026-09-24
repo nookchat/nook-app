@@ -1,5 +1,12 @@
 /**
- * An optional archive for a Cathode space.
+ * The Cathode server: an archive, a relay, and a way through strict networks.
+ *
+ * A space runs one of two ways. Peer to peer, it needs no server, and this is
+ * an optional archive beside it. On a server, this is the backend: every
+ * handshake, every chat line and every event goes through the relay below,
+ * the history lives here, and the TURN credentials it hands out let the
+ * picture and the sound through a network that blocks peer to peer. Both
+ * ways, what it carries and keeps is sealed, and it cannot read any of it.
  *
  * Cathode needs no server. Every device keeps the whole history and hands it to
  * whoever turns up, so a space survives as long as one person who was in it
@@ -26,12 +33,12 @@
  */
 
 import { createServer } from 'node:http'
-import { appendFile, mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, open, readFile, rename, writeFile } from 'node:fs/promises'
 import { createReadStream } from 'node:fs'
-import { createHash, timingSafeEqual } from 'node:crypto'
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import { lookup } from 'node:dns/promises'
-import { createInterface } from 'node:readline'
 import { join, resolve } from 'node:path'
+
 
 const PORT = Number(process.env.PORT ?? 8787)
 const DATA = resolve(process.env.CATHODE_DATA ?? './data')
@@ -53,6 +60,52 @@ const MAX_BODY = 4 * 1024 * 1024
 /** How much one space may keep. Past this the oldest go. */
 const MAX_ROOM_BYTES = Number(process.env.CATHODE_MAX_ROOM_BYTES ?? 256 * 1024 * 1024)
 
+/**
+ * Which pages may use this server. A comma separated list of origins, such as
+ * https://cathode.example.org, or * for any page at all.
+ *
+ * Nothing here needs it for secrecy, because the key decides who can read a
+ * space. It decides whose bandwidth this is: a server that answers every
+ * website is a free relay for all of them.
+ */
+const ORIGINS = (process.env.CATHODE_ORIGINS ?? '*')
+  .split(',')
+  .map((o) => o.trim().replace(/\/+$/, ''))
+  .filter(Boolean)
+const ANY_ORIGIN = ORIGINS.length === 0 || ORIGINS.includes('*')
+
+/** True when a request from this origin may use the server. */
+function originAllowed(origin) {
+  if (ANY_ORIGIN) return true
+  return typeof origin === 'string' && ORIGINS.includes(origin)
+}
+
+/*
+ * TURN, for the picture and the sound.
+ *
+ * Peer to peer media fails on about one network in eight, and the only fix is
+ * a relay that carries it. The relay is coturn, next to this in the compose
+ * file; this hands out short lived credentials for it, made the way coturn's
+ * use-auth-secret expects, so the shared secret never leaves this machine.
+ * CATHODE_TURN_ONLY sends every call through it, which hides each person's
+ * address from everybody else at the cost of this machine's bandwidth.
+ */
+const TURN_URLS = (process.env.CATHODE_TURN_URLS ?? '')
+  .split(',')
+  .map((u) => u.trim())
+  .filter(Boolean)
+const TURN_SECRET = process.env.CATHODE_TURN_SECRET ?? ''
+const TURN_TTL_S = Number(process.env.CATHODE_TURN_TTL ?? 24 * 60 * 60)
+const TURN_ONLY = process.env.CATHODE_TURN_ONLY === '1'
+const HAS_TURN = TURN_URLS.length > 0 && TURN_SECRET !== ''
+
+function iceServers() {
+  if (!HAS_TURN) return { iceServers: [], relayOnly: false }
+  const username = `${Math.floor(Date.now() / 1000) + TURN_TTL_S}:cathode`
+  const credential = createHmac('sha1', TURN_SECRET).update(username).digest('base64')
+  return { iceServers: [{ urls: TURN_URLS, username, credential }], relayOnly: TURN_ONLY }
+}
+
 await mkdir(DATA, { recursive: true })
 
 const file = (room) => join(DATA, `${room}.jsonl`)
@@ -73,40 +126,57 @@ const tokenFile = (room) => join(DATA, `${room}.token`)
  * id before anybody legitimate writes could claim it, and the space would
  * simply have no archive here, which is where it started.
  */
+/** The claimed hash per room, once read, so a write does not read the disk. */
+const claims = new Map()
+
 async function mayWrite(room, token) {
   if (typeof token !== 'string' || token.length === 0 || token.length > 256) return false
   const hash = createHash('sha256').update(token).digest()
-  try {
-    // wx: claim only if unclaimed, atomically, so two first writes cannot race.
-    await writeFile(tokenFile(room), hash.toString('hex') + '\n', { flag: 'wx' })
-    return true
-  } catch (err) {
-    if (err?.code !== 'EEXIST') return false
+  let held = claims.get(room)
+  if (!held) {
+    try {
+      // wx: claim only if unclaimed, atomically, so two first writes cannot race.
+      await writeFile(tokenFile(room), hash.toString('hex') + '\n', { flag: 'wx' })
+      claims.set(room, hash)
+      return true
+    } catch (err) {
+      if (err?.code !== 'EEXIST') return false
+    }
+    try {
+      held = Buffer.from((await readFile(tokenFile(room), 'utf8')).trim(), 'hex')
+    } catch {
+      return false
+    }
+    claims.set(room, held)
   }
-  try {
-    const held = Buffer.from((await readFile(tokenFile(room), 'utf8')).trim(), 'hex')
-    return held.length === hash.length && timingSafeEqual(held, hash)
-  } catch {
-    return false
-  }
+  return held.length === hash.length && timingSafeEqual(held, hash)
 }
 
+/*
+ * No compression here. A page of history is base64 ciphertext, which gzip
+ * shrinks by a quarter at best and at sixteen milliseconds a megabyte: slower
+ * than sending it on any network this runs on. The Caddyfile beside this can
+ * compress at the edge, with zstd, for anybody on a slow line.
+ */
 function send(res, code, body, type = 'application/json') {
   const text = typeof body === 'string' ? body : JSON.stringify(body)
+  const origin = res.req?.headers.origin
+  const payload = Buffer.from(text)
   res.writeHead(code, {
     'content-type': type,
-    'content-length': Buffer.byteLength(text),
+    'content-length': payload.length,
     /*
-     * Anybody may talk to it, because the thing that decides who may read a
-     * space is the key, not the origin. An archive that only answered one
-     * website would be an archive that only worked for one deployment.
+     * By default anybody may talk to it, because the thing that decides who
+     * may read a space is the key, not the origin. CATHODE_ORIGINS narrows it
+     * to the pages you serve, which decides whose bandwidth this is.
      */
-    'access-control-allow-origin': '*',
+    'access-control-allow-origin': ANY_ORIGIN ? '*' : originAllowed(origin) ? origin : 'null',
+    vary: 'origin',
     'access-control-allow-headers': 'content-type,x-cathode-write',
     'access-control-allow-methods': 'GET,POST,OPTIONS',
     'cache-control': 'no-store',
   })
-  res.end(text)
+  res.end(payload)
 }
 
 /** Read a request body, refusing anything oversized before it is in memory. */
@@ -128,52 +198,126 @@ function readBody(req) {
   })
 }
 
+/*
+ * Where every line starts, per room, kept in memory.
+ *
+ * Reading "everything after line N" used to read the file from the top and
+ * count, every time, so catching up on the last ten lines of a busy room read
+ * all of it. Now the file is read once, the first time anybody asks, and the
+ * byte each line starts at is remembered. After that a read is one seek and
+ * one read of exactly the bytes wanted, and an append adds to the list.
+ *
+ * About eight bytes per line: a room at its cap holds a few hundred thousand
+ * lines, which is a couple of megabytes of numbers.
+ */
+const indexes = new Map()
+
+/** One room at a time: an append and a trim must never interleave with a read. */
+const queues = new Map()
+
+function exclusive(room, work) {
+  const before = queues.get(room) ?? Promise.resolve()
+  const run = before.then(work, work)
+  const settled = run.catch(() => undefined)
+  queues.set(room, settled)
+  void settled.then(() => {
+    if (queues.get(room) === settled) queues.delete(room)
+  })
+  return run
+}
+
+/** Build the index by reading the file once, in chunks, counting newlines. */
+async function indexOf(room) {
+  const held = indexes.get(room)
+  if (held) return held
+  const starts = []
+  let size = 0
+  let lineOpen = false
+  try {
+    for await (const chunk of createReadStream(file(room), { highWaterMark: 1 << 20 })) {
+      for (let i = 0; i < chunk.length; i++) {
+        if (!lineOpen) {
+          starts.push(size + i)
+          lineOpen = true
+        }
+        if (chunk[i] === 10) lineOpen = false
+      }
+      size += chunk.length
+    }
+  } catch (err) {
+    if (err?.code !== 'ENOENT') throw err
+  }
+  const index = { starts, size }
+  indexes.set(room, index)
+  return index
+}
+
+/** The most one page of history may carry, in lines and in bytes. */
+const PAGE_LINES = 5000
+const PAGE_BYTES = 8 * 1024 * 1024
+
 /**
  * Hand back the lines after a given point.
  *
  * The cursor is a line count rather than a time, because time is the one thing
  * two machines never agree on and a count is the same number everywhere.
+ *
+ * At most one page at a time. `more` says there is another, and a client from
+ * before pages existed reads one page per visit and catches up over a few.
  */
-async function since(room, from) {
-  const path = file(room)
-  try {
-    await stat(path)
-  } catch {
-    return { at: 0, events: [] }
-  }
-  const out = []
-  let n = 0
-  const lines = createInterface({ input: createReadStream(path), crlfDelay: Infinity })
-  for await (const line of lines) {
-    n += 1
-    if (n <= from) continue
-    if (line) out.push(line)
-  }
-  return { at: n, events: out }
+function since(room, from, limit) {
+  return exclusive(room, async () => {
+    const { starts, size } = await indexOf(room)
+    const total = starts.length
+    if (from >= total) return { at: total, events: [], more: false }
+    let end = Math.min(total, from + Math.min(limit || PAGE_LINES, PAGE_LINES))
+    const first = starts[from]
+    const endByte = (i) => (i < total ? starts[i] : size)
+    // Never more than a page of bytes, but always at least one line.
+    while (end > from + 1 && endByte(end) - first > PAGE_BYTES) end = from + Math.ceil((end - from) / 2)
+    const length = endByte(end) - first
+    const buffer = Buffer.alloc(length)
+    const handle = await open(file(room), 'r')
+    try {
+      await handle.read(buffer, 0, length, first)
+    } finally {
+      await handle.close()
+    }
+    const events = buffer.toString('utf8').split('\n').filter(Boolean)
+    return { at: end, events, more: end < total }
+  })
 }
 
-/** Drop the oldest half when a space has kept too much. */
-async function trim(room) {
-  const path = file(room)
-  let size = 0
-  try {
-    size = (await stat(path)).size
-  } catch {
-    return
-  }
-  if (size <= MAX_ROOM_BYTES) return
+/** Add lines to a room, and drop the oldest half if that made it too big. */
+function append(room, lines) {
+  return exclusive(room, async () => {
+    const index = await indexOf(room)
+    const text = lines.join('\n') + '\n'
+    await appendFile(file(room), text)
+    for (const line of lines) {
+      index.starts.push(index.size)
+      index.size += Buffer.byteLength(line) + 1
+    }
+    if (index.size > MAX_ROOM_BYTES) await trim(room, index)
+  })
+}
 
-  const kept = []
-  const lines = createInterface({ input: createReadStream(path), crlfDelay: Infinity })
-  for await (const line of lines) if (line) kept.push(line)
-  const half = kept.slice(Math.floor(kept.length / 2))
+/** Drop the oldest half. Called inside the room's queue, with its index. */
+async function trim(room, index) {
+  const path = file(room)
+  const buffer = await readFile(path)
+  const keepFrom = index.starts[Math.floor(index.starts.length / 2)] ?? buffer.length
+  const half = buffer.subarray(keepFrom)
 
   // Written beside and renamed over, so a crash in the middle costs the trim
   // rather than the room: rewriting in place left a truncated history behind.
   const fresh = `${path}.trim`
-  await writeFile(fresh, half.join('\n') + (half.length ? '\n' : ''))
+  await writeFile(fresh, half)
   await rename(fresh, path)
-  console.log(`[cathode] trimmed ${room} to ${half.length} events`)
+  // Every line moved, so the index is rebuilt from what is there now.
+  indexes.delete(room)
+  const rebuilt = await indexOf(room)
+  console.log(`[cathode] trimmed ${room} to ${rebuilt.starts.length} events`)
 }
 
 /*
@@ -344,7 +488,26 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', 'http://localhost')
   const parts = url.pathname.split('/').filter(Boolean)
 
-  if (parts[0] === 'health') return send(res, 200, { ok: true, service: 'cathode-archive' })
+  /*
+   * The service name stays what it was when this was only an archive, because
+   * every client in the wild checks for it before it trusts the address.
+   */
+  if (parts[0] === 'health') {
+    return send(res, 200, {
+      ok: true,
+      service: 'cathode-archive',
+      name: 'cathode',
+      turn: HAS_TURN,
+      relayOnly: HAS_TURN && TURN_ONLY,
+    })
+  }
+
+  // A page this server does not serve gets nothing but the health check.
+  if (!originAllowed(req.headers.origin) && req.headers.origin !== undefined) {
+    return send(res, 403, { error: 'this server does not answer that page' })
+  }
+
+  if (parts[0] === 'ice' && req.method === 'GET') return send(res, 200, iceServers())
 
   if (parts[0] === 'gif' && req.method === 'GET') {
     if (!TENOR_KEY) return send(res, 404, { error: 'this archive has no GIF key' })
@@ -394,8 +557,9 @@ const server = createServer(async (req, res) => {
   if (!ROOM.test(room)) return send(res, 400, { error: 'that is not a room' })
 
   if (req.method === 'GET') {
-    const from = Math.max(0, Number(url.searchParams.get('from') ?? 0) || 0)
-    const page = await since(room, from)
+    const from = Math.max(0, Math.floor(Number(url.searchParams.get('from') ?? 0)) || 0)
+    const limit = Math.max(0, Math.floor(Number(url.searchParams.get('limit') ?? 0)) || 0)
+    const page = await since(room, from, limit)
     return send(res, 200, page)
   }
 
@@ -428,8 +592,7 @@ const server = createServer(async (req, res) => {
     const clean = events.filter((e) => typeof e === 'string' && e.length > 0 && e.length <= MAX_LINE)
     if (clean.length === 0) return send(res, 200, { added: 0 })
 
-    await appendFile(file(room), clean.join('\n') + '\n')
-    await trim(room)
+    await append(room, clean)
     return send(res, 200, { added: clean.length })
   }
 
@@ -455,8 +618,12 @@ const server = createServer(async (req, res) => {
    and the file's first rule is no dependencies.
    ========================================================================= */
 
-/** Signalling frames are small. Anything bigger is not a handshake. */
-const MAX_FRAME = 128 * 1024
+/**
+ * The biggest frame. A handshake is a few kilobytes, but a space that runs on
+ * this server sends its chat here too, and a batch of history is sized to
+ * stay under this (see BATCH_BYTES in store/room-chat.ts).
+ */
+const MAX_FRAME = 512 * 1024
 /** Sockets one room may hold. A space is people, not a botnet. */
 const MAX_ROOM_SOCKETS = 64
 /** Dead sockets are found by pinging this often. */
@@ -499,6 +666,11 @@ server.on('upgrade', (req, socket) => {
   const key = req.headers['sec-websocket-key']
   if (!m || typeof key !== 'string' || !/websocket/i.test(String(req.headers.upgrade ?? ''))) {
     socket.write('HTTP/1.1 400 Bad Request\r\n\r\n')
+    socket.destroy()
+    return
+  }
+  if (!originAllowed(req.headers.origin)) {
+    socket.write('HTTP/1.1 403 Forbidden\r\n\r\n')
     socket.destroy()
     return
   }
@@ -614,5 +786,22 @@ setInterval(() => {
 }, PING_MS).unref()
 
 server.listen(PORT, () => {
-  console.log(`[cathode] archive on :${PORT}, keeping ciphertext in ${DATA}, relaying on /relay`)
+  console.log(
+    `[cathode] on :${PORT}, keeping ciphertext in ${DATA}, relaying on /relay, ` +
+      `${HAS_TURN ? `TURN at ${TURN_URLS.join(' ')}${TURN_ONLY ? ' for every call' : ''}` : 'no TURN'}, ` +
+      `${ANY_ORIGIN ? 'any page' : `pages from ${ORIGINS.join(' ')}`}`,
+  )
 })
+
+/*
+ * A container is stopped with SIGTERM, and node as the first process ignores
+ * it, so docker waits ten seconds and kills it. Close on the signal instead:
+ * every write lands with appendFile before it answers, so nothing is lost.
+ */
+for (const signal of ['SIGTERM', 'SIGINT']) {
+  process.on(signal, () => {
+    for (const standing of relayRooms.values()) for (const socket of standing) socket.destroy()
+    server.close(() => process.exit(0))
+    setTimeout(() => process.exit(0), 2000).unref()
+  })
+}

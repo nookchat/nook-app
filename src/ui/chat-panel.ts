@@ -15,6 +15,7 @@ import type { LinkPreview } from '../store/archive'
 import { cleanName, EVERYONE, findMentions, mentionsMe } from '../chat'
 import { shortKey } from '../store/identity'
 import { clear, h } from './dom'
+import { icon } from './icons'
 import {
   closeEmojiPicker,
   openEmojiPicker,
@@ -135,6 +136,12 @@ export interface ChatActions {
   /** Pick an answer to a poll. */
   vote(id: string, choice: number): void
 }
+
+
+/** How many messages a conversation opens with, and how many more a scroll up adds. */
+const WINDOW = 120
+/** The most a conversation opens with, when reaching back for what is unread. */
+const WINDOW_MAX = 600
 
 export class ChatPanel {
   readonly root: HTMLElement
@@ -284,10 +291,13 @@ export class ChatPanel {
       },
     })
 
-    this.sendButton = h('button', { text: 'Send', on: { click: () => this.submit() } })
+    this.sendButton = h(
+      'button',
+      { class: 'send-button', title: 'Send (Enter)', ariaLabel: 'Send', on: { click: () => this.submit() } },
+      [icon('send', 18)],
+    )
     this.emojiButton = h('button', {
-      class: 'ghost',
-      text: '\u263a',
+      class: 'ghost icon-only',
       title: 'Emoji',
       ariaLabel: 'Emoji',
       on: {
@@ -299,6 +309,7 @@ export class ChatPanel {
           }),
       },
     })
+    this.emojiButton.append(icon('smile', 19))
 
     /*
      * The two things beside the emoji button.
@@ -308,19 +319,19 @@ export class ChatPanel {
      * A button is how anybody else finds out they exist.
      */
     this.gifButton = h('button', {
-      class: 'ghost tiny-btn',
+      class: 'ghost gif-button',
       text: 'GIF',
       title: 'Find a GIF',
       ariaLabel: 'Find a GIF',
       on: { click: () => this.onGif?.() },
     })
     this.soundButton = h('button', {
-      class: 'ghost',
-      text: '🔊',
+      class: 'ghost icon-only',
       title: 'Soundboard',
       ariaLabel: 'Soundboard',
       on: { click: () => this.onSound?.() },
     })
+    this.soundButton.append(icon('volume', 19))
 
     this.nameRow = h('div', { class: 'row' }, [
       h('span', { class: 'tiny faint', text: 'You', style: { width: '26px' } }),
@@ -350,6 +361,8 @@ export class ChatPanel {
     this.log.addEventListener('scroll', () => {
       this.pinned = this.isAtBottom()
       this.showJump()
+      // Near the top of what is drawn, and there is more: draw more.
+      if (this.log.scrollTop < 400 && this.hiddenAbove > 0) this.drawOlder()
     })
 
     /*
@@ -369,6 +382,18 @@ export class ChatPanel {
      * rather than load.
      */
     this.log.addEventListener('load', () => this.followMedia(), true)
+    /*
+     * Stay at the bottom when the log changes size under you.
+     *
+     * A screen share opening above the conversation took half its height, and
+     * the scroll position stayed where it was, so the newest messages slid
+     * out of sight under the composer and the way back down appeared for no
+     * reason anybody could see. A log that was at the bottom stays there.
+     */
+    new ResizeObserver(() => {
+      if (this.pinned) this.log.scrollTop = this.log.scrollHeight
+      this.showJump()
+    }).observe(this.log)
     this.log.addEventListener('loadedmetadata', () => this.followMedia(), true)
     this.title = h('span', { class: 'eyebrow', text: title })
     this.backButton = h('button', {
@@ -396,7 +421,7 @@ export class ChatPanel {
         this.typingLine,
         this.replyBar,
         this.nameRow,
-        h('div', { class: 'row' }, [
+        h('div', { class: 'row compose-box' }, [
           this.textInput,
           this.roomLeft,
           this.gifButton,
@@ -563,6 +588,21 @@ export class ChatPanel {
       if (this.threadRoot) this.onThread?.(null)
       else if (this.directWith) this.onDirect?.(null)
     }
+  }
+
+  /** Draw another few screens above, and keep the reader where they were. */
+  private olderQueued = false
+  private drawOlder(): void {
+    if (this.olderQueued || !this.lastFeed) return
+    this.olderQueued = true
+    requestAnimationFrame(() => {
+      this.olderQueued = false
+      if (!this.lastFeed || this.hiddenAbove === 0) return
+      const fromBottom = this.log.scrollHeight - this.log.scrollTop
+      this.windowSize += WINDOW
+      this.render(this.lastFeed.messages, this.lastFeed.joins)
+      this.log.scrollTop = this.log.scrollHeight - fromBottom
+    })
   }
 
   /** Whether the way back down is needed. */
@@ -877,6 +917,28 @@ export class ChatPanel {
 
   /** What is on screen, so up-arrow knows what your last message was. */
   private shown: Message[] = []
+  /**
+   * How many of the newest messages are drawn.
+   *
+   * Every message in a channel used to be drawn, so a busy channel was tens
+   * of thousands of nodes and every arrival signed all of them again. Now the
+   * newest few screens are drawn, and scrolling up to the top of what is
+   * drawn draws more. Nothing is fetched: it is all in memory already.
+   */
+  private windowSize = WINDOW
+  /** Which conversation the window was sized for. A new one starts small. */
+  private windowKey: string | null = null
+  /** The last thing drawn, so drawing more of it needs nobody to ask. */
+  private lastFeed: { messages: Message[]; joins: { at: number; text: string }[] } | null = null
+  /** How many older messages are not drawn yet. */
+  private hiddenAbove = 0
+  /** What the top of the conversation says, once it has been scrolled to. */
+  private intro: { title: string; text: string } | null = null
+
+  /** Say what the very top of this conversation is, or nothing. */
+  setIntro(intro: { title: string; text: string } | null): void {
+    this.intro = intro
+  }
   /** What is drawn, by key, so a redraw can leave most of it alone. */
   private readonly rows = new Map<string, { el: HTMLElement; sig: string }>()
 
@@ -896,9 +958,31 @@ export class ChatPanel {
    */
   render(messages: Message[], joins: { at: number; text: string }[] = []): void {
     this.shown = messages
+    this.lastFeed = { messages, joins }
     const stuck = this.isAtBottom()
 
     const byId = new Map(messages.map((m) => [m.id, m]))
+
+    /*
+     * A new conversation starts with the newest few screens, reaching back
+     * far enough to include the first thing you have not read, so the line
+     * that says "new" is always drawn with something above it.
+     */
+    if (this.windowKey !== this.draftKey) {
+      this.windowKey = this.draftKey
+      this.windowSize = WINDOW
+      if (this.readMark > 0) {
+        const first = messages.findIndex((m) => m.lamport > this.readMark && m.author !== this.me)
+        if (first >= 0) {
+          this.windowSize = Math.min(WINDOW_MAX, Math.max(WINDOW, messages.length - first + 20))
+        }
+      }
+    }
+    const start = Math.max(0, messages.length - this.windowSize)
+    this.hiddenAbove = start
+    const since = start > 0 ? messages[start].at : -Infinity
+    messages = start > 0 ? messages.slice(start) : messages
+    joins = start > 0 ? joins.filter((j) => j.at >= since) : joins
     /*
      * The messages arrive already ordered by the log, whose order every peer
      * agrees on, and that order is not touched here. Notes about arrivals are
@@ -923,6 +1007,23 @@ export class ChatPanel {
     }
 
     const items: { key: string; sig: string; make: () => HTMLElement }[] = []
+    /*
+     * The beginning, said as a beginning. Only when it really is: with older
+     * messages still undrawn above, the top of the screen is not the top.
+     */
+    const intro = this.intro
+    if (intro && this.hiddenAbove === 0 && !this.threadRoot) {
+      items.push({
+        key: 'intro',
+        sig: `${intro.title}|${intro.text}`,
+        make: () =>
+          h('div', { class: 'chat-intro' }, [
+            h('span', { class: 'chat-intro-mark' }, [icon(this.directWith ? 'people' : 'hash', 30)]),
+            h('div', { class: 'chat-intro-title', text: intro.title }),
+            h('div', { class: 'chat-intro-text', text: intro.text }),
+          ]),
+      })
+    }
     let lastDay = ''
     let lastAuthor = ''
     let drawnUnread = false
@@ -1129,10 +1230,16 @@ export class ChatPanel {
     if (first) {
       const name = h('span', { class: 'chat-name', text: m.name || shortKey(m.author) })
       name.style.color = authorColour(m.author)
+      row.classList.add('first')
+      /*
+       * The face in the gutter, and the time on the line with the name, so a
+       * run reads as one block with its author and its time at the top.
+       */
       line.append(
         h('div', { class: 'chat-who' }, [
-          avatarOf(m.author, m.name ?? '', this.avatars.get(m.author) ?? '', 24),
+          avatarOf(m.author, m.name ?? '', this.avatars.get(m.author) ?? '', 40),
           name,
+          at,
           m.pinned ? pinMark() : null,
         ]),
       )
@@ -1202,7 +1309,8 @@ export class ChatPanel {
     }
 
     if (m.edited) line.append(h('span', { class: 'chat-edited', text: '(edited)' }))
-    line.append(at)
+    // In a run the time waits in the gutter, for the pointer to ask for it.
+    if (!first) line.append(at)
 
     // The way into a thread, and the count of what is waiting in it.
     if (!this.threadRoot && m.replies) {
@@ -1359,6 +1467,15 @@ export class ChatPanel {
   }
 
   private jumpTo(id: string): void {
+    // Further back than is drawn: draw down to it first.
+    if (!this.log.querySelector(`[data-id="${id}"]`) && this.lastFeed) {
+      const { messages, joins } = this.lastFeed
+      const at = messages.findIndex((m) => m.id === id)
+      if (at >= 0) {
+        this.windowSize = messages.length - at + 20
+        this.render(messages, joins)
+      }
+    }
     const row = this.log.querySelector(`[data-id="${id}"]`)
     if (!(row instanceof HTMLElement)) return
     row.scrollIntoView({ block: 'center', behavior: 'smooth' })
@@ -1372,27 +1489,38 @@ export class ChatPanel {
     const bar = h('div', { class: 'chat-actions' })
     if (this.canPin) {
       bar.append(
-        h('button', {
-          text: m.pinned ? '\u2691' : '\u2690',
-          title: m.pinned ? 'Stop holding this one up' : 'Pin this one',
-          on: { click: () => this.actions?.pin(m.id, !m.pinned) },
-        }),
+        h(
+          'button',
+          {
+            class: m.pinned ? 'on' : '',
+            title: m.pinned ? 'Stop holding this one up' : 'Pin this one',
+            ariaLabel: m.pinned ? 'Unpin' : 'Pin',
+            on: { click: () => this.actions?.pin(m.id, !m.pinned) },
+          },
+          [icon('pin', 17)],
+        ),
       )
     }
-    const react = h('button', {
-      text: '☺',
-      title: 'React',
-      ariaLabel: 'React to this message',
-      on: { click: () => this.reactWith(m, react) },
-    })
+    const react = h(
+      'button',
+      {
+        title: 'React',
+        ariaLabel: 'React to this message',
+        on: { click: () => this.reactWith(m, react) },
+      },
+      [icon('smile', 17)],
+    )
     bar.append(
       react,
-      h('button', {
-        text: '↩',
-        title: 'Reply here, where everybody is reading',
-        ariaLabel: 'Reply',
-        on: { click: () => this.startReply(m) },
-      }),
+      h(
+        'button',
+        {
+          title: 'Reply here, where everybody is reading',
+          ariaLabel: 'Reply',
+          on: { click: () => this.startReply(m) },
+        },
+        [icon('reply', 17)],
+      ),
     )
     /*
      * Replying in a thread rather than in the channel.
@@ -1403,23 +1531,30 @@ export class ChatPanel {
      */
     if (!this.threadRoot) {
       bar.append(
-        h('button', {
-          text: '⌥',
-          title: 'Reply in a thread',
-          ariaLabel: 'Reply in a thread',
-          on: { click: () => this.onThread?.(m.id) },
-        }),
+        h(
+          'button',
+          {
+            title: 'Reply in a thread',
+            ariaLabel: 'Reply in a thread',
+            on: { click: () => this.onThread?.(m.id) },
+          },
+          [icon('thread', 17)],
+        ),
       )
     }
     if (mine) {
       bar.append(
-        h('button', { text: '✎', title: 'Edit', ariaLabel: 'Edit', on: { click: () => this.startEdit(m) } }),
-        h('button', {
-          text: '✕',
-          title: 'Delete for everybody who has not already read it',
-          ariaLabel: 'Delete',
-          on: { click: () => this.actions?.retract(m.id) },
-        }),
+        h('button', { title: 'Edit', ariaLabel: 'Edit', on: { click: () => this.startEdit(m) } }, [icon('edit', 17)]),
+        h(
+          'button',
+          {
+            class: 'danger',
+            title: 'Delete for everybody who has not already read it',
+            ariaLabel: 'Delete',
+            on: { click: () => this.actions?.retract(m.id) },
+          },
+          [icon('trash', 17)],
+        ),
       )
     } else if (this.canPin) {
       /*
@@ -1428,18 +1563,22 @@ export class ChatPanel {
        * words and it cannot be undone.
        */
       bar.append(
-        h('button', {
-          text: '✕',
-          title: `Delete this message from ${m.name || shortKey(m.author)}`,
-          ariaLabel: 'Delete this message',
-          on: {
-            click: () => {
-              const who = m.name || shortKey(m.author)
-              if (!window.confirm(`Delete this message from ${who}?`)) return
-              this.actions?.retract(m.id)
+        h(
+          'button',
+          {
+            class: 'danger',
+            title: `Delete this message from ${m.name || shortKey(m.author)}`,
+            ariaLabel: 'Delete this message',
+            on: {
+              click: () => {
+                const who = m.name || shortKey(m.author)
+                if (!window.confirm(`Delete this message from ${who}?`)) return
+                this.actions?.retract(m.id)
+              },
             },
           },
-        }),
+          [icon('trash', 17)],
+        ),
       )
     }
     return bar
@@ -2107,15 +2246,23 @@ function clip(src: string): HTMLElement {
   return video
 }
 
+const DAY = new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
+
 function dayLabel(at: number): string {
   const day = new Date(at)
   const today = new Date()
   const yesterday = new Date(today.getTime() - 86_400_000)
   if (day.toDateString() === today.toDateString()) return 'Today'
   if (day.toDateString() === yesterday.toDateString()) return 'Yesterday'
-  return day.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
+  return DAY.format(day)
 }
 
+/**
+ * Made once. toLocaleTimeString builds a formatter on every call, which cost
+ * a sixth of the time it took to draw a channel.
+ */
+const CLOCK = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' })
+
 function clockLabel(at: number): string {
-  return new Date(at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+  return CLOCK.format(at)
 }

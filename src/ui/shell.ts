@@ -1,9 +1,11 @@
 /**
  * The shell.
  *
- * The app fills the window, and along the bottom there is one line saying what
- * is happening: where you are, how many people are here, how many relays are
- * up. That is the whole chrome.
+ * The app fills the window. Down the left edge is the rail of your spaces, one
+ * button each, so going from one to another is a click and not a trip through
+ * the list. The line saying what is happening (where you are, how many people
+ * are here, what it is connected to) is handed to the screen, which puts it
+ * where it belongs: in a space, under your own name.
  *
  * There was more of it once. A desktop with a wallpaper, a window floating on
  * it with a frame and a title bar, and three caption buttons, two of which
@@ -34,6 +36,10 @@ export interface WindowChrome {
   readonly root: HTMLElement
   /** Where a screen mounts itself. */
   readonly body: HTMLElement
+  /** Where the rail of spaces goes. */
+  readonly rail: HTMLElement
+  /** The status line. Not on the page until a screen puts it somewhere. */
+  readonly status: HTMLElement
   setTitle(text: string): void
   setStatus(panels: (HTMLElement | string)[]): void
   setActions(actions: WindowActions): void
@@ -45,7 +51,8 @@ export function createWindow(title: string): WindowChrome {
 
   const body = h('div', { class: 'app-body' })
   const status = h('div', { class: 'status-bar' })
-  const root = h('div', { class: 'app-shell' }, [body, status])
+  const rail = h('nav', { class: 'space-rail', ariaLabel: 'Spaces' })
+  const root = h('div', { class: 'app-shell' }, [rail, body])
 
   const setStatus = (panels: (HTMLElement | string)[]): void => {
     status.replaceChildren()
@@ -61,6 +68,8 @@ export function createWindow(title: string): WindowChrome {
   return {
     root,
     body,
+    rail,
+    status,
     setTitle: (text) => {
       document.title = text
     },

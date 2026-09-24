@@ -61,7 +61,7 @@ async function makeSpace(page, name, password = '') {
 }
 
 async function openSettings(page) {
-  await page.click('button:has-text("Settings")')
+  await page.click('button[aria-label="Settings"]')
   await page.waitForSelector('button:has-text("Leave this space")')
 }
 

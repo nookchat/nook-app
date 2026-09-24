@@ -2,7 +2,7 @@
  * The icon set.
  *
  * Stroked outlines on a 24 unit grid, drawn in the current text colour, so one
- * icon works on a button and on a dark video overlay. Beam used emoji here
+ * icon works on a button and on a dark video overlay. Cathode used emoji here
  * before, which changed shape on every platform and never matched the weight of
  * the text beside it.
  */
@@ -37,6 +37,21 @@ export type IconName =
   | 'menu'
   | 'people'
   | 'pin'
+  | 'server'
+  | 'hash'
+  | 'settings'
+  | 'send'
+  | 'smile'
+  | 'reply'
+  | 'thread'
+  | 'edit'
+  | 'trash'
+  | 'search'
+  | 'chevron-left'
+  | 'headphones'
+  | 'phone-off'
+  | 'link'
+  | 'enter'
 
 const PATHS: Record<IconName, string> = {
   copy: 'M9 9.5A1.5 1.5 0 0 1 10.5 8h8A1.5 1.5 0 0 1 20 9.5v8a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 9 17.5zM5.5 16A1.5 1.5 0 0 1 4 14.5v-8A1.5 1.5 0 0 1 5.5 5h8A1.5 1.5 0 0 1 15 6.5',
@@ -72,6 +87,23 @@ const PATHS: Record<IconName, string> = {
   crown: 'M4 8.5l3.6 3L12 5l4.4 6.5 3.6-3-1.6 8.5H5.6zM5.6 19.5h12.8v1.6H5.6z',
   more: 'M6 12h.01M12 12h.01M18 12h.01',
   menu: 'M4 7h16M4 12h16M4 17h16',
+  hash: 'M5 9h14M5 15h14M10.5 4 8.5 20M15.5 4l-2 16',
+  // Two sliders, which reads as settings without the fiddly teeth of a cog.
+  settings: 'M4 7.5h8.5M16.5 7.5H20M4 16.5h3.5M11.5 16.5H20M14.5 5.5v4M9.5 14.5v4',
+  send: 'M20.5 3.5 10 14M20.5 3.5 14 20.5l-4-6.5-6.5-4z',
+  smile: 'M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17zM8.5 14a4.2 4.2 0 0 0 7 0M9 9.8h.01M15 9.8h.01',
+  reply: 'M9.5 7 4.5 12l5 5M4.5 12H14a5.5 5.5 0 0 1 5.5 5.5V19',
+  thread: 'M5.5 5h13A1.5 1.5 0 0 1 20 6.5v8a1.5 1.5 0 0 1-1.5 1.5H10l-4 3.5V16A1.5 1.5 0 0 1 4 14.5v-8A1.5 1.5 0 0 1 5.5 5zM8 9.5h8M8 12.5h5',
+  edit: 'M14.5 6.5l3 3M5 19l1-4L15.8 5.2a2.1 2.1 0 0 1 3 3L9 18z',
+  trash: 'M4.5 7h15M9.5 7V5h5v2M6.5 7l1 12.5h9l1-12.5M10 11v5M14 11v5',
+  search: 'M11 4.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zM20 20l-4.4-4.4',
+  'chevron-left': 'M14.5 6 8.5 12l6 6',
+  headphones: 'M4.5 16v-3a7.5 7.5 0 0 1 15 0v3M4.5 15.5h2a1 1 0 0 1 1 1v2.5a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1zM19.5 15.5h-2a1 1 0 0 0-1 1v2.5a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1z',
+  'phone-off': 'M3.5 14.5c4.8-4.4 12.2-4.4 17 0l-1.8 2.3a1 1 0 0 1-1.3.2l-2.2-1.3a1 1 0 0 1-.5-.9V13a10 10 0 0 0-5.4 0v1.8a1 1 0 0 1-.5.9L6.6 17a1 1 0 0 1-1.3-.2z',
+  link: 'M10 14a4 4 0 0 0 5.7.3l3-3a4 4 0 0 0-5.7-5.7l-1.2 1.2M14 10a4 4 0 0 0-5.7-.3l-3 3a4 4 0 0 0 5.7 5.7l1.2-1.2',
+  enter: 'M10 7.5 14.5 12 10 16.5M14.5 12H4M13 4.5h5.5a1.5 1.5 0 0 1 1.5 1.5v12a1.5 1.5 0 0 1-1.5 1.5H13',
+  // Two units in a rack, each with its light on.
+  server: 'M5.5 4.5h13a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1zM5.5 13.5h13a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1zM8 7.5h.01M8 16.5h.01',
   people: 'M9 11.5a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4zM3 19.5c0-3 2.7-4.8 6-4.8s6 1.8 6 4.8M16 5.4a3.2 3.2 0 0 1 0 6.2M17.5 14.9c2.1.5 3.5 1.9 3.5 4.6',
 }
 
@@ -100,5 +132,34 @@ export function icon(name: IconName, size = 18): SVGSVGElement {
     path.setAttribute('stroke-linejoin', 'round')
   }
   svg.append(path)
+  return svg
+}
+
+/**
+ * The mark: a screen with a beam across it, the way a cathode ray tube drew
+ * its one line. Drawn in two parts so the beam can take the accent while the
+ * screen takes the text colour.
+ */
+export function logo(size = 28): SVGSVGElement {
+  const ns = 'http://www.w3.org/2000/svg'
+  const svg = document.createElementNS(ns, 'svg')
+  svg.setAttribute('viewBox', '0 0 32 32')
+  svg.setAttribute('width', String(size))
+  svg.setAttribute('height', String(size))
+  svg.setAttribute('fill', 'none')
+  svg.setAttribute('aria-hidden', 'true')
+  svg.classList.add('logo')
+  const screen = document.createElementNS(ns, 'rect')
+  for (const [k, v] of Object.entries({ x: '3', y: '5', width: '26', height: '20', rx: '6' })) {
+    screen.setAttribute(k, v)
+  }
+  screen.setAttribute('class', 'logo-screen')
+  const beam = document.createElementNS(ns, 'path')
+  beam.setAttribute('d', 'M8 16.5h4.2l2.3-5 3 9 2.3-4H24')
+  beam.setAttribute('class', 'logo-beam')
+  const stand = document.createElementNS(ns, 'path')
+  stand.setAttribute('d', 'M12 29h8')
+  stand.setAttribute('class', 'logo-screen')
+  svg.append(screen, beam, stand)
   return svg
 }

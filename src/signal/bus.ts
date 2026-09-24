@@ -4,6 +4,9 @@
  *
  * After two peers connect, WebRTC carries the media directly and the bus goes
  * quiet. The host keeps it open only so that new viewers can arrive.
+ *
+ * A space on a server hands it one transport, the server's own relay, and no
+ * public relays at all. Then the bus is never quiet: it carries the chat too.
  */
 
 import type { Room } from '../room'
@@ -46,13 +49,16 @@ export class SignalBus {
   opened = 0
   unreadable = 0
 
-  constructor(room: Room, selfId: string) {
+  /** `only`, when given, replaces the public relays rather than joining them. */
+  constructor(room: Room, selfId: string, only?: Transport[]) {
     this.room = room
     this.selfId = selfId
-    this.transports = [
-      ...MQTT_BROKERS.map((b) => new MqttTransport(b.url, b.name)),
-      ...NOSTR_RELAYS.map((r) => new NostrTransport(r.url, r.name)),
-    ]
+    this.transports = only
+      ? [...only]
+      : [
+          ...MQTT_BROKERS.map((b) => new MqttTransport(b.url, b.name)),
+          ...NOSTR_RELAYS.map((r) => new NostrTransport(r.url, r.name)),
+        ]
     for (const t of this.transports) this.health.set(t, { name: t.name, status: 'idle' })
   }
 

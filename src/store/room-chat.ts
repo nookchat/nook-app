@@ -56,6 +56,13 @@ export interface Unread {
 const BACKFILL = 250
 /** Data channels choke on very large messages, so batches stay modest. */
 const BATCH = 40
+/**
+ * And modest in bytes, not only in count. Forty full-size messages is nearly
+ * two megabytes, which no data channel carries in one piece and which a sealed
+ * envelope refuses to open (see open in signal/envelope.ts). A batch this size
+ * seals to well under the frame a Cathode server relays, escaping and all.
+ */
+const BATCH_BYTES = 150_000
 
 type Wire =
   | { t: 'ev'; e: unknown[] }
@@ -598,9 +605,15 @@ export class RoomChat {
   /** Throw away what the log no longer needs, in memory and on disk. */
   async tidy(): Promise<void> {
     this.sinceCompaction = 0
+    /*
+     * The limits first, and the log read after, with nothing awaited between
+     * reading it and replacing it. Read before the wait, anything that arrived
+     * during it was missing from what was kept, and the replace threw it away.
+     */
+    const limits = await limitsForNow()
     const all = this.log.all()
     const effective = this.log.effective()
-    const { keep, drop } = compact(all, await limitsForNow(), effective)
+    const { keep, drop } = compact(all, limits, effective)
     if (drop.length === 0) return
     /*
      * The floor rises only when storage pressure dropped a message that still
@@ -625,10 +638,24 @@ export class RoomChat {
 
   encode(events: LogEvent[]): string[] {
     const out: string[] = []
-    for (let i = 0; i < events.length; i += BATCH) {
-      const wire: Wire = { t: 'ev', e: events.slice(i, i + BATCH).map(packEvent) }
+    const bytes = new TextEncoder()
+    let batch: unknown[] = []
+    let size = 0
+    const flush = (): void => {
+      if (batch.length === 0) return
+      const wire: Wire = { t: 'ev', e: batch }
       out.push(JSON.stringify(wire))
+      batch = []
+      size = 0
     }
+    for (const event of events) {
+      const packed = packEvent(event)
+      const weight = bytes.encode(JSON.stringify(packed)).length
+      if (batch.length >= BATCH || (batch.length > 0 && size + weight > BATCH_BYTES)) flush()
+      batch.push(packed)
+      size += weight
+    }
+    flush()
     return out
   }
 

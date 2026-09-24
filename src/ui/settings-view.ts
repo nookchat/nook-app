@@ -16,6 +16,7 @@ import { loadIdentity, saveDisplayName, shortKey } from '../store/identity'
 import { setSounds, soundsOn } from './sounds'
 import { micSettings, setMicSettings, type MicSettings } from '../net/mic'
 import { defaultArchive, setDefaultArchive } from '../store/archive'
+import { serverTag } from '../backend'
 import { gifCredential, GIF_SERVICES, setGifCredential, type GifService } from '../store/gifs'
 import { clear, copyText, fmtBytes, h } from './dom'
 import { openEmojiPicker, quickReactions, setQuickReactions } from './emoji'
@@ -34,6 +35,8 @@ export interface SettingsActions {
   /** Where this space keeps a copy, if it keeps one. Empty means it does not. */
   archive?: string
   setArchive?(url: string): Promise<boolean>
+  /** The server this space runs on, or empty for peer to peer. */
+  server?: string
   /** The space itself, when settings was opened from inside one. */
   space?: {
     name: string
@@ -410,12 +413,12 @@ export function settingsView(actions: SettingsActions): HTMLElement {
     return row
   }
 
-  return h('main', {}, [
+  return h('main', { class: 'settings' }, [
     h('div', { class: 'center-page' }, [
       h('div', { class: 'sheet stack' }, [
-        h('div', { class: 'row spread' }, [
-          h('span', { class: 'eyebrow', text: 'Settings' }),
-          h('button', { text: 'Back', on: { click: actions.back } }),
+        h('div', { class: 'row settings-head' }, [
+          h('button', { class: 'ghost', text: 'Back', on: { click: actions.back } }, [icon('chevron-left', 16)]),
+          h('h1', { class: 'settings-title', text: 'Settings' }),
         ]),
 
         h('div', { class: 'card stack tight' }, [
@@ -598,6 +601,24 @@ export function settingsView(actions: SettingsActions): HTMLElement {
             text: 'Optional. All three hand out a free key, and Klipy is the quickest: a test key from their partner panel takes about a minute, where Tenor wants a Google Cloud project. The key is kept in this browser, is never said in a space, and is never sent anywhere except to the service you picked. What that service is told is the word you searched for, which is the whole deal being made and is why this is off until you fill it in.',
           }),
         ]),
+
+        actions.server
+          ? h('div', { class: 'card stack tight' }, [
+              h('span', { class: 'eyebrow', text: 'Server' }),
+              h('div', { class: 'row small' }, [icon('server', 14), h('span', { text: serverTag(actions.server) })]),
+              h('div', {
+                class: 'tiny faint',
+                text: 'This space runs on a server. Chat, history and every handshake go through it, and it hands out a relay for the picture and the sound when a network blocks peer to peer. Where a space runs is chosen when it is made, and goes out in its invite, so everybody in it talks in the same place.',
+              }),
+              h('details', { class: 'adv' }, [
+                h('summary', { text: 'What it can see, and what it can do' }),
+                h('div', {
+                  class: 'tiny faint',
+                  text: 'It cannot read anything. Every line is sealed with the key made from the space code before it leaves this device, and the code lives in the part of a link that a browser never sends to anybody. It cannot lie either: every event is signed, and is checked on arrival exactly as it would be from a person. What it can see is who is connected and when, and how much they send. Every device still keeps the whole history, so a server that goes away takes nothing with it.',
+                }),
+              ]),
+            ])
+          : null,
 
         actions.setArchive
           ? h('div', { class: 'card stack tight' }, [

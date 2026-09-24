@@ -345,6 +345,20 @@ export class RoomLog {
     if (event.lamport < this.floor && CLEARABLE.has(event.kind)) return false
     this.byId.set(event.id, event)
     this.advance(event.lamport)
+    /*
+     * Keep the ordered copy when the new event goes on the end, which is
+     * nearly always: something just said is the newest thing there is.
+     * Anything else, an old event from a peer catching us up, orders again
+     * on the next read.
+     */
+    const ordered = this.ordered
+    if (ordered && (ordered.length === 0 || compare(ordered[ordered.length - 1], event) < 0)) {
+      // A new array, not a push: whoever is holding the last one, across an
+      // await, keeps exactly what they were given.
+      this.ordered = [...ordered, event]
+    } else {
+      this.ordered = null
+    }
     return true
   }
 
@@ -541,10 +555,23 @@ export class RoomLog {
   replace(events: LogEvent[]): void {
     this.byId.clear()
     for (const e of events) this.byId.set(e.id, e)
+    this.ordered = null
   }
 
+  /** Every event, in the order every peer agrees on. */
+  private ordered: LogEvent[] | null = null
+
+  /**
+   * Every event in order. Shared, not copied: read it, never change it. It
+   * never changes under you either: adding an event makes a new one.
+   *
+   * It sorted the whole log afresh on every call, and one redraw calls this
+   * a dozen times over, through names, roles, channels and messages. At a few
+   * thousand events that was a third of the time it took to open a space.
+   */
   all(): LogEvent[] {
-    return [...this.byId.values()].sort(compare)
+    this.ordered ??= [...this.byId.values()].sort(compare)
+    return this.ordered
   }
 
   /** The most recent events, oldest first, for backfilling a peer. */

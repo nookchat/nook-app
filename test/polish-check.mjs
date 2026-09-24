@@ -68,34 +68,54 @@ try {
       return Math.round(performance.now() - at)
     }
     const full = time(make(2000))
+    // Only the newest few screens are drawn; the rest wait for a scroll up.
+    const drawn = document.querySelectorAll('.chat-row').length
     document.querySelectorAll('.chat-row').forEach((el, i) => (el.dataset.mark = String(i)))
     const grown = make(2001)
     const one = time(grown)
     const kept = [...document.querySelectorAll('.chat-row')].filter((el) => el.dataset.mark).length
     document.querySelectorAll('.chat-row').forEach((el) => (el.dataset.again = '1'))
-    grown[500].text = 'edited now'
-    grown[500].edited = true
+    const near = grown.length - 10
+    grown[near].text = 'edited now'
+    grown[near].edited = true
     time(grown)
     const rebuilt = [...document.querySelectorAll('.chat-row')].filter((el) => !el.dataset.again)
       .length
     const shown = [...document.querySelectorAll('.chat-row .chat-text')].map((e) => e.textContent)
+
+    // Scrolling to the top of what is drawn draws more, above.
+    panel.root.style.height = '600px'
+    panel.log.scrollTop = 0
+    panel.log.dispatchEvent(new Event('scroll'))
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+    const more = document.querySelectorAll('.chat-row').length
     panel.root.remove()
     return {
       full,
       one,
+      drawn,
       kept,
       rebuilt,
+      more,
       inOrder:
-        shown[0].includes('number 0') && shown[500] === 'edited now' && shown[2000].includes('2000'),
+        shown[0].includes(`number ${2001 - drawn}`) &&
+        shown[shown.length - 10] === 'edited now' &&
+        shown[shown.length - 1].includes('2000'),
     }
   })
   check(
+    'a long channel draws the newest few screens, not all of it',
+    speed.drawn > 50 && speed.drawn < 400,
+    `${speed.drawn} of 2000 drawn in ${speed.full} ms`,
+  )
+  check(
     'a new message leaves the rest of the conversation alone',
-    speed.kept === 2000 && speed.one < speed.full / 4,
+    speed.kept === speed.drawn - 1 && speed.one < Math.max(4, speed.full / 2),
     `${speed.kept} kept, ${speed.full} ms to build, ${speed.one} ms to add one`,
   )
   check('an edit rebuilds exactly one row', speed.rebuilt === 1, `${speed.rebuilt}`)
   check('and the order still holds', speed.inOrder)
+  check('scrolling to the top draws the older ones', speed.more > speed.drawn, `${speed.drawn} then ${speed.more}`)
   await bare.context().close()
 
   // ---- the room -----------------------------------------------------------

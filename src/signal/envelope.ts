@@ -28,6 +28,7 @@ export type MsgType =
   | 'vanswer'
   | 'vice'
   | 'vmove' // an admin moving somebody between voice channels
+  | 'mdata' // a mesh line carried by the relay, for a space on a server
 
 export interface Envelope {
   v: 1

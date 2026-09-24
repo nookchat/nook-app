@@ -16,6 +16,13 @@
  *                gets its own connections rather than renegotiating these.
  *
  * Chat is kilobytes. A mesh that would collapse under video is free for text.
+ *
+ * A space on a server keeps the same shape and swaps what a link is made of.
+ * Every link is a relay link: a line for one peer, or for everybody, goes to
+ * the server's WebSocket inside the same sealed envelope the handshakes use,
+ * and the server hands it to whoever is in the room. There is no data channel
+ * to negotiate, so a link is up the moment the peer is heard from, and a
+ * network that blocks peer to peer blocks nothing here.
  */
 
 import { rtcConfig } from '../rtc/config'
@@ -73,16 +80,22 @@ export class Mesh {
   private readonly bus: SignalBus
   private readonly selfId: string
   private myName: string
+  /** True for a space on a server: every link goes through its relay. */
+  private readonly relayed: boolean
 
-  private readonly links = new Map<string, Link>()
-  private readonly seen = new Map<string, { name: string; key: string; at: number }>()
+  private readonly links = new Map<string, Link | RelayLink>()
+  private readonly seen = new Map<
+    string,
+    { name: string; key: string; at: number; relay: boolean }
+  >()
   private timers: number[] = []
   private stopped = false
 
-  constructor(bus: SignalBus, selfId: string, name: string) {
+  constructor(bus: SignalBus, selfId: string, name: string, relayed = false) {
     this.bus = bus
     this.selfId = selfId
     this.myName = name
+    this.relayed = relayed
   }
 
   start(): void {
@@ -115,12 +128,47 @@ export class Mesh {
     return 1 + [...this.links.values()].filter((l) => l.ready).length
   }
 
+  /**
+   * One line to everybody. A relay link does not send its own copy: one
+   * envelope with no address reaches every socket in the room at once.
+   */
   broadcast(raw: string): void {
-    for (const link of this.links.values()) link.send(raw)
+    let relay = false
+    for (const link of this.links.values()) {
+      if (link instanceof RelayLink) relay = true
+      else link.send(raw)
+    }
+    // On a server it goes out even to nobody yet: somebody who is still on
+    // the way in, and has not been heard from, is on the relay already.
+    if (relay || this.relayed) this.relayAll(raw)
+  }
+
+  /**
+   * Pass on a line that came from somebody else, so it reaches people they
+   * are not linked to.
+   *
+   * A line that came over the relay has already reached everybody else on
+   * it, so it goes on only down the data channels. Sending it round the relay
+   * again would cost every one of N people another N copies of every line.
+   */
+  forward(from: string, raw: string): void {
+    // On a server everything comes by relay, linked yet or not.
+    const cameByRelay = this.relayed || this.links.get(from) instanceof RelayLink
+    let relay = false
+    for (const [id, link] of this.links) {
+      if (id === from) continue
+      if (link instanceof RelayLink) relay = true
+      else link.send(raw)
+    }
+    if ((relay || this.relayed) && !cameByRelay) this.relayAll(raw)
   }
 
   sendTo(peerId: string, raw: string): void {
     this.links.get(peerId)?.send(raw)
+  }
+
+  private relayAll(raw: string): void {
+    void this.bus.send({ type: 'mdata', data: raw }).catch(() => undefined)
   }
 
   stop(): void {
@@ -137,7 +185,10 @@ export class Mesh {
 
   /** Say we are here, now. */
   announce(): void {
-    void this.bus.send({ type: 'announce', data: { name: this.myName, ...(this.extra?.() ?? {}) } })
+    const data: Record<string, unknown> = { name: this.myName, ...(this.extra?.() ?? {}) }
+    // Said so a peer that is not on a server links to us the same way.
+    if (this.relayed) data.relay = true
+    void this.bus.send({ type: 'announce', data })
   }
 
   /** The space owns the bus and hands us what is ours. */
@@ -157,10 +208,12 @@ export class Mesh {
          * folds it into one row: see SpaceView.roster.
          */
         const known = this.seen.get(env.from)
+        const relay = this.relayed || data.relay === true
         this.seen.set(env.from, {
           name: name || known?.name || '',
           key: key || known?.key || '',
           at: Date.now(),
+          relay,
         })
         /*
          * Somebody who has just come back has a new session id and the same
@@ -178,7 +231,33 @@ export class Mesh {
         }
         if (!known) this.onPeers?.()
         else if (known.name !== name && name) this.onPeers?.()
-        this.considerDial(env.from)
+        if (relay) this.relayTo(env.from)
+        else this.considerDial(env.from)
+        return
+      }
+      case 'mdata': {
+        /*
+         * A line over the relay. Taken only from a peer we link to that way:
+         * a peer on a data channel whose relay copy also reaches us would
+         * otherwise be heard twice, and a sound played twice is not the same
+         * sound.
+         */
+        if (typeof env.data !== 'string') return
+        if (env.from === this.selfId) return
+        if (!(this.links.get(env.from) instanceof RelayLink)) {
+          /*
+           * On a server, from anybody. What they send first is their history,
+           * and it can easily beat their announcement here: dropping it until
+           * they had been heard from lost whatever it carried for good.
+           */
+          if (this.relayed) {
+            this.onData?.(env.from, env.data)
+            return
+          }
+          if (!this.seen.get(env.from)?.relay) return
+          this.relayTo(env.from)
+        }
+        this.onData?.(env.from, env.data)
         return
       }
       case 'bye': {
@@ -201,6 +280,8 @@ export class Mesh {
          * so we start over with them.
          */
         const held = this.links.get(env.from)
+        // A peer on the relay is never called. See relayTo.
+        if (held instanceof RelayLink) return
         if (held && !held.canAnswer()) {
           held.close()
           this.links.delete(env.from)
@@ -210,16 +291,38 @@ export class Mesh {
         return
       }
       case 'manswer': {
-        await this.links.get(env.from)?.onAnswer(data as unknown as RTCSessionDescriptionInit)
+        const link = this.links.get(env.from)
+        if (link instanceof Link) await link.onAnswer(data as unknown as RTCSessionDescriptionInit)
         return
       }
       case 'mice': {
-        await this.links.get(env.from)?.onIce(data as unknown as RTCIceCandidateInit)
+        const link = this.links.get(env.from)
+        if (link instanceof Link) await link.onIce(data as unknown as RTCIceCandidateInit)
         return
       }
       default:
         return
     }
+  }
+
+  /**
+   * Link to a peer through the relay, which both sides do on hearing from the
+   * other. There is nothing to negotiate, so there is nobody who has to call
+   * first, and the link is ready as soon as it exists.
+   */
+  private relayTo(peerId: string): void {
+    if (peerId === this.selfId) return
+    const existing = this.links.get(peerId)
+    if (existing instanceof RelayLink) return
+    existing?.close()
+    const link = new RelayLink((raw) =>
+      void this.bus.send({ type: 'mdata', to: peerId, data: raw }).catch(() => undefined),
+    )
+    this.links.set(peerId, link)
+    this.onPeers?.()
+    this.onReady?.(peerId)
+    // Say we are here now, not in four seconds, so they link back at once.
+    if (this.relayed) this.announce()
   }
 
   /** Offer only to peers whose id sorts after ours, so exactly one side calls. */
@@ -249,7 +352,8 @@ export class Mesh {
 
   private link(peerId: string, weOffer: boolean): Link {
     const existing = this.links.get(peerId)
-    if (existing) return existing
+    if (existing instanceof Link) return existing
+    existing?.close()
     const link = new Link(peerId, weOffer, {
       send: (type, data) => void this.bus.send({ type, to: peerId, data }),
       onData: (raw) => this.onData?.(peerId, raw),
@@ -293,6 +397,36 @@ interface LinkHooks {
   onChange: () => void
   /** Fired once, when this link first becomes able to carry something. */
   onReady: () => void
+}
+
+/**
+ * A link that is only a way to address one peer on the relay.
+ *
+ * Ready from the start and never stale: whether the peer is still there is
+ * the presence sweep's question, answered by their announcements, exactly as
+ * it is for a data channel.
+ */
+class RelayLink {
+  ready = true
+  private closed = false
+  private readonly deliver: (raw: string) => void
+
+  constructor(deliver: (raw: string) => void) {
+    this.deliver = deliver
+  }
+
+  stale(): boolean {
+    return false
+  }
+
+  send(raw: string): void {
+    if (!this.closed) this.deliver(raw)
+  }
+
+  close(): void {
+    this.closed = true
+    this.ready = false
+  }
 }
 
 /** One connection to one peer, carrying chat and nothing else. */

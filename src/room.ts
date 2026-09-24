@@ -20,6 +20,8 @@
  * so the code is stretched into a key rather than used as one. See ROUNDS.
  */
 
+import { serverTag, serverUrl } from './backend'
+
 const enc = new TextEncoder()
 
 /** Crockford base32. No I, no L, no O, no U. */
@@ -183,9 +185,9 @@ export async function deriveRoom(secret: string, password = ''): Promise<Room> {
 }
 
 /** The link the host shares. The code stays after the hash, so it is client side only. */
-export function roomLink(secret: string, locked = false): string {
+export function roomLink(secret: string, locked = false, server = ''): string {
   const { origin, pathname } = window.location
-  return `${origin}${pathname}#${formatSecret(secret)}${locked ? LOCK : ''}`
+  return `${origin}${pathname}#${linkTail(secret, locked, server)}`
 }
 
 /**
@@ -194,22 +196,55 @@ export function roomLink(secret: string, locked = false): string {
  */
 const LOCK = '.P'
 
+/**
+ * A space on a server says which one, after an @, so everybody who opens the
+ * link talks in the same place. See backend.ts. The server is not a secret:
+ * it is only an address, and it is in the fragment like the rest.
+ */
+const AT = '@'
+
+/** A chat app may have escaped the server in a link. A bad escape is no server. */
+function unescapeTag(tag: string): string {
+  try {
+    return decodeURIComponent(tag)
+  } catch {
+    return ''
+  }
+}
+
+function linkTail(secret: string, locked: boolean, server: string): string {
+  const tag = server ? serverTag(server) : ''
+  return `${formatSecret(secret)}${locked ? LOCK : ''}${tag ? `${AT}${tag}` : ''}`
+}
+
 export interface LinkInfo {
   secret: string
   locked: boolean
+  /**
+   * The server the link names, or undefined when it names none. Undefined
+   * rather than empty, because a bare code says nothing about where a space
+   * runs, and the device may already know.
+   */
+  server?: string
 }
 
 export function parseLink(raw: string): LinkInfo | null {
   const trimmed = raw.trim()
-  const locked = trimmed.toUpperCase().endsWith(LOCK)
-  const secret = parseSecret(locked ? trimmed.slice(0, -LOCK.length) : trimmed)
-  return secret ? { secret, locked } : null
+  const at = trimmed.indexOf(AT)
+  const code = at >= 0 ? trimmed.slice(0, at) : trimmed
+  const server = at >= 0 ? serverUrl(unescapeTag(trimmed.slice(at + 1))) : undefined
+  // A link that names a server nobody could reach is not half a link.
+  if (at >= 0 && !server) return null
+  const locked = code.toUpperCase().endsWith(LOCK)
+  const secret = parseSecret(locked ? code.slice(0, -LOCK.length) : code)
+  if (!secret) return null
+  return server ? { secret, locked, server } : { secret, locked }
 }
 
 /** The link without its scheme, for showing rather than for copying. */
-export function shortLink(secret: string, locked = false): string {
+export function shortLink(secret: string, locked = false, server = ''): string {
   const { host, pathname } = window.location
-  const tail = `${formatSecret(secret)}${locked ? LOCK : ''}`
+  const tail = linkTail(secret, locked, server)
   return `${host}${pathname === '/' ? '' : pathname}/#${tail}`.replace('//#', '/#')
 }
 
@@ -224,8 +259,8 @@ export function readLink(): LinkInfo | null {
  * there. replaceState rather than pushState: the back button should leave the
  * app, not walk backwards through rooms that no longer exist.
  */
-export function setLinkSecret(secret: string, locked = false): void {
-  history.replaceState(null, '', `#${formatSecret(secret)}${locked ? LOCK : ''}`)
+export function setLinkSecret(secret: string, locked = false, server = ''): void {
+  history.replaceState(null, '', `#${linkTail(secret, locked, server)}`)
 }
 
 export function clearLink(): void {

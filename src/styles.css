@@ -1,87 +1,89 @@
 /*
  * Cathode.
  *
- * One look, and every value it is made of lives in the block below. That is
- * still the rule even with nothing to switch between: a colour written into a
- * layout rule is a colour that has to be found again by hand when the palette
- * moves, and there were five skins here once because that was easy to get wrong.
+ * One look, and every value it is made of lives in the block below. Nothing
+ * further down names a colour: a colour written into a layout rule is a colour
+ * that has to be found again by hand when the palette moves.
  *
- * Dark, quiet, and out of the way. The interesting thing on the screen is what
- * people are saying to each other, so the furniture is grey, the accent appears
- * about four times per screen, and nothing has a gradient on it.
+ * The look is a dark room with the furniture floating in it. The canvas is
+ * near black, and each part of the app (the channels, the conversation, who is
+ * here) is its own rounded pane on it, lifted by shade rather than outlined.
+ * The one colour is the beam: a cyan running into a periwinkle, the colour of
+ * a cathode ray tube lighting up. It marks what is yours to press and what is
+ * live, and it glows a little, which is the only decoration anything gets.
  */
 
 :root {
   /* Depth, from the back of the window to the front of it. */
-  --bg: #131519;
-  --face: #181b20;
-  --surface: #1c2026;
-  --surface-2: #252a32;
-  --line: #2b313a;
-  --line-soft: #23282f;
+  --bg: #0a0b0e;
+  --pane: #111217;
+  --face: #15161c;
+  --surface: #1b1d24;
+  --surface-2: #23262f;
+  --hover: rgb(255 255 255 / 4.5%);
+  --line: #2a2d37;
+  --line-soft: rgb(255 255 255 / 6%);
 
-  --fg: #e7eaef;
-  --fg-dim: #b6bcc7;
-  /* Lifted to clear 4.5:1 against every surface it is drawn on. It was #7f8794,
-     which measured 4.4 on the cards: legible, and a fail. */
-  --fg-faint: #8d95a3;
-  --fg-disabled: #565d68;
-  --heading: #8b94a1;
+  --fg: #eef0f5;
+  --fg-dim: #b9bdc9;
+  /* Every ink below clears 4.5 to 1 on every surface above: test/polish-check. */
+  --fg-faint: #9095a3;
+  --fg-disabled: #5a5f6c;
+  --heading: #9095a3;
 
-  /*
-   * Two of them, because one colour cannot do both jobs and pass.
-   *
-   * The fill is dark enough that white text on it clears 4.5 to 1, and the text
-   * one is light enough to clear the same against the surfaces it is drawn on.
-   * It was a single mid indigo, which measured 3.7 under the white on every
-   * primary button and 4.5 as text: legible either way, and a fail one way.
-   */
-  --accent: #4f6ae8;
-  --accent-fg: #ffffff;
-  --accent-text: #93a6ff;
-  /* What is selected is raised rather than painted: an accent behind every
-     channel you happen to be standing in is an accent that stops meaning
-     anything. */
-  --select: #2d333d;
+  /* The beam. The fill is bright, so what sits on it is dark. */
+  --accent: #3cc8ff;
+  --accent-2: #7b8cff;
+  --accent-fg: #03121c;
+  --accent-text: #7fd6ff;
+  --beam: linear-gradient(135deg, var(--accent), var(--accent-2));
+  --glow: 0 0 18px rgb(60 200 255 / 32%);
+  --accent-wash: rgb(60 200 255 / 9%);
+  /* What is selected is raised rather than painted. */
+  --select: rgb(255 255 255 / 8%);
   --select-fg: #ffffff;
+  /* Text on the red of a live badge or a count. */
+  --on-live: #ffffff;
 
-  --good: #3fb950;
-  --warn: #d29922;
-  /* Light enough to clear 4.5 to 1 on the raised surfaces too, where an unread
-     badge sits on a hovered row. It was #f85149, which measured 4.3 there. */
-  --bad: #ff6b63;
-  --progress: linear-gradient(90deg, var(--accent), #7d95fb);
+  --good: #3ddc84;
+  --warn: #f0b232;
+  --bad: #ff6b78;
+  --live: #ff4d5e;
+  --progress: var(--beam);
 
-  --field-bg: #131519;
-  --field-border: 1px solid #2b313a;
+  --field-bg: #0d0e12;
+  --field-border: 1px solid var(--line);
   --field-inset: 0 solid transparent;
-  --field-radius: 8px;
+  --field-radius: 10px;
 
-  --btn-bg: #262c35;
-  --btn-bg-hover: #2f3641;
-  --btn-bg-active: #1f242b;
+  --btn-bg: var(--surface-2);
+  --btn-bg-hover: #2c303b;
+  --btn-bg-active: #1e2129;
   --btn-border: transparent;
   --btn-border-hover: transparent;
-  --btn-fg: #e7eaef;
-  --btn-radius: 8px;
+  --btn-fg: var(--fg);
+  --btn-radius: 9px;
   --btn-shadow: none;
-  --btn-h: 30px;
-  --btn-weight: 500;
+  --btn-h: 32px;
+  --btn-weight: 550;
 
-  --radius-sm: 6px;
+  --radius-sm: 7px;
   --pill-radius: 999px;
-  --panel-radius: 10px;
-  --shadow: 0 10px 30px rgb(0 0 0 / 45%);
-  --tip-bg: #252a32;
-  --tip-border: #2b313a;
+  --panel-radius: 14px;
+  --pane-radius: 16px;
+  --gap: 8px;
+  --shadow: 0 16px 40px rgb(0 0 0 / 55%), 0 0 0 1px var(--line-soft);
+  --tip-bg: var(--surface-2);
+  --tip-border: var(--line);
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 
   /* The one square button, on the corner of a dialog. */
-  --cap-size: 26px;
+  --cap-size: 28px;
 
-  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --size: 16px;
-  --size-small: 13.5px;
+  --sans: "Inter var", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  --size: 15px;
+  --size-small: 13px;
 
   color-scheme: dark;
 }
@@ -103,11 +105,40 @@ body {
 
 body {
   color: var(--fg);
+  background: var(--bg);
   font-family: var(--sans);
   font-size: var(--size);
-  line-height: 1.4;
+  line-height: 1.45;
   overscroll-behavior: none;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+/* Thin, dark scrollbars that stay out of the way until they are wanted. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--surface-2) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--surface-2);
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 #app {
@@ -118,18 +149,15 @@ body {
 }
 
 /*
- * The app fills the window.
- *
- * There used to be a desktop behind it with a wallpaper on it, and a window
- * floating on that with a frame and a title bar. Three layers of picture frame
- * around a chat room. It is a page now: the screen is the app.
+ * The app fills the window: the rail of spaces down the left, and the screen
+ * beside it. Both sit on the bare canvas, and everything a screen draws is a
+ * pane floating on that.
  */
 .app-shell {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
   display: flex;
-  flex-direction: column;
   background: var(--bg);
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
@@ -137,6 +165,7 @@ body {
 
 .app-body {
   flex: 1 1 auto;
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -152,34 +181,206 @@ main {
   overflow-x: hidden;
 }
 
-/* ---------- status bar ---------- */
+/* ---------- the rail of spaces ---------- */
 
-/* One quiet line along the bottom: where you are, who is here, how many relays
-   are up. Panels rather than boxes, separated by space instead of by borders. */
-.status-bar {
-  flex: 0 0 auto;
+.space-rail {
+  flex: 0 0 72px;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 14px;
-  padding: 5px 12px;
-  background: var(--face);
-  border-top: 1px solid var(--line-soft);
-  font-size: var(--size-small);
-  color: var(--fg-faint);
+  gap: 8px;
+  padding: 12px 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
 }
 
-.status-cell {
+.space-rail::-webkit-scrollbar {
+  display: none;
+}
+
+.rail-sep {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--line);
+  margin: 2px 0;
+}
+
+/*
+ * A space, as a tile. Round until it is under the pointer or open, when it
+ * squares off a little, and a bar on the rail's edge says which one you are
+ * in: the gesture every chat app with a rail has taught everybody.
+ */
+.rail-tile {
+  position: relative;
+  flex: 0 0 auto;
+  width: 48px;
+  height: 48px;
+  min-height: 48px;
+  padding: 0;
+  border-radius: 24px;
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  transition: border-radius 160ms var(--ease), background 160ms var(--ease), box-shadow 160ms var(--ease);
+}
+
+.rail-tile:not(.home):not(.add) {
+  background: hsl(var(--hue, 210) 42% 26%);
+  color: hsl(var(--hue, 210) 90% 88%);
+}
+
+.rail-tile:hover:not(:disabled),
+.rail-tile.on {
+  border-radius: 15px;
+}
+
+.rail-tile:not(.home):not(.add):hover:not(:disabled) {
+  background: hsl(var(--hue, 210) 48% 32%);
+}
+
+.rail-tile.on {
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px color-mix(in srgb, var(--accent) 70%, transparent), var(--glow);
+}
+
+/* The bar on the rail's edge: a dot for under the pointer, a line for open. */
+.rail-tile::before {
+  content: "";
+  position: absolute;
+  left: -12px;
+  top: 50%;
+  width: 4px;
+  height: 8px;
+  border-radius: 0 4px 4px 0;
+  background: var(--fg);
+  transform: translateY(-50%) scale(0);
+  transition: transform 160ms var(--ease), height 160ms var(--ease);
+}
+
+.rail-tile:hover::before {
+  transform: translateY(-50%) scale(1);
+}
+
+.rail-tile.on::before {
+  height: 36px;
+  transform: translateY(-50%) scale(1);
+  background: var(--beam);
+}
+
+.rail-tile.home {
+  background: var(--surface);
+}
+
+.rail-tile.home.on,
+.rail-tile.home:hover:not(:disabled) {
+  background: var(--beam);
+  color: var(--accent-fg);
+}
+
+.rail-tile.add {
+  background: var(--surface);
+  color: var(--good);
+}
+
+.rail-tile.add:hover:not(:disabled) {
+  background: var(--good);
+  color: var(--accent-fg);
+}
+
+.rail-tile-badge {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--accent-text);
+  box-shadow: 0 0 0 3px var(--bg);
+}
+
+/* The name of a tile, beside it, for a pointer that rests on it. */
+.rail-tile[data-tip]:hover::after {
+  content: attr(data-tip);
+  position: fixed;
+  left: 78px;
+  transform: translateY(-50%);
+  margin-top: 24px;
+  z-index: 90;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: var(--shadow);
+  pointer-events: none;
+}
+
+/* The mark: the screen in the text colour, the beam in the accent. */
+.logo .logo-screen {
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+
+.logo .logo-beam {
+  stroke: var(--accent);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.rail-tile.home.on .logo-beam,
+.rail-tile.home:hover .logo-beam {
+  stroke: currentColor;
+}
+
+/* ---------- status line ---------- */
+
+/*
+ * What is happening, in one quiet line. In a space it sits under your own
+ * name, where Discord puts your status; the first cell repeats the header, so
+ * it is left out there.
+ */
+.status-bar {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--fg-faint);
+  white-space: nowrap;
   overflow: hidden;
+}
+
+.status-cell {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* The count of who is here never gives way; the address after it does. */
+.status-cell.grow + .status-cell {
+  flex: 0 0 auto;
+}
+
 .status-cell.grow {
-  flex: 1 1 auto;
-  min-width: 0;
-  color: var(--fg-dim);
+  display: none;
+}
+
+.status-cell + .status-cell:not(.grow + .status-cell)::before {
+  content: "· ";
 }
 
 /* ---------- typography ---------- */
@@ -251,18 +452,20 @@ button {
   font-weight: var(--btn-weight);
   color: var(--btn-fg);
   min-height: var(--btn-h);
-  padding: 2px 12px;
+  padding: 2px 13px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: 6px;
   white-space: nowrap;
   user-select: none;
   border: 1px solid var(--btn-border);
   border-radius: var(--btn-radius);
   background: var(--btn-bg);
   box-shadow: var(--btn-shadow);
+  transition: background 120ms var(--ease), color 120ms var(--ease), filter 120ms var(--ease),
+    box-shadow 120ms var(--ease), transform 80ms var(--ease);
 }
 
 button:hover:not(:disabled) {
@@ -272,23 +475,25 @@ button:hover:not(:disabled) {
 
 button:active:not(:disabled) {
   background: var(--btn-bg-active);
+  transform: translateY(0.5px);
 }
 
 button:disabled {
   color: var(--fg-disabled);
-  border-color: var(--line);
-  background: var(--surface-2);
+  border-color: transparent;
+  background: var(--surface);
   box-shadow: none;
   cursor: default;
 }
 
 button:focus-visible,
 input:focus-visible,
+textarea:focus-visible,
 select:focus-visible,
 summary:focus-visible,
 [tabindex]:focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: -1px;
+  outline-offset: 1px;
 }
 
 .icon {
@@ -296,20 +501,28 @@ summary:focus-visible,
   display: block;
 }
 
+/* The beam, on the one thing on the screen most worth pressing. */
 button.primary {
-  background: var(--accent);
+  background: var(--beam);
   color: var(--accent-fg);
   border-color: transparent;
   font-weight: 700;
 }
 
 button.primary:hover:not(:disabled) {
-  filter: brightness(1.1);
+  background: var(--beam);
+  filter: brightness(1.08) saturate(1.05);
+  box-shadow: var(--glow);
   border-color: transparent;
-  background: var(--accent);
 }
 
 button.danger {
+  color: var(--bad);
+}
+
+button.primary.danger,
+button.danger.solid {
+  background: color-mix(in srgb, var(--live) 18%, var(--surface-2));
   color: var(--bad);
 }
 
@@ -321,8 +534,8 @@ button.ghost {
 }
 
 button.ghost:hover:not(:disabled) {
-  background: var(--surface-2);
-  border-color: var(--line);
+  background: var(--hover);
+  border-color: transparent;
   color: var(--fg);
 }
 
@@ -333,23 +546,34 @@ button.icon-only {
 }
 
 button.big {
-  min-height: calc(var(--btn-h) + 8px);
+  min-height: calc(var(--btn-h) + 10px);
   padding: 4px 20px;
   font-size: var(--size);
+  border-radius: 11px;
 }
 
 button.small,
 button.tiny-btn {
-  min-height: calc(var(--btn-h) - 3px);
-  padding: 1px 9px;
+  min-height: calc(var(--btn-h) - 4px);
+  padding: 1px 10px;
 }
 
 /* On, as opposed to selected. Tinted with the accent rather than outlined in
    it: a coloured border on a resting button reads as a focus ring. */
 button.on {
-  background: color-mix(in srgb, var(--accent) 22%, var(--surface-2));
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface-2));
   color: var(--fg);
   border-color: transparent;
+}
+
+button.ghost.on {
+  background: var(--select);
+  color: var(--fg);
+}
+
+button.ghost.danger.on {
+  background: color-mix(in srgb, var(--live) 16%, transparent);
+  color: var(--bad);
 }
 
 /* ---------- fields ---------- */
@@ -365,18 +589,38 @@ select {
   outline: var(--field-inset);
   outline-offset: -2px;
   border-radius: var(--field-radius);
-  padding: 3px 6px;
+  padding: 5px 10px;
   min-height: var(--btn-h);
   width: 100%;
+  transition: border-color 120ms var(--ease), box-shadow 120ms var(--ease);
+}
+
+input[type="text"]:hover,
+textarea:hover,
+select:hover {
+  border-color: color-mix(in srgb, var(--fg-faint) 40%, var(--line));
+}
+
+input[type="text"]:focus,
+textarea:focus,
+select:focus {
+  border-color: color-mix(in srgb, var(--accent) 65%, var(--line));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+  outline: none;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--fg-faint);
 }
 
 select {
   outline: none;
-  padding-right: 20px;
+  padding-right: 24px;
   appearance: none;
   background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
     linear-gradient(135deg, currentColor 50%, transparent 50%);
-  background-position: calc(100% - 11px) calc(50% + 1px), calc(100% - 7px) calc(50% + 1px);
+  background-position: calc(100% - 13px) calc(50% + 1px), calc(100% - 9px) calc(50% + 1px);
   background-size: 4px 4px;
   background-repeat: no-repeat;
 }
@@ -385,6 +629,12 @@ input[type="range"] {
   width: 100%;
   accent-color: var(--accent);
   min-height: 20px;
+}
+
+input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
 }
 
 label {
@@ -396,8 +646,8 @@ label {
 
 hr {
   border: 0;
-  border-top: 1px solid var(--line);
-  margin: 9px 0;
+  border-top: 1px solid var(--line-soft);
+  margin: 10px 0;
 }
 
 /* ---------- panels ---------- */
@@ -407,7 +657,7 @@ hr {
   background: var(--surface);
   border: 1px solid var(--line-soft);
   border-radius: var(--panel-radius);
-  padding: 9px 10px 10px;
+  padding: 14px 16px 16px;
   position: relative;
 }
 
@@ -433,11 +683,11 @@ hr {
 .stack {
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 10px;
 }
 
 .stack.tight {
-  gap: 6px;
+  gap: 7px;
 }
 
 .hidden {
@@ -450,14 +700,25 @@ hr {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: calc(var(--size-small) - 1px);
-  font-family: var(--mono);
-  padding: 1px 6px;
-  border: 1px solid var(--line);
+  font-size: 11px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  padding: 1px 7px;
+  border: 1px solid transparent;
   border-radius: var(--pill-radius);
-  background: var(--surface);
+  background: var(--surface-2);
   color: var(--fg-dim);
   white-space: nowrap;
+}
+
+/* Somebody is sharing here: a red lozenge, like every live badge. */
+.pill.live {
+  background: var(--live);
+  color: var(--on-live);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 10px;
+  padding: 1px 6px;
 }
 
 .pill.good {
@@ -471,8 +732,9 @@ hr {
 }
 
 .pill.bad {
-  color: var(--bad);
-  border-color: color-mix(in srgb, var(--bad) 45%, transparent);
+  color: var(--on-live);
+  background: var(--live);
+  border-color: transparent;
 }
 
 /*
@@ -541,6 +803,243 @@ hr {
 .sheet {
   width: 100%;
   max-width: 430px;
+}
+
+/* ---------- settings ---------- */
+
+main.settings {
+  margin: var(--gap) var(--gap) var(--gap) 0;
+  background: var(--face);
+  border-radius: var(--pane-radius);
+}
+
+main.settings .center-page {
+  justify-content: flex-start;
+  padding: 28px 20px 48px;
+}
+
+main.settings .sheet {
+  max-width: 640px;
+}
+
+.settings-head {
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.settings-head > button {
+  flex-direction: row-reverse;
+  padding-left: 8px;
+}
+
+.settings-title {
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+}
+
+@media (max-width: 780px) {
+  main.settings {
+    margin: 0;
+    border-radius: 0;
+  }
+}
+
+/* ---------- home ---------- */
+
+/*
+ * Home is a pane on the canvas like everything else, with the mark and one
+ * line at the top, your spaces on the left, and making or joining one on the
+ * right.
+ */
+main.home {
+  margin: var(--gap) var(--gap) var(--gap) 0;
+  background: var(--face);
+  border-radius: var(--pane-radius);
+}
+
+.home-page {
+  width: 100%;
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 44px 28px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.home-hero {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.home-mark {
+  display: grid;
+  place-items: center;
+  width: 68px;
+  height: 68px;
+  flex: 0 0 auto;
+  border-radius: 20px;
+  background: var(--surface-2);
+  color: var(--fg);
+  box-shadow: var(--glow), inset 0 0 0 1px var(--line-soft);
+}
+
+.home-title {
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  background: linear-gradient(90deg, var(--fg) 30%, var(--accent-text));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.home-tag {
+  color: var(--fg-dim);
+  font-size: 15px;
+  max-width: 560px;
+}
+
+.home-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 16px;
+  align-items: start;
+}
+
+.home-side {
+  gap: 16px;
+}
+
+.home-spaces {
+  min-height: 240px;
+}
+
+/* With nothing to list yet, making one is the first thing on a narrow screen. */
+@media (max-width: 860px) {
+  .home-spaces {
+    min-height: 0;
+  }
+
+  .home-grid:has(.home-empty) .home-side {
+    order: -1;
+  }
+}
+
+.home-spaces .rail-list,
+.home-spaces > .stack {
+  gap: 4px;
+}
+
+.space-row > .rail-item {
+  min-height: 60px;
+  padding: 8px 10px;
+  gap: 12px;
+  border-radius: 12px;
+  color: var(--fg);
+}
+
+.space-row > .rail-item:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--fg);
+}
+
+.space-tile {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 13px;
+  background: hsl(var(--hue, 210) 42% 26%);
+  color: hsl(var(--hue, 210) 90% 88%);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.space-row-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.space-row-name {
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.home-empty {
+  padding: 36px 12px;
+}
+
+.home .chips {
+  gap: 6px;
+}
+
+.home .chip {
+  min-height: 32px;
+  padding: 0 14px;
+}
+
+.join-button {
+  flex-direction: row-reverse;
+}
+
+@media (max-width: 860px) {
+  .home-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 780px) {
+  main.home {
+    margin: 0;
+    border-radius: 0;
+  }
+
+  .home-page {
+    padding: 24px 16px 32px;
+    gap: 20px;
+  }
+
+  .home-title {
+    font-size: 28px;
+  }
+
+  .home-mark {
+    width: 56px;
+    height: 56px;
+    border-radius: 17px;
+  }
+
+  /* A phone gets the rail as a row along the top, which is where a thumb
+     expects the other places to be. */
+  .app-shell:not(:has(.space-grid)) {
+    flex-direction: column;
+  }
+
+  .app-shell:not(:has(.space-grid)) .space-rail {
+    flex: 0 0 auto;
+    flex-direction: row;
+    padding: 10px 12px;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .app-shell:not(:has(.space-grid)) .rail-sep {
+    width: 2px;
+    height: 30px;
+    margin: 0 2px;
+  }
+
+  .app-shell:not(:has(.space-grid)) .rail-tile::before,
+  .app-shell:not(:has(.space-grid)) .rail-tile[data-tip]:hover::after {
+    display: none;
+  }
 }
 
 .host-grid {
@@ -1022,15 +1521,14 @@ details.adv[open] > summary {
   z-index: 5;
 }
 
-/* ---------- the space: channels left, the room on the right ---------- */
+/* ---------- the space: channels left, the room in the middle, people right ---------- */
 
 /*
- * Three columns, flush.
+ * Three panes floating on the canvas.
  *
- * They used to be three bordered cards floating on a padded background, which
- * is four edges each to look at before you get to anybody's message. Depth
- * carries it instead: the rails sit back, the conversation sits forward, and
- * the only lines left are the two between them.
+ * Rounded, a gap apart, and told apart by shade: the side panes sit back and
+ * the conversation sits a step forward. No borders between them; the gap is
+ * the border.
  */
 /*
  * Held back until the store has answered.
@@ -1067,13 +1565,23 @@ details.adv[open] > summary {
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr) 200px;
-  background: var(--face);
+  grid-template-columns: 248px minmax(0, 1fr) 248px;
+  gap: var(--gap);
+  padding: var(--gap) var(--gap) var(--gap) 0;
+  background: var(--bg);
 }
 
-@media (max-width: 1080px) {
+.space-grid.members-hidden {
+  grid-template-columns: 248px minmax(0, 1fr);
+}
+
+.space-grid.members-hidden .rail-right {
+  display: none;
+}
+
+@media (max-width: 1100px) {
   .space-grid {
-    grid-template-columns: 170px minmax(0, 1fr);
+    grid-template-columns: 224px minmax(0, 1fr);
   }
 
   .rail-right {
@@ -1085,40 +1593,6 @@ details.adv[open] > summary {
   grid-template-columns: minmax(0, 1fr);
 }
 
-.voice-channel {
-  display: flex;
-  flex-direction: column;
-}
-
-.voice-member {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 1px 7px 1px 22px;
-  font-size: calc(var(--size-small) - 1px);
-  color: var(--fg-faint);
-}
-
-.voice-sink {
-  display: none;
-}
-
-.voice-bar {
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 6px;
-  margin-bottom: 4px;
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-}
-
-.rail-person {
-  align-items: flex-start;
-}
-
 .rail-hidden .rail {
   display: none;
 }
@@ -1127,38 +1601,66 @@ details.adv[open] > summary {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  overflow: hidden;
+  background: var(--pane);
+  border-radius: var(--pane-radius);
+}
+
+/* What scrolls inside a pane, with the header above and the footer below it. */
+.rail-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
-  background: var(--surface);
-  padding: 8px 8px 10px;
-}
-
-.rail-left {
-  border-right: 1px solid var(--line-soft);
-}
-
-.rail-right {
-  border-left: 1px solid var(--line-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 8px 12px;
 }
 
 .rail-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 2px 3px;
+  gap: 4px;
+  padding: 14px 6px 4px 8px;
+  min-height: 34px;
 }
 
-/* The name of the place, at the top of the column that lists what is in it. */
+.rail-head .eyebrow {
+  font-size: 11px;
+}
+
+.rail-add {
+  width: 22px;
+  min-width: 22px;
+  min-height: 22px;
+  height: 22px;
+  border-radius: 6px;
+}
+
+/* The name of the place, at the top of the pane that lists what is in it. */
 .space-title {
-  padding: 2px 2px 10px;
-  margin-bottom: 4px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 52px;
+  padding: 0 14px 0 16px;
   border-bottom: 1px solid var(--line-soft);
+  box-shadow: 0 1px 0 rgb(0 0 0 / 20%);
 }
 
 .space-name {
-  font-size: var(--size);
-  font-weight: 600;
+  flex: 1 1 auto;
+  font-size: 15.5px;
+  font-weight: 700;
   color: var(--fg);
+  letter-spacing: -0.005em;
+}
+
+.space-where {
+  display: inline-flex;
+  color: var(--accent-text);
 }
 
 .rail-list {
@@ -1167,15 +1669,14 @@ details.adv[open] > summary {
   gap: 1px;
 }
 
-/* One space on the opening screen: the space, and the way out of it. Faint
-   until the pointer is on the row, because leaving is not the usual errand. */
+/* One space on the home screen: the space, and the way out of it. */
 .space-row {
   gap: 4px;
 }
 
 .space-row > button.tiny-btn {
   flex: 0 0 auto;
-  opacity: 0.5;
+  opacity: 0;
 }
 
 .space-row:hover > button.tiny-btn,
@@ -1183,47 +1684,159 @@ details.adv[open] > summary {
   opacity: 1;
 }
 
+/*
+ * A channel. Grey until it has something new, white when it does, raised when
+ * it is the one open, with the beam down its left edge.
+ */
 .rail-item {
+  position: relative;
   justify-content: flex-start;
-  /* Buttons centre their text. A list of channels is a list, so it reads down
-     the left edge like one. */
   text-align: left;
   width: 100%;
-  border: 1px solid transparent;
+  gap: 7px;
+  border: 0;
   background: transparent;
   box-shadow: none;
-  color: var(--fg-dim);
-  padding: 3px 7px;
-  min-height: calc(var(--btn-h) - 2px);
-  border-radius: var(--radius-sm);
-  font-weight: 400;
+  color: var(--fg-faint);
+  padding: 4px 8px;
+  min-height: 34px;
+  border-radius: 8px;
+  font-size: 14.5px;
+  font-weight: 500;
+}
+
+.rail-item > .icon {
+  opacity: 0.75;
 }
 
 .rail-item:hover:not(:disabled) {
-  background: var(--surface-2);
-  border-color: transparent;
-  color: var(--fg);
+  background: var(--hover);
+  color: var(--fg-dim);
 }
 
 .rail-item.on {
   background: var(--select);
   color: var(--select-fg);
-  border-color: transparent;
-  font-weight: bold;
+  font-weight: 600;
+}
+
+.rail-item.on::before {
+  content: "";
+  position: absolute;
+  left: -8px;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--beam);
+  box-shadow: var(--glow);
+}
+
+.rail-item.unread {
+  color: var(--fg);
+  font-weight: 650;
+}
+
+/* A dot on the edge for a channel with something new, as long as it is not open. */
+.rail-item.unread:not(.on)::before {
+  content: "";
+  position: absolute;
+  left: -8px;
+  top: 50%;
+  width: 4px;
+  height: 8px;
+  margin-top: -4px;
+  border-radius: 0 4px 4px 0;
+  background: var(--fg);
 }
 
 .rail-person {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 4px 3px 7px;
-  border-radius: var(--radius-sm);
-  font-size: var(--size-small);
+  gap: 10px;
+  padding: 5px 6px 5px 8px;
+  border-radius: 9px;
+  font-size: 14px;
   color: var(--fg-dim);
+  min-height: 44px;
 }
 
 .rail-person:hover {
-  background: var(--surface-2);
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.rail-person.away {
+  opacity: 0.45;
+}
+
+.rail-person.away:hover {
+  opacity: 0.8;
+}
+
+/* The face, with presence as a dot cut out of its corner. */
+.person-face,
+.me-face {
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-flex;
+}
+
+.person-face > .dot,
+.me-face > .dot {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 12px;
+  height: 12px;
+  box-shadow: 0 0 0 3px var(--pane);
+}
+
+.rail-person:hover .person-face > .dot {
+  box-shadow: 0 0 0 3px var(--surface);
+}
+
+.person-face > .dot.idle {
+  box-shadow: 0 0 0 3px var(--pane), inset 0 0 0 2px var(--fg-faint);
+}
+
+/* Talking: a ring round the face, in green, like every voice app. */
+.rail-person.talking .person-face .avatar {
+  box-shadow: 0 0 0 2px var(--pane), 0 0 0 4px var(--good);
+}
+
+.person-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.person-line {
+  gap: 5px;
+  min-width: 0;
+  font-weight: 550;
+}
+
+.person-doing {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--fg-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.person-doing.live {
+  color: var(--bad);
+}
+
+.person-doing.talking {
+  color: var(--good);
 }
 
 /* Whoever runs the place, said in one glyph on the same line as their name. */
@@ -1241,9 +1854,9 @@ details.adv[open] > summary {
  */
 .person-more {
   flex: 0 0 auto;
-  width: 22px;
-  min-width: 22px;
-  min-height: 20px;
+  width: 26px;
+  min-width: 26px;
+  min-height: 26px;
   padding: 0;
   opacity: 0;
 }
@@ -1253,59 +1866,225 @@ details.adv[open] > summary {
   opacity: 1;
 }
 
-/* The button's footprint with nothing in it, worn by a row with no actions,
-   so the pills on every row line up in one column. */
-.person-more-gap {
-  flex: 0 0 auto;
-  width: 22px;
-  min-width: 22px;
-}
-
 @media (hover: none) {
   .person-more {
     opacity: 0.6;
   }
 }
 
-.rail-foot {
+/* ---------- voice, and you ---------- */
+
+.voice-channel {
+  display: flex;
+  flex-direction: column;
+}
+
+.voice-member {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px 3px 30px;
+  min-height: 28px;
+  font-size: 13.5px;
+  color: var(--fg-dim);
+}
+
+/* The dot is kept for anything that reads it; the face says it now. */
+.voice-member > .dot {
+  display: none;
+}
+
+.voice-member .avatar {
+  transition: box-shadow 120ms var(--ease);
+}
+
+.voice-member.talking .avatar {
+  box-shadow: 0 0 0 2px var(--pane), 0 0 0 4px var(--good);
+}
+
+.voice-member.talking {
+  color: var(--fg);
+}
+
+.voice-sink {
+  display: none;
+}
+
+/* Connected: the strip above your name while you are in a voice channel. */
+.voice-bar {
   flex: 0 0 auto;
-  padding-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 10px 8px 14px;
+  border-top: 1px solid var(--line-soft);
+  background: color-mix(in srgb, var(--good) 5%, var(--pane));
+}
+
+.voice-bar-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.voice-bar-state {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--good);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.voice-bar-state .dot {
+  box-shadow: 0 0 10px var(--good);
+}
+
+/* You, at the foot of the channels. */
+.me-panel {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 56px;
+  padding: 8px 8px 8px 10px;
+  background: color-mix(in srgb, var(--bg) 45%, var(--pane));
   border-top: 1px solid var(--line-soft);
 }
 
-.rail-foot .share-code {
-  font-size: var(--size-small);
-  padding: 4px 2px;
-  letter-spacing: 0.02em;
+.me-face {
+  margin-right: 6px;
 }
+
+.me-face > .dot {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--bg) 45%, var(--pane));
+}
+
+.me-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.me-name {
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--fg);
+}
+
+/* ---------- the conversation pane ---------- */
 
 .space-main {
   min-height: 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px 12px 12px;
   background: var(--face);
+  border-radius: var(--pane-radius);
+  overflow: hidden;
 }
 
-/* Where you are, and the way to find something. One line, with the rule under
-   it that separates the header from the conversation. */
+/* Where you are, and the things you do to where you are. */
 .space-head {
   flex: 0 0 auto;
-  gap: 10px;
-  padding-bottom: 8px;
+  gap: 6px;
+  min-height: 52px;
+  padding: 0 10px 0 16px;
   border-bottom: 1px solid var(--line-soft);
+  box-shadow: 0 1px 0 rgb(0 0 0 / 20%);
 }
+
+.channel-head {
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 12px;
+}
+
+.channel-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--fg);
+}
+
+.channel-name > .icon {
+  color: var(--fg-faint);
+}
+
+.channel-topic {
+  min-width: 0;
+  color: var(--fg-faint);
+  font-size: var(--size-small);
+  border-left: 1px solid var(--line);
+  padding-left: 12px;
+}
+
+.share-button {
+  min-height: 32px;
+  padding: 2px 12px;
+}
+
+.share-button.danger {
+  background: color-mix(in srgb, var(--live) 18%, var(--surface-2));
+  color: var(--bad);
+}
+
+.share-button.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--live) 26%, var(--surface-2));
+  filter: none;
+  box-shadow: 0 0 18px color-mix(in srgb, var(--live) 30%, transparent);
+}
+
+/* Search, as a field with a glass in it. */
+.search-box {
+  position: relative;
+  flex: 0 0 auto;
+  width: 200px;
+  transition: width 160ms var(--ease);
+  display: flex;
+  align-items: center;
+  margin: 0;
+  color: var(--fg-faint);
+}
+
+.search-box > .icon {
+  position: absolute;
+  left: 9px;
+  pointer-events: none;
+}
+
+.search-box:focus-within {
+  width: 270px;
+}
+
+input[type="text"].space-search {
+  width: 100%;
+  min-height: 30px;
+  padding-left: 30px;
+  font-size: var(--size-small);
+  background: var(--bg);
+  border-color: transparent;
+  border-radius: 8px;
+  transition: width 160ms var(--ease), border-color 120ms var(--ease), box-shadow 120ms var(--ease);
+}
+
 
 .stage {
   flex: 0 0 auto;
-  height: 46%;
-  min-height: 180px;
+  height: 48%;
+  min-height: 200px;
+  margin: 10px 12px 0;
   /* One stream is the whole stage; two split it evenly, side by side. */
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: minmax(0, 1fr);
-  gap: 4px;
+  gap: 8px;
 }
 
 .stage-tile {
@@ -1313,6 +2092,10 @@ details.adv[open] > summary {
   display: flex;
   min-width: 0;
   min-height: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent),
+    0 0 48px -12px color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
 /* Whose screen this is, said on the picture itself. */
@@ -1321,16 +2104,30 @@ details.adv[open] > summary {
   top: 10px;
   left: 10px;
   z-index: 3;
-  padding: 3px 10px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  backdrop-filter: blur(8px);
   color: var(--fg);
   font-size: 12px;
+  font-weight: 600;
   pointer-events: none;
 }
 
 .share-panel {
   flex: 0 0 auto;
+  margin: 10px 12px 0;
+}
+
+.stream-bar {
+  margin: 10px 12px 0;
+}
+
+.search-results {
+  margin: 8px 12px 0;
 }
 
 .space-main .chat-panel {
@@ -1338,7 +2135,25 @@ details.adv[open] > summary {
   min-height: 120px;
 }
 
-/* The two buttons that call the rails in. Only on a screen without room. */
+/* The invite, at the foot of who is here. */
+.invite-card {
+  flex: 0 0 auto;
+  margin: 8px;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+}
+
+.invite-card .share-code {
+  font-size: 14px;
+  padding: 7px 4px;
+  letter-spacing: 0.08em;
+  background: var(--bg);
+  border-color: transparent;
+}
+
+/* The two buttons that call the side panes in on a phone. */
 .rail-button {
   display: none;
   flex: 0 0 auto;
@@ -1351,16 +2166,27 @@ details.adv[open] > summary {
 /*
  * A phone.
  *
- * One column, all of it conversation. The rails slide in over the top when
- * they are asked for and go away the moment anything in them is used, because
- * a channel list covering the room you just picked is a list you have to
- * dismiss twice. They used to sit stacked above the conversation with a third
- * of the height each, on a screen with no height to spare.
+ * One pane, all of it conversation, edge to edge. The side panes slide in over
+ * the top when they are asked for and go away the moment anything in them is
+ * used, because a channel list covering the room you just picked is a list you
+ * have to dismiss twice.
  */
 @media (max-width: 780px) {
-  .space-grid {
+  /* The rail of spaces lives at home on a phone: there is no room for it here. */
+  .app-shell:has(.space-grid) .space-rail {
+    display: none;
+  }
+
+  .space-grid,
+  .space-grid.members-hidden {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr);
+    padding: 0;
+    gap: 0;
+  }
+
+  .space-main {
+    border-radius: 0;
   }
 
   .rail-button {
@@ -1372,23 +2198,26 @@ details.adv[open] > summary {
     z-index: 40;
     top: 0;
     bottom: 0;
-    width: min(78vw, 300px);
+    width: min(84vw, 320px);
     max-height: none;
-    border: 0;
+    border-radius: 0;
     box-shadow: var(--shadow);
-    transition: transform 160ms ease;
-    padding-top: max(10px, env(safe-area-inset-top));
+    transition: transform 200ms var(--ease);
+    padding-top: env(safe-area-inset-top);
   }
 
   .rail-left {
     left: 0;
-    transform: translateX(-101%);
+    border-radius: 0 var(--pane-radius) var(--pane-radius) 0;
+    transform: translateX(-102%);
   }
 
-  .rail-right {
+  .rail-right,
+  .space-grid.members-hidden .rail-right {
     display: flex;
     right: 0;
-    transform: translateX(101%);
+    border-radius: var(--pane-radius) 0 0 var(--pane-radius);
+    transform: translateX(102%);
   }
 
   .space-grid.rail-left-open .rail-left,
@@ -1402,52 +2231,41 @@ details.adv[open] > summary {
     position: absolute;
     inset: 0;
     z-index: 30;
-    background: rgb(0 0 0 / 45%);
+    background: rgb(0 0 0 / 55%);
+    backdrop-filter: blur(2px);
   }
 
-  .space-main {
-    padding: 8px 10px 10px;
-  }
-
-  /* Room to read: a message may take nearly the width, and what you can do
-     with it is asked for by tapping rather than reserved beside it. */
-  .chat-line {
-    max-width: 88%;
-  }
-
-  /* Thumbs, not pointers. */
   .space-head {
-    gap: 6px;
+    gap: 2px;
+    padding: 0 6px;
+    min-height: 50px;
   }
 
-  input[type="text"].space-search {
-    width: 34%;
-    min-width: 90px;
+  .channel-topic,
+  .share-label {
+    display: none;
+  }
+
+  .share-button {
+    width: 34px;
+    min-width: 34px;
+    padding: 0;
+  }
+
+  .search-box,
+  .search-box:focus-within {
+    flex: 0 1 132px;
+    width: auto;
+    min-width: 0;
+  }
+
+  .stage {
+    margin: 8px 8px 0;
+    height: 36%;
   }
 
   .chat-compose {
-    padding-bottom: env(safe-area-inset-bottom);
-  }
-
-  .chat-compose textarea,
-  .chat-compose button {
-    min-height: 36px;
-  }
-
-  .status-bar {
-    gap: 10px;
-    padding: 5px 10px;
-  }
-}
-
-/* Anything narrower than a phone held in one hand. */
-@media (max-width: 420px) {
-  .chat-line {
-    max-width: 94%;
-  }
-
-  .status-bar .status-cell:not(.grow) {
-    display: none;
+    padding-bottom: max(10px, env(safe-area-inset-bottom));
   }
 }
 
@@ -1458,7 +2276,7 @@ details.adv[open] > summary {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  gap: 8px;
+  gap: 0;
   padding: 0;
   border: 0;
   background: transparent;
@@ -1472,6 +2290,7 @@ details.adv[open] > summary {
 
 .chat-head {
   flex: 0 0 auto;
+  padding: 8px 12px 0;
 }
 
 .chat-log {
@@ -1481,11 +2300,45 @@ details.adv[open] > summary {
   overflow-x: hidden;
   background: transparent;
   border: 0;
-  padding: 0 2px;
+  padding: 8px 0 14px;
   font-size: var(--size);
   line-height: 1.45;
   overflow-wrap: anywhere;
   color: var(--fg-dim);
+  /* A change inside the log never makes the browser lay out anything outside it. */
+  contain: content;
+}
+
+/* The very top of a conversation, said as the top. */
+.chat-intro {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 28px 18px 14px;
+}
+
+.chat-intro-mark {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  margin-bottom: 6px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--fg);
+  box-shadow: var(--glow);
+}
+
+.chat-intro-title {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+  color: var(--fg);
+}
+
+.chat-intro-text {
+  color: var(--fg-faint);
+  font-size: 14px;
 }
 
 /* A date, with the rule running through it rather than above it. */
@@ -1493,9 +2346,10 @@ details.adv[open] > summary {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin: 12px 0 6px;
+  margin: 18px 16px 4px;
   color: var(--fg-faint);
-  font-size: calc(var(--size-small) - 1px);
+  font-size: 11.5px;
+  font-weight: 650;
 }
 
 .chat-day::before,
@@ -1507,199 +2361,303 @@ details.adv[open] > summary {
 }
 
 /*
- * A message is a plain line of text, the way a log reads.
+ * A message is a line of text beside a face.
  *
- * It was a bubble, and the bubble earned its keep when the type was small:
- * each message plainly its own object. At reading size the chrome is most of
- * what a short line is made of, so it is gone. What tells you who is talking
- * is the coloured name above the run and the air between runs; what tells you
- * which line you are on is the tint the row takes under the pointer.
+ * The first line of a run carries the face in the gutter and the name and the
+ * time on the line above the words; the rest of the run is just the words,
+ * with the time waiting in the gutter for the pointer. What tells you which
+ * line you are on is the tint the row takes under it.
  */
 .chat-row {
   position: relative;
   display: flex;
-  margin-top: 3px;
-  border-radius: 6px;
+  padding: 1px 16px 1px 72px;
+  margin-top: 0;
+}
+
+.chat-row.first {
+  margin-top: 14px;
+  padding-top: 3px;
 }
 
 .chat-row:hover {
-  background: var(--surface);
-}
-
-/* A run is one block: tight inside, with air between runs. */
-.chat-row:has(.chat-name) {
-  margin-top: 14px;
+  background: color-mix(in srgb, var(--bg) 35%, transparent);
 }
 
 .chat-log > .chat-row:first-child {
-  margin-top: 0;
+  margin-top: 4px;
 }
 
 .chat-line {
   position: relative;
   min-width: 0;
-  /* Room for the actions beside it, on the narrowest panel this has. */
-  max-width: calc(100% - 108px);
-  width: fit-content;
-  padding: 0 2px;
-  line-height: 1.5;
+  width: 100%;
+  padding: 0;
+  line-height: 1.47;
+  color: var(--fg-dim);
 }
 
-/* Who wrote it, above the first line of their run. */
+/* Who wrote it, and when, above the first line of their run. */
 .chat-who {
+  position: relative;
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 8px;
-  margin-bottom: 2px;
+  margin-bottom: 1px;
 }
 
-/*
- * Everybody's name is the same colour.
- *
- * It was the accent for other people and green for your own, which is two
- * colours doing the job of one piece of information you already have: your own
- * messages are the ones you just wrote.
- */
+.chat-who > .avatar {
+  position: absolute;
+  left: -56px;
+  top: 1px;
+  cursor: default;
+}
+
 .chat-name {
-  font-weight: 600;
-  font-size: calc(var(--size) - 1px);
+  font-weight: 650;
+  font-size: 15px;
   color: var(--fg);
 }
 
 /* A note about the room rather than something somebody said. */
 .chat-line.system {
-  max-width: 100%;
+  padding: 2px 16px 2px 72px;
   color: var(--fg-faint);
   font-style: italic;
-  padding-left: 2px;
+  font-size: var(--size-small);
 }
 
 .chat-at {
   color: var(--fg-faint);
-  font-size: calc(var(--size-small) - 2px);
-  margin-left: 5px;
+  font-size: 11.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* In a run, the time lives in the gutter and appears under the pointer. */
+.chat-line > .chat-at.on-hover {
+  position: absolute;
+  left: -64px;
+  width: 52px;
+  top: 3px;
+  text-align: right;
+  font-size: 10.5px;
 }
 
 .chat-edited {
   color: var(--fg-faint);
-  font-size: calc(var(--size-small) - 2px);
+  font-size: 11px;
   margin-left: 4px;
 }
 
-.chat-reply {
-  display: block;
-  color: var(--fg-faint);
-  font-size: calc(var(--size-small) - 1px);
-  border-left: 2px solid var(--line);
-  padding-left: 5px;
-  margin-bottom: 1px;
+.chat-text {
+  color: var(--fg);
+  opacity: 0.92;
 }
 
 .chat-text code {
   font-family: var(--mono);
+  font-size: 0.88em;
   background: var(--surface-2);
-  border-radius: 3px;
-  padding: 0 3px;
+  border-radius: 5px;
+  padding: 1px 5px;
 }
 
 .chat-text a {
   color: var(--accent-text);
+  text-decoration: none;
+}
+
+.chat-text a:hover {
+  text-decoration: underline;
 }
 
 /*
- * Reply, react, edit, pin.
+ * Reply, react, edit, pin, as a small floating bar on the row's top right.
  *
- * Faded rather than removed. Taking them out of the layout took them out of the
- * tab order with it, so the only way to react to a message was to hover it,
- * which is no way at all on a phone and no way at all with a keyboard. They are
- * always there and always reachable now; what hovering changes is whether you
- * can see them.
- */
-/*
- * Beside the bubble, not out at the edge of the panel.
- *
- * They used to be pinned to the far side of the row, which on a short message
- * left them stranded halfway across the panel with nothing between them and the
- * thing they act on. They hang off the bubble now: on its right for somebody
- * else's message, on its left for your own, always a few pixels away from it
- * whatever width it is.
- *
- * The bubble's width is capped with room for them left over, so they can never
- * be pushed off the edge and clipped by the scroller.
+ * Faded rather than removed, so they stay in the tab order: the only way to
+ * react to a message must not be to hover it, which is no way at all on a
+ * phone and no way at all with a keyboard.
  */
 .chat-actions {
   position: absolute;
-  /* Centred on the bubble, so the hand travels the same both ways. */
-  top: 50%;
-  transform: translateY(-50%);
-  left: 100%;
-  margin-left: 8px;
+  top: -16px;
+  right: 16px;
+  z-index: 2;
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 0;
+  padding: 2px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  box-shadow: 0 6px 16px rgb(0 0 0 / 35%);
   opacity: 0;
   pointer-events: none;
   transition: opacity 90ms linear;
 }
 
+.chat-row:not(.first) .chat-actions {
+  top: -20px;
+}
+
 .chat-row:hover .chat-actions,
-.chat-row:focus-within .chat-actions {
+.chat-row:focus-within .chat-actions,
+.chat-row.acting .chat-actions {
   opacity: 1;
   pointer-events: auto;
 }
 
-/* No pointer to hover with: show them, quietly. */
+/* No pointer to hover with: tapping the message brings them up. */
 @media (hover: none) {
   .chat-actions {
-    opacity: 0.55;
-    pointer-events: auto;
+    opacity: 0;
+    pointer-events: none;
   }
 }
 
 .chat-actions button {
+  width: 32px;
+  min-width: 32px;
   min-height: 30px;
   height: 30px;
-  padding: 0 9px;
-  font-size: var(--size);
-  border-radius: var(--radius-sm);
+  padding: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--fg-dim);
+}
+
+.chat-actions button:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--fg);
+}
+
+.chat-actions button.danger:hover:not(:disabled) {
+  color: var(--bad);
+}
+
+.chat-actions button.on {
+  color: var(--accent-text);
 }
 
 .chat-reacts {
   display: flex;
   flex-wrap: wrap;
-  gap: 3px;
-  margin: 2px 0 3px;
+  gap: 4px;
+  margin: 4px 0 2px;
 }
 
 .chat-react {
-  min-height: 22px;
-  padding: 0 7px;
-  font-size: var(--size-small);
-  border-radius: var(--pill-radius);
+  min-height: 26px;
+  padding: 0 8px;
+  font-size: 13px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid transparent;
+  font-variant-numeric: tabular-nums;
 }
 
 .chat-react.on {
-  background: var(--select);
+  background: var(--accent-wash);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
   color: var(--select-fg);
 }
 
 .chat-react.add {
   font-weight: bold;
-  padding: 0 6px;
-}
-
-/* What the channel is for, beside its name, out of the way. */
-.channel-head {
-  min-width: 0;
-  gap: 10px;
-}
-
-.channel-topic {
-  min-width: 0;
+  padding: 0 8px;
   color: var(--fg-faint);
-  font-size: var(--size-small);
-  border-left: 1px solid var(--line);
-  padding-left: 10px;
+}
+
+/* ---------- the composer ---------- */
+
+.chat-compose {
+  flex: 0 0 auto;
+  padding: 0 16px 16px;
+}
+
+.chat-compose.stack.tight {
+  gap: 4px;
+}
+
+/* One rounded box with everything you can put in a message inside it. */
+.compose-box {
+  gap: 2px;
+  padding: 5px 5px 5px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  transition: border-color 120ms var(--ease), box-shadow 120ms var(--ease);
+}
+
+.compose-box:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.compose-box textarea {
+  flex: 1 1 auto;
+  min-height: 34px;
+  max-height: 116px;
+  padding: 7px 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  resize: none;
+  font-size: var(--size);
+  line-height: 1.4;
+}
+
+.compose-box textarea:hover,
+.compose-box textarea:focus {
+  border: 0;
+  box-shadow: none;
+}
+
+.compose-box button.ghost {
+  color: var(--fg-faint);
+  min-height: 34px;
+  height: 34px;
+}
+
+.compose-box button.icon-only {
+  width: 34px;
+  min-width: 34px;
+}
+
+.compose-box button.ghost:hover:not(:disabled) {
+  color: var(--fg);
+}
+
+.gif-button {
+  padding: 0 7px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.send-button {
+  width: 34px;
+  min-width: 34px;
+  min-height: 34px;
+  height: 34px;
+  padding: 0;
+  margin-left: 2px;
+  border-radius: 9px;
+  background: var(--beam);
+  color: var(--accent-fg);
+}
+
+.send-button:hover:not(:disabled) {
+  background: var(--beam);
+  filter: brightness(1.08);
+  box-shadow: var(--glow);
+}
+
+.send-button:disabled {
+  background: var(--surface-2);
+  color: var(--fg-disabled);
 }
 
 /* ---------- faces ---------- */
@@ -1838,9 +2796,10 @@ details.adv[open] > summary {
 
 .mention {
   color: var(--accent-text);
-  font-weight: bold;
-  border-radius: 3px;
-  padding: 0 2px;
+  background: var(--accent-wash);
+  font-weight: 600;
+  border-radius: 4px;
+  padding: 0 3px;
 }
 
 /* Being named is different from reading a name. */
@@ -1852,8 +2811,12 @@ details.adv[open] > summary {
 /* A message that names you: a warm wash across the whole row, with a bar on
    the edge so it still says so when the wash is under the pointer tint. */
 .chat-row:has(.calls-me) {
-  background: color-mix(in srgb, var(--warn) 10%, transparent);
-  box-shadow: inset 2px 0 0 var(--warn);
+  background: color-mix(in srgb, var(--warn) 8%, transparent);
+  box-shadow: inset 3px 0 0 var(--warn);
+}
+
+.chat-row:has(.calls-me):hover {
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
 }
 
 /* The line you came back to read. */
@@ -1861,9 +2824,12 @@ details.adv[open] > summary {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin: 4px 0 2px;
+  margin: 10px 16px 0;
   color: var(--bad);
-  font-size: calc(var(--size-small) - 1px);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .chat-new::after {
@@ -1895,11 +2861,11 @@ details.adv[open] > summary {
 
 /* The way in to a stream, on the line that announced it. Gone when it ends. */
 .chat-join {
-  margin-left: 8px;
-  min-height: 24px;
-  padding: 0 12px;
+  margin: 6px 0 2px;
+  min-height: 30px;
+  padding: 0 14px;
   font-size: var(--size-small);
-  border-radius: var(--pill-radius);
+  border-radius: 9px;
 }
 
 .chat-reply {
@@ -1907,14 +2873,15 @@ details.adv[open] > summary {
   width: 100%;
   text-align: left;
   min-height: 0;
-  padding: 0 0 0 5px;
+  margin-bottom: 2px;
+  padding: 0 0 0 8px;
   background: transparent;
   border: 0;
   border-left: 2px solid var(--line);
   border-radius: 0;
   box-shadow: none;
   color: var(--fg-faint);
-  font-size: calc(var(--size-small) - 1px);
+  font-size: 12.5px;
   font-weight: 400;
 }
 
@@ -1929,16 +2896,17 @@ details.adv[open] > summary {
   opacity: 0;
 }
 
-.chat-line:hover .chat-at.on-hover {
+.chat-row:hover .chat-at.on-hover,
+.chat-row:focus-within .chat-at.on-hover {
   opacity: 1;
 }
 
 .chat-typing {
-  min-height: 13px;
-  padding: 0 2px;
-  font-size: calc(var(--size-small) - 1px);
+  min-height: 16px;
+  padding: 0 4px;
+  font-size: 12px;
+  font-weight: 500;
   color: var(--fg-faint);
-  font-style: italic;
 }
 
 /*
@@ -2233,25 +3201,6 @@ input[type="text"].emoji-search {
   line-height: 1;
 }
 
-.chat-compose {
-  flex: 0 0 auto;
-}
-
-/* The glyph buttons beside the box: a face and a speaker earn a bigger cut
-   than the word "GIF", which is already a word. */
-.chat-compose button.ghost:not(.tiny-btn) {
-  font-size: 20px;
-}
-
-.chat-compose textarea {
-  font-size: var(--size);
-  /* Grown by the panel to fit what is in it, then it scrolls. */
-  min-height: var(--btn-h);
-  max-height: 116px;
-  resize: none;
-  line-height: 1.35;
-  padding: 3px 6px;
-}
 
 .chat-replying {
   display: flex;
@@ -2437,10 +3386,7 @@ input[type="text"].emoji-search {
 }
 
 /* Somebody who belongs here but is not here now. */
-.rail-person.away {
-  opacity: 0.55;
-  padding-left: 18px;
-}
+
 
 /* The messages held up at the top of a channel. */
 
@@ -2621,25 +3567,30 @@ input[type="text"].gif-search {
 .stream-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border: 1px solid var(--line);
-  border-bottom: none;
-  background: var(--surface-2);
+  gap: 6px;
+  padding: 5px 6px 5px 12px;
+  border: 1px solid color-mix(in srgb, var(--live) 28%, transparent);
+  border-radius: 12px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--live) 12%, var(--surface)), var(--surface) 60%);
   overflow-x: auto;
+}
+
+.stream-bar .eyebrow {
+  color: var(--bad);
 }
 
 .stream-tab {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  min-height: 30px;
-  max-width: 220px;
-  padding: 4px 11px 4px 6px;
-  font-size: 12px;
+  min-height: 32px;
+  max-width: 240px;
+  padding: 4px 12px 4px 6px;
+  font-size: 13px;
   white-space: nowrap;
   flex: 0 0 auto;
-  border-radius: 8px;
+  border-radius: 9px;
+  background: var(--surface-2);
 }
 
 .stream-tab.on {

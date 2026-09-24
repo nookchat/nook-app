@@ -303,7 +303,14 @@ try {
     bob.evaluate(() => window.__pwned === 1),
   ])
   check('a script inside an svg never runs, on either side', !pwned[0] && !pwned[1])
-  const noSvgInPage = await bob.evaluate(() => document.querySelectorAll('.chat-log svg').length === 0)
+  // The app's own icons sit in the message actions and the channel intro,
+  // which no message can write into. Anything else would be a message's.
+  const noSvgInPage = await bob.evaluate(
+    () =>
+      [...document.querySelectorAll('.chat-log svg')].filter(
+        (el) => !el.closest('.chat-actions, .chat-intro'),
+      ).length === 0,
+  )
   check('and no svg element is ever parsed into the page', noSvgInPage)
 
   await say(alice, 'the <svg> element is my favourite')

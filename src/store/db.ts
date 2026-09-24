@@ -148,6 +148,15 @@ export interface RoomNote {
   archive?: string
   archiveAt?: number
   /**
+   * The server this space runs on, or nothing for peer to peer. Set when the
+   * space is made or opened from a link that names one. Kept apart from the
+   * archive, so a peer to peer space that once had an archive keeps its
+   * choice, and its cursor, if it is ever opened that way again.
+   */
+  server?: string
+  /** How far through the server's copy this device has read. */
+  serverAt?: number
+  /**
    * The oldest history this device still holds, after trimming.
    *
    * Kept so the floor survives a reload. Without it, a device short of storage
@@ -192,12 +201,29 @@ export async function getRoom(room: string): Promise<RoomNote | null> {
   })
 }
 
+/**
+ * Say that the list of spaces may have changed, so the rail can look again.
+ * An event rather than a callback, because the rail and the store have no
+ * business knowing about each other.
+ */
+export const ROOMS_CHANGED = 'cathode:rooms'
+
+function roomsChanged(): void {
+  try {
+    window.dispatchEvent(new Event(ROOMS_CHANGED))
+  } catch {
+    /* no window, as in a worker: nobody to tell */
+  }
+}
+
 /** Remember that this room exists, so it can be listed and reopened. */
 export async function noteRoom(note: RoomNote): Promise<void> {
   const db = await open()
   if (!db) return
   try {
-    tx(db, ROOMS, 'readwrite').put(note)
+    const store = tx(db, ROOMS, 'readwrite')
+    store.put(note)
+    store.transaction.oncomplete = roomsChanged
   } catch {
     /* nothing to do */
   }
@@ -260,7 +286,10 @@ export async function forgetRoom(room: string): Promise<void> {
   await new Promise<void>((resolve) => {
     try {
       const transaction = db.transaction([EVENTS, ROOMS], 'readwrite')
-      transaction.oncomplete = () => resolve()
+      transaction.oncomplete = () => {
+        roomsChanged()
+        resolve()
+      }
       transaction.onerror = () => resolve()
       const store = transaction.objectStore(EVENTS)
       const cursor = store.index('room').openKeyCursor(room)

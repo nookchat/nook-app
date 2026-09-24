@@ -25,16 +25,37 @@ export const STUN_SERVERS: RTCIceServer[] = [
  *   ]
  *
  * Use short lived credentials. A key in a static site is a public key.
+ *
+ * A space on a Cathode server needs none of this: the server hands out its
+ * own short lived TURN credentials, and useServedIce puts them here for as
+ * long as that space is open.
  */
 export const TURN_SERVERS: RTCIceServer[] = []
 
+/** What the server of the open space handed out, if it runs on one. */
+let served: RTCIceServer[] = []
+/** True when that server says every call goes through its TURN relay. */
+let relayOnly = false
+
+/**
+ * Use a server's ICE servers until told otherwise. Called with nothing when
+ * the space closes, so the next space starts from the shipped list.
+ */
+export function useServedIce(servers: RTCIceServer[] = [], only = false): void {
+  served = servers
+  relayOnly = only && servers.length > 0
+}
+
 export function hasTurn(): boolean {
-  return TURN_SERVERS.length > 0
+  return TURN_SERVERS.length > 0 || served.length > 0
 }
 
 export function rtcConfig(): RTCConfiguration {
   return {
-    iceServers: [...STUN_SERVERS, ...TURN_SERVERS],
+    iceServers: [...STUN_SERVERS, ...TURN_SERVERS, ...served],
+    // Relay only hides every address from everybody, and costs the server
+    // the bandwidth of every call. The server decides. See server/README.md.
+    iceTransportPolicy: relayOnly ? 'relay' : 'all',
     bundlePolicy: 'max-bundle',
     rtcpMuxPolicy: 'require',
     iceCandidatePoolSize: 0,

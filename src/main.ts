@@ -1,7 +1,8 @@
 /**
- * Cathode. A peer to peer place, with screen sharing in it.
+ * Cathode. A place with screen sharing in it, peer to peer or on a server.
  *
- * The only server is the one that served this page. Read the plan in README.md.
+ * Peer to peer, the only server is the one that served this page. A space can
+ * also run on a Cathode server instead: see backend.ts. Read README.md.
  */
 
 import './styles.css'
@@ -9,6 +10,7 @@ import { clearLink, readLink, setLinkSecret } from './room'
 import { clear } from './ui/dom'
 import { createWindow, type WindowChrome } from './ui/shell'
 import { spaceList } from './ui/space-list'
+import { mountSpaceRail } from './ui/space-rail'
 import { SpaceView } from './ui/space-view'
 import { findBySecret } from './store/db'
 import { toast } from './ui/toast'
@@ -25,32 +27,42 @@ interface Screen {
   readonly secret?: string
   /** And whether it was opened with a password, which decides the same thing. */
   readonly locked?: boolean
+  /** And where it runs. */
+  readonly server?: string
 }
 
 let active: Screen | null = null
 
-function freshWindow(title: string): WindowChrome {
+function freshWindow(title: string, space: string | null): WindowChrome {
   active?.destroy()
   active = null
   clear(mount)
   const chrome = createWindow(title)
   mount.append(chrome.root)
+  mountSpaceRail(chrome.rail, space, {
+    home: () => void showList(),
+    add: () => void showList(true),
+    open: (room) =>
+      void enter(room.secret, room.locked === true, room.password ?? '', false, '', room.server ?? ''),
+  })
   return chrome
 }
 
-async function showList(): Promise<void> {
+async function showList(making = false): Promise<void> {
   clearLink()
-  const chrome = freshWindow('Cathode')
+  const chrome = freshWindow('Cathode', null)
   chrome.setStatus(['Pick a space, or make one'])
   chrome.setActions({})
   chrome.body.append(
     await spaceList({
       // A name means this space is being made rather than joined, so whoever
       // typed it is the one who claims the founder's key.
-      open: (secret, locked, password, name) =>
-        void enter(secret, locked, password, name !== undefined, name),
+      open: (secret, locked, password, name, server) =>
+        void enter(secret, locked, password, name !== undefined, name, server),
     }),
   )
+  // Came from the plus on the rail: straight to naming a new one.
+  if (making) chrome.body.querySelector<HTMLInputElement>('input[aria-label="Space name"]')?.focus()
 }
 
 function openSpace(
@@ -59,14 +71,16 @@ function openSpace(
   password = '',
   fresh = false,
   name = '',
+  server = '',
 ): void {
-  const chrome = freshWindow('Cathode')
-  setLinkSecret(secret, locked)
+  const chrome = freshWindow('Cathode', secret)
+  setLinkSecret(secret, locked, server)
   const view = new SpaceView(chrome.body, secret, chrome, () => void showList(), {
     locked,
     password,
     fresh,
     name,
+    server,
   })
   active = view
   void view.start()
@@ -84,6 +98,9 @@ function openSpace(
  * not fail: it lands in a different room, empty, under the same code. That is
  * what a bare code from the list or from somebody's message looks like, and it
  * is why the store is asked before the code is trusted.
+ *
+ * Where it runs comes from the link when the link says, and from the store
+ * when it does not: a bare code typed in by hand says nothing about servers.
  */
 async function enter(
   secret: string,
@@ -91,8 +108,10 @@ async function enter(
   password = '',
   fresh = false,
   name = '',
+  server?: string,
 ): Promise<void> {
   const known = fresh ? null : await findBySecret(secret)
+  const where = server ?? known?.server ?? ''
   const needsPassword = locked ?? known?.locked === true
   let pass = password
   if (needsPassword && !pass) pass = known?.password ?? ''
@@ -103,12 +122,12 @@ async function enter(
       return
     }
   }
-  openSpace(secret, needsPassword, pass, fresh, name)
+  openSpace(secret, needsPassword, pass, fresh, name, where)
 }
 
 const linked = readLink()
 if (linked) {
-  void enter(linked.secret, linked.locked)
+  void enter(linked.secret, linked.locked, '', false, '', linked.server)
 } else {
   void showList()
 }
@@ -129,8 +148,14 @@ window.addEventListener('hashchange', () => {
   }
   // The code alone does not say which room this is: a locked space and an
   // unlocked one wearing the same code are two different rooms.
-  if (active?.secret === next.secret && active.locked === next.locked) return
-  void enter(next.secret, next.locked)
+  if (
+    active?.secret === next.secret &&
+    active.locked === next.locked &&
+    (next.server === undefined || active.server === next.server)
+  ) {
+    return
+  }
+  void enter(next.secret, next.locked, '', false, '', next.server)
 })
 
 window.addEventListener('beforeunload', (ev) => {

@@ -197,10 +197,10 @@ try {
   // Alice makes a second channel and Bob stands in it, so the first goes unread.
   alice.once('dialog', (d) => d.accept('random'))
   await alice.click('.rail-left button[title="Make a text channel"]')
-  await alice.waitForFunction(() => document.querySelector('.space-head .eyebrow')?.textContent === '#random', null, { timeout: 10_000 })
+  await alice.waitForFunction(() => document.querySelector('.space-head .channel-name')?.textContent === 'random', null, { timeout: 10_000 })
   await alice.click('.rail-left .rail-item:has-text("general")')
   await bob.click('.rail-left .rail-item:has-text("random")')
-  await bob.waitForFunction(() => document.querySelector('.space-head .eyebrow')?.textContent === '#random', null, { timeout: 10_000 })
+  await bob.waitForFunction(() => document.querySelector('.space-head .channel-name')?.textContent === 'random', null, { timeout: 10_000 })
 
   await say(alice, 'anybody about')
   await say(alice, 'hello @Bob again')

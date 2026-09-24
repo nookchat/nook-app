@@ -1,28 +1,99 @@
-# Start an archive:
+# The Cathode server, on a machine of your own.
 #
+#   cp server/.env.example server/.env    then fill it in
 #   docker compose -f server/docker-compose.yml up -d
 #
-# Then paste http://localhost:8787 into Settings, under Archive, in any space
-# you want kept. Nothing else changes: the space works exactly as it did, and
-# it keeps working if this container is stopped, moved, or thrown away.
+# Three containers:
+#
+#   cathode   history, the WebSocket relay, link previews, TURN credentials
+#   turn      coturn, which carries the picture and the sound when peer to
+#             peer cannot get through
+#   caddy     HTTPS for cathode, with a certificate from Let's Encrypt
+#
+# The page itself stays where it is (Vercel, or any static host). Build it with
+# VITE_CATHODE_SERVER=https://<CATHODE_DOMAIN> and "Server" is offered, and
+# preselected, when somebody makes a space.
+#
+# Only the server, for a try on this machine:
+#
+#   docker compose -f server/docker-compose.yml up -d cathode
+#
+# and use http://localhost:8787 as the server address.
+
+name: cathode
 
 services:
-  archive:
+  cathode:
     build: .
-    container_name: cathode-archive
+    image: cathode-server
+    container_name: cathode
     restart: unless-stopped
     ports:
-      - '8787:8787'
+      # Plain HTTP, so only this machine by default: the world comes in through
+      # Caddy. Set CATHODE_BIND=0.0.0.0 to put your own proxy in front instead.
+      - '${CATHODE_BIND:-127.0.0.1}:8787:8787'
     volumes:
-      - archive-data:/data
+      - cathode-data:/data
     environment:
       # How much ciphertext one space may keep before the oldest is dropped.
-      CATHODE_MAX_ROOM_BYTES: 268435456
-    healthcheck:
-      test: ['CMD', 'wget', '-qO-', 'http://localhost:8787/health']
-      interval: 30s
-      timeout: 3s
-      retries: 3
+      CATHODE_MAX_ROOM_BYTES: ${CATHODE_MAX_ROOM_BYTES:-268435456}
+      # The pages that may use this server. * is any page.
+      CATHODE_ORIGINS: ${CATHODE_ORIGINS:-*}
+      # TURN, handed to every space on this server. Empty turns it off.
+      CATHODE_TURN_URLS: ${CATHODE_TURN_URLS:-}
+      CATHODE_TURN_SECRET: ${CATHODE_TURN_SECRET:-}
+      CATHODE_TURN_ONLY: ${CATHODE_TURN_ONLY:-0}
+      # Optional GIF search for /gif. See server/README.md.
+      CATHODE_TENOR_KEY: ${CATHODE_TENOR_KEY:-}
+
+  turn:
+    image: coturn/coturn:4.6
+    container_name: cathode-turn
+    restart: unless-stopped
+    # TURN needs a wide range of UDP ports, and host networking is the only
+    # sane way to give a container one.
+    network_mode: host
+    command:
+      - -n
+      - --log-file=stdout
+      - --listening-port=3478
+      - --fingerprint
+      - --use-auth-secret
+      - --static-auth-secret=${CATHODE_TURN_SECRET:-}
+      - --realm=${CATHODE_DOMAIN:-cathode}
+      - --external-ip=$$(detect-external-ip)
+      - --min-port=${CATHODE_TURN_MIN_PORT:-49160}
+      - --max-port=${CATHODE_TURN_MAX_PORT:-49260}
+      - --no-cli
+      - --no-tls
+      - --no-dtls
+      - --no-multicast-peers
+      # Never relay into this machine's own network.
+      - --denied-peer-ip=0.0.0.0-0.255.255.255
+      - --denied-peer-ip=10.0.0.0-10.255.255.255
+      - --denied-peer-ip=100.64.0.0-100.127.255.255
+      - --denied-peer-ip=127.0.0.0-127.255.255.255
+      - --denied-peer-ip=169.254.0.0-169.254.255.255
+      - --denied-peer-ip=172.16.0.0-172.31.255.255
+      - --denied-peer-ip=192.168.0.0-192.168.255.255
+    profiles: ['turn']
+
+  caddy:
+    image: caddy:2
+    container_name: cathode-caddy
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      CATHODE_DOMAIN: ${CATHODE_DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on:
+      - cathode
+    profiles: ['tls']
 
 volumes:
-  archive-data:
+  cathode-data:
+  caddy-data:

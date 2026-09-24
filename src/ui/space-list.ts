@@ -4,17 +4,24 @@
  * Every space you visit is remembered on this device, so coming back is a click
  * rather than a hunt for a link. New space makes a code; Join takes one that
  * somebody sent you, in whatever shape they sent it.
+ *
+ * Making one is also where you say where it runs, peer to peer or on a
+ * server. The choice is the space's for good and goes out in its invite, so
+ * it is asked once, here, and nowhere else. See backend.ts.
  */
 
+import { checkServer, lastChoice, lastServer, rememberChoice, serverTag, serverUrl } from '../backend'
 import { newSecret, parseLink } from '../room'
 import { forgetRoom, listRooms, type RoomNote } from '../store/db'
 import { loadIdentity } from '../store/identity'
 import { clear, h } from './dom'
-import { icon } from './icons'
+import { icon, logo } from './icons'
+import { hideShadows, initials, spaceHue } from './space-rail'
 import { toast } from './toast'
 
 export interface SpaceListActions {
-  open(secret: string, locked?: boolean, password?: string, name?: string): void
+  /** A name means the space is being made. A server means it runs on one. */
+  open(secret: string, locked?: boolean, password?: string, name?: string, server?: string): void
 }
 
 export async function spaceList(actions: SpaceListActions): Promise<HTMLElement> {
@@ -40,7 +47,7 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
      * have it. Asking here meant being asked for the password of a space you
      * made yourself, every time somebody pasted you its link.
      */
-    actions.open(link.secret, link.locked ? true : undefined)
+    actions.open(link.secret, link.locked ? true : undefined, undefined, undefined, link.server)
   }
   join.addEventListener('keydown', (ev) => {
     if ((ev as KeyboardEvent).key === 'Enter') go()
@@ -51,18 +58,73 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
     placeholder: 'Name it. Weeknight raids, book club, work.',
     ariaLabel: 'Space name',
   })
+  /*
+   * Where it runs. Whatever was picked last time, which on a page built with
+   * a server is that server until somebody says otherwise.
+   */
+  let onServer = lastChoice().server !== ''
+  const serverInput = h('input', {
+    type: 'text',
+    placeholder: 'cathode.example.org',
+    ariaLabel: 'Server address',
+    value: serverTag(lastChoice().server || lastServer()),
+  })
+  const p2pButton = h('button', { class: 'chip', text: 'Peer to peer' })
+  const serverButton = h('button', { class: 'chip' }, [icon('server', 13), 'Server'])
+  const whereNote = h('div', { class: 'tiny faint' })
+  const serverRow = h('div', { class: 'row' }, [serverInput])
+  const paintWhere = (): void => {
+    p2pButton.classList.toggle('on', !onServer)
+    serverButton.classList.toggle('on', onServer)
+    p2pButton.setAttribute('aria-pressed', String(!onServer))
+    serverButton.setAttribute('aria-pressed', String(onServer))
+    serverRow.classList.toggle('hidden', !onServer)
+    whereNote.textContent = onServer
+      ? 'Chat, history and every handshake go through this server, sealed so it cannot read them. It works on networks that block peer to peer, and it remembers what was said while everybody was away.'
+      : 'Nothing runs anywhere. Everybody connects straight to everybody else, and every device keeps the history.'
+  }
+  p2pButton.addEventListener('click', () => {
+    onServer = false
+    paintWhere()
+  })
+  serverButton.addEventListener('click', () => {
+    onServer = true
+    paintWhere()
+    if (!serverInput.value) serverInput.focus()
+  })
+  paintWhere()
+
+  /** The server to make the space on, checked, or null when it cannot be used. */
+  const pickServer = async (): Promise<string | null> => {
+    if (!onServer) return ''
+    const url = serverUrl(serverInput.value)
+    if (!url) {
+      toast('Say which server. It looks like cathode.example.org.', 'warn')
+      serverInput.focus()
+      return null
+    }
+    if (!(await checkServer(url))) {
+      toast(`No Cathode server answered at ${serverTag(url)}.`, 'bad', 6000)
+      return null
+    }
+    return url
+  }
+
   /** Make a space and walk in as its founder. */
-  const make = (locked: boolean): void => {
+  const make = async (locked: boolean): Promise<void> => {
     const name = title.value.trim().slice(0, 60)
+    const server = await pickServer()
+    if (server === null) return
+    rememberChoice({ server })
     if (!locked) {
-      actions.open(newSecret(), false, '', name)
+      actions.open(newSecret(), false, '', name, server)
       return
     }
     const password = window.prompt('Choose a password for this space.') ?? ''
-    if (password) actions.open(newSecret(), true, password, name)
+    if (password) actions.open(newSecret(), true, password, name, server)
   }
   title.addEventListener('keydown', (ev) => {
-    if ((ev as KeyboardEvent).key === 'Enter') make(false)
+    if ((ev as KeyboardEvent).key === 'Enter') void make(false)
   })
 
   const recent = h('div', { class: 'stack tight' })
@@ -92,9 +154,11 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
   const paint = async (): Promise<void> => {
     // A closed space keeps a note so its link says why it is gone. It is not a
     // space any more, so it is not in the list of them.
-    const rooms = withoutShadows((await listRooms()).filter((r) => !r.closed))
+    const rooms = hideShadows((await listRooms()).filter((r) => !r.closed))
     clear(recent)
     for (const room of rooms.slice(0, 12)) {
+      const face = h('span', { class: 'space-tile', text: initials(room.title || 'Unnamed space') })
+      face.style.setProperty('--hue', String(spaceHue(room.room)))
       recent.append(
         h('div', { class: 'row space-row' }, [
           h(
@@ -104,14 +168,34 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
               // The lock and the password travel with the space, or the code
               // alone derives a different room: same code, empty, and a second
               // row in this list next time.
-              on: { click: () => actions.open(room.secret, room.locked === true, room.password ?? '') },
+              on: {
+                click: () =>
+                  actions.open(
+                    room.secret,
+                    room.locked === true,
+                    room.password ?? '',
+                    undefined,
+                    room.server ?? '',
+                  ),
+              },
             },
             [
-              h('span', { class: 'grow truncate', text: room.title || 'Unnamed space' }),
-              room.locked
-                ? h('span', { class: 'tiny faint', title: 'Needs a password' }, [icon('shield', 11)])
+              face,
+              h('span', { class: 'space-row-text' }, [
+                h('span', { class: 'truncate space-row-name', text: room.title || 'Unnamed space' }),
+                h('span', {
+                  class: 'tiny faint truncate',
+                  text: `${room.server ? serverTag(room.server) : 'Peer to peer'} · ${whenLabel(room.lastSeen)}`,
+                }),
+              ]),
+              room.server
+                ? h('span', { class: 'tiny faint', title: `Runs on ${serverTag(room.server)}` }, [
+                    icon('server', 13),
+                  ])
                 : null,
-              h('span', { class: 'tiny faint', text: whenLabel(room.lastSeen) }),
+              room.locked
+                ? h('span', { class: 'tiny faint', title: 'Needs a password' }, [icon('shield', 13)])
+                : null,
             ],
           ),
           h('button', {
@@ -125,7 +209,7 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
     }
     if (rooms.length === 0) {
       recent.append(
-        h('div', { class: 'empty' }, [
+        h('div', { class: 'empty home-empty' }, [
           h('div', { class: 'small', text: 'No spaces yet.' }),
           h('div', { class: 'tiny faint', text: 'Make one, or paste an invite.' }),
         ]),
@@ -134,25 +218,35 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
   }
   await paint()
 
-  return h('main', {}, [
-    h('div', { class: 'center-page' }, [
-      h('div', { class: 'sheet stack' }, [
-        h('div', { class: 'card stack tight' }, [
+  return h('main', { class: 'home' }, [
+    h('div', { class: 'home-page' }, [
+      h('header', { class: 'home-hero' }, [
+        h('span', { class: 'home-mark' }, [logo(40)]),
+        h('div', { class: 'stack tight' }, [
+          h('h1', { class: 'home-title', text: 'Cathode' }),
+          h('div', {
+            class: 'home-tag',
+            text: 'Chat, voice and screen sharing. Peer to peer, or on your own server. Sealed end to end either way.',
+          }),
+        ]),
+      ]),
+      h('div', { class: 'home-grid' }, [
+        h('section', { class: 'card stack tight home-spaces' }, [
           h('span', { class: 'eyebrow', text: 'Your spaces' }),
           recent,
         ]),
-        h('div', { class: 'card stack tight' }, [
-          h('span', { class: 'eyebrow', text: 'Join one' }),
-          h('div', { class: 'row' }, [
-            join,
-            h('button', { text: 'Join', on: { click: go } }),
-          ]),
-        ]),
+        h('div', { class: 'stack home-side' }, [
         h('div', { class: 'card stack tight' }, [
           h('span', { class: 'eyebrow', text: 'Make one' }),
           title,
+          h('div', { class: 'chips', role: 'group', ariaLabel: 'Where it runs' }, [
+            p2pButton,
+            serverButton,
+          ]),
+          serverRow,
+          whereNote,
           h('div', { class: 'row' }, [
-            h('button', { class: 'primary big grow', on: { click: () => make(false) } }, [
+            h('button', { class: 'primary big grow', on: { click: () => void make(false) } }, [
               icon('plus', 16),
               'New space',
             ]),
@@ -160,7 +254,7 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
               class: 'big',
               title: 'Nobody can join with the link alone: they need the password too',
               text: 'Add a password',
-              on: { click: () => make(true) },
+              on: { click: () => void make(true) },
             }),
           ]),
           h('div', {
@@ -168,26 +262,17 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
             text: 'Whoever makes a space is its admin. Everybody else joins as a member until you say otherwise.',
           }),
         ]),
+        h('div', { class: 'card stack tight' }, [
+          h('span', { class: 'eyebrow', text: 'Join one' }),
+          h('div', { class: 'row' }, [
+            join,
+            h('button', { class: 'join-button', text: 'Join', on: { click: go } }, [icon('enter', 15)]),
+          ]),
+        ]),
+        ]),
       ]),
     ]),
   ])
-}
-
-/**
- * Drop the empty twin a locked space used to leave behind.
- *
- * Opening a locked space without its password derives a different room from the
- * same code: a real room, with a real note, holding nothing. Nothing makes one
- * now, but the ones already made are still sitting in people's lists next to
- * the space they are a shadow of, and clicking either was a coin toss.
- *
- * Only ever the nameless one, only when the space it shadows is right there
- * with a password, and nothing is deleted: the note stays, and so does anything
- * that was written into it.
- */
-function withoutShadows(rooms: RoomNote[]): RoomNote[] {
-  const locked = new Set(rooms.filter((r) => r.locked && r.password).map((r) => r.secret))
-  return rooms.filter((r) => !(!r.locked && !r.title && locked.has(r.secret)))
 }
 
 function whenLabel(at: number): string {

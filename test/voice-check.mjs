@@ -172,7 +172,7 @@ try {
 
   await one.evaluate(() => {
     const button = [...document.querySelectorAll('button')].find((b) =>
-      /mute/i.test(b.textContent ?? ''),
+      /^mute$/i.test(b.getAttribute('aria-label') ?? b.textContent ?? ''),
     )
     button?.click()
   })

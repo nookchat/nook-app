@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Peer to peer screen share with audio. No server except the static host.",
+  "description": "Screen share, voice and chat. Peer to peer, or on a Cathode server you run.",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
@@ -37,7 +37,12 @@
     "test:chat": "node test/chat-check.mjs",
     "test:extras": "node test/extras-check.mjs",
     "test:polish": "node test/polish-check.mjs",
-    "test:board": "node test/board-check.mjs"
+    "test:board": "node test/board-check.mjs",
+    "test:server": "node test/server-check.mjs",
+    "server": "node server/server.mjs",
+    "test:speed": "node test/speed.mjs",
+    "test:bench": "node test/server-bench.mjs",
+    "tour": "node test/tour.mjs"
   },
   "dependencies": {
     "@jitsi/rnnoise-wasm": "^0.2.1",

@@ -42,6 +42,9 @@ export interface LinkPreview {
 
 /** How many events to push in one request. */
 const BATCH = 200
+/** How many lines to ask for at once, and how many pages one catch up may take. */
+const PAGE = 2000
+const MAX_PAGES = 200
 /** The smallest line cap any deployed archive enforces, in characters. A
     sealed line over this can never land anywhere, whatever this build says. */
 const LINE_FLOOR = 64 * 1024
@@ -203,35 +206,50 @@ export class Archive {
    */
   async fetch(): Promise<LogEvent[]> {
     if (!this.url) return []
-    const page = await this.page(this.at)
-    if (!page) return []
+    const out: LogEvent[] = []
     /*
-     * An archive that got shorter trimmed itself, and trimming rewrites the
-     * file, so every line number after it moved. Ours now points past the end
-     * and would sit there for ever, reading nothing while the archive filled up
-     * again. Start over from the top: everything already held costs one merge
-     * that finds nothing new, and nothing else.
+     * Page by page, until the archive says that was the last. A server hands
+     * out a few thousand lines at a time so that nobody's first visit to a
+     * busy space is one enormous reply; an older one hands out everything and
+     * never says more, which ends the loop after one.
      */
-    if (page.at < this.at) {
-      this.at = 0
-      const again = await this.page(0)
-      return again ? this.take(again) : []
+    for (let pages = 0; pages < MAX_PAGES; pages++) {
+      const page = await this.page(this.at)
+      if (!page) break
+      /*
+       * An archive that got shorter trimmed itself, and trimming rewrites the
+       * file, so every line number after it moved. Ours now points past the end
+       * and would sit there for ever, reading nothing while the archive filled
+       * up again. Start over from the top: everything already held costs one
+       * merge that finds nothing new, and nothing else.
+       */
+      if (page.at < this.at) {
+        this.at = 0
+        continue
+      }
+      out.push(...(await this.take(page)))
+      if (!page.more) break
     }
-    return this.take(page)
+    return out
   }
 
   /** One request. Null when the archive is unreachable or unhappy. */
-  private async page(from: number): Promise<{ at: number; events: unknown[] } | null> {
+  private async page(
+    from: number,
+  ): Promise<{ at: number; events: unknown[]; more: boolean } | null> {
     try {
-      const res = await globalThis.fetch(`${this.url}/events/${this.room}?from=${from}`, {
+      const res = await globalThis.fetch(`${this.url}/events/${this.room}?from=${from}&limit=${PAGE}`, {
         method: 'GET',
         mode: 'cors',
       })
       if (!res.ok) return null
-      const body = (await res.json()) as { at?: number; events?: unknown }
+      const body = (await res.json()) as { at?: number; events?: unknown; more?: unknown }
+      const at = typeof body.at === 'number' && body.at >= 0 ? body.at : from
       return {
-        at: typeof body.at === 'number' && body.at >= 0 ? body.at : from,
+        at,
         events: Array.isArray(body.events) ? body.events : [],
+        // A page that moved nothing is the last, whatever it says.
+        more: body.more === true && at > from,
       }
     } catch {
       return null
@@ -241,9 +259,12 @@ export class Archive {
   /** Open what came back, and move the cursor to where it ended. */
   private async take(page: { at: number; events: unknown[] }): Promise<LogEvent[]> {
     const out: LogEvent[] = []
-    for (const line of page.events) {
-      if (typeof line !== 'string') continue
-      const env = await unseal(this.key, line)
+    // All at once: the browser opens them in parallel, where one at a time
+    // waited on every decryption in turn.
+    const opened = await Promise.all(
+      page.events.map((line) => (typeof line === 'string' ? unseal(this.key, line) : null)),
+    )
+    for (const env of opened) {
       if (!env?.data) continue
       out.push(env.data as unknown as LogEvent)
     }

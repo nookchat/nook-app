@@ -1,0 +1,10 @@
+# HTTPS in front of the Cathode server. Caddy gets the certificate itself and
+# passes WebSocket upgrades through without being told to.
+{$CATHODE_DOMAIN} {
+	# Pages of history are large. zstd is the cheap way to make them smaller.
+	encode zstd gzip
+	reverse_proxy cathode:8787 {
+		# Frames go through at once, not when a buffer fills.
+		flush_interval -1
+	}
+}

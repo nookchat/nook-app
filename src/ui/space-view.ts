@@ -28,6 +28,8 @@ import { deriveRoom, formatSecret, newPeerId, roomLink, type Room } from '../roo
 import { HostPeer } from '../rtc/host-peer'
 import { ViewerPeer } from '../rtc/viewer-peer'
 import { NO_HARDWARE, probeHardwareEncoders, type HardwareProbe } from '../rtc/hardware'
+import { useServedIce } from '../rtc/config'
+import { fetchIce, serverTag } from '../backend'
 import {
   availableCodecs,
   FPS_CHOICES,
@@ -46,7 +48,6 @@ import { loadSettings, saveSettings, type HostSettings } from '../settings'
 import { cleanName, mentionsMe } from '../chat'
 import { forgetRoom, getRoom, noteRoom, tombstoneRoom } from '../store/db'
 import { loadIdentity, saveDisplayName, shortKey, signClaim, verifyClaim } from '../store/identity'
-import { settingsView } from './settings-view'
 import { Archive, defaultArchive } from '../store/archive'
 import { buzzNudge, chirpJoin, chirpLeave, chirpMessage, isNews, speak } from './sounds'
 import { openSoundboard, playSound, soundById, soundByName, SOUNDS } from './soundboard'
@@ -67,7 +68,6 @@ import { openMenu, type MenuItem } from './menu'
 import { placeNear } from './emoji'
 import { avatarOf } from './chat-panel'
 import { loadAvatar } from './avatar'
-import { qrSvg } from './qr'
 import type { WindowChrome } from './shell'
 import { toast } from './toast'
 import { notify } from './notify'
@@ -157,6 +157,17 @@ export class SpaceView {
   /** Whether a password went into deriving this room. Part of which room it is. */
   readonly locked: boolean
   private readonly password: string
+  /**
+   * The server this space runs on, or empty for peer to peer. See backend.ts.
+   * Fixed for the life of the space, because everybody in it has to agree.
+   */
+  readonly server: string
+  /** Whether the server's relay was up last time anybody looked. */
+  private serverUp = false
+  /** Whether it has ever been up, so the first connection is not a return. */
+  private serverSeen = false
+  /** The catch up under way, so two are never run at once. */
+  private catching: Promise<void> | null = null
   /** True when this person just made the space, so they claim it. */
   private readonly fresh: boolean
   private readonly wantedName: string
@@ -248,6 +259,11 @@ export class SpaceView {
   private pinsButton!: HTMLButtonElement
   private channelsButton!: HTMLButtonElement
   private peopleButton!: HTMLButtonElement
+  /** You, at the foot of the channels: your face, your name, and the status line. */
+  private meFace!: HTMLSpanElement
+  private meName!: HTMLSpanElement
+  /** Whether the members column is folded away, on a screen wide enough for it. */
+  private membersHidden = false
   /** Which rail is showing over the conversation, on a narrow screen. */
   private railOpen: 'left' | 'right' | null = null
 
@@ -280,7 +296,7 @@ export class SpaceView {
     secret: string,
     chrome: WindowChrome | null,
     onLeave: () => void,
-    lock: { locked: boolean; password: string; fresh?: boolean; name?: string } = {
+    lock: { locked: boolean; password: string; fresh?: boolean; name?: string; server?: string } = {
       locked: false,
       password: '',
     },
@@ -292,6 +308,7 @@ export class SpaceView {
     this.password = lock.password
     this.fresh = lock.fresh === true
     this.wantedName = lock.name ?? ''
+    this.server = lock.server ?? ''
     this.onLeave = onLeave
     chrome?.setActions({
       minimise: () => this.root.classList.toggle('rail-hidden'),
@@ -350,12 +367,26 @@ export class SpaceView {
     this.openedAt = this.read[this.channel] ?? 0
     void chat.readDirect()
 
-    const bus = new SignalBus(this.room, this.selfId)
+    /*
+     * On a server, its relay is the only relay, and it carries the chat as
+     * well as the handshakes. Its TURN credentials are fetched beside that and
+     * not waited for: nothing needs them until somebody shares or talks.
+     */
+    if (this.server) {
+      void fetchIce(this.server).then((ice) => {
+        if (!this.stopped) useServedIce(ice.iceServers, ice.relayOnly)
+      })
+    }
+    const bus = new SignalBus(
+      this.room,
+      this.selfId,
+      this.server ? [new WsRelayTransport(this.server, serverTag(this.server))] : undefined,
+    )
     const voice = new Voice(bus, this.selfId)
     voice.onChange = () => this.draw()
     voice.onArrival = (arrived) => (arrived ? chirpJoin() : chirpLeave())
     this.voice = voice
-    const mesh = new Mesh(bus, this.selfId, identity.name)
+    const mesh = new Mesh(bus, this.selfId, identity.name, this.server !== '')
     mesh.extra = () => ({
       // Who this is, so the roster is a list of people rather than of tabs.
       key: identity.pubkey,
@@ -395,6 +426,17 @@ export class SpaceView {
     bus.onHealth = () => {
       this.status()
       this.watchRelays()
+      /*
+       * Back on the server after being off it. Whatever was said in between
+       * went past this device, and the server kept it, so ask. The first time
+       * is the catch up on the way in, which is already under way.
+       */
+      if (this.server) {
+        const up = bus.connected
+        if (up && !this.serverUp && this.serverSeen) void this.catchUp()
+        if (up) this.serverSeen = true
+        this.serverUp = up
+      }
     }
     bus.start()
     mesh.start()
@@ -414,19 +456,28 @@ export class SpaceView {
      */
     if (this.room) {
       const archive = new Archive(this.room.id, this.room.key, this.room.write)
-      // What this space was told, or the default, or nothing. A space that was
-      // told the empty string was turned off here on purpose and stays off.
-      const wanted = note?.archive !== undefined ? note.archive : defaultArchive()
+      /*
+       * What this space was told, or the default, or nothing. A space that was
+       * told the empty string was turned off here on purpose and stays off.
+       * A space on a server has no say: the server is its archive.
+       */
+      const wanted = this.server
+        ? this.server
+        : note?.archive !== undefined
+          ? note.archive
+          : defaultArchive()
       this.archive = archive
       if (wanted) {
-        archive.use(wanted, note?.archiveAt ?? 0)
+        // A cursor counts lines in one archive, so the server's is kept apart.
+        archive.use(wanted, this.server ? note?.serverAt ?? 0 : note?.archiveAt ?? 0)
         void this.catchUp()
         /*
          * The same machine carries handshakes too. The public relays stay on
          * the roster as spares, so a space with its own archive rides its own
-         * infrastructure and survives everybody else's bad night.
+         * infrastructure and survives everybody else's bad night. A space on
+         * a server already rides nothing else.
          */
-        this.bus?.addRelay(new WsRelayTransport(wanted))
+        if (!this.server) this.bus?.addRelay(new WsRelayTransport(wanted))
       }
     }
 
@@ -538,6 +589,9 @@ export class SpaceView {
     const bus = this.bus
     this.bus = null
     if (bus) window.setTimeout(() => bus.stop(), 200)
+    this.archive?.dispose()
+    // The next space starts from the ICE servers the page ships with.
+    if (this.server) useServedIce()
     document.title = 'Cathode'
   }
 
@@ -703,7 +757,7 @@ export class SpaceView {
     }
     this.noticeMentions(fresh)
     // Pass on what was new, so a line reaches people we are not linked to.
-    for (const wire of this.chat?.encode(fresh) ?? []) this.mesh?.broadcast(wire)
+    for (const wire of this.chat?.encode(fresh) ?? []) this.mesh?.forward(from, wire)
     /*
      * And to the archive, which only ever heard what this device said itself.
      *
@@ -1267,7 +1321,7 @@ export class SpaceView {
         return true
       }
       case 'invite': {
-        void copyText(roomLink(this.secret, this.locked)).then((ok) =>
+        void copyText(roomLink(this.secret, this.locked, this.server)).then((ok) =>
           toast(ok ? 'Invite link copied.' : 'Could not copy it.', ok ? 'info' : 'warn'),
         )
         return true
@@ -1566,7 +1620,16 @@ export class SpaceView {
    * grows too large, so what those copies pushed out was the real history they
    * were copies of.
    */
-  private async catchUp(): Promise<void> {
+  private catchUp(): Promise<void> {
+    /*
+     * One at a time. Two at once both start from the same cursor, and on a
+     * first visit both hand the archive the whole log, which it keeps twice.
+     */
+    this.catching ??= this.tradeHistory().finally(() => (this.catching = null))
+    return this.catching
+  }
+
+  private async tradeHistory(): Promise<void> {
     if (!this.archive?.on || !this.chat) return
     // Nothing read from this archive yet, so what it holds is unknown and this
     // device's history may be the only copy of some of it.
@@ -1587,7 +1650,8 @@ export class SpaceView {
 
   /** Point this space at an archive, or at nothing. */
   async setArchive(url: string): Promise<boolean> {
-    if (!this.room) return false
+    // A space on a server keeps its history there, and nowhere else is asked.
+    if (!this.room || this.server) return false
     const archive = this.archive ?? new Archive(this.room.id, this.room.key, this.room.write)
     this.archive = archive
     const accepted = archive.use(url)
@@ -1656,6 +1720,10 @@ export class SpaceView {
      */
     if (this.direct) {
       const name = this.chat.nameOf(this.direct) || shortKey(this.direct)
+      this.chatPanel?.setIntro({
+        title: name,
+        text: `This is the start of your private conversation with ${name}. It is sealed so that only the two of you can read it.`,
+      })
       this.chatPanel?.setDirect(this.direct, name)
       this.chatPanel?.render(this.chat.directWith(this.direct))
       this.chatPanel?.setTitle(name)
@@ -1671,6 +1739,12 @@ export class SpaceView {
       this.chatPanel?.render(thread)
       this.chatPanel?.setTitle(`Thread in #${this.channel}`)
     } else {
+      const info = this.chat.channelInfo().find((c) => c.name === this.channel)
+      const label = info?.label ?? this.channel
+      this.chatPanel?.setIntro({
+        title: `Welcome to #${label}`,
+        text: info?.topic || `This is the start of #${label}.`,
+      })
       this.chatPanel?.render(this.chat.messages(this.channel))
       this.chatPanel?.setTitle('Chat')
     }
@@ -1689,7 +1763,9 @@ export class SpaceView {
     // line about what the channel is for when there is one.
     const here = this.chat.channelInfo().find((c) => c.name === this.channel)
     clear(this.channelTitle)
-    this.channelTitle.append(h('span', { class: 'eyebrow', text: `#${here?.label ?? this.channel}` }))
+    this.channelTitle.append(
+      h('span', { class: 'channel-name' }, [icon('hash', 18), h('span', { class: 'truncate', text: here?.label ?? this.channel })]),
+    )
     if (here?.topic) {
       this.channelTitle.append(h('span', { class: 'channel-topic truncate', text: here.topic }))
     }
@@ -1719,8 +1795,22 @@ export class SpaceView {
     this.renderDirects()
     this.renderVoice()
     this.renderPeople()
+    this.renderMe()
     this.renderShareButton()
     this.status()
+  }
+
+  /** Your own face and name at the foot of the channels. Redrawn only when they change. */
+  private renderMe(): void {
+    const chat = this.chat
+    if (!chat) return
+    const name = chat.displayName
+    const picture = chat.avatarOf(chat.me) || loadAvatar()
+    const sig = `${name}|${picture.length}|${picture.slice(-24)}`
+    if (this.meFace.dataset.sig === sig) return
+    this.meFace.dataset.sig = sig
+    this.meFace.replaceChildren(avatarOf(chat.me, name, picture, 32), h('i', { class: 'dot good' }))
+    this.meName.textContent = name
   }
 
   /**
@@ -1770,12 +1860,16 @@ export class SpaceView {
        * why it arrives as a patch rather than being read off an archive that is
        * merely not running.
        */
-      archive: patch.archive ?? (this.archive?.address || existing?.archive),
+      archive: this.server
+        ? existing?.archive
+        : patch.archive ?? (this.archive?.address || existing?.archive),
       // A space that was closed stays closed, however it is opened again.
       closed: existing?.closed || undefined,
       read: patch.read ?? existing?.read,
       readDm: patch.readDm ?? existing?.readDm,
-      archiveAt: this.archive?.cursor ?? existing?.archiveAt,
+      archiveAt: this.server ? existing?.archiveAt : this.archive?.cursor ?? existing?.archiveAt,
+      server: this.server || undefined,
+      serverAt: this.server ? this.archive?.cursor ?? existing?.serverAt : existing?.serverAt,
       founder: patch.founder ?? existing?.founder ?? this.chat?.founder ?? '',
     })
   }
@@ -1803,7 +1897,11 @@ export class SpaceView {
     this.chrome.setStatus([
       what,
       `${people} here`,
-      relays === 0 ? 'no relays' : `${relays} relay${relays === 1 ? '' : 's'}`,
+      this.server
+        ? `${relays > 0 ? 'on' : 'cannot reach'} ${serverTag(this.server)}`
+        : relays === 0
+          ? 'no relays'
+          : `${relays} relay${relays === 1 ? '' : 's'}`,
     ])
   }
 
@@ -1832,7 +1930,9 @@ export class SpaceView {
       if (this.stopped || this.relayWarned || open() > 0) return
       this.relayWarned = true
       toast(
-        'Cathode cannot reach a signal relay, so nobody new can be found and nothing will sync. A VPN or a firewall on this network is the usual cause.',
+        this.server
+          ? `Cathode cannot reach ${serverTag(this.server)}, so nobody can be found and nothing will sync until it answers. The server may be down, or this network may block it.`
+          : 'Cathode cannot reach a signal relay, so nobody new can be found and nothing will sync. A VPN or a firewall on this network is the usual cause.',
         'bad',
         12_000,
       )
@@ -1861,10 +1961,10 @@ export class SpaceView {
      */
     this.streamBar = h('div', { class: 'stream-bar hidden' })
     this.channelTitle = h('div', { class: 'row channel-head' }, [
-      h('span', { class: 'eyebrow', text: `#${this.channel}` }),
+      h('span', { class: 'channel-name' }, [icon('hash', 18), h('span', { class: 'truncate', text: this.channel })]),
     ])
 
-    this.shareButton = h('button', { class: 'primary grow' }, [icon('monitor', 15), 'Share screen'])
+    this.shareButton = h('button', { class: 'primary share-button' }, [icon('monitor', 15), 'Share screen'])
     this.shareButton.addEventListener('click', () => void this.toggleShare())
 
     this.sharePanel = h('div', { class: 'share-panel hidden' })
@@ -1900,10 +2000,53 @@ export class SpaceView {
     // Empty rather than a guess. The name arrives with the log.
     this.spaceTitle = h('span', { class: 'space-name truncate', text: '' })
 
+    /*
+     * Where this space runs, said beside its name: a rack for a server, and
+     * nothing for peer to peer, which is the ordinary case and needs no badge.
+     */
+    const where = this.server
+      ? h('span', { class: 'space-where', title: `Runs on ${serverTag(this.server)}` }, [icon('server', 13)])
+      : null
+
+    this.meFace = h('span', { class: 'me-face' })
+    this.meName = h('span', { class: 'me-name truncate' })
+    const me = h('div', { class: 'me-panel' }, [
+      this.meFace,
+      h('div', { class: 'me-text' }, [this.meName, this.chrome?.status ?? null]),
+      h(
+        'button',
+        {
+          class: 'ghost icon-only',
+          title: 'Your name, your ID, and this space',
+          ariaLabel: 'Settings',
+          on: { click: () => void this.openSettings() },
+        },
+        [icon('settings', 17)],
+      ),
+      /*
+       * The way out, and the only one there was not.
+       *
+       * Nothing is given up by pressing it: the space stays on this device and
+       * the link still opens it. The rail of spaces does the same job on a
+       * screen wide enough to show it; this is the one a phone can reach.
+       */
+      h(
+        'button',
+        {
+          title: 'Back to your spaces. This one stays on this device.',
+          ariaLabel: 'Your spaces',
+          class: 'ghost icon-only me-home',
+          on: { click: () => this.goHome() },
+        },
+        [icon('home', 17)],
+      ),
+    ])
+
     const left = h('div', { class: 'rail rail-left', role: 'navigation', ariaLabel: 'Channels, threads and conversations' }, [
       // Just the name. Renaming and clearing live in settings, where a thing
       // you do rarely and cannot undo belongs.
-      h('div', { class: 'rail-head space-title' }, [this.spaceTitle]),
+      h('div', { class: 'space-title' }, [this.spaceTitle, where]),
+      h('div', { class: 'rail-scroll' }, [
       h('div', { class: 'rail-head' }, [
         h('span', { class: 'eyebrow', text: 'Text channels' }),
         /*
@@ -1912,12 +2055,16 @@ export class SpaceView {
          * them: the event went out, every peer ignored it, and the person who
          * clicked was left staring at a rail that had not changed.
          */
-        (this.newTextButton = h('button', {
-          class: 'ghost tiny-btn hidden',
-          text: '+',
-          title: 'Make a text channel',
-          on: { click: () => void this.newChannel(false) },
-        })),
+        (this.newTextButton = h(
+          'button',
+          {
+            class: 'ghost icon-only rail-add hidden',
+            title: 'Make a text channel',
+            ariaLabel: 'Make a text channel',
+            on: { click: () => void this.newChannel(false) },
+          },
+          [icon('plus', 15)],
+        )),
       ]),
       this.channelList,
       h('div', { class: 'rail-head' }, [
@@ -1926,12 +2073,16 @@ export class SpaceView {
           text: 'Voice channels',
           title: 'Everybody standing in one hears everybody else.',
         }),
-        (this.newVoiceButton = h('button', {
-          class: 'ghost tiny-btn hidden',
-          text: '+',
-          title: 'Make a voice channel',
-          on: { click: () => void this.newChannel(true) },
-        })),
+        (this.newVoiceButton = h(
+          'button',
+          {
+            class: 'ghost icon-only rail-add hidden',
+            title: 'Make a voice channel',
+            ariaLabel: 'Make a voice channel',
+            on: { click: () => void this.newChannel(true) },
+          },
+          [icon('plus', 15)],
+        )),
       ]),
       this.voiceList,
       h('div', { class: 'rail-head' }, [
@@ -1946,38 +2097,13 @@ export class SpaceView {
         }),
       ]),
       this.directList,
-      h('div', { class: 'grow' }),
-      this.voiceBar,
-      h('div', { class: 'rail-foot stack tight' }, [
-        h('div', { class: 'row' }, [this.shareButton]),
-        h('div', { class: 'row' }, [
-          h(
-            'button',
-            { class: 'grow', title: 'Your name, your ID, and the look', on: { click: () => this.openSettings() } },
-            [icon('shield', 14), 'Settings'],
-          ),
-          /*
-           * The way out, and the only one there was not.
-           *
-           * The caption buttons went with the title bar, and leaving went with
-           * them, so the list of spaces could be reached by editing the address
-           * bar and no other way. Nothing is given up by pressing it: the space
-           * stays on this device and the link still opens it.
-           */
-          h('button', {
-            title: 'Back to your spaces. This one stays on this device.',
-            ariaLabel: 'Your spaces',
-            class: 'icon-only',
-            on: { click: () => this.goHome() },
-          }, [icon('home', 15)]),
-        ]),
       ]),
+      this.voiceBar,
+      me,
     ])
 
     const right = h('div', { class: 'rail rail-right', role: 'complementary', ariaLabel: 'Who is here' }, [
-      h('div', { class: 'rail-head' }, [h('span', { class: 'eyebrow', text: 'Members' })]),
-      this.peopleList,
-      h('div', { class: 'grow' }),
+      h('div', { class: 'rail-scroll' }, [this.peopleList]),
       this.inviteBox(),
     ])
 
@@ -2023,6 +2149,7 @@ export class SpaceView {
       },
     })
     this.searchResults = h('div', { class: 'search-results hidden' })
+    const searchBox = h('label', { class: 'search-box' }, [icon('search', 14), this.searchInput])
 
     /*
      * The two rails are drawers on a phone.
@@ -2044,23 +2171,40 @@ export class SpaceView {
       on: { click: () => this.showRail(this.railOpen === 'left' ? null : 'left') },
     })
     this.channelsButton.append(icon('menu', 16))
+    /*
+     * Who is here. A drawer on a phone, and on a wide screen the column it
+     * opens folds away instead, for the conversation or a screen share that
+     * wants the width.
+     */
     this.peopleButton = h('button', {
-      class: 'ghost icon-only rail-button',
+      class: 'ghost icon-only people-button',
       ariaLabel: 'Who is here',
       title: 'Who is here, and the invite',
-      on: { click: () => this.showRail(this.railOpen === 'right' ? null : 'right') },
+      on: {
+        click: () => {
+          if (window.matchMedia('(max-width: 780px)').matches) {
+            this.showRail(this.railOpen === 'right' ? null : 'right')
+            return
+          }
+          this.membersHidden = !this.membersHidden
+          this.shell.classList.toggle('members-hidden', this.membersHidden)
+          this.peopleButton.classList.toggle('on', !this.membersHidden)
+        },
+      },
     })
+    this.peopleButton.classList.add('on')
     this.peopleButton.append(icon('people', 16))
 
     this.shell = h('div', { class: 'space-grid loading' }, [
       scrim,
       left,
       h('div', { class: 'space-main' }, [
-        h('div', { class: 'space-head row spread' }, [
+        h('div', { class: 'space-head row' }, [
           this.channelsButton,
           this.channelTitle,
+          this.shareButton,
           this.pinsButton,
-          this.searchInput,
+          searchBox,
           this.peopleButton,
         ]),
         this.searchResults,
@@ -2075,14 +2219,19 @@ export class SpaceView {
     this.root.append(h('main', {}, [this.shell]))
   }
 
-  private openSettings(): void {
+  private async openSettings(): Promise<void> {
+    // Loaded the first time it is wanted: most visits never open it.
+    const { settingsView } = await import('./settings-view')
+    if (this.stopped) return
     clear(this.root)
     this.settingsOpen = true
     this.root.append(
       settingsView({
         rename: (name, avatar) => this.rename(name, avatar),
         archive: this.archiveAddress,
-        setArchive: (url) => this.setArchive(url),
+        // A space on a server has its history there, and no archive to pick.
+        setArchive: this.server ? undefined : (url) => this.setArchive(url),
+        server: this.server,
         space: {
           name: this.chat?.spaceName() || 'Unnamed space',
           admin: this.chat?.isAdmin === true,
@@ -2122,7 +2271,7 @@ export class SpaceView {
     await this.remember({ name })
     // The card that holds the button shows the name. Renaming from it and
     // leaving it saying the old name is the same disagreement in one screen.
-    if (this.settingsOpen) this.openSettings()
+    if (this.settingsOpen) void this.openSettings()
   }
 
   /** Slide a rail in over the conversation, or put both away. */
@@ -2235,16 +2384,16 @@ export class SpaceView {
       class: 'share-code',
       text: formatSecret(this.secret),
       title: 'The code for this space',
-      data: { link: roomLink(this.secret, this.locked) },
+      data: { link: roomLink(this.secret, this.locked, this.server) },
     })
-    const copy = h('button', { class: 'grow' }, [icon('copy', 14), 'Copy invite'])
+    const copy = h('button', { class: 'primary grow' }, [icon('link', 15), 'Copy invite'])
     copy.addEventListener('click', async () => {
-      const ok = await copyText(roomLink(this.secret, this.locked))
+      const ok = await copyText(roomLink(this.secret, this.locked, this.server))
       toast(ok ? 'Invite link copied.' : 'Could not copy. The code is above.', ok ? 'info' : 'warn')
     })
     const qr = h('button', { class: 'icon-only', title: 'Show a QR code', ariaLabel: 'Show a QR code' })
     qr.append(icon('qr', 14))
-    qr.addEventListener('click', () => this.showQr())
+    qr.addEventListener('click', () => void this.showQr())
     /*
      * The code, and two ways to hand it over. Nothing else.
      *
@@ -2253,9 +2402,9 @@ export class SpaceView {
      * every time you looked at the corner of the window. The code is the
      * thing; a lock on it says the rest.
      */
-    return h('div', { class: 'stack tight' }, [
+    return h('div', { class: 'invite-card stack tight' }, [
       h('div', { class: 'row spread' }, [
-        h('span', { class: 'eyebrow', text: 'Invite' }),
+        h('span', { class: 'eyebrow', text: 'Invite people' }),
         this.locked
           ? h('span', {
               class: 'tiny faint',
@@ -2269,7 +2418,9 @@ export class SpaceView {
     ])
   }
 
-  private showQr(): void {
+  private async showQr(): Promise<void> {
+    // The encoder is loaded the first time somebody asks for a code.
+    const { qrSvg } = await import('./qr')
     const close = (): void => {
       scrim.remove()
       window.removeEventListener('keydown', onKey)
@@ -2281,7 +2432,7 @@ export class SpaceView {
     window.addEventListener('keydown', onKey)
     const frame = h('div', { class: 'qr-frame' })
     try {
-      frame.append(qrSvg(roomLink(this.secret, this.locked), { pixels: 240 }))
+      frame.append(qrSvg(roomLink(this.secret, this.locked, this.server), { pixels: 240 }))
     } catch {
       frame.append(h('div', { class: 'small', text: 'This link is too long for a QR code.' }))
     }
@@ -2323,8 +2474,9 @@ export class SpaceView {
             on: { click: () => this.openChannel(name) },
           },
           [
-            h('span', { class: 'truncate grow', text: `# ${channel.label}` }),
-            sharingHere ? h('span', { class: 'pill good', text: 'live' }) : null,
+            icon('hash', 16),
+            h('span', { class: 'truncate grow', text: channel.label }),
+            sharingHere ? h('span', { class: 'pill live', text: 'live' }) : null,
             /*
              * A count only when somebody used your name. The rest is a change
              * of weight on the channel: a number on everything that moved is a
@@ -2447,7 +2599,7 @@ export class SpaceView {
             on: { click: () => void this.joinVoice(name) },
           },
           [
-            icon('volume-low', 13),
+            icon('volume', 16),
             h('span', { class: 'truncate grow', text: name }),
             members.length ? h('span', { class: 'pill', text: String(members.length) }) : null,
           ],
@@ -2455,14 +2607,15 @@ export class SpaceView {
       ])
       for (const id of members) {
         const talking = this.voice?.isTalking(id) ?? false
-        const label =
-          id === this.selfId
-            ? `${this.chat?.displayName ?? 'You'} (you)`
-            : this.mesh?.peers().find((p) => p.id === id)?.name || shortKey(id)
+        const peer = id === this.selfId ? null : this.mesh?.peers().find((p) => p.id === id)
+        const key = id === this.selfId ? this.chat?.me ?? id : peer?.key || id
+        const name = id === this.selfId ? this.chat?.displayName ?? 'You' : peer?.name || shortKey(id)
+        const label = id === this.selfId ? `${name} (you)` : name
         row.append(
           h('div', { class: `voice-member${talking ? ' talking' : ''}` }, [
             h('i', { class: `dot ${talking ? 'talking' : 'good'}` }),
-            h('span', { text: label }),
+            avatarOf(key, name, this.chat?.avatarOf(key) ?? '', 20),
+            h('span', { class: 'truncate', text: label }),
           ]),
         )
       }
@@ -2473,23 +2626,39 @@ export class SpaceView {
     this.voiceBar.classList.toggle('hidden', !state?.channel)
     if (state?.channel) {
       clear(this.voiceBar)
+      /*
+       * Connected, and where: the strip every voice app has at the foot of its
+       * channel list, with the two things you reach for while talking.
+       */
       this.voiceBar.append(
-        h('div', { class: 'row spread' }, [
-          h('span', { class: 'tiny good truncate' }, [icon('volume-low', 12), ` ${state.channel}`]),
-          h('span', { class: 'tiny faint', text: `${(this.voice?.connected ?? 0) + 1} in` }),
+        h('div', { class: 'voice-bar-text' }, [
+          h('span', { class: 'voice-bar-state' }, [h('i', { class: 'dot good' }), 'Voice connected']),
+          h('span', {
+            class: 'tiny faint truncate',
+            text: `${state.channel} · ${(this.voice?.connected ?? 0) + 1} in`,
+          }),
         ]),
-        h('div', { class: 'row' }, [
-          h('button', {
-            class: `grow small${state.muted ? ' on' : ''}`,
-            text: state.muted ? 'Unmute' : 'Mute',
+        h(
+          'button',
+          {
+            class: `ghost icon-only${state.muted ? ' danger on' : ''}`,
+            text: '',
+            title: state.muted ? 'Unmute' : 'Mute',
+            ariaLabel: state.muted ? 'Unmute' : 'Mute',
             on: { click: () => this.voice?.setMuted(!state.muted) },
-          }),
-          h('button', {
-            class: 'small danger',
-            text: 'Leave',
+          },
+          [icon(state.muted ? 'mic-off' : 'mic', 17)],
+        ),
+        h(
+          'button',
+          {
+            class: 'ghost icon-only danger',
+            title: 'Leave voice',
+            ariaLabel: 'Leave',
             on: { click: () => this.leaveVoice() },
-          }),
-        ]),
+          },
+          [icon('phone-off', 17)],
+        ),
       )
     }
   }
@@ -2819,12 +2988,23 @@ export class SpaceView {
     const roles = chat?.roles() ?? new Map<string, string>()
     const order = this.roster()
 
+    /*
+     * Two groups with a count each, the way every chat app says it: who is
+     * here, and who has been lately. The count is the one the status line
+     * says, worked out from the same rows.
+     */
+    const visible = order.filter((r) => (roles.get(r.key) ?? 'member') !== 'kicked' || r.you)
+    const hereCount = visible.filter((r) => r.here).length
+    const awayCount = visible.length - hereCount
+    this.peopleList.append(
+      h('div', { class: 'rail-head' }, [h('span', { class: 'eyebrow', text: `Here — ${hereCount}` })]),
+    )
     let drawnOffline = false
     for (const row of order) {
       if (!row.here && !drawnOffline) {
         drawnOffline = true
         this.peopleList.append(
-          h('div', { class: 'rail-head' }, [h('span', { class: 'eyebrow', text: 'Not here' })]),
+          h('div', { class: 'rail-head' }, [h('span', { class: 'eyebrow', text: `Not here — ${awayCount}` })]),
         )
       }
 
@@ -2846,25 +3026,42 @@ export class SpaceView {
       })
       more.append(icon('more', 14))
 
+      /*
+       * What they are doing, under the name, when they are doing something:
+       * sharing a screen, or standing in a voice channel.
+       */
+      const doing = row.sharing
+        ? h('span', { class: 'person-doing live' }, [h('i', { class: 'live-dot' }), 'Sharing their screen'])
+        : row.voice
+          ? h('span', { class: `person-doing${row.talking ? ' talking' : ''}` }, [
+              icon('volume-low', 11),
+              row.talking ? `Talking in ${row.voice}` : `In ${row.voice}`,
+            ])
+          : null
+
       this.peopleList.append(
-        h('div', { class: `rail-person${row.here ? '' : ' away'}`, title: `ID ${row.key}` }, [
-          /*
-           * Green: here and reading. Orange: here with the tab put away.
-           * Hollow: their device answers but the link between us is not up yet,
-           * which is a second or two on the way in and is worth showing rather
-           * than pretending either of the other two.
-           */
-          row.here
-            ? h('i', {
-                class: `dot ${!row.ready ? 'idle' : row.away ? 'warn' : 'good'}`,
-                title: !row.ready
-                  ? 'Connecting'
-                  : row.away
-                    ? 'Here, but looking at something else'
-                    : 'Here',
-              })
-            : null,
-          h('div', { class: 'grow row', style: { minWidth: '0' } }, [
+        h('div', { class: `rail-person${row.here ? '' : ' away'}${row.talking ? ' talking' : ''}`, title: `ID ${row.key}` }, [
+          h('span', { class: 'person-face' }, [
+            avatarOf(row.key, row.name, chat?.avatarOf(row.key) ?? '', 32),
+            /*
+             * Green: here and reading. Orange: here with the tab put away.
+             * Hollow: their device answers but the link between us is not up
+             * yet, which is a second or two on the way in and is worth showing
+             * rather than pretending either of the other two.
+             */
+            row.here
+              ? h('i', {
+                  class: `dot ${!row.ready ? 'idle' : row.away ? 'warn' : 'good'}`,
+                  title: !row.ready
+                    ? 'Connecting'
+                    : row.away
+                      ? 'Here, but looking at something else'
+                      : 'Here',
+                })
+              : null,
+          ]),
+          h('div', { class: 'person-text' }, [
+          h('div', { class: 'row person-line' }, [
             h('span', { class: 'truncate', text: row.you ? `${label} (you)` : label }),
             /*
              * A crown, rather than the word admin under the name.
@@ -2878,25 +3075,10 @@ export class SpaceView {
               ? h('span', { class: 'crown', title: 'Runs this space' }, [icon('crown', 12)])
               : null,
             role === 'kicked' ? h('span', { class: 'tiny faint', text: 'removed' }) : null, // your own row only
-
           ]),
-          row.voice
-            ? h(
-                'span',
-                {
-                  class: `pill${row.talking ? ' talking' : ''}`,
-                  title: row.talking ? `Talking in ${row.voice}` : `In voice: ${row.voice}`,
-                },
-                [icon('volume-low', 11)],
-              )
-            : null,
-          row.sharing ? h('span', { class: 'pill good', text: 'live' }) : null,
-          /*
-           * A row with nothing to offer still wears an empty slot the size of
-           * the button, so the voice and live pills line up in one column
-           * whether or not the row beside them has actions.
-           */
-          actions.length ? more : h('span', { class: 'person-more-gap' }),
+          doing,
+          ]),
+          actions.length ? more : null,
         ]),
       )
     }
@@ -3188,10 +3370,12 @@ export class SpaceView {
   private renderShareButton(): void {
     const sharing = this.capture !== null
     clear(this.shareButton)
-    this.shareButton.append(
-      icon(sharing ? 'stop' : 'monitor', 15),
-      sharing ? 'Stop sharing' : 'Share screen',
-    )
+    const label = sharing ? 'Stop sharing' : 'Share screen'
+    // The label goes on a narrow screen and the name has to stay, so it is
+    // said twice: once to read, once to the accessibility tree.
+    this.shareButton.setAttribute('aria-label', label)
+    this.shareButton.title = sharing ? 'Stop sharing your screen' : 'Share your screen in this channel'
+    this.shareButton.append(icon(sharing ? 'stop' : 'monitor', 15), h('span', { class: 'share-label', text: label }))
     this.shareButton.classList.toggle('danger', sharing)
     this.shareButton.classList.toggle('primary', !sharing)
     this.sharePanel.classList.toggle('hidden', !sharing)
