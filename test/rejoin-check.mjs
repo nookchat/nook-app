@@ -190,6 +190,30 @@ try {
     both.map((r) => `${r.text}${r.away ? ' (away)' : ''}`).join(' | '),
   )
 
+  /*
+   * You, on a second device that was never linked: its own key, your name.
+   * Both are here at once, which is what showed you twice. Alice sees one
+   * of herself.
+   */
+  const alsoAlice = await open('Alice')
+  await alsoAlice.goto(link)
+  await alsoAlice.reload()
+  await alsoAlice.waitForTimeout(2500)
+  const self = await waitFor(
+    async () => {
+      const list = await roster(alice)
+      return list.filter((r) => r.text.startsWith('Alice')).length === 1 && list.length === 2 ? list : null
+    },
+    20_000,
+    'Alice to be shown once',
+  ).catch(() => null)
+  const selfRows = self ?? (await roster(alice))
+  check(
+    'your own name on another device is not a second you',
+    !!self,
+    selfRows.map((r) => r.text).join(' | '),
+  )
+
 } finally {
   await browser.close()
 }

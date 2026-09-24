@@ -112,6 +112,32 @@ try {
   }
   const inLounge = await waitFor(async () => ((await loudness(ben)) > 0.01 ? true : null), 20_000)
   check('two people in the lounge hear each other', !!inLounge)
+
+  // ---- how loud somebody is, for you ----
+  const sinkVolume = () => ada.evaluate(() => document.querySelector('audio.voice-sink')?.volume ?? null)
+  await ada.click('.rail-person:has-text("Ben") .person-more')
+  await ada.waitForSelector('.menu-volume input[type="range"]', { timeout: 5000 })
+  await ada.$eval('.menu-volume input[type="range"]', (el) => {
+    el.value = '30'
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  const lowered = await sinkVolume()
+  await ada.click('.menu-volume .menu-switch')
+  const muted = await sinkVolume()
+  await ada.click('.menu-volume .menu-switch')
+  const back = await sinkVolume()
+  await ada.keyboard.press('Escape')
+  check(
+    'somebody in voice can be made quieter, muted, and brought back, for you alone',
+    Math.abs(lowered - 0.3) < 0.01 && muted === 0 && Math.abs(back - 0.3) < 0.01,
+    `${lowered} ${muted} ${back}`,
+  )
+  const benHearsAda = await ben.evaluate(() => document.querySelector('audio.voice-sink')?.volume ?? null)
+  check('and it changes nothing for anybody else', benHearsAda === 1, String(benHearsAda))
+  await ada.click('.voice-member:has-text("Ben")', { button: 'right' })
+  const rightClick = await ada.waitForSelector('.menu .menu-volume', { timeout: 5000 }).then(() => true, () => false)
+  check('a right click on them in the voice channel does the same', rightClick)
+  await ada.keyboard.press('Escape')
   await toHome(ada)
   await ada.waitForSelector('.home-grid-shell')
   const dock = await waitFor(

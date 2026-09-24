@@ -289,6 +289,13 @@ try {
   await alice.waitForTimeout(600)
   const landed = await alice.$eval('.chat-head .eyebrow', (el) => el.textContent)
   check('and clicking it takes you to where it was said', landed === 'Thread in #general', landed)
+  // Still lit after the scroll has had time to stop, so the eye finds it.
+  await alice.waitForTimeout(2500)
+  const lit = await alice.evaluate(() => {
+    const line = document.querySelector('.chat-line.found')
+    return line ? getComputedStyle(line).backgroundColor : null
+  })
+  check('and it is still lit two and a half seconds later', !!lit && lit !== 'rgba(0, 0, 0, 0)', lit ?? 'not lit')
 
   await alice.click('button:has-text("Back")')
   await openSearch(alice)
@@ -326,6 +333,14 @@ try {
   await alice.keyboard.press('Escape')
 
   // ---- polish -------------------------------------------------------------
+  // The space's name opens its menu, and pressing it again closes it.
+  await alice.click('button[aria-label="Switch space"]')
+  const opened = await alice.waitForSelector('.menu.switcher', { timeout: 5000 }).then(() => true, () => false)
+  await alice.click('button[aria-label="Switch space"]')
+  await alice.waitForTimeout(400)
+  const shut = (await alice.$('.menu.switcher')) === null
+  check('the menu at the top left opens on a press, and closes on the next', opened && shut, `${opened} ${shut}`)
+
   const grouped = await alice.$$eval('.chat-at.on-hover', (els) => els.length)
   check('a run from one person shows one clock, not five', grouped > 0, `${grouped} hidden`)
 

@@ -120,3 +120,25 @@ export async function copyText(text: string): Promise<boolean> {
     }
   }
 }
+
+/**
+ * Act on the press rather than the release.
+ *
+ * A click needs the press and the release on the same element. A list that
+ * redraws while it is being pointed at (who is here, what they are doing)
+ * replaces the button in between, and the click never comes: the menu that
+ * opens on the second try. The keyboard, which clicks without pressing, still
+ * works.
+ */
+export function onPress(el: HTMLElement, fn: (ev: Event) => void): void {
+  let pressed = 0
+  el.addEventListener('pointerdown', (ev) => {
+    if (ev.button !== 0) return
+    ev.preventDefault()
+    pressed = Date.now()
+    fn(ev)
+  })
+  el.addEventListener('click', (ev) => {
+    if (Date.now() - pressed > 600) fn(ev)
+  })
+}

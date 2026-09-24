@@ -358,7 +358,7 @@ interface BoardOptions {
   onPick(id: string): void
 }
 
-let open: { close(): void } | null = null
+let open: { close(): void; anchor?: HTMLElement } | null = null
 
 /**
  * The grid of buttons, hung off whatever was pressed to open it.
@@ -367,6 +367,11 @@ let open: { close(): void } | null = null
  * consulted, and closing after every noise would make a duet impossible.
  */
 export function openSoundboard(options: BoardOptions): void {
+  // Its own button again: closed, the way a toggle is. Anything else opens it afresh.
+  if (open && open.anchor === options.anchor) {
+    open.close()
+    return
+  }
   open?.close()
 
   const grid = h('div', { class: 'sound-grid' })
@@ -433,7 +438,7 @@ export function openSoundboard(options: BoardOptions): void {
     window.removeEventListener('resize', close)
   }
 
-  open = { close }
+  open = { close, anchor: options.anchor }
   sayFoot()
   document.body.append(pop)
   placeNear(pop, options.anchor)

@@ -57,7 +57,7 @@ const MAX_JOINED = 500
  * this, within two of them, so it is short enough that nobody is shown as
  * here for long after they went. A ping is two bytes.
  */
-const PING_MS = 15_000
+const PING_MS = 10_000
 
 /*
  * Who is in each space: room -> the memberships in it. A membership is one

@@ -30,8 +30,8 @@ export interface MenuItem {
   run(): void
 }
 
-/** A label over a group of items, or a line between two groups. */
-export type MenuEntry = MenuItem | { heading: string } | 'line'
+/** A label over a group of items, a line between two groups, or something of its own, such as a slider. */
+export type MenuEntry = MenuItem | { heading: string } | { custom: HTMLElement } | 'line'
 
 export interface MenuOptions {
   /** An extra class, for a menu that is laid out differently. */
@@ -40,12 +40,24 @@ export interface MenuOptions {
 
 /** Only one is ever open, for the same reason only one picker is. */
 let open: (() => void) | null = null
+/** What the open one hangs off, so pressing that again closes it rather than opening it afresh. */
+let openFor: HTMLElement | null = null
 
 export function closeMenu(): void {
   open?.()
 }
 
+/** The same button, or the one drawn in its place since: they say which menu they open. */
+function sameButton(a: HTMLElement | null, b: HTMLElement): boolean {
+  return !!a && (a === b || (!!a.dataset.menu && a.dataset.menu === b.dataset.menu))
+}
+
 export function openMenu(anchor: HTMLElement, items: MenuEntry[], options: MenuOptions = {}): void {
+  // The same button again: a toggle, the way every menu button works.
+  if (open && sameButton(openFor, anchor)) {
+    closeMenu()
+    return
+  }
   closeMenu()
   if (items.length === 0) return
 
@@ -57,6 +69,10 @@ export function openMenu(anchor: HTMLElement, items: MenuEntry[], options: MenuO
     }
     if ('heading' in item) {
       menu.append(h('div', { class: 'menu-heading', text: item.heading }))
+      continue
+    }
+    if ('custom' in item) {
+      menu.append(item.custom)
       continue
     }
     const words = h('span', { class: 'menu-words' }, [
@@ -84,6 +100,7 @@ export function openMenu(anchor: HTMLElement, items: MenuEntry[], options: MenuO
   function close(): void {
     if (open !== close) return
     open = null
+    openFor = null
     menu.remove()
     window.removeEventListener('keydown', onKey, true)
     window.removeEventListener('pointerdown', onDown, true)
@@ -110,10 +127,14 @@ export function openMenu(anchor: HTMLElement, items: MenuEntry[], options: MenuO
   const onDown = (ev: Event): void => {
     const target = ev.target as Node
     if (menu.contains(target) || anchor.contains(target)) return
+    // Its button, drawn again since it opened, is still its button: that press is left to the button.
+    const button = (target as Element).closest?.('[data-menu]')
+    if (button instanceof HTMLElement && sameButton(anchor, button)) return
     close()
   }
 
   open = close
+  openFor = anchor
   document.body.append(menu)
   placeNear(menu, anchor)
   window.addEventListener('keydown', onKey, true)

@@ -19,13 +19,7 @@ import { cleanName, EVERYONE, findMentions, mentionsMe } from '../chat'
 import { shortKey } from '../store/identity'
 import { clear, h } from './dom'
 import { icon } from './icons'
-import {
-  closeEmojiPicker,
-  openEmojiPicker,
-  placeNear,
-  quickReactions,
-  recentEmoji,
-} from './emoji'
+import { closeEmojiPicker, openEmojiPicker, placeNear, quickReactions, recentEmoji, emojiFor, emojiStartingWith, withEmoji } from './emoji'
 
 /**
  * The row offered straight away when reacting, before the picker is opened.
@@ -226,7 +220,7 @@ export class ChatPanel {
   private suggestions: HTMLDivElement | null = null
   private suggestAt = -1
   /** Which kind of list is up, because Enter means different things to them. */
-  private suggestKind: 'mention' | 'command' | 'name' | null = null
+  private suggestKind: 'mention' | 'command' | 'name' | 'emoji' | null = null
   /**
    * What was half typed in each channel.
    *
@@ -812,6 +806,7 @@ export class ChatPanel {
    */
   private suggest(): void {
     if (this.suggestCommands()) return
+    if (this.suggestEmoji()) return
     const input = this.textInput
     const caret = input.selectionStart ?? 0
     const before = input.value.slice(0, caret)
@@ -854,6 +849,76 @@ export class ChatPanel {
       document.body.append(list)
     }
     placeNear(list, this.textInput)
+  }
+
+  /**
+   * Emoji by name, the way people type them everywhere else: :laugh: turns
+   * into 😆 the moment its second colon goes in, and while the name is being
+   * typed the ones it could be are offered, Tab or Enter to take one.
+   */
+  private suggestEmoji(): boolean {
+    const input = this.textInput
+    const caret = input.selectionStart ?? 0
+    const before = input.value.slice(0, caret)
+    const finished = /(^|[\s(]):([a-z0-9_+-]{1,32}):$/i.exec(before)
+    if (finished) {
+      const ch = emojiFor(finished[2])
+      if (ch) {
+        const start = caret - finished[2].length - 2
+        input.value = input.value.slice(0, start) + ch + input.value.slice(caret)
+        input.setSelectionRange(start + ch.length, start + ch.length)
+        this.closeSuggestions()
+        this.grow()
+        return true
+      }
+    }
+    const typing = /(^|[\s(]):([a-z0-9_+-]{2,32})$/i.exec(before)
+    if (!typing) return false
+    const hits = emojiStartingWith(typing[2])
+    if (hits.length === 0) {
+      this.closeSuggestions()
+      return true
+    }
+    this.suggestAt = caret - typing[2].length - 1
+    this.suggestKind = 'emoji'
+    const list = this.suggestions ?? h('div', { class: 'mention-pop' })
+    clear(list)
+    hits.forEach(({ code, ch }, i) => {
+      const option = h(
+        'button',
+        {
+          class: `mention-option emoji-option${i === 0 ? ' on' : ''}`,
+          on: {
+            mousedown: (ev) => {
+              ev.preventDefault()
+              this.takeEmoji(ch)
+            },
+          },
+        },
+        [h('span', { class: 'emoji-option-face', text: ch }), h('span', { class: 'tiny faint', text: `:${code}:` })],
+      )
+      option.dataset.emoji = ch
+      list.append(option)
+    })
+    if (!this.suggestions) {
+      this.suggestions = list
+      document.body.append(list)
+    }
+    placeNear(list, this.textInput)
+    return true
+  }
+
+  private takeEmoji(ch: string): void {
+    const input = this.textInput
+    const caret = input.selectionStart ?? 0
+    const head = input.value.slice(0, this.suggestAt)
+    const tail = input.value.slice(caret)
+    input.value = head + ch + tail
+    const at = head.length + ch.length
+    input.setSelectionRange(at, at)
+    this.closeSuggestions()
+    input.focus()
+    this.grow()
   }
 
   /** The commands, while the line being written is one. */
@@ -977,6 +1042,12 @@ export class ChatPanel {
     if (ev.key === 'Enter' && this.suggestKind === 'command') {
       this.closeSuggestions()
       return false
+    }
+    if ((ev.key === 'Enter' || ev.key === 'Tab') && this.suggestKind === 'emoji') {
+      const chosen = options[at === -1 ? 0 : at] as HTMLElement | undefined
+      if (chosen?.dataset.emoji) this.takeEmoji(chosen.dataset.emoji)
+      ev.preventDefault()
+      return true
     }
     if (ev.key === 'Enter' || ev.key === 'Tab') {
       const chosen = options[at === -1 ? 0 : at]
@@ -1305,6 +1376,12 @@ export class ChatPanel {
         `${mentionsMe(m.text, this.names, this.me) ? ' calls-me' : ''}`,
     })
     line.dataset.id = m.id
+    // Drawn again while lit: the light carries on from where it had got to.
+    const since = this.found?.id === m.id ? Date.now() - this.found.at : Infinity
+    if (since < 5000) {
+      line.classList.add('found')
+      line.style.animationDelay = `-${since}ms`
+    }
     // The line sits in a row, and the row is what the actions hang off, so
     // they are beside the message rather than on top of the end of it.
     const row = h('div', { class: `chat-row${mine ? ' mine' : ''}` }, [line])
@@ -1605,11 +1682,18 @@ export class ChatPanel {
     const row = this.log.querySelector(`[data-id="${id}"]`)
     if (!(row instanceof HTMLElement)) return
     row.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    this.found = { id, at: Date.now() }
     row.classList.remove('found')
     // Restart the highlight even when the same one is clicked twice.
     void row.offsetWidth
     row.classList.add('found')
   }
+
+  /** The button the quick reactions hang off, so pressing it again closes them. */
+  private quickFor: HTMLElement | null = null
+
+  /** The message a jump landed on, and when, so a redraw carries the light on rather than dropping it. */
+  private found: { id: string; at: number } | null = null
 
   private rowActions(m: Message, mine: boolean): HTMLElement {
     const bar = h('div', { class: 'chat-actions' })
@@ -1724,6 +1808,14 @@ export class ChatPanel {
    * toggle rather than a one way door.
    */
   private reactWith(m: Message, anchor: HTMLElement): void {
+    // Its own button again closes it.
+    const already = document.querySelector('.emoji-pop.quick')
+    if (already && this.quickFor === anchor) {
+      already.remove()
+      this.quickFor = null
+      return
+    }
+    this.quickFor = anchor
     const toggle = (emoji: string): void => {
       const mine = m.reactions.get(emoji)?.has(this.me) === true
       this.actions?.react(m.id, emoji, !mine)
@@ -1851,7 +1943,9 @@ export class ChatPanel {
   }
 
   private submit(): void {
-    const text = this.textInput.value.trim()
+    const typed = this.textInput.value.trim()
+    // A :name: left as it was typed goes as its emoji; a command goes as written.
+    const text = /^\/[^/\s]/.test(typed) ? typed : withEmoji(typed)
     const attaching = this.tray.count > 0 && !this.editing
     if (!text && !attaching) return
     // Past the limit nobody would receive it, so it does not leave the box.

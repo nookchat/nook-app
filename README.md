@@ -180,7 +180,7 @@ on it. A channel draws its newest few screens, and a scroll up draws more.
 | A signal between two sockets | 0.1 ms |
 
 Nothing polls. The page says who it is when that changes, the server says when
-somebody arrives or goes, and the only timer is the server's 15 second ping.
+somebody arrives or goes, and the only timer is the server's 10 second ping.
 
 ## Development
 

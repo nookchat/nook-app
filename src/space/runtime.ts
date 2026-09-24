@@ -12,6 +12,7 @@
 import { deriveRoom, newPeerId, type Room } from '../room'
 import { fetchIce, serverTag } from '../backend'
 import { Voice } from '../net/voice'
+import { heardAt } from '../net/volume'
 import { rtcConfig } from '../rtc/config'
 import { cleanChannel } from '../store/log'
 import { chirpJoin, chirpLeave } from '../ui/sounds'
@@ -219,6 +220,7 @@ export class SpaceRuntime {
       this.callArrival(arrived, peer)
     }
     voice.onFailed = (peer) => callNews({ kind: 'failed', space: this, peer })
+    voice.volumeOf = (peer) => heardAt(this.keyOf(peer))
     voice.onChange = () => {
       const now = voice.state.channel
       if (now !== this.voiceWas) {

@@ -49,6 +49,7 @@ import { spaces } from '../space/registry'
 import { spaceFace, switcherButton } from './space-switcher'
 import { filesFor, isCallChannel } from '../space/runtime'
 import { voiceDock } from './call'
+import { mutedFor, setMutedFor, setVolumeFor, volumeFor } from '../net/volume'
 import { gifs as serverGifs, preview, serverHasGifs } from '../net/server-api'
 import { loadIdentity, saveDisplayName, shortKey, signClaim, verifyClaim } from '../store/identity'
 import { chirpMessage, isNews, speak } from './sounds'
@@ -64,9 +65,9 @@ import {
 } from '../store/log'
 import type { RoomChat } from '../store/room-chat'
 import { ChatPanel, imageLinks } from './chat-panel'
-import { clear, copyText, fmtKbps, h } from './dom'
+import { clear, copyText, fmtKbps, h, onPress } from './dom'
 import { icon } from './icons'
-import { openMenu, type MenuItem } from './menu'
+import { openMenu, type MenuItem, type MenuEntry } from './menu'
 import { placeNear } from './emoji'
 import { avatarOf } from './chat-panel'
 import { loadAvatar } from './avatar'
@@ -166,6 +167,8 @@ export class SpaceView {
   readonly server: string
   private spaceTitle!: HTMLSpanElement
   private spaceFace!: HTMLSpanElement
+  /** The GIF picker's way out, while it is open. */
+  private gifClose: (() => void) | null = null
   /** Voice running in another space, with the way to end it. */
   private dock: { root: HTMLElement; stop(): void } = { root: h('div', { class: 'hidden' }), stop: () => undefined }
   private voice: Voice | null = null
@@ -2125,8 +2128,9 @@ export class SpaceView {
         class: 'ghost tiny-btn person-more',
         title: `What you can do with ${channel.label}`,
         ariaLabel: `Actions for ${channel.label}`,
-        on: { click: () => openMenu(more, this.channelActions(channel)) },
+        data: { menu: `channel:${name}` },
       })
+      onPress(more, () => openMenu(more, this.channelActions(channel)))
       more.append(icon('more', 14))
       this.channelList.append(
         h('div', { class: 'row rail-row' }, [open, this.chat?.isAdmin ? more : null]),
@@ -2194,35 +2198,58 @@ export class SpaceView {
           [
             icon('volume', 16),
             h('span', { class: 'truncate grow', text: name }),
-            members.length ? h('span', { class: 'pill', text: String(members.length) }) : null,
+            members.length ? h('span', { class: 'pill', text: String(new Set(members.map((m) => (m === this.selfId ? this.chat?.me : this.mesh?.peers().find((p) => p.id === m)?.key) || m)).size) }) : null,
           ],
         ),
       ])
+      /*
+       * One row a person, not a session. A tab that died without a word stands
+       * in the channel until the server notices, and the same person coming
+       * back meanwhile was drawn twice, the old and the new.
+       */
+      const people = new Map<string, string[]>()
       for (const id of members) {
-        const talking = this.voice?.isTalking(id) ?? false
         const peer = id === this.selfId ? null : this.mesh?.peers().find((p) => p.id === id)
         const key = id === this.selfId ? this.chat?.me ?? id : peer?.key || id
-        const name = id === this.selfId ? this.chat?.displayName ?? 'You' : peer?.name || shortKey(id)
-        const label = id === this.selfId ? `${name} (you)` : name
+        people.set(key, [...(people.get(key) ?? []), id])
+      }
+      for (const [key, ids] of people) {
+        const mineRow = ids.includes(this.selfId)
+        const talking = ids.some((id) => this.voice?.isTalking(id))
+        const peer = mineRow ? null : this.mesh?.peers().find((p) => ids.includes(p.id) && p.name)
+        const name = mineRow ? this.chat?.displayName ?? 'You' : peer?.name || this.chat?.nameOf(key) || shortKey(key)
+        const label = mineRow ? `${name} (you)` : name
         // Sharing: a red LIVE that puts their screen on yours.
-        const live = id === this.selfId ? this.capture !== null : this.sharers.has(id)
+        const sharing = mineRow ? (this.capture !== null ? this.selfId : null) : (ids.find((id) => this.sharers.has(id)) ?? null)
+        const live = sharing !== null
+        const id = sharing ?? ids[0]
         const watching = this.watched.has(id)
-        row.append(
-          h('div', { class: `voice-member${talking ? ' talking' : ''}` }, [
-            h('i', { class: `dot ${talking ? 'talking' : 'good'}` }),
-            avatarOf(key, name, this.chat?.avatarOf(key) ?? '', 20),
-            h('span', { class: 'truncate grow', text: label }),
-            live
-              ? h('button', {
-                  class: `live-badge${watching ? ' on' : ''}`,
-                  text: 'LIVE',
-                  title: watching ? 'Stop watching' : `Watch ${label}`,
-                  ariaLabel: watching ? `Stop watching ${label}` : `Watch ${label}`,
-                  on: { click: () => this.watch(id) },
-                })
-              : null,
-          ]),
+        const member = h('div', { class: `voice-member${talking ? ' talking' : ''}` })
+        // A right click on somebody in voice: how loud they are, for you.
+        if (!mineRow) {
+          member.addEventListener('contextmenu', (ev) => {
+            ev.preventDefault()
+            openMenu(member, [{ custom: this.volumeBlock(key, name) }])
+          })
+          member.title = 'Right click for their volume'
+        }
+        member.append(
+          h('i', { class: `dot ${talking ? 'talking' : 'good'}` }),
+          avatarOf(key, name, this.chat?.avatarOf(key) ?? '', 20),
+          h('span', { class: 'truncate grow', text: label }),
         )
+        if (live) {
+          member.append(
+            h('button', {
+              class: `live-badge${watching ? ' on' : ''}`,
+              text: 'LIVE',
+              title: watching ? 'Stop watching' : `Watch ${label}`,
+              ariaLabel: watching ? `Stop watching ${label}` : `Watch ${label}`,
+              on: { click: () => this.watch(id) },
+            }),
+          )
+        }
+        row.append(member)
       }
       this.voiceList.append(row)
     }
@@ -2385,6 +2412,50 @@ export class SpaceView {
    * button either: an ellipsis that opens nothing is a promise the interface
    * does not keep.
    */
+  /** Somebody's menu: how loud they are to you while they are in voice, then what you can do about them. */
+  private personMenu(key: string, role: string, you: boolean, here: boolean): MenuEntry[] {
+    const actions = this.actionsFor(key, role, you, here)
+    const talks = !you && (this.mesh?.peers() ?? []).some((p) => p.key === key && this.voice?.whereIs(p.id))
+    if (!talks) return actions
+    const name = this.chat?.nameOf(key) || shortKey(key)
+    return actions.length ? [{ custom: this.volumeBlock(key, name) }, 'line', ...actions] : [{ custom: this.volumeBlock(key, name) }]
+  }
+
+  /**
+   * How loud somebody is, for you: a slider and a mute, kept on this device
+   * and told to nobody. See net/volume.ts.
+   */
+  private volumeBlock(key: string, name: string): HTMLElement {
+    const value = h('span', { class: 'tiny faint' })
+    const range = h('input', { type: 'range', min: '0', max: '100', step: '1', ariaLabel: `Volume for ${name}` })
+    range.value = String(Math.round(volumeFor(key) * 100))
+    const mute = h('button', { class: 'switch-row menu-switch', role: 'switch' }, [
+      h('span', { class: 'switch-words' }, [h('span', { class: 'switch-label', text: 'Mute for me' })]),
+      h('span', { class: 'switch' }, [h('i')]),
+    ])
+    const paint = (): void => {
+      const muted = mutedFor(key)
+      value.textContent = muted ? 'Muted' : `${range.value}%`
+      mute.setAttribute('aria-checked', String(muted))
+      range.classList.toggle('muted', muted)
+    }
+    range.addEventListener('input', () => {
+      setVolumeFor(key, Number(range.value) / 100)
+      if (mutedFor(key)) setMutedFor(key, false)
+      paint()
+    })
+    mute.addEventListener('click', () => {
+      setMutedFor(key, !mutedFor(key))
+      paint()
+    })
+    paint()
+    return h('div', { class: 'menu-volume' }, [
+      h('div', { class: 'row spread' }, [h('span', { class: 'menu-volume-label', text: `${name}’s volume` }), value]),
+      range,
+      mute,
+    ])
+  }
+
   private actionsFor(key: string, role: string, you: boolean, here: boolean): MenuItem[] {
     const chat = this.chat
     if (!chat || you) return []
@@ -2590,6 +2661,19 @@ export class SpaceView {
     for (const [key, row] of rows) {
       if (!row.here && row.name && hereByName.has(row.name.toLowerCase())) rows.delete(key)
     }
+    /*
+     * And your own name on another key, here or not, is you on a device that
+     * was never linked to this one: the phone and the laptop each made their
+     * own key and were both given your name. It goes into your row rather
+     * than standing beside it as a second you. Linking the devices makes them
+     * one key, which is the cure; this is so it never looks like two of you.
+     */
+    const mine = (chat?.displayName ?? '').toLowerCase()
+    if (mine) {
+      for (const [key, row] of rows) {
+        if (!row.you && row.name.toLowerCase() === mine) rows.delete(key)
+      }
+    }
 
     // You first, then whoever is here, then the rest, alphabetically within each.
     return [...rows.values()].sort((a, b) => {
@@ -2644,8 +2728,9 @@ export class SpaceView {
         class: 'ghost tiny-btn person-more',
         title: `What you can do about ${label}`,
         ariaLabel: `Actions for ${label}`,
-        on: { click: () => openMenu(more, this.actionsFor(row.key, role, row.you, row.here)) },
+        data: { menu: `person:${row.key}` },
       })
+      onPress(more, () => openMenu(more, this.personMenu(row.key, role, row.you, row.here)))
       more.append(icon('more', 14))
 
       /*
@@ -2746,6 +2831,12 @@ export class SpaceView {
    * new travels.
    */
   private async openGifPicker(term: string): Promise<void> {
+    // The GIF button again, with nothing to search for: closed, the way a toggle is.
+    if (this.gifClose) {
+      const close = this.gifClose
+      close()
+      if (!term) return
+    }
     const grid = h('div', { class: 'gif-grid' })
     const status = h('div', { class: 'tiny faint' })
     const box = h('input', {
@@ -2778,11 +2869,15 @@ export class SpaceView {
         done()
       }
     }
+    // A press on the GIF button is left to the button, which closes it.
     const onAway = (ev: PointerEvent): void => {
-      if (!pop.contains(ev.target as Node)) done()
+      const target = ev.target as Node
+      if (pop.contains(target) || this.chatPanel?.gifAnchor.contains(target)) return
+      done()
     }
     let timer: number | null = null
     const done = (): void => {
+      if (this.gifClose === done) this.gifClose = null
       if (timer !== null) window.clearTimeout(timer)
       pop.remove()
       window.removeEventListener('keydown', onKey, true)
@@ -2871,6 +2966,7 @@ export class SpaceView {
     })
 
     document.body.append(pop)
+    this.gifClose = done
     place()
     window.addEventListener('resize', place)
     box.focus()

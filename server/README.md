@@ -169,9 +169,8 @@ Nothing is sent on a timer. Presence goes out when it changes: the server
 holds each session's latest, gives it to whoever arrives, and says `left` the
 moment a socket goes. A space that is open and quiet sends nothing at all. The
 only regular traffic is the WebSocket heartbeat, a ping from the server every
-15 seconds, which the browser answers by itself. A connection that misses one
-is closed, so somebody whose network dropped is shown as away within 30
-seconds.
+10 seconds, which the browser answers by itself. A connection that misses one
+is closed, so somebody whose network dropped is gone within 20 seconds.
 
 `at` is always the number of the newest line a message brings the reader to.
 The server sends a space's lines in order, so a reader that keeps the highest

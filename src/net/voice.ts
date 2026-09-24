@@ -17,6 +17,7 @@
 
 import { rtcConfig } from '../rtc/config'
 import { DEVICES_CHANGED, explainMicRefusal, micSettings, openMic, playOn } from './mic'
+import { VOLUMES_CHANGED } from './volume'
 import { denoise, type Denoiser } from './denoise'
 import { Talking } from './talking'
 import type { SignalBus } from '../signal/bus'
@@ -41,6 +42,8 @@ export class Voice {
    * no to everybody else, so knowing its name is not a way into it.
    */
   admit: ((peerId: string, channel: string) => boolean) | null = null
+  /** How loud somebody plays here, from 0 to 1. See net/volume.ts. */
+  volumeOf: ((peerId: string) => number) | null = null
   private readonly failed = new Set<string>()
 
   private readonly bus: SignalBus
@@ -61,6 +64,10 @@ export class Voice {
   private readonly config: () => RTCConfiguration
 
   /** A new microphone or speaker chosen, or one plugged in or out: the call moves to it. */
+  private readonly onVolumes = (): void => {
+    for (const [peer, call] of this.calls) call.setVolume(this.volumeOf?.(peer) ?? 1)
+  }
+
   private readonly onDevices = (): void => {
     for (const call of this.calls.values()) call.speakers()
     void this.switchMic()
@@ -72,6 +79,7 @@ export class Voice {
     this.selfId = selfId
     this.config = config
     window.addEventListener(DEVICES_CHANGED, this.onDevices)
+    window.addEventListener(VOLUMES_CHANGED, this.onVolumes)
     navigator.mediaDevices?.addEventListener?.('devicechange', this.onDevices)
     this.talking.onChange = () => this.onChange?.()
     this.timer = window.setInterval(() => this.retry(), 5000)
@@ -79,6 +87,7 @@ export class Voice {
 
   dispose(): void {
     window.removeEventListener(DEVICES_CHANGED, this.onDevices)
+    window.removeEventListener(VOLUMES_CHANGED, this.onVolumes)
     navigator.mediaDevices?.removeEventListener?.('devicechange', this.onDevices)
     if (this.timer !== null) window.clearInterval(this.timer)
     this.timer = null
@@ -326,11 +335,13 @@ export class Voice {
       onChange: () => this.onChange?.(),
       onAudio: (stream) => this.talking.add(peerId, stream),
       onFailed: () => {
+        // Still standing here: the server says when somebody has really gone, and a retry may yet connect.
         if (this.failed.has(peerId)) return
         this.failed.add(peerId)
         this.onFailed?.(peerId)
       },
     })
+    call.setVolume(this.volumeOf?.(peerId) ?? 1)
     this.calls.set(peerId, call)
     return call
   }
@@ -427,6 +438,11 @@ class Call {
   /** Play through whichever speaker Settings says now. */
   speakers(): void {
     playOn(this.sink)
+  }
+
+  /** How loud they play here, from 0 to 1. */
+  setVolume(level: number): void {
+    this.sink.volume = Math.min(1, Math.max(0, level))
   }
 
   async dial(): Promise<void> {

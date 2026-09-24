@@ -308,6 +308,66 @@ const ALL: { group: EmojiGroup; list: Emoji[] }[] = GROUPS.map((group) => ({
   }),
 }))
 
+/*
+ * Typed as :name:, the way every chat app since Campfire has done it. Each
+ * emoji answers to its own words, the first one to claim a word keeping it,
+ * and to the names people already know from Slack and Discord, which win.
+ */
+const ALIASES: Record<string, string> = {
+  joy: '😂', laughing: '😆', laugh: '😆', rofl: '🤣', smile: '😄', grin: '😁', grinning: '😀',
+  sweat_smile: '😅', wink: '😉', blush: '😊', heart_eyes: '😍', kissing_heart: '😘', thinking: '🤔',
+  sob: '😭', cry: '😢', angry: '😠', rage: '😡', scream: '😱', sunglasses: '😎', nerd: '🤓',
+  upside_down: '🙃', eyes: '👀', skull: '💀', poop: '💩', ghost: '👻', shrug: '🤷', facepalm: '🤦',
+  heart: '❤️', broken_heart: '💔', fire: '🔥', tada: '🎉', party: '🥳', sparkles: '✨', star: '⭐',
+  '100': '💯', rocket: '🚀', thumbsup: '👍', '+1': '👍', thumbsdown: '👎', '-1': '👎', ok_hand: '👌',
+  clap: '👏', pray: '🙏', wave: '👋', muscle: '💪', raised_hands: '🙌', point_up: '☝️', v: '✌️',
+  handshake: '🤝', white_check_mark: '✅', check: '✅', x: '❌', warning: '⚠️', zap: '⚡', boom: '💥',
+  coffee: '☕', beer: '🍺', pizza: '🍕', cake: '🎂', see_no_evil: '🙈', sleeping: '😴', yawn: '🥱',
+}
+
+const SHORTCODES: Map<string, string> = (() => {
+  const out = new Map<string, string>()
+  for (const { list } of ALL) {
+    for (const e of list) {
+      for (const word of e.words.split(/\s+/)) if (word && !out.has(word)) out.set(word, e.ch)
+    }
+  }
+  for (const [code, ch] of Object.entries(ALIASES)) out.set(code, ch)
+  return out
+})()
+
+/** The emoji a :name: stands for, or null. */
+export function emojiFor(code: string): string | null {
+  return SHORTCODES.get(code.toLowerCase()) ?? null
+}
+
+/** Names starting with what has been typed, the exact one first, one per emoji. */
+export function emojiStartingWith(typed: string, most = 8): { code: string; ch: string }[] {
+  const wanted = typed.toLowerCase()
+  const seen = new Set<string>()
+  const out: { code: string; ch: string }[] = []
+  const exact = SHORTCODES.get(wanted)
+  if (exact) {
+    out.push({ code: wanted, ch: exact })
+    seen.add(exact)
+  }
+  for (const [code, ch] of SHORTCODES) {
+    if (out.length >= most) break
+    if (!code.startsWith(wanted) || seen.has(ch)) continue
+    seen.add(ch)
+    out.push({ code, ch })
+  }
+  return out
+}
+
+/** Every :name: in some words made into its emoji, leaving `code` and names it does not know alone. */
+export function withEmoji(text: string): string {
+  return text
+    .split(/(`[^`]*`)/)
+    .map((part, i) => (i % 2 === 1 ? part : part.replace(/:([a-z0-9_+-]{1,32}):/gi, (all, code: string) => emojiFor(code) ?? all)))
+    .join('')
+}
+
 const RECENT_KEY = 'cathode.emoji.v1'
 const RECENT_MAX = 24
 
@@ -372,7 +432,7 @@ function describe(ch: string): string {
  * Two open pickers is two things listening for the same click, and the second
  * one to open would close the first from underneath the pointer.
  */
-let open: { close: () => void } | null = null
+let open: { close: () => void; anchor?: HTMLElement } | null = null
 
 export function closeEmojiPicker(): void {
   open?.close()
@@ -396,6 +456,11 @@ export interface PickerOptions {
  * hands focus back, because a picker that traps the keyboard is worse than none.
  */
 export function openEmojiPicker(options: PickerOptions): void {
+  // Its own button again: closed, the way a toggle is. Anything else opens it afresh.
+  if (open && open.anchor === options.anchor) {
+    open.close()
+    return
+  }
   open?.close()
 
   const search = h('input', {
@@ -550,7 +615,7 @@ export function openEmojiPicker(options: PickerOptions): void {
     window.removeEventListener('resize', close)
   }
 
-  open = { close }
+  open = { close, anchor: options.anchor }
   setPreview('')
   paint('')
   document.body.append(pop)

@@ -3735,9 +3735,12 @@ input[type="text"].space-search {
 
 .to-bottom {
   position: absolute;
-  left: 50%;
+  /* Centred by its margins, not by a transform: a pressed button nudges itself with one, and took this sideways. */
+  left: 0;
+  right: 0;
+  width: max-content;
+  margin: 0 auto;
   bottom: 8px;
-  transform: translateX(-50%);
   z-index: 5;
   min-height: 30px;
   padding: 0 14px;
@@ -4025,6 +4028,36 @@ input[type="text"].space-search {
   background: var(--line-soft);
 }
 
+/* How loud somebody is, for you: at the top of their menu while they are in voice. */
+.menu-volume {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 240px;
+  padding: 8px 8px 4px;
+}
+
+.menu-volume-label {
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.menu-volume input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.menu-volume input[type='range'].muted {
+  opacity: 0.4;
+}
+
+.menu-switch {
+  min-height: 36px;
+  padding: 4px 2px;
+  border-radius: 8px;
+}
+
 /* ---------- mention autocomplete ---------- */
 
 .mention-pop {
@@ -4051,6 +4084,16 @@ input[type="text"].space-search {
   box-shadow: none;
   font-weight: 400;
   font-size: var(--size-small);
+}
+
+.emoji-option {
+  gap: 8px;
+  min-height: 30px;
+}
+
+.emoji-option-face {
+  font-size: 18px;
+  line-height: 1;
 }
 
 .mention-option.on,
@@ -4600,13 +4643,24 @@ input[type="text"].gif-search {
 }
 
 /* Where a pin just took you. Fades out on its own. */
+/*
+ * Where a jump landed: lit, with the accent down its edge, long enough to
+ * find it once the scroll has stopped, and then let go of slowly.
+ */
 @keyframes found {
-  from { background: var(--select); }
-  to { background: transparent; }
+  0%,
+  60% {
+    background: var(--accent-wash);
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+  100% {
+    background: transparent;
+    box-shadow: inset 3px 0 0 transparent;
+  }
 }
 
 .chat-line.found {
-  animation: found 1.6s ease-out;
+  animation: found 5s ease-out forwards;
 }
 
 /* Who is live in this channel. One card each, the watched one pressed in. */
@@ -4807,4 +4861,19 @@ input[type="text"].gif-search {
   background: #000;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
+}
+
+/*
+ * A phone zooms into any text field set smaller than 16 pixels the moment it
+ * is tapped, and does not zoom back out. So on a touch screen every field is
+ * 16 pixels, whatever the rule for it says, and the page stays as it was.
+ * Pinching to zoom still works: the viewport does not forbid it.
+ */
+@media (pointer: coarse) {
+  input,
+  textarea,
+  select,
+  [contenteditable='true'] {
+    font-size: 16px !important;
+  }
 }

@@ -195,6 +195,37 @@ try {
     .then(() => true)
     .catch(() => false)
   check('and everybody else sees them', arrived, (await reactionsOn(other)).join(' '))
+
+  // ---- emoji by name ------------------------------------------------------
+  const BOX = '[aria-label="Write a message"]'
+  await page.fill(BOX, '')
+  await page.click(BOX)
+  await page.keyboard.type('so :lau')
+  const offered = await page.waitForSelector('.emoji-option', { timeout: 5000 }).then(() => page.$$eval('.emoji-option', (els) => els.map((e) => e.dataset.emoji)), () => [])
+  check('typing :lau offers the emoji it could be', offered.includes('😆'), offered.join(' '))
+  await page.keyboard.press('Tab')
+  const took = await page.inputValue(BOX)
+  check('and Tab takes the first', took === 'so 😆', took)
+  await page.keyboard.type(' and :fire:')
+  const swapped = await page.inputValue(BOX)
+  check('a finished :name: turns into its emoji as it is typed', swapped === 'so 😆 and 🔥', swapped)
+  await page.fill(BOX, 'party :tada: but not `:tada:`')
+  await page.keyboard.press('Enter')
+  const sent = await page
+    .waitForFunction(() => [...document.querySelectorAll('.chat-text')].map((e) => e.textContent).find((t) => t.startsWith('party')), null, { timeout: 10_000 })
+    .then((h) => h.jsonValue(), () => '')
+  check('one left as typed goes as its emoji, and code stays code', sent === 'party 🎉 but not :tada:', sent)
+
+  // ---- a button that opens something closes it again ------------------------
+  const toggles = async (button, pop) => {
+    await page.click(button)
+    const opened = !!(await page.waitForSelector(pop, { timeout: 5000 }).catch(() => null))
+    await page.click(button)
+    await page.waitForTimeout(300)
+    return opened && (await page.$(pop)) === null
+  }
+  check('the emoji button opens the picker, and closes it on the next press', await toggles('button[aria-label="Emoji"]', '.emoji-pop'))
+  check('and so does the GIF button', await toggles('button[aria-label="Find a GIF"]', '.gif-pop'))
 } catch (err) {
   check('the run finished', false, err instanceof Error ? err.message : String(err))
 }
