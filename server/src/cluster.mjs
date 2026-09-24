@@ -30,6 +30,7 @@ import { timingSafeEqual } from 'node:crypto'
 import { CLUSTER_SECRET, CLUSTERED, PEERS, PUBLIC_URL } from './config.mjs'
 import { pool } from './db.mjs'
 import { pullFiles } from './files.mjs'
+import { fromPeerLive, peerGone } from './sockets.mjs'
 import { append, kept, takeClaim, takePerson } from './store.mjs'
 
 /** Lines one pull may take. */
@@ -233,6 +234,41 @@ async function followSide(peer) {
   }
 }
 
+/**
+ * Who is here and what they are saying right now, from a peer: a long poll,
+ * over and over, like the lines. When it fails, everybody on that server is
+ * gone for the devices here until it answers again. See live.mjs.
+ */
+async function followLive(peer) {
+  let after = 0
+  let boot = ''
+  let wait = 1000
+  let connected = false
+  for (;;) {
+    try {
+      const page = await ask(
+        peer,
+        `/api/v1/cluster/live?after=${after}&boot=${boot}&wait=${WAIT_S}`,
+        AbortSignal.timeout((WAIT_S + 15) * 1000),
+      )
+      // A snapshot: what was held from that server is replaced by what it says now.
+      if (page.reset) peerGone(peer)
+      for (const event of page.events ?? []) fromPeerLive(peer, event)
+      after = page.at
+      boot = page.boot
+      connected = true
+      wait = 1000
+    } catch {
+      if (connected) peerGone(peer)
+      connected = false
+      after = 0
+      boot = ''
+      await new Promise((r) => setTimeout(r, wait))
+      wait = Math.min(wait * 2, 15_000)
+    }
+  }
+}
+
 export function startCluster() {
   if (!CLUSTERED) {
     if (PEERS.length) console.log('[cathode] cluster: CATHODE_CLUSTER_SECRET must be at least 16 characters; not syncing')
@@ -243,5 +279,6 @@ export function startCluster() {
   for (const peer of PEERS) {
     void followLines(peer)
     void followSide(peer)
+    void followLive(peer)
   }
 }

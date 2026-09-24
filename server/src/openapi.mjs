@@ -182,6 +182,13 @@ export const openapi = {
     '/api/v1/cluster/people': {
       get: { summary: 'Between servers: the sealed person records', security: cluster, responses: { 200: { description: 'OK' } } },
     },
+    '/api/v1/cluster/live': {
+      get: {
+        summary: 'Between servers: who is here and what they are saying right now, by long poll; a snapshot first, then changes',
+        security: cluster,
+        responses: { 200: { description: 'OK' } },
+      },
+    },
     '/api/v1/cluster/files': {
       get: { summary: 'Between servers: which files are kept, in the order they came', security: cluster, responses: { 200: { description: 'OK' } } },
     },

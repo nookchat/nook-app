@@ -124,7 +124,7 @@ async function testRelay(server: string): Promise<{ ok: boolean; text: string }>
 }
 
 /** The card's contents. */
-export function voiceSettings(): HTMLElement {
+export function voiceSettings(more: HTMLElement[] = []): HTMLElement {
   const input = h('select', { ariaLabel: 'Microphone' })
   const output = h('select', { ariaLabel: 'Speaker' })
   const fill = async (): Promise<void> => {
@@ -162,7 +162,7 @@ export function voiceSettings(): HTMLElement {
     if (test) void restart()
   })
   // Before the page may see the microphones' names, it cannot offer them.
-  const named = h('button', { class: 'ghost small hidden', text: 'Show my microphones' })
+  const named = h('button', { class: 'ghost small start hidden', text: 'Show my microphones' })
   named.addEventListener('click', async () => {
     try {
       const probe = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -254,8 +254,11 @@ export function voiceSettings(): HTMLElement {
     named,
     h('label', { class: 'field-row' }, [h('span', { class: 'field-label', text: 'Speaker' }), output]),
     h('div', { class: 'mic-test' }, [h('div', { class: 'row wrap' }, [testButton, hearButton]), meter, which]),
-    h('div', { class: 'row wrap' }, [relayButton]),
-    results,
+    // The rest is for when something is wrong, or for somebody who likes switches.
+    h('details', { class: 'adv' }, [
+      h('summary', { text: 'More voice options' }),
+      h('div', { class: 'stack tight' }, [...more, h('div', { class: 'row wrap' }, [relayButton]), results]),
+    ]),
   ])
   // Leaving settings stops the test, so the microphone light goes out.
   const watch = new MutationObserver(() => {

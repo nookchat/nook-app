@@ -16,64 +16,34 @@ A step by step guide for somebody who has not done this before is in
 
 ## Running it on your own machine
 
-You need a Linux machine with Docker, and a DNS name that points at it.
-
-1. Get the compose file and its settings:
-
-   ```
-   git clone https://github.com/nebbsie/stream.git && cd stream
-   cp server/.env.example server/.env
-   ```
-
-2. Fill in `server/.env`. Make the two secrets with `openssl rand -hex 32`:
-
-   | Setting | What to put |
-   | --- | --- |
-   | `CATHODE_DOMAIN` | The name this server answers on |
-   | `CATHODE_ORIGINS` | The address of your page, such as `https://cathode.example.vercel.app` |
-   | `POSTGRES_PASSWORD` | A long random password for the database |
-   | `CATHODE_TURN_SECRET` | A long random secret for TURN |
-   | `CATHODE_TURN_URLS` | `turn:<your domain>:3478?transport=udp,turn:<your domain>:3478?transport=tcp` |
-   | `CATHODE_PUBLIC_URL` | `https://<your domain>` |
-
-3. Start everything:
-
-   ```
-   docker compose -f server/docker-compose.yml up -d
-   ```
-
-   This pulls `ghcr.io/nebbsie/cathode-server:latest` and starts four
-   containers: the server, Postgres, coturn, and Caddy for HTTPS.
-
-4. Open these ports in the firewall:
-
-   | Port | For |
-   | --- | --- |
-   | 80 and 443, TCP | Caddy, which gets the certificate and serves HTTPS |
-   | 3478, TCP and UDP | TURN |
-   | 49160–49260, UDP | TURN relay ports. Change them with `CATHODE_TURN_MIN_PORT` and `CATHODE_TURN_MAX_PORT` |
-
-5. Check it:
-
-   ```
-   curl https://cathode.example.org/api/v1/health
-   ```
-
-6. Open Cathode and add `cathode.example.org` under **Add your server** on the
-   home page, or under Settings, Servers. Your new spaces go there. Other
-   people reach it only through the invites you send them.
-
-To update to the newest image:
+You need a Linux machine with Docker, and a domain that points at it. Then:
 
 ```
-docker compose -f server/docker-compose.yml pull
-docker compose -f server/docker-compose.yml up -d
+curl -fsSL https://raw.githubusercontent.com/nebbsie/stream/main/server/install.sh | sh
 ```
+
+It asks for the domain, makes the secrets, starts the server, Postgres,
+Caddy for HTTPS and coturn for calls, and waits until it answers. Run it again
+to update. [docs/self-hosting.md](../docs/self-hosting.md) says the same step
+by step, with the choices it takes.
+
+The folder it makes holds `docker-compose.yml` and `.env`. Only
+`CATHODE_DOMAIN` has to be in `.env`: the server's address and its TURN
+addresses follow from it, and everything else has a default. Any setting
+under [Settings](#settings) can go in `.env` to change it; then run
+`docker compose up -d` in that folder.
+
+Open these ports in the firewall:
+
+| Port | For |
+| --- | --- |
+| 80 and 443, TCP | Caddy, which gets the certificate and serves HTTPS |
+| 3478, TCP and UDP | TURN |
+| 49160–49260, UDP | TURN relay ports. Change them with `CATHODE_TURN_MIN_PORT` and `CATHODE_TURN_MAX_PORT` |
 
 `COMPOSE_PROFILES` in `.env` selects the extra containers: `tls` starts Caddy,
-and `turn` starts coturn. Remove `tls` if you already have a reverse proxy, and
-set `CATHODE_BIND=0.0.0.0` so that the proxy can reach port 8787. Remove `turn`
-if you do not want to relay media.
+and `turn` starts coturn. Leave out `tls` if you already have a reverse proxy,
+and set `CATHODE_BIND=0.0.0.0` so that the proxy can reach port 8787.
 
 ### Only the server, to try it
 
@@ -146,7 +116,7 @@ Version 1, under `/api/v1`. A running server describes it at
 | `PUT /api/v1/people/:id` | Replaces it. Needs `x-cathode-write`. The first write claims it |
 | `GET /api/v1/preview?url=U` | The title, description and picture behind a public link |
 | `GET /api/v1/gifs?q=term` | GIF search, when `CATHODE_TENOR_KEY` is set |
-| `GET /api/v1/cluster/lines`, `/rooms`, `/people`, `/files` | Between servers in a cluster only. Needs the cluster secret |
+| `GET /api/v1/cluster/lines`, `/rooms`, `/people`, `/files`, `/live` | Between servers in a cluster only. Needs the cluster secret |
 
 The socket speaks JSON, one message per frame. Every message carries the
 `room` it is about, so one connection carries every space a device is in:
@@ -187,10 +157,12 @@ one cluster. Every server then keeps a full copy of every space in the cluster.
 3. On every server, set:
 
    ```
-   CATHODE_PUBLIC_URL=https://this-server.example.org
    CATHODE_PEERS=https://other-one.example.org,https://other-two.example.org
    CATHODE_CLUSTER_SECRET=the shared secret
    ```
+
+   Each server's own address comes from its `CATHODE_DOMAIN`; set
+   `CATHODE_PUBLIC_URL` only when it is reached some other way.
 
 4. Restart each server. `GET /api/v1/health` lists the cluster, and `peers`
    says whether each of the others is reachable.
@@ -198,7 +170,12 @@ one cluster. Every server then keeps a full copy of every space in the cluster.
 How it works:
 
 - Every server pulls from every other, all the time, over HTTPS: which spaces
-  exist and their claims, every sealed line, and every person's sealed record.
+  exist and their claims, every sealed line, every file, and every person's
+  sealed record.
+- What is live is passed on too: who is here, who is typing, and the
+  handshakes of calls and screen shares, so two people on two servers of one
+  cluster see and hear each other. When a server stops answering, everybody on
+  it is gone for the others at once.
 - Lines are pulled by long polling, so a line written on one server reaches
   the others in about the time it takes to cross the network.
 - A line two servers both hold is the same line and is kept once.
@@ -251,14 +228,13 @@ What a server can see, because it has to:
 ## Put it behind TLS
 
 The server speaks plain HTTP. Caddy in the compose file puts HTTPS in front of
-it. With your own proxy, pass WebSocket upgrades through, and keep read
-timeouts above 30 seconds, because servers in a cluster hold requests open
-while they wait for new lines. The smallest working Caddyfile:
+it, with no configuration beyond the domain. With your own proxy, pass
+WebSocket upgrades through, and keep read timeouts above 30 seconds, because
+servers in a cluster hold requests open while they wait for new lines. With
+Caddy on its own, that is:
 
 ```
-cathode.example.org {
-    reverse_proxy localhost:8787
-}
+caddy reverse-proxy --from cathode.example.org --to localhost:8787
 ```
 
 ## TURN
@@ -283,10 +259,11 @@ calls try to go straight between browsers.
 | `DATABASE_URL` | `postgres://cathode:cathode@localhost:5432/cathode` | The Postgres database |
 | `CATHODE_ORIGINS` | `*` | The pages that may use this server, comma separated. Set it, or any website can use your server and your TURN bandwidth |
 | `CATHODE_MAX_ROOM_BYTES` | `268435456` | Per space, before the oldest half is dropped |
-| `CATHODE_PUBLIC_URL` | (empty) | This server's own address, as pages and other servers reach it |
+| `CATHODE_DOMAIN` | (empty) | The domain this server answers on. Its address and TURN addresses follow from it |
+| `CATHODE_PUBLIC_URL` | `https://` and the domain | This server's own address, as pages and other servers reach it |
 | `CATHODE_PEERS` | (empty) | The other servers in the cluster, comma separated |
 | `CATHODE_CLUSTER_SECRET` | (empty) | Shared by every server in the cluster, 16 characters or more |
-| `CATHODE_TURN_URLS` | (empty) | The TURN addresses to hand out, comma separated |
+| `CATHODE_TURN_URLS` | the domain's port 3478, UDP and TCP, when there is a TURN secret | The TURN addresses to hand out, comma separated |
 | `CATHODE_TURN_SECRET` | (empty) | The secret shared with coturn. TURN is off until this and the URLs are set |
 | `CATHODE_TURN_TTL` | `86400` | How long a TURN credential lasts, in seconds |
 | `CATHODE_TURN_ONLY` | `1` | `0` lets a call try a direct path before TURN |

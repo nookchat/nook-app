@@ -40,7 +40,9 @@
     "test:tamper": "node test/tamper-check.mjs",
     "test:own": "node test/own-server-check.mjs",
     "test:files": "node test/files-check.mjs",
-    "test:calls": "node test/call-check.mjs"
+    "test:calls": "node test/call-check.mjs",
+    "test:backup": "node test/backup-check.mjs",
+    "test:live-cluster": "node test/live-cluster-check.mjs"
   },
   "dependencies": {
     "@jitsi/rnnoise-wasm": "^0.2.1",

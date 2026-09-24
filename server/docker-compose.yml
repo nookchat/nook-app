@@ -1,31 +1,33 @@
 # The Cathode server, on a machine of your own.
 #
-#   cp server/.env.example server/.env    then fill it in
-#   docker compose -f server/docker-compose.yml up -d
+# The easy way, which writes this file and a .env beside it and starts it:
+#
+#   curl -fsSL https://raw.githubusercontent.com/nebbsie/stream/main/server/install.sh | sh
+#
+# By hand: put CATHODE_DOMAIN=your.domain in a .env next to this file (the
+# rest has defaults), then
+#
+#   docker compose up -d
 #
 # Four containers:
 #
-#   cathode   the server: spaces, the WebSocket per space, the API, TURN credentials
+#   cathode   the server: spaces, the WebSocket, the API, TURN credentials
 #   db        Postgres, where the spaces are kept (as ciphertext)
-#   turn      coturn, which carries calls and screen shares
-#   caddy     HTTPS for cathode, with a certificate from Let's Encrypt
+#   caddy     HTTPS for your domain, with a certificate from Let's Encrypt
+#   turn      coturn, which carries calls on networks that block them
 #
-# The page itself stays where it is (Vercel, or any static host). People add
-# this server in the page, under Add your server, or join it from an invite.
+# Only the server and its database, to try it on this machine:
 #
-# A cluster: several people each run this on their own machine, with the same
-# CATHODE_CLUSTER_SECRET and each other's addresses in CATHODE_PEERS. Every
-# space is then kept on all of them. See server/README.md.
+#   docker compose up -d cathode
 #
-# Update to the newest published image:
+# and use http://localhost:8787 as the server address in Cathode.
 #
-#   docker compose -f server/docker-compose.yml pull && docker compose -f server/docker-compose.yml up -d
+# Update to the newest server: run the installer again, or
 #
-# Only the server and its database, for a try on this machine:
+#   docker compose pull && docker compose up -d
 #
-#   docker compose -f server/docker-compose.yml up -d cathode
-#
-# and use http://localhost:8787 as the server address.
+# Every setting below has a default, and a line in .env overrides it. See
+# server/README.md for all of them.
 
 name: cathode
 
@@ -47,25 +49,27 @@ services:
       - cathode-data:/data
     environment:
       DATABASE_URL: postgres://cathode:${POSTGRES_PASSWORD:-cathode}@db:5432/cathode
-      # How much ciphertext one space may keep before the oldest is dropped.
-      CATHODE_MAX_ROOM_BYTES: ${CATHODE_MAX_ROOM_BYTES:-268435456}
-      # The pages that may use this server. * is any page.
-      CATHODE_ORIGINS: ${CATHODE_ORIGINS:-*}
-      # TURN, handed to every space on this server. Empty turns it off.
-      CATHODE_TURN_URLS: ${CATHODE_TURN_URLS:-}
-      CATHODE_TURN_SECRET: ${CATHODE_TURN_SECRET:-}
-      CATHODE_TURN_ONLY: ${CATHODE_TURN_ONLY:-1}
-      # The cluster. Leave CATHODE_PEERS empty to run on your own.
+      # The name this server answers on. Its address and its TURN addresses follow from it.
+      CATHODE_DOMAIN: ${CATHODE_DOMAIN:-}
       CATHODE_PUBLIC_URL: ${CATHODE_PUBLIC_URL:-}
+      # The pages that may use this server. * is any page, which is what a
+      # server for friends wants; narrow it to your own page if you like.
+      CATHODE_ORIGINS: ${CATHODE_ORIGINS:-*}
+      # TURN, for calls: on when the installer made a secret for it.
+      CATHODE_TURN_SECRET: ${CATHODE_TURN_SECRET:-}
+      CATHODE_TURN_URLS: ${CATHODE_TURN_URLS:-}
+      CATHODE_TURN_ONLY: ${CATHODE_TURN_ONLY:-1}
+      # A cluster with friends. Empty runs on its own. See server/README.md.
       CATHODE_PEERS: ${CATHODE_PEERS:-}
       CATHODE_CLUSTER_SECRET: ${CATHODE_CLUSTER_SECRET:-}
-      # Link cards: 0 stops this server learning which links people preview.
-      CATHODE_PREVIEWS: ${CATHODE_PREVIEWS:-1}
-      # Optional GIF search for /gif. See server/README.md.
-      CATHODE_TENOR_KEY: ${CATHODE_TENOR_KEY:-}
       # Files: the largest one may be, and how much one space may keep.
       CATHODE_MAX_FILE_BYTES: ${CATHODE_MAX_FILE_BYTES:-104857600}
       CATHODE_MAX_ROOM_FILE_BYTES: ${CATHODE_MAX_ROOM_FILE_BYTES:-5368709120}
+      CATHODE_MAX_ROOM_BYTES: ${CATHODE_MAX_ROOM_BYTES:-268435456}
+      # Link cards: 0 stops this server learning which links people preview.
+      CATHODE_PREVIEWS: ${CATHODE_PREVIEWS:-1}
+      # GIF search for /gif, off until a key is given.
+      CATHODE_TENOR_KEY: ${CATHODE_TENOR_KEY:-}
 
   db:
     image: postgres:17-alpine
@@ -82,6 +86,22 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+
+  caddy:
+    image: caddy:2
+    container_name: cathode-caddy
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    # HTTPS for the domain, and everything passed to the server, WebSockets
+    # included. No Caddyfile: this is all it needs.
+    command: caddy reverse-proxy --from ${CATHODE_DOMAIN:-localhost} --to cathode:8787
+    volumes:
+      - caddy-data:/data
+    depends_on:
+      - cathode
+    profiles: ['tls']
 
   turn:
     image: coturn/coturn:4.6
@@ -114,22 +134,6 @@ services:
       - --denied-peer-ip=172.16.0.0-172.31.255.255
       - --denied-peer-ip=192.168.0.0-192.168.255.255
     profiles: ['turn']
-
-  caddy:
-    image: caddy:2
-    container_name: cathode-caddy
-    restart: unless-stopped
-    ports:
-      - '80:80'
-      - '443:443'
-    environment:
-      CATHODE_DOMAIN: ${CATHODE_DOMAIN:-localhost}
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy-data:/data
-    depends_on:
-      - cathode
-    profiles: ['tls']
 
 volumes:
   cathode-data:

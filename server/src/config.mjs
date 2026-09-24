@@ -44,8 +44,19 @@ export function originAllowed(origin) {
   return typeof origin === 'string' && ORIGINS.includes(origin)
 }
 
+/**
+ * The one thing a server on the internet needs saying: the name it answers
+ * on. Its own address and its TURN addresses follow from it, unless they are
+ * set themselves. See server/install.sh.
+ */
+export const DOMAIN = String(env.CATHODE_DOMAIN ?? '').trim().replace(/^https?:\/\//, '').replace(/\/+$/, '')
+
 /** TURN, for calls and screen shares. See turn.mjs. */
-export const TURN_URLS = list(env.CATHODE_TURN_URLS)
+export const TURN_URLS = list(env.CATHODE_TURN_URLS).length
+  ? list(env.CATHODE_TURN_URLS)
+  : DOMAIN && env.CATHODE_TURN_SECRET
+    ? [`turn:${DOMAIN}:3478?transport=udp`, `turn:${DOMAIN}:3478?transport=tcp`]
+    : []
 export const TURN_SECRET = env.CATHODE_TURN_SECRET ?? ''
 export const TURN_TTL_S = Number(env.CATHODE_TURN_TTL ?? 24 * 60 * 60)
 export const TURN_ONLY = env.CATHODE_TURN_ONLY !== '0'
@@ -68,7 +79,7 @@ export const PREVIEW_LOCAL = env.CATHODE_PREVIEW_LOCAL === '1'
  * of them going away. They trust each other with ciphertext and nothing else.
  */
 /** This server's own public address, as the pages and the other servers reach it. */
-export const PUBLIC_URL = list(env.CATHODE_PUBLIC_URL)[0] ?? ''
+export const PUBLIC_URL = list(env.CATHODE_PUBLIC_URL)[0] ?? (DOMAIN ? `https://${DOMAIN}` : '')
 /** The other servers in the cluster. */
 export const PEERS = list(env.CATHODE_PEERS).filter((p) => p !== PUBLIC_URL)
 /** What proves a request comes from another server in the cluster. Same on all of them. */
@@ -82,4 +93,4 @@ export const MAX_ROOM_SOCKETS = Number(env.CATHODE_MAX_ROOM_SOCKETS ?? 200)
 export const RATE_PER_S = Number(env.CATHODE_RATE ?? 30)
 export const RATE_BURST = Number(env.CATHODE_RATE_BURST ?? 120)
 
-export const VERSION = '1.3.0'
+export const VERSION = '1.4.0'

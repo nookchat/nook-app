@@ -85,7 +85,7 @@ try {
   const two = await fresh()
   await two.goto(APP_URL)
   await two.waitForSelector('input[aria-label="Your name"]')
-  await two.click('button:has-text("I already use Cathode on another device")')
+  await two.click('button:has-text("I already use Cathode")')
   await two.fill('input[aria-label="The link or code"]', first.code.toLowerCase())
   await two.fill('input[aria-label="The server"]', 'localhost:8787')
   await two.click('button:has-text("Link this device")')

@@ -81,7 +81,7 @@ export function welcome(mount: HTMLElement, invited: boolean): Promise<void> {
       go,
       h('button', {
         class: 'ghost welcome-link',
-        text: 'I already use Cathode on another device',
+        text: 'I already use Cathode',
         on: { click: () => void import('./link-device').then((m) => m.enterLinkCode()) },
       }),
     ]),

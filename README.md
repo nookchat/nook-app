@@ -68,10 +68,17 @@ a direct message or a mention in any of them reaches you wherever you are.
 | Your list of spaces and read marks | The server, in one record per person, sealed with a key made from your identity |
 | Who is here | The server holds it in memory, and says when it changes |
 | Picture and sound | Straight between browsers, or through the server's TURN relay when it has one, encrypted with DTLS-SRTP |
-| Your identity key | Your devices only, and only the ones you link. It signs everything you write |
-| Your server addresses and preferences | This device only |
+| Your preferences: quick reactions, volumes, sounds, GIF key, space order | This device, and a copy in your sealed record on your servers, so they follow you to every device |
+| Your identity key | Your devices only, and only the ones you link or restore. It signs everything you write |
+| Your microphone and speaker | This device only: they are its hardware |
 
 Nothing about a space is written to IndexedDB or local storage.
+
+**A backup.** Settings, Your account, Download a backup, saves your account
+as one small file, with a password if you want one. If a browser's data is
+ever cleared, open Cathode, choose "I already use Cathode", then "Restore from
+a backup file", and you are back with every space and message. Anybody with
+the file can be you, so keep it somewhere private.
 
 **Another device.** Settings, Link another device, shows a QR code, a link
 and a code like `K7M2-9QPT-VB2W`. Scan it with the new device's camera, open
@@ -205,7 +212,7 @@ src/
     cluster.ts        the servers of a cluster, and moving to the next
     server-api.ts     sealing a line, link cards, GIF search, health
     files.ts          files: sealed with a key each, uploaded, fetched and opened
-    link.ts           linking a device: what travels, and how it is sealed
+    link.ts           linking a device, and backups: what travels, and how it is sealed
     mesh.ts           who is here, from what the server passes on
     voice.ts          voice channels, mic.ts denoise.ts talking.ts around them
     uplink.ts         how much upload Cathode may use, guessed then measured
@@ -218,6 +225,7 @@ src/
     log.ts            signed, immutable events and what they add up to
     room-chat.ts      one room's conversation, on top of the log
     server-spaces.ts  your sealed record of spaces on each server
+    prefs.ts          the preferences that ride in that record, newest wins
     verify-pool.ts    signature checks on Web Workers
     gifs.ts           GIF search: your own key, or the server's
   rtc/                screen share connections, codecs, quality, stats
@@ -248,6 +256,8 @@ test/
   files-check.mjs     pictures, a video and a file: sent, sealed, copied, opened
   call-check.mjs      voice off screen, a call rung and answered, kept private, hung up
   link-check.mjs      a second and a third device, by code and by link, as the same person
+  backup-check.mjs    a backup restored on an empty browser, and preferences that follow you
+  live-cluster-check.mjs  two people on two servers seeing, typing to and hearing each other
   cluster-check.mjs   two servers, two databases, one cluster
   failover-check.mjs  people carrying on when their server dies
   chat-check.mjs      typing, unread, mentions, search, threads

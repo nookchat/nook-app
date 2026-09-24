@@ -43,6 +43,7 @@
 
 import { createHash } from 'node:crypto'
 import { MAX_ROOM_SOCKETS, originAllowed } from './config.mjs'
+import { emitLive } from './live.mjs'
 import { append, kept, MAX_LINE, mayWrite, newest, ROOM, since } from './store.mjs'
 
 const WS_MAGIC = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
@@ -66,6 +67,59 @@ const PING_MS = 10_000
  */
 const rooms = new Map()
 const sockets = new Set()
+
+/*
+ * The presence of sessions on the other servers of the cluster, by room, so
+ * somebody arriving here is told who is there as well as who is here. Kept
+ * per server they came from, so a server that goes quiet takes its sessions
+ * with it. See live.mjs.
+ */
+const remote = new Map()
+
+/** Everybody here, as each last said it, for a server that is starting to read. */
+export function localStates() {
+  const out = []
+  for (const [room, standing] of rooms) {
+    for (const member of standing) if (member.state) out.push({ room, kind: 'state', id: member.state.id, d: member.state.d })
+  }
+  return out
+}
+
+function toRoom(room, message) {
+  for (const member of rooms.get(room) ?? []) deliver(member, message)
+}
+
+/** Something said on another server of the cluster, for the devices here. */
+export function fromPeerLive(peer, event) {
+  if (typeof event?.room !== 'string' || !ROOM.test(event.room)) return
+  if (event.kind === 'sig' && typeof event.d === 'string') {
+    toRoom(event.room, { t: 'sig', d: event.d })
+    return
+  }
+  if (typeof event.id !== 'string' || !/^[0-9a-f]{1,32}$/.test(event.id)) return
+  const held = remote.get(event.room) ?? new Map()
+  const key = `${peer}|${event.id}`
+  if (event.kind === 'state' && typeof event.d === 'string') {
+    held.set(key, { peer, id: event.id, d: event.d })
+    remote.set(event.room, held)
+    toRoom(event.room, { t: 'sig', d: event.d })
+  } else if (event.kind === 'left') {
+    if (held.delete(key)) toRoom(event.room, { t: 'left', id: event.id })
+    if (held.size === 0) remote.delete(event.room)
+  }
+}
+
+/** Another server went quiet, or started again: everybody on it is gone until it says otherwise. */
+export function peerGone(peer) {
+  for (const [room, held] of remote) {
+    for (const [key, session] of held) {
+      if (session.peer !== peer) continue
+      held.delete(key)
+      toRoom(room, { t: 'left', id: session.id })
+    }
+    if (held.size === 0) remote.delete(room)
+  }
+}
 
 export function wsFrame(opcode, payload) {
   const len = payload.length
@@ -121,6 +175,7 @@ function part(member) {
   member.socket.cathodeRooms.delete(member.room)
   if (!member.state) return
   for (const other of standing ?? []) deliver(other, { t: 'left', id: member.state.id })
+  emitLive({ room: member.room, kind: 'left', id: member.state.id })
 }
 
 /** Every page of history after a line, down one membership, then what arrived meanwhile. */
@@ -142,6 +197,8 @@ async function stream(member, from, live) {
       for (const other of rooms.get(member.room) ?? []) {
         if (other !== member && other.state) deliver(member, { t: 'sig', d: other.state.d }, false)
       }
+      // And who is on the other servers of the cluster.
+      for (const session of remote.get(member.room)?.values() ?? []) deliver(member, { t: 'sig', d: session.d }, false)
       deliver(member, { t: 'live', at: Math.max(cursor, await newest(member.room)) }, false)
     }
   } finally {
@@ -203,6 +260,7 @@ async function onMessage(socket, single, payload) {
     case 'sig': {
       if (typeof message.d !== 'string' || message.d.length > MAX_SIGNAL) return
       others(member, { t: 'sig', d: message.d })
+      emitLive({ room, kind: 'sig', d: message.d })
       return
     }
     case 'state': {
@@ -211,6 +269,7 @@ async function onMessage(socket, single, payload) {
       // Sealed like everything else: this keeps it, and cannot read it.
       member.state = { id: message.id, d: message.d }
       others(member, { t: 'sig', d: message.d })
+      emitLive({ room, kind: 'state', id: message.id, d: message.d })
       return
     }
     default:

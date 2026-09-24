@@ -15,7 +15,7 @@ import { avatarOf } from './chat-panel'
 import { clear, copyText, h } from './dom'
 import { openEmojiPicker, quickReactions, setQuickReactions } from './emoji'
 import { icon } from './icons'
-import { enterLinkCode, showLinkCode } from './link-device'
+import { enterLinkCode, showBackup, showLinkCode } from './link-device'
 import { askNotify, notifyState, stopNotify } from './notify'
 import { setSounds, soundsOn } from './sounds'
 import { toast } from './toast'
@@ -105,32 +105,21 @@ export function settingsView(actions: SettingsActions): HTMLElement {
   })
 
   // A picture travels inside the signed event that carries your name, shrunk to fit.
-  const picture = h('div', { class: 'row' })
+  const picture = h('button', { class: 'welcome-face profile-face', ariaLabel: 'Change your picture', title: 'Change your picture' })
+  const removePicture = h('button', { class: 'ghost tiny-btn hidden', text: 'Remove picture' })
   const pickPicture = h('input', { type: 'text', ariaLabel: 'Choose a picture' })
   pickPicture.type = 'file'
   pickPicture.accept = 'image/*'
   pickPicture.classList.add('hidden')
+  picture.addEventListener('click', () => pickPicture.click())
+  removePicture.addEventListener('click', () => {
+    saveAvatar('')
+    actions.rename(cleanName(name.value) || identity.name, '')
+    drawAvatar()
+  })
   const drawAvatar = (): void => {
-    clear(picture)
-    picture.append(
-      avatarOf(identity.pubkey, identity.name, loadAvatar(), 44),
-      h('button', { text: loadAvatar() ? 'Change picture' : 'Add a picture', on: { click: () => pickPicture.click() } }),
-    )
-    if (loadAvatar()) {
-      picture.append(
-        h('button', {
-          class: 'ghost',
-          text: 'Remove',
-          on: {
-            click: () => {
-              saveAvatar('')
-              actions.rename(cleanName(name.value) || identity.name, '')
-              drawAvatar()
-            },
-          },
-        }),
-      )
-    }
+    picture.replaceChildren(avatarOf(identity.pubkey, identity.name, loadAvatar(), 56), h('span', { class: 'welcome-face-edit' }, [icon('edit', 12)]))
+    removePicture.classList.toggle('hidden', !loadAvatar())
   }
   pickPicture.addEventListener('change', async () => {
     const chosen = pickPicture.files?.[0]
@@ -165,7 +154,7 @@ export function settingsView(actions: SettingsActions): HTMLElement {
     const joined = knownServers().filter((s) => !own.includes(s))
     const target = newSpaceServer()
     clear(serverList)
-    if (own.length === 0) serverList.append(note('You have no server yet. Add one below to make spaces.'))
+    if (own.length === 0) serverList.append(note('You have no server yet. Add one to make spaces.'))
     const row = (server: string, mine: boolean): void => {
       const dot = h('i', { class: 'dot idle', title: 'Checking' })
       const peers = h('div', { class: 'server-peers' })
@@ -175,7 +164,7 @@ export function settingsView(actions: SettingsActions): HTMLElement {
             dot,
             h('span', { class: 'grow truncate server-name', text: serverTag(server) }),
             target === server
-              ? h('span', { class: 'pill', text: 'new spaces go here' })
+              ? h('span', { class: 'pill', text: 'Default', title: 'New spaces go here' })
               : h('button', {
                   class: 'ghost tiny-btn',
                   text: 'Use for new spaces',
@@ -215,6 +204,13 @@ export function settingsView(actions: SettingsActions): HTMLElement {
   drawServers()
 
   const addInput = h('input', { type: 'text', placeholder: 'cathode.example.org', ariaLabel: 'Add a server' })
+  const addRow = h('div', { class: 'row hidden' })
+  const addOpen = h('button', { class: 'ghost small start' }, [icon('plus', 14), 'Add a server'])
+  addOpen.addEventListener('click', () => {
+    addRow.classList.remove('hidden')
+    addOpen.classList.add('hidden')
+    addInput.focus()
+  })
   const addButton = h('button', {
     text: 'Add',
     on: {
@@ -230,18 +226,19 @@ export function settingsView(actions: SettingsActions): HTMLElement {
         }
         addServer(url, true)
         addInput.value = ''
+        addRow.classList.add('hidden')
+        addOpen.classList.remove('hidden')
         drawServers()
         toast('Server added.', 'good')
       },
     },
   })
 
-  // Run your own: the three commands, and the guide for the rest.
-  const commands = [
-    'git clone https://github.com/nebbsie/stream.git && cd stream',
-    'cp server/.env.example server/.env   # then fill it in',
-    'docker compose -f server/docker-compose.yml up -d',
-  ]
+  addRow.append(addInput, addButton)
+
+  // Run your own: the one command, and the guide for the rest.
+  // One command: it asks for the domain and does the rest. See server/install.sh.
+  const commands = ['curl -fsSL https://raw.githubusercontent.com/nebbsie/stream/main/server/install.sh | sh']
   const copyCommands = h('button', { class: 'small' }, [icon('copy', 13), 'Copy'])
   copyCommands.addEventListener('click', async () => {
     const ok = await copyText(commands.join('\n'))
@@ -254,7 +251,7 @@ export function settingsView(actions: SettingsActions): HTMLElement {
   const own = h('details', { class: 'adv' }, [
     h('summary', { text: 'Run your own server' }),
     h('div', { class: 'stack tight' }, [
-      note('A Linux machine with Docker and a domain name.'),
+      note('On a Linux machine with Docker, and a domain pointed at it, run this. It asks for the domain and does the rest.'),
       h('pre', { class: 'code-block', text: commands.join('\n') }),
       h('div', { class: 'row' }, [copyCommands, guide]),
       note('Friends can each run one and join them into a cluster, so every space is kept on all of them.'),
@@ -409,47 +406,70 @@ export function settingsView(actions: SettingsActions): HTMLElement {
           ),
         ]),
 
-        card('Profile', h('div', { class: 'row' }, [name, save]), picture, pickPicture),
-
         card(
-          'Your ID',
-          h('div', { class: 'row' }, [
-            h('span', { class: 'share-code grow', text: shortKey(identity.pubkey), title: identity.pubkey }),
-            copyId,
+          'You',
+          h('div', { class: 'profile-row' }, [
+            picture,
+            h('div', { class: 'stack tight grow' }, [h('div', { class: 'row' }, [name, save]), removePicture]),
           ]),
-          h('div', { class: 'row wrap' }, [
-            h('button', { text: 'Link another device', on: { click: () => showLinkCode() } }),
-            h('button', { class: 'ghost', text: 'Use a code from another device', on: { click: () => enterLinkCode() } }),
-          ]),
-          note('Your key signs everything you write. Linking a device makes it you there too, with the same spaces and messages.'),
+          pickPicture,
         ),
-
-        card('Servers', serverList, h('div', { class: 'row' }, [addInput, addButton]), own),
 
         spaceCard,
 
         card(
           'Voice',
-          voiceSettings(),
-          h('div', { class: 'switch-list' }, [
-            mic('smart', 'Noise removal', 'Takes out keyboards, fans and dogs'),
-            mic('denoise', 'Noise suppression', "The browser's own, lighter filter"),
-            mic('echo', 'Echo cancellation', 'Stops others hearing themselves through your speakers'),
-            mic('gain', 'Auto volume', 'Keeps your voice at a steady level'),
+          voiceSettings([
+            h('div', { class: 'switch-list' }, [
+              mic('smart', 'Noise removal', 'Takes out keyboards, fans and dogs'),
+              mic('denoise', 'Noise suppression', "The browser's own, lighter filter"),
+              mic('echo', 'Echo cancellation', 'Stops others hearing themselves through your speakers'),
+              mic('gain', 'Auto volume', 'Keeps your voice at a steady level'),
+            ]),
           ]),
         ),
 
         card(
-          'Preferences',
+          'Notifications',
           h('div', { class: 'switch-list' }, [
             notifyButton,
-            toggle('Sounds', soundsOn, setSounds, 'A chirp for new messages, and the soundboard'),
+            toggle('Sounds', soundsOn, setSounds, 'A chirp for new messages'),
           ]),
-          h('span', { class: 'eyebrow', text: 'Quick reactions' }),
-          quick,
-          h('span', { class: 'eyebrow', text: 'GIF search' }),
-          h('div', { class: 'row' }, [gifPick, gifInput, gifSave]),
         ),
+
+        card(
+          'Your account',
+          note('Use Cathode on your phone or another computer, with the same spaces and messages.'),
+          h('div', { class: 'row wrap' }, [
+            h('button', { text: 'Link another device', on: { click: () => showLinkCode() } }),
+            h('button', { class: 'ghost', text: 'I have a code', on: { click: () => enterLinkCode() } }),
+          ]),
+          note('Keep a backup, in case this browser’s data is ever cleared.'),
+          h('div', { class: 'row wrap' }, [
+            h('button', { on: { click: () => showBackup() } }, [icon('download', 15), 'Download a backup']),
+          ]),
+        ),
+
+        card('Servers', serverList, addOpen, addRow, own),
+
+        // What most people never need, closed until somebody looks.
+        h('section', { class: 'card stack tight' }, [
+          h('details', { class: 'adv settings-more' }, [
+            h('summary', { text: 'More: your ID, quick reactions, GIFs' }),
+            h('div', { class: 'stack tight' }, [
+              h('span', { class: 'eyebrow', text: 'Your ID' }),
+              h('div', { class: 'row' }, [
+                h('span', { class: 'share-code id-code grow', text: shortKey(identity.pubkey), title: identity.pubkey }),
+                copyId,
+              ]),
+              note('The key that signs everything you write. It never leaves your devices.'),
+              h('span', { class: 'eyebrow', text: 'Quick reactions' }),
+              quick,
+              h('span', { class: 'eyebrow', text: 'GIF search' }),
+              h('div', { class: 'row' }, [gifPick, gifInput, gifSave]),
+            ]),
+          ]),
+        ]),
       ]),
     ]),
   ])

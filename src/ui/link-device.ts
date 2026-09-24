@@ -16,7 +16,8 @@ import { icon } from './icons'
 import { qrSvg } from './qr'
 import { toast } from './toast'
 import { serverTag } from '../backend'
-import { linkInAddress, offerLink, readOffer, takeOffer } from '../net/link'
+import { backupFile, linkInAddress, offerLink, readBackup, readOffer, restoreBackup, takeOffer } from '../net/link'
+import { saveFile } from '../net/files'
 import { loadIdentity, nameChosen } from '../store/identity'
 import { newSpaceServer } from '../store/server-spaces'
 
@@ -129,6 +130,60 @@ export function showLinkCode(): void {
   )
 }
 
+/** Save the account as a file, for the day this browser forgets it. A password is up to you. */
+export function showBackup(): void {
+  const password = h('input', { type: 'password', ariaLabel: 'Password for the backup', placeholder: 'A password (you can leave this empty)' })
+  password.autocomplete = 'new-password'
+  const save = h('button', { class: 'primary' }, [icon('download', 15), 'Download backup'])
+  const close = dialog('Back up your account', [
+    h('div', { class: 'backup-words' }, [
+      h('p', { class: 'small', text: 'This saves your account as one small file. If this browser’s data is ever cleared, open Cathode, choose “I already use Cathode”, and restore it. Your spaces and messages come back.' }),
+      h('p', { class: 'tiny faint', text: 'Anybody with the file can be you, so keep it somewhere private, such as a password manager. A password makes it useless to anybody else, but it cannot be recovered if you forget it.' }),
+    ]),
+    password,
+    save,
+  ])
+  save.addEventListener('click', async () => {
+    save.disabled = true
+    try {
+      const { name, blob } = await backupFile(password.value)
+      saveFile(blob, name)
+      toast(password.value ? 'Backup saved, with its password.' : 'Backup saved. Keep it somewhere private.', 'good', 5000)
+      close()
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'The backup could not be made.', 'bad', 7000)
+      save.disabled = false
+    }
+  })
+}
+
+/** A backup file, picked and read and restored, asking for its password when it has one. */
+function restoreFrom(file: File, passwordRow: HTMLElement, password: HTMLInputElement, go: HTMLButtonElement): void {
+  void file.text().then((text) => {
+    const seen = readBackup(text)
+    if (!seen) {
+      toast('That file is not a Cathode backup.', 'warn')
+      return
+    }
+    const restore = async (): Promise<void> => {
+      if (nameChosen() && !window.confirm(`This device stops being ${loadIdentity().name} and becomes ${seen.name || 'the person in the backup'}. Go on?`)) return
+      try {
+        restart(await restoreBackup(text, password.value))
+      } catch (err) {
+        toast(err instanceof Error ? err.message : 'That backup would not open.', 'bad', 7000)
+      }
+    }
+    if (!seen.locked) {
+      void restore()
+      return
+    }
+    passwordRow.classList.remove('hidden')
+    password.focus()
+    go.textContent = 'Restore'
+    go.onclick = () => void restore()
+  })
+}
+
 interface Reader {
   detect(source: HTMLVideoElement): Promise<{ rawValue: string }[]>
 }
@@ -151,6 +206,13 @@ export function enterLinkCode(): void {
   video.muted = true
   video.playsInline = true
   const scan = h('button', { class: 'ghost' }, [icon('qr', 15), 'Scan with the camera'])
+  // Or a backup, for a device that has nothing to link from.
+  const picker = h('input', { type: 'file', class: 'hidden', ariaLabel: 'Backup file' })
+  picker.accept = 'application/json,.json'
+  const restoreButton = h('button', { class: 'ghost start' }, [icon('file', 15), 'Restore from a backup file'])
+  const password = h('input', { type: 'password', ariaLabel: 'The backup’s password', placeholder: 'The backup’s password' })
+  const passwordRow = h('label', { class: 'welcome-field hidden' }, [h('span', { class: 'eyebrow', text: 'Password' }), password])
+  restoreButton.addEventListener('click', () => picker.click())
 
   // A bare code needs its server; a pasted link carries it.
   const paint = (): void => {
@@ -161,11 +223,20 @@ export function enterLinkCode(): void {
 
   let stream: MediaStream | null = null
   let stopped = false
-  const close = dialog('Link this device', [note, code, serverRow, h('div', { class: 'row wrap' }, [go, scan]), video], () => {
-    stopped = true
-    for (const track of stream?.getTracks() ?? []) track.stop()
-  })
+  const close = dialog(
+    'Link this device',
+    [note, code, serverRow, h('div', { class: 'row wrap' }, [go, scan]), video, h('div', { class: 'link-or tiny faint', text: 'or' }), restoreButton, picker, passwordRow],
+    () => {
+      stopped = true
+      for (const track of stream?.getTracks() ?? []) track.stop()
+    },
+  )
   code.focus()
+  picker.addEventListener('change', () => {
+    const file = picker.files?.[0]
+    picker.value = ''
+    if (file) restoreFrom(file, passwordRow, password, go)
+  })
 
   const take = async (text: string): Promise<void> => {
     const offer = readOffer(text, server.value)

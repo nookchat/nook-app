@@ -65,22 +65,42 @@ export interface Offer {
   until: number
 }
 
-/** Leave this device's identity on its server, sealed, for another device to take. */
-export async function offerLink(): Promise<Offer> {
+/** Everything another device needs to be you: what a link carries, and a backup. */
+function bundleOfThisDevice(): Bundle {
   const secret = secretForLinking()
-  if (!secret) throw new Error('This browser will not let your key be read back, so it cannot be linked from here.')
-  const server = newSpaceServer() || knownServers()[0] || ''
-  if (!server) throw new Error('Add a server first: the link waits there for the other device.')
-  const me = loadIdentity()
-  const bundle: Bundle = {
+  if (!secret) throw new Error('This browser will not let your key be read back, so it cannot be copied from here.')
+  return {
     k: secret,
-    n: me.name,
+    n: loadIdentity().name,
     a: loadAvatar() || undefined,
     servers: knownServers(),
     own: ownServers(),
     pick: newSpaceServer(),
     clusters: knownClusters(),
   }
+}
+
+/** Become whoever a bundle is. Returns their name. */
+function adopt(bundle: Bundle): string {
+  if (!takeIdentity(bundle.k)) throw new Error('This browser will not keep a key.')
+  if (bundle.n) saveDisplayName(bundle.n)
+  saveAvatar(typeof bundle.a === 'string' ? bundle.a : '')
+  adoptServers(
+    Array.isArray(bundle.servers) ? bundle.servers : [],
+    Array.isArray(bundle.own) ? bundle.own : [],
+    typeof bundle.pick === 'string' ? bundle.pick : '',
+  )
+  for (const [primary, others] of Object.entries(bundle.clusters ?? {})) {
+    if (Array.isArray(others)) learn(primary, others.filter((u): u is string => typeof u === 'string'))
+  }
+  return bundle.n || ''
+}
+
+/** Leave this device's identity on its server, sealed, for another device to take. */
+export async function offerLink(): Promise<Offer> {
+  const server = newSpaceServer() || knownServers()[0] || ''
+  if (!server) throw new Error('Add a server first: the link waits there for the other device.')
+  const bundle = bundleOfThisDevice()
   const code = newSecret()
   const { id, key } = await derive(code)
   const iv = crypto.getRandomValues(new Uint8Array(12))
@@ -140,16 +160,96 @@ export async function takeOffer(offer: { code: string; server: string }): Promis
   } catch {
     throw new Error('That link would not open. Make a new one on the other device.')
   }
-  if (!takeIdentity(bundle.k)) throw new Error('This browser will not keep a key.')
-  if (bundle.n) saveDisplayName(bundle.n)
-  saveAvatar(typeof bundle.a === 'string' ? bundle.a : '')
-  adoptServers(
-    Array.isArray(bundle.servers) ? bundle.servers : [],
-    Array.isArray(bundle.own) ? bundle.own : [],
-    typeof bundle.pick === 'string' ? bundle.pick : '',
+  return adopt(bundle)
+}
+
+// ---------------------------------------------------------------------------
+// A backup: the same, in a file you keep
+// ---------------------------------------------------------------------------
+
+/*
+ * For the day a browser forgets everything: its storage cleared, a new
+ * computer, a phone reset. The file is the account, as a link carries it, and
+ * restoring it on the first screen is being you again, with every space and
+ * message, because those were on your servers all along.
+ *
+ * It can have a password. Without one the file is the account in the open,
+ * which is simple and is how most people will keep it (in a password manager,
+ * or somewhere private); with one it is sealed the way a link is, and useless
+ * to anybody who finds it, and to you if the password is forgotten.
+ */
+
+interface BackupFile {
+  cathode: 'backup'
+  version: 1
+  keep: string
+  saved: string
+  name: string
+  account?: Bundle
+  sealed?: { salt: string; iv: string; box: string }
+}
+
+const KEEP =
+  'This file is your Cathode account. Anybody who has it can be you, so keep it somewhere private. ' +
+  'To use it, open Cathode, choose "I already use Cathode", then "Restore from a backup file".'
+
+async function passwordKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
+  const base = await crypto.subtle.importKey('raw', enc.encode(password) as BufferSource, 'PBKDF2', false, ['deriveKey'])
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', hash: 'SHA-256', salt: salt as BufferSource, iterations: 600_000 },
+    base,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt'],
   )
-  for (const [primary, others] of Object.entries(bundle.clusters ?? {})) {
-    if (Array.isArray(others)) learn(primary, others.filter((u): u is string => typeof u === 'string'))
+}
+
+/** This device's account as a file to keep, sealed with a password when one is given. */
+export async function backupFile(password = ''): Promise<{ name: string; blob: Blob }> {
+  const account = bundleOfThisDevice()
+  const file: BackupFile = { cathode: 'backup', version: 1, keep: KEEP, saved: new Date().toISOString(), name: account.n }
+  if (password) {
+    const salt = crypto.getRandomValues(new Uint8Array(16))
+    const iv = crypto.getRandomValues(new Uint8Array(12))
+    const key = await passwordKey(password, salt)
+    const box = new Uint8Array(
+      await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv as BufferSource }, key, enc.encode(JSON.stringify(account)) as BufferSource),
+    )
+    file.sealed = { salt: b64(salt), iv: b64(iv), box: b64(box) }
+  } else {
+    file.account = account
   }
-  return bundle.n || ''
+  const safe = (account.n || 'account').replace(/[^\w -]+/g, '').trim().replace(/\s+/g, '-') || 'account'
+  return { name: `cathode-${safe}.json`, blob: new Blob([JSON.stringify(file, null, 2)], { type: 'application/json' }) }
+}
+
+/** Whether a backup needs its password, or null when the text is not a backup at all. */
+export function readBackup(text: string): { locked: boolean; name: string } | null {
+  try {
+    const file = JSON.parse(text) as Partial<BackupFile>
+    if (file.cathode !== 'backup' || (!file.account && !file.sealed)) return null
+    return { locked: !!file.sealed, name: typeof file.name === 'string' ? file.name : '' }
+  } catch {
+    return null
+  }
+}
+
+/** Become the person in a backup. The page starts again after, as them. */
+export async function restoreBackup(text: string, password = ''): Promise<string> {
+  const file = JSON.parse(text) as BackupFile
+  let account = file.account
+  if (file.sealed) {
+    try {
+      const plain = await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: unb64(file.sealed.iv) as BufferSource },
+        await passwordKey(password, unb64(file.sealed.salt)),
+        unb64(file.sealed.box) as BufferSource,
+      )
+      account = JSON.parse(new TextDecoder().decode(plain)) as Bundle
+    } catch {
+      throw new Error('That is not the password this backup was saved with.')
+    }
+  }
+  if (!account || typeof account.k !== 'string') throw new Error('That file is not a Cathode backup.')
+  return adopt(account)
 }

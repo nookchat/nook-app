@@ -1,7 +1,7 @@
 {
   "name": "cathode-server",
   "private": true,
-  "version": "1.2.0",
+  "version": "1.4.0",
   "type": "module",
   "description": "The Cathode server: sealed spaces in Postgres, one WebSocket per space, and a cluster that keeps them on several machines.",
   "main": "server.mjs",

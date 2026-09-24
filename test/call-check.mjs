@@ -243,6 +243,7 @@ try {
     10_000,
   )
   check('and choosing another during a call moves the call to it', !!inCall, inCall ?? 'still the old one')
+  await cat.click('summary:has-text("More voice options")')
   await cat.click('button:has-text("Test connection")')
   const relay = await waitFor(() => cat.evaluate(() => document.querySelector('.relay-result')?.textContent ?? null), 15_000)
   check('and the connection test says what the relay is doing', !!relay, relay ?? 'nothing')

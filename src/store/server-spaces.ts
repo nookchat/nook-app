@@ -19,6 +19,7 @@
 
 import { BUILT_IN_SERVER, defaultServer, serverUrl, setDefaultServer } from '../backend'
 import { roomsChanged, type RoomNote } from './notes'
+import { localPrefs, takePrefs, watchPrefs } from './prefs'
 import { personalBytes } from './identity'
 import { ask } from '../net/cluster'
 
@@ -187,6 +188,11 @@ export class ServerBook {
     this.later(0)
   }
 
+  /** Save soon, for a change that is not about any one space: a preference. */
+  touch(): void {
+    void this.load().then(() => this.later(SAVE_MS))
+  }
+
   /** Save now rather than in a moment. For a page about to go away. */
   flush(): Promise<void> {
     if (this.timer) {
@@ -233,8 +239,10 @@ export class ServerBook {
       const body = (await res.json()) as { blob?: unknown }
       if (body.blob === null || body.blob === undefined) return []
       if (typeof body.blob !== 'string') return null
-      const record = (await unseal(key, body.blob)) as { notes?: unknown } | null
+      const record = (await unseal(key, body.blob)) as { notes?: unknown; prefs?: unknown } | null
       if (!record) return null
+      // What another device changed since: quick reactions, volumes, and the rest. See prefs.ts.
+      takePrefs(record.prefs)
       return Array.isArray(record.notes)
         ? (record.notes.filter((n) => n && typeof n === 'object' && typeof (n as Kept).room === 'string') as Kept[])
         : []
@@ -257,7 +265,7 @@ export class ServerBook {
       }
       for (const note of theirs) this.take(note)
       const { id, token, key } = await personal()
-      const blob = await seal(key, { notes: [...this.notes.values()] })
+      const blob = await seal(key, { notes: [...this.notes.values()], prefs: localPrefs() })
       await ask(this.server, `/api/v1/people/${id}`, {
         method: 'PUT',
         headers: { 'content-type': 'application/json', 'x-cathode-write': token },
@@ -277,6 +285,11 @@ function strip(note: Kept): RoomNote {
 }
 
 const books = new Map<string, ServerBook>()
+
+// A preference changed here goes into the record on every server of yours.
+watchPrefs(() => {
+  for (const server of knownServers()) bookFor(server).touch()
+})
 
 /** The record for one server, made once per page. */
 export function bookFor(server: string): ServerBook {

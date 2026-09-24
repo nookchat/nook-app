@@ -296,6 +296,29 @@ main {
   align-self: center;
 }
 
+.backup-words {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 16px;
+  line-height: 1.5;
+}
+
+.backup-words p {
+  margin: 0;
+}
+
+.modal:has(.backup-words) {
+  max-width: 400px;
+  gap: 12px;
+  padding-bottom: 16px;
+}
+
+.modal:has(.backup-words) > input,
+.modal:has(.backup-words) > button {
+  margin: 0 16px;
+}
+
 .link-code {
   padding: 10px 8px;
   font-size: 19px;
@@ -633,6 +656,7 @@ button.ghost.danger.on {
 /* ---------- fields ---------- */
 
 input[type="text"],
+input[type="password"],
 textarea,
 select {
   font-family: var(--sans);
@@ -650,12 +674,14 @@ select {
 }
 
 input[type="text"]:hover,
+input[type="password"]:hover,
 textarea:hover,
 select:hover {
   border-color: color-mix(in srgb, var(--fg-faint) 40%, var(--line));
 }
 
 input[type="text"]:focus,
+input[type="password"]:focus,
 textarea:focus,
 select:focus {
   border-color: color-mix(in srgb, var(--accent) 65%, var(--line));
@@ -2196,8 +2222,20 @@ details.adv[open] > summary {
 .switch-words {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   gap: 2px;
   min-width: 0;
+}
+
+/* What a switch does, in as many lines as it takes, never under the switch. */
+.switch-about {
+  white-space: normal;
+  line-height: 1.35;
+}
+
+/* A small button on its own line, where the eye starts rather than in the middle. */
+button.start {
+  align-self: flex-start;
 }
 
 .switch-label {
@@ -2240,6 +2278,50 @@ details.adv[open] > summary {
 
 .switch-row:disabled .switch {
   opacity: 0.4;
+}
+
+/* Settings, You: your face, which is the button for changing it, beside your name. */
+.profile-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.profile-face,
+.profile-face .avatar {
+  width: 56px;
+  height: 56px;
+  min-height: 56px;
+  flex: 0 0 auto;
+}
+
+.profile-face .avatar {
+  font-size: 22px;
+}
+
+.profile-row .tiny-btn {
+  align-self: flex-start;
+}
+
+/* Your ID, small: a thing to copy now and then, not the thing on the page. */
+.share-code.id-code {
+  padding: 5px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-align: left;
+  color: var(--fg-dim);
+}
+
+.settings-more > summary {
+  color: var(--fg-dim);
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.settings-more[open] > summary {
+  margin-bottom: 10px;
 }
 
 /* Settings: servers, and the three commands to run one. */
@@ -4876,4 +4958,14 @@ input[type="text"].gif-search {
   [contenteditable='true'] {
     font-size: 16px !important;
   }
+}
+
+/*
+ * No zoom on a double tap. A phone waits to see whether a tap is the first of
+ * two, and zooms if it is, so tapping a button twice zoomed the page. This
+ * keeps scrolling and pinching and drops only the double tap, on everything.
+ * The picture of a shared screen sets its own, because it does its own zoom.
+ */
+* {
+  touch-action: manipulation;
 }

@@ -24,63 +24,50 @@ of them is down.
 
 ## Set it up
 
-1. Get the files:
+One command, on the machine:
 
-   ```
-   git clone https://github.com/nebbsie/stream.git
-   cd stream
-   cp server/.env.example server/.env
-   ```
+```
+curl -fsSL https://raw.githubusercontent.com/nebbsie/stream/main/server/install.sh | sh
+```
 
-2. Make two secrets:
+It asks for your domain, and does the rest:
 
-   ```
-   openssl rand -hex 24    # the database password
-   openssl rand -hex 32    # the TURN secret
-   ```
+- makes the secrets (the database password and the TURN secret)
+- starts the server, its database, HTTPS (Caddy, with a free certificate) and
+  a TURN relay for calls
+- waits until your server answers, and says so
 
-3. Open `server/.env` and fill in:
+Then open Cathode, type your domain under **Add your server** on the home
+page, and press **Add**. Your new spaces go there.
 
-   | Setting | What to put |
-   | --- | --- |
-   | `CATHODE_DOMAIN` | Your domain, such as `cathode.example.org` |
-   | `CATHODE_PUBLIC_URL` | `https://` and your domain |
-   | `CATHODE_ORIGINS` | The address of the Cathode page people use, such as `https://cathode.example.vercel.app` |
-   | `POSTGRES_PASSWORD` | The first secret |
-   | `CATHODE_TURN_SECRET` | The second secret |
-   | `CATHODE_TURN_URLS` | `turn:<your domain>:3478?transport=udp,turn:<your domain>:3478?transport=tcp` |
+Nobody else sees your server until you send them an invite. An invite names
+the server, so a friend can join with no server of their own.
 
-4. Start it:
+Everything goes in a folder called `cathode`, with your settings in
+`cathode/.env`. Only the domain has to be set; everything else has a
+default, and any setting in [server/README.md](../server/README.md#settings)
+can be added to `.env` to change it. Then run `docker compose up -d` in that
+folder.
 
-   ```
-   docker compose -f server/docker-compose.yml up -d
-   ```
+### Choices, set before the command
 
-   This starts four containers: the server, its database (Postgres), a TURN
-   relay for calls (coturn), and Caddy, which gets an HTTPS certificate for
-   your domain by itself.
+| Setting | What it does |
+| --- | --- |
+| `CATHODE_DOMAIN=cathode.example.org` | The domain, so it does not ask |
+| `CATHODE_TLS=0` | No Caddy, because you already have a proxy (Traefik, nginx) in front |
+| `CATHODE_TURN=0` | No TURN relay: calls go straight between people |
+| `CATHODE_DIR=/opt/cathode` | Where it goes |
 
-5. Check it:
+For example:
 
-   ```
-   curl https://cathode.example.org/api/v1/health
-   ```
-
-   It answers with `"ok": true`.
-
-6. Use it. Open Cathode, type your domain under **Add your server** on the
-   home page, and press **Add**. Your new spaces go there. You can also add it
-   under **Settings, Servers**.
-
-   Nobody else sees your server until you send them an invite. An invite
-   names the server, so a friend can join with no server of their own.
+```
+curl -fsSL https://raw.githubusercontent.com/nebbsie/stream/main/server/install.sh | CATHODE_DOMAIN=cathode.example.org sh
+```
 
 ## Keep it up to date
 
-```
-docker compose -f server/docker-compose.yml pull
-docker compose -f server/docker-compose.yml up -d
-```
+Run the same command again. It keeps your settings and starts the newest
+server.
 
 ## Join a cluster with friends
 
@@ -95,7 +82,7 @@ noticing, and it catches up when it comes back.
    openssl rand -hex 32
    ```
 
-3. On every server, add to `server/.env`:
+3. On every server, add to `cathode/.env`:
 
    ```
    CATHODE_PEERS=https://friend-one.example.org,https://friend-two.example.org
@@ -104,10 +91,10 @@ noticing, and it catches up when it comes back.
 
    `CATHODE_PEERS` lists the other servers, not your own.
 
-4. Restart each server:
+4. Restart each server, in its `cathode` folder:
 
    ```
-   docker compose -f server/docker-compose.yml up -d
+   docker compose up -d
    ```
 
 5. In Cathode, **Settings**, **Servers** shows each server in the cluster and

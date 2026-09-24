@@ -15,12 +15,14 @@
  *   GET  /api/v1/preview?url=             a link card
  *   GET  /api/v1/gifs?q=                  GIF search
  *   GET  /api/v1/openapi.json             all of the above, described
- *   GET  /api/v1/cluster/{lines,rooms,people,files}   between servers only
+ *   GET  /api/v1/cluster/{lines,rooms,people,files,live}   between servers only
  *   WS   /api/v1/socket                 every space a device is in, on one connection
  */
 
 import { HAS_TURN, MAX_FILE_BYTES, PREVIEWS, TURN_ONLY, VERSION, originAllowed } from './config.mjs'
 import { clusterHealth, clusterUrls, fromPeer, linesFor, peopleFor, roomsFor } from './cluster.mjs'
+import { liveFor } from './live.mjs'
+import { localStates } from './sockets.mjs'
 import { FILE_ID, filesFor, keep, send } from './files.mjs'
 import { ApiError, allow, fail, readJson, reply } from './http.mjs'
 import { LINK_ID, MAX_LINK, putLink, takeLink } from './links.mjs'
@@ -205,6 +207,10 @@ export async function handle(req, res) {
         if (b === 'rooms') return reply(res, 200, await roomsFor(after))
         if (b === 'people') return reply(res, 200, await peopleFor(after))
         if (b === 'files') return reply(res, 200, await filesFor(after))
+        if (b === 'live') {
+          const wait = Math.min(25, int(url.searchParams.get('wait')))
+          return reply(res, 200, await liveFor(after, String(url.searchParams.get('boot') ?? ''), wait, localStates))
+        }
       }
       throw new ApiError(404, 'not_found', 'There is nothing at that address.')
     }
