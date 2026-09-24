@@ -14,6 +14,9 @@
  *         get {from}           the same, without the live at the end
  *         put {id, lines, w}   keep these lines; `w` is the space's write token
  *         sig {d}              a sealed signal for everybody else, not kept
+ *         state {id, d}        this session's sealed presence: kept while the
+ *                              socket is open, handed to whoever arrives, and
+ *                              followed by left {id} when the socket goes
  *
  *   out   page {at, lines, more}   history
  *         live {at}                history done; from here on lines arrive as ev
@@ -21,6 +24,9 @@
  *         ack {id, at}             the put was kept
  *         nack {id, code, message} the put was refused
  *         sig {d}
+ *         left {id}                a session's socket closed or stopped answering
+ *
+ * So presence is sent when it changes and never on a timer.
  *
  * `at` is always the number of the newest line the message took the reader
  * to, and a reader keeps the highest it has seen: after a dropped connection,
@@ -72,7 +78,7 @@ function leave(rooms, room, socket) {
 }
 
 /** Take an upgrade and hand every text frame after it to `onText`. */
-function open(req, socket, rooms, room, onText, maxFrame = MAX_FRAME) {
+function open(req, socket, rooms, room, onText, maxFrame = MAX_FRAME, onGone = () => undefined) {
   const key = req.headers['sec-websocket-key']
   const standing = rooms.get(room) ?? new Set()
   if (standing.size >= MAX_ROOM_SOCKETS) {
@@ -92,6 +98,13 @@ function open(req, socket, rooms, room, onText, maxFrame = MAX_FRAME) {
   rooms.set(room, standing)
   socket.cathodeAlive = true
 
+  let gone = false
+  const away = () => {
+    leave(rooms, room, socket)
+    if (gone) return
+    gone = true
+    onGone()
+  }
   const goodbye = (code) => {
     try {
       const reason = Buffer.alloc(2)
@@ -100,7 +113,7 @@ function open(req, socket, rooms, room, onText, maxFrame = MAX_FRAME) {
     } catch {
       /* it was already gone */
     }
-    leave(rooms, room, socket)
+    away()
     socket.destroy()
   }
 
@@ -151,9 +164,9 @@ function open(req, socket, rooms, room, onText, maxFrame = MAX_FRAME) {
     }
   })
 
-  socket.on('close', () => leave(rooms, room, socket))
+  socket.on('close', away)
   socket.on('error', () => {
-    leave(rooms, room, socket)
+    away()
     socket.destroy()
   })
 }
@@ -183,7 +196,13 @@ async function stream(room, socket, from, live) {
       cursor = page.at
       if (!page.more) break
     }
-    if (live) socket.write(text({ t: 'live', at: Math.max(cursor, await newest(room)) }))
+    if (live) {
+      // Who else is here, as each of them last said it.
+      for (const other of spaces.get(room) ?? []) {
+        if (other !== socket && other.cathodeState) socket.write(text({ t: 'sig', d: other.cathodeState.d }))
+      }
+      socket.write(text({ t: 'live', at: Math.max(cursor, await newest(room)) }))
+    }
   } finally {
     socket.cathodeStreaming = false
     for (const frame of socket.cathodeHeld) if (!socket.destroyed) socket.write(frame)
@@ -221,6 +240,15 @@ async function onSpace(room, socket, payload) {
     }
     case 'sig': {
       if (typeof message.d !== 'string' || message.d.length > MAX_SIGNAL) return
+      const frame = text({ t: 'sig', d: message.d })
+      for (const other of spaces.get(room) ?? []) if (other !== socket) send(other, frame)
+      return
+    }
+    case 'state': {
+      if (typeof message.d !== 'string' || message.d.length > MAX_SIGNAL) return
+      if (typeof message.id !== 'string' || !/^[0-9a-f]{1,32}$/.test(message.id)) return
+      // Sealed like everything else: this keeps it, and cannot read it.
+      socket.cathodeState = { id: message.id, d: message.d }
       const frame = text({ t: 'sig', d: message.d })
       for (const other of spaces.get(room) ?? []) if (other !== socket) send(other, frame)
       return
@@ -272,9 +300,23 @@ export function upgrade(req, socket) {
   if (!ROOM.test(room)) return
   // One message at a time per socket, so a page is never interleaved with an ack.
   let queue = Promise.resolve()
-  open(req, socket, spaces, room, (payload) => {
-    queue = queue.then(() => onSpace(room, socket, payload)).catch((err) => console.error('[cathode]', err))
-  })
+  open(
+    req,
+    socket,
+    spaces,
+    room,
+    (payload) => {
+      queue = queue.then(() => onSpace(room, socket, payload)).catch((err) => console.error('[cathode]', err))
+    },
+    MAX_FRAME,
+    () => {
+      // Gone, so everybody still here hears it now, not when a timer runs out.
+      const state = socket.cathodeState
+      if (!state) return
+      const frame = text({ t: 'left', id: state.id })
+      for (const other of spaces.get(room) ?? []) send(other, frame)
+    },
+  )
 }
 
 export function closeAll() {

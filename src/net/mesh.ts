@@ -100,6 +100,13 @@ export class Mesh {
 
   start(): void {
     this.announce()
+    /*
+     * On a server, nothing on a timer. The server holds what each session
+     * last said about itself, hands it to whoever arrives, and says when a
+     * session goes, so presence is sent when it changes and at no other time.
+     * Peer to peer there is nobody to hold it, and it has to be repeated.
+     */
+    if (this.relayed) return
     this.timers.push(window.setInterval(() => this.announce(), ANNOUNCE_MS))
     this.timers.push(window.setInterval(() => this.sweep(), 4000))
   }
@@ -112,7 +119,8 @@ export class Mesh {
   peers(): MeshPeer[] {
     const now = Date.now()
     return [...this.seen.entries()]
-      .filter(([, v]) => now - v.at < PRESENCE_TTL_MS)
+      // On a server a session is here until the server says it has gone.
+      .filter(([, v]) => this.relayed || now - v.at < PRESENCE_TTL_MS)
       .map(([id, v]) => ({
         id,
         key: v.key,
@@ -321,8 +329,6 @@ export class Mesh {
     this.links.set(peerId, link)
     this.onPeers?.()
     this.onReady?.(peerId)
-    // Say we are here now, not in four seconds, so they link back at once.
-    if (this.relayed) this.announce()
   }
 
   /** Offer only to peers whose id sorts after ours, so exactly one side calls. */

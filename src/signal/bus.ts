@@ -67,6 +67,12 @@ export class SignalBus {
     return this.transports.some((t) => t.ready)
   }
 
+  /** A message made here rather than received, such as a server saying somebody left. */
+  deliver(env: Envelope): void {
+    if (env.from === this.selfId) return
+    this.onMessage?.(env)
+  }
+
   get healthList(): RelayHealth[] {
     return this.transports.map((t) => this.health.get(t)!)
   }
@@ -106,7 +112,11 @@ export class SignalBus {
   async send(msg: OutgoingEnvelope): Promise<void> {
     const env = buildEnvelope(this.selfId, msg)
     const wire = await seal(this.room.key, env)
-    for (const t of this.transports) t.publish(wire)
+    const state = msg.type === 'announce' && !msg.to
+    for (const t of this.transports) {
+      if (state && t.publishState) t.publishState(wire, this.selfId)
+      else t.publish(wire)
+    }
   }
 
   stop(): void {

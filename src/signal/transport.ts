@@ -25,6 +25,13 @@ export interface Transport {
   readonly ready: boolean
   connect(topic: string, events: TransportEvents): void
   publish(wire: string): void
+  /**
+   * Who this session is and what it is doing, for a transport that can hold
+   * it: a server keeps the latest, hands it to whoever arrives, and says when
+   * the session goes. A transport without this is handed an announcement
+   * like anything else, and presence works by repeating it.
+   */
+  publishState?(wire: string, session: string): void
   close(): void
 }
 

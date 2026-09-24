@@ -24,7 +24,24 @@ import { ask } from '../net/cluster'
 
 const SERVERS_KEY = 'cathode.servers.v1'
 /** How long after the last change a save waits, so a burst is one write. */
-const SAVE_MS = 400
+const SAVE_MS = 2000
+/** The same, for a change worth having everywhere quickly, such as a name. */
+const SOON_MS = 300
+
+/** JSON with every object's keys in order, so two equal values are equal strings. */
+export function stable(value: unknown): string {
+  return JSON.stringify(value, (_key, v: unknown) =>
+    v && typeof v === 'object' && !Array.isArray(v)
+      ? Object.fromEntries(Object.entries(v as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : 1)))
+      : v,
+  )
+}
+
+/** A note with how far you have read, and when you were here, taken out. */
+function withoutMarks(note: RoomNote & { changed?: number; gone?: boolean }): Record<string, unknown> {
+  const { read: _read, readDm: _readDm, lastSeen: _lastSeen, changed: _changed, gone: _gone, ...rest } = note
+  return rest
+}
 
 interface Kept extends RoomNote {
   /** When this note last changed, for the merge. */
@@ -148,8 +165,16 @@ export class ServerBook {
   /** Write a note, as noteRoom does for a peer to peer space. */
   async put(note: RoomNote): Promise<void> {
     await this.load()
-    this.notes.set(note.room, { ...note, server: this.server, changed: Date.now() })
-    this.later()
+    const was = this.notes.get(note.room)
+    // A copy: the note handed in may be changed by its owner afterwards.
+    this.notes.set(note.room, { ...structuredClone(note), server: this.server, changed: Date.now() })
+    /*
+     * A space you just joined, or renamed, is on your other devices at once.
+     * How far you have read changes with every message and can wait a moment.
+     */
+    const fresh = !was || was.gone === true
+    const onlyRead = !fresh && stable(withoutMarks(was)) === stable(withoutMarks(note))
+    this.later(fresh ? 0 : onlyRead ? SAVE_MS : SOON_MS)
   }
 
   /** Leave: the note goes, and stays gone on every device. */
@@ -165,7 +190,7 @@ export class ServerBook {
       changed: Date.now(),
       gone: true,
     })
-    this.later()
+    this.later(0)
   }
 
   /** Save now rather than in a moment. For a page about to go away. */
@@ -183,13 +208,20 @@ export class ServerBook {
     if (!held || (note.changed ?? 0) > (held.changed ?? 0)) this.notes.set(note.room, note)
   }
 
-  private later(): void {
+  /** When the save waiting now will run, so a later change never pushes it back. */
+  private due = 0
+
+  private later(delay = SAVE_MS): void {
     announce()
+    const at = Date.now() + delay
+    if (this.timer && this.due <= at) return
     window.clearTimeout(this.timer)
+    this.due = at
     this.timer = window.setTimeout(() => {
       this.timer = 0
+      this.due = 0
       this.saving = this.saving.then(() => this.push())
-    }, SAVE_MS)
+    }, delay)
   }
 
   /**

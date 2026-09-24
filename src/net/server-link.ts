@@ -42,6 +42,7 @@ type Incoming =
   | { t: 'ack'; id: string; at: number }
   | { t: 'nack'; id: string; code?: string; message?: string }
   | { t: 'sig'; d: string }
+  | { t: 'left'; id: string }
 
 export class ServerLink implements Transport {
   readonly name: string
@@ -50,6 +51,8 @@ export class ServerLink implements Transport {
 
   /** Events that arrived, opened but not yet checked. The space checks them. */
   onEvents: ((events: unknown[]) => void) | null = null
+  /** A session the server says has gone: its socket closed, or stopped answering. */
+  onLeft: ((session: string) => void) | null = null
   /** A write the server refused, with its reason. It will not heal by retrying. */
   onRefused: ((why: string) => void) | null = null
   /** The first time the history has been read to the end. */
@@ -71,6 +74,7 @@ export class ServerLink implements Transport {
   private attempt = 0
   private closed = false
   private signals: { wire: string; expires: number }[] = []
+  private state: { d: string; id: string } | null = null
   /** Writes not yet acknowledged, by request id, kept sealed so a resend is byte for byte. */
   private readonly unacked = new Map<string, string[]>()
   private nextId = 0
@@ -117,6 +121,16 @@ export class ServerLink implements Transport {
       if (this.signals.length >= SIGNAL_LIMIT) this.signals.shift()
       this.signals.push({ wire, expires: now + SIGNAL_TTL_MS })
     }
+  }
+
+  /**
+   * Who this is, kept by the server. Sent when it changes and never on a
+   * timer: the server hands the latest to whoever arrives, and tells the room
+   * the moment this socket goes. Kept here too, to say again on reconnecting.
+   */
+  publishState(wire: string, session: string): void {
+    this.state = { d: wire, id: session }
+    this.send({ t: 'state', ...this.state })
   }
 
   close(): void {
@@ -208,7 +222,8 @@ export class ServerLink implements Transport {
       this.failures = 0
       answered(this.base, this.current)
       this.setStatus('open')
-      // Everything since this device last looked, then live.
+      // Who this is, then everything since this device last looked, then live.
+      if (this.state) this.send({ t: 'state', ...this.state })
       this.send({ t: 'hello', from: this.at })
       // Whatever was written while the socket was down, again, byte for byte.
       // The server keeps one copy of a line it already has.
@@ -242,6 +257,9 @@ export class ServerLink implements Transport {
     switch (message.t) {
       case 'sig':
         if (typeof message.d === 'string') this.events?.onWire(message.d)
+        return
+      case 'left':
+        if (typeof message.id === 'string') this.onLeft?.(message.id)
         return
       case 'page':
       case 'ev': {

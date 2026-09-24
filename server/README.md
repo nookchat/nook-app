@@ -132,12 +132,20 @@ The space socket speaks JSON, one message per frame:
 | --- | --- | --- |
 | to the server | `hello {from}` | Everything after line `from`, page by page, then live |
 | to the server | `put {id, lines, w}` | Keep these sealed lines. `w` is the write token |
-| to the server | `sig {d}` | A sealed signal (a handshake, typing, presence) for everybody else. Not kept |
+| to the server | `sig {d}` | A sealed signal (a handshake, typing) for everybody else. Not kept |
+| to the server | `state {id, d}` | This session's sealed presence. Kept while the socket is open, handed to whoever arrives, and followed by `left` when it closes |
 | from the server | `page {at, lines, more}` | History |
 | from the server | `live {at}` | History is done. New lines arrive as `ev` from here on |
 | from the server | `ev {at, lines}` | Lines somebody else wrote, or another server sent |
 | from the server | `ack {id, at}` / `nack {id, code, message}` | The `put` was kept, or refused |
-| from the server | `sig {d}` | Somebody else's signal |
+| from the server | `sig {d}` | Somebody else's signal, or their presence |
+| from the server | `left {id}` | A session's socket closed, or stopped answering the heartbeat |
+
+Nothing is sent on a timer. Presence goes out when it changes: the server
+holds each session's latest, gives it to whoever arrives, and says `left` the
+moment a socket goes. A space that is open and quiet sends nothing at all. The
+only regular traffic is the WebSocket heartbeat, a ping from the server every
+30 seconds, which the browser answers by itself.
 
 `at` is always the number of the newest line a message brings the reader to.
 The server sends a space's lines in order, so a reader that keeps the highest

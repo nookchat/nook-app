@@ -40,7 +40,8 @@ async function ensure() {
   }
   for (let i = 0; i < 60; i++) {
     try {
-      docker('exec', CONTAINER, 'pg_isready', '-U', 'cathode')
+      // Over TCP: the socket inside the container answers during first-start setup, before the restart.
+      docker('exec', CONTAINER, 'pg_isready', '-h', '127.0.0.1', '-U', 'cathode')
       return
     } catch {
       await new Promise((r) => setTimeout(r, 500))

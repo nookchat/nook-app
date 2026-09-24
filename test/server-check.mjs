@@ -172,6 +172,67 @@ try {
     .catch(() => false)
   check('both are here, to each other', people)
 
+  // Doing nothing costs nothing: no polling, no pings, no presence on a timer.
+  {
+    await wait(3000)
+    const sent = []
+    const cdp = await alice.context().newCDPSession(alice)
+    await cdp.send('Network.enable')
+    cdp.on('Network.webSocketFrameSent', (e) => {
+      if (!e.response.payloadData.startsWith('{"type":"ping"')) sent.push(e.response.payloadData.slice(0, 20))
+    })
+    const asked = []
+    const onRequest = (r) => r.url().includes(SERVER) && asked.push(new URL(r.url()).pathname)
+    alice.on('request', onRequest)
+    await wait(12_000)
+    alice.off('request', onRequest)
+    await cdp.detach()
+    /*
+     * Nothing on a timer: no kind of frame and no request twice. A timer, even
+     * a slow one, repeats inside twelve seconds; a connection that happened to
+     * drop and come back under load says each thing once.
+     */
+    const kinds = [...sent.map((f) => f.slice(0, 12)), ...asked]
+    const repeated = kinds.filter((k, i) => kinds.indexOf(k) !== i)
+    check(
+      'an open space sends the server nothing on a timer while nobody does anything',
+      repeated.length === 0,
+      `${sent.length} frames, ${asked.length} requests in 12 s${repeated.length ? `, repeated: ${repeated.join(' ')}` : ''}`,
+    )
+  }
+
+  // Presence is held by the server, not repeated: somebody new sees who is
+  // here at once, a tab put away says so, and a tab that closes is gone at
+  // once for everybody, with nothing on a timer.
+  const erin = await person('Erin')
+  const erinAt = Date.now()
+  await erin.goto(link)
+  const erinSees = await erin
+    .waitForFunction(() => document.querySelector('.status-bar')?.textContent?.includes('3 here'), null, { timeout: 10_000 })
+    .then(() => true)
+    .catch(() => false)
+  check('somebody new sees who is already here at once', erinSees, `${Date.now() - erinAt} ms`)
+  await bob.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { value: true, configurable: true })
+    document.dispatchEvent(new Event('visibilitychange'))
+  })
+  const away = await alice
+    .waitForFunction(
+      () => [...document.querySelectorAll('.rail-person')].some((r) => r.textContent.includes('Bob') && r.querySelector('.dot.warn')),
+      null,
+      { timeout: 5000 },
+    )
+    .then(() => true)
+    .catch(() => false)
+  check('a tab put away says so, straight away', away)
+  const goneAt = Date.now()
+  await erin.context().close()
+  const gone = await alice
+    .waitForFunction(() => document.querySelector('.status-bar')?.textContent?.includes('2 here'), null, { timeout: 5000 })
+    .then(() => true)
+    .catch(() => false)
+  check('a tab that closes is gone for everybody at once', gone, `${Date.now() - goneAt} ms`)
+
   // Alice's key on a second device: the space is on her list there, from the server.
   const key = await alice.evaluate(() => ({
     id: localStorage.getItem('cathode.identity.v1'),
@@ -192,7 +253,11 @@ try {
     )
     .then(() => true)
     .catch(() => false)
-  check('a second device with the same key finds the space on the server', listed)
+  check(
+    'a second device with the same key finds the space on the server',
+    listed,
+    listed ? '' : await second.evaluate(() => document.querySelector('.home-spaces')?.textContent ?? 'no list'),
+  )
   if (listed) {
     await second.click('.space-row .rail-item')
     check('and opens it with the whole history', await sees(second, 'and back again'))

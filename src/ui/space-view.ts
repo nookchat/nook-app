@@ -47,7 +47,7 @@ import type { Envelope } from '../signal/envelope'
 import { loadSettings, saveSettings, type HostSettings } from '../settings'
 import { cleanName, mentionsMe } from '../chat'
 import { forgetRoom, getRoom, noteRoom, tombstoneRoom, type RoomNote } from '../store/db'
-import { addServer, bookFor, type ServerBook } from '../store/server-spaces'
+import { addServer, bookFor, stable, type ServerBook } from '../store/server-spaces'
 import { ServerLink } from '../net/server-link'
 import { loadIdentity, saveDisplayName, shortKey, signClaim, verifyClaim } from '../store/identity'
 import { Archive, defaultArchive } from '../store/archive'
@@ -176,6 +176,18 @@ function onServer(book: ServerBook): NoteStore {
  * was said since. Memory only, and gone with the tab. A handful at most.
  */
 const HELD_MAX = 8
+
+/** How stale "when you were last here" may get before it is written again. */
+const LAST_SEEN_MS = 60 * 60 * 1000
+
+/** Two notes that say the same, apart from when they were last written. */
+function same(a: RoomNote, b: RoomNote): boolean {
+  const plain = (n: RoomNote): string => {
+    const { lastSeen: _lastSeen, ...rest } = n
+    return stable(rest)
+  }
+  return plain(a) === plain(b)
+}
 const held = new Map<string, { chat: RoomChat; read: Map<string, number> }>()
 
 export class SpaceView {
@@ -430,6 +442,9 @@ export class SpaceView {
       const link = new ServerLink(this.server, this.room, serverTag(this.server), kept?.read)
       link.onEvents = (events) => void this.takeFromServer(events)
       link.onRefused = (why) => toast(`The server would not keep that. ${why}`, 'bad', 8000)
+      // Gone, on the server's word: the same as their own goodbye.
+      link.onLeft = (session) =>
+        this.bus?.deliver({ v: 1, id: `left:${session}:${Date.now()}`, from: session, t: Date.now(), type: 'bye' })
       this.link = link
     }
     const bus = new SignalBus(this.room, this.selfId, this.link ? [this.link] : undefined)
@@ -1918,7 +1933,34 @@ export class SpaceView {
   }
 
   /** Keep what this device knows about the space up to date. */
-  private async remember(
+  private remember(
+    patch: Partial<{
+      founder: string
+      name: string
+      archive: string
+      read: Record<string, number>
+      readDm: Record<string, number>
+    }>,
+  ): Promise<void> {
+    /*
+     * One at a time, each built when its turn comes. Run side by side, each
+     * read the note before the others had written it, and the last to land
+     * won: the one saying who founded the space could put back the empty
+     * name the one before it had just replaced. Copies of the read marks,
+     * because the live ones are changed in place and would compare equal.
+     */
+    const own = {
+      ...patch,
+      read: patch.read ? { ...patch.read } : undefined,
+      readDm: patch.readDm ? { ...patch.readDm } : undefined,
+    }
+    this.remembering = this.remembering.then(() => this.rememberNow(own)).catch(() => undefined)
+    return this.remembering
+  }
+
+  private remembering: Promise<void> = Promise.resolve()
+
+  private async rememberNow(
     patch: Partial<{
       founder: string
       name: string
@@ -1929,7 +1971,7 @@ export class SpaceView {
   ): Promise<void> {
     if (!this.room || this.forgotten) return
     const existing = await this.notes.get(this.room.id)
-    await this.notes.put({
+    const next: RoomNote = {
       room: this.room.id,
       secret: this.secret,
       lastSeen: Date.now(),
@@ -1958,7 +2000,16 @@ export class SpaceView {
       server: this.server || undefined,
       serverAt: this.server ? this.archive?.cursor ?? existing?.serverAt : existing?.serverAt,
       founder: patch.founder ?? existing?.founder ?? this.chat?.founder ?? '',
-    })
+    }
+    /*
+     * Only when something changed. This runs on every redraw that marks a
+     * channel read, and it used to write the note every time, which for a
+     * space on a server meant a round trip to the server every two seconds
+     * of doing nothing. When you were last here only has to be right to the
+     * hour.
+     */
+    if (existing && Date.now() - existing.lastSeen < LAST_SEEN_MS && same(existing, next)) return
+    await this.notes.put(next)
   }
 
   private status(): void {
