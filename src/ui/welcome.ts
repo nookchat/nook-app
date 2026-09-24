@@ -79,6 +79,11 @@ export function welcome(mount: HTMLElement, invited: boolean): Promise<void> {
       h('div', { class: 'welcome-picture' }, [face, h('div', { class: 'row' }, [pictureButton, removeButton]), picker]),
       h('label', { class: 'welcome-field' }, [h('span', { class: 'eyebrow', text: 'Your name' }), name]),
       go,
+      h('button', {
+        class: 'ghost welcome-link',
+        text: 'I already use Cathode on another device',
+        on: { click: () => void import('./link-device').then((m) => m.enterLinkCode()) },
+      }),
     ]),
   ])
   paint()

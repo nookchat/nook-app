@@ -54,6 +54,7 @@ const cluster = (self, peer) => ({
   CATHODE_PEERS: peer,
   CATHODE_CLUSTER_SECRET: 'files-check-cluster-secret',
   CATHODE_MAX_FILE_BYTES: String(MAX),
+  CATHODE_MAX_ROOM_FILE_BYTES: String(12 * 1024 * 1024),
 })
 const a = await startServer(8797, cluster(A, B))
 const b = await startServer(8798, cluster(B, A))
@@ -263,10 +264,40 @@ try {
   }, 20_000)
   check('a file alone can go in a direct message, and arrives', inDm === 'private.txt', inDm ?? 'nothing')
 
+  // ---- a space's room for files, counted right ----
+  /*
+   * One after another, as a person sends them. The space's total was once
+   * text added to a number, so the second upload ever made found the space
+   * full. Four of 2.5 MB fit in 12 MB beside what is already there; a fifth
+   * does not.
+   */
+  const counted = await alice.evaluate(async () => {
+    const { spaces } = await import('/src/space/registry.ts')
+    const { filesFor } = await import('/src/space/runtime.ts')
+    const files = filesFor(spaces.all()[0])
+    const out = []
+    for (let i = 0; i < 5; i++) {
+      const bytes = crypto.getRandomValues(new Uint8Array(65536))
+      const big = new Blob(Array.from({ length: 40 }, () => bytes))
+      try {
+        await files.send(new File([big, String(i)], `part-${i}.bin`), () => undefined, new AbortController().signal)
+        out.push('kept')
+      } catch (err) {
+        out.push(err.message)
+      }
+    }
+    return out
+  })
+  check(
+    'files sent one after another all fit, and the one past the limit does not',
+    counted.slice(0, 4).every((r) => r === 'kept') && counted[4] !== 'kept' && /room/.test(counted[4]),
+    counted.join(' | '),
+  )
+
   // ---- what the server has ----
   const kept = onDisk(a.files)
   const blobs = [...kept.values()]
-  check('the server keeps each file, and a poster for the video', kept.size === 5, `${kept.size} files`)
+  check('the server keeps each file, and a poster for the video', kept.size === 9, `${kept.size} files`)
   check(
     'none of it is readable',
     blobs.every(
@@ -279,7 +310,7 @@ try {
     [...kept].every(([id, blob]) => createHash('sha256').update(blob).digest('hex') === id),
   )
   const rows = await sql(a.database, 'select room, id, size from files')
-  check('and the database lists them', rows.length === 5, `${rows.length} rows`)
+  check('and the database lists them', rows.length === 9, `${rows.length} rows`)
 
   const room = rows[0]?.room
   const bare = await fetch(`${A}/api/v1/spaces/${room}/files`, { method: 'POST', body: 'junk' })

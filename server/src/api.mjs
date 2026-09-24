@@ -8,6 +8,8 @@
  *   POST /api/v1/spaces/:room/files       keep a sealed file, named by its hash
  *   GET  /api/v1/spaces/:room/files/:id   send one back
  *   WS   /api/v1/spaces/:room/socket      see sockets.mjs
+ *   PUT  /api/v1/links/:id                leave a sealed device link, for ten minutes
+ *   GET  /api/v1/links/:id                take it, once
  *   GET  /api/v1/people/:id               a sealed record of somebody's spaces
  *   PUT  /api/v1/people/:id               replace it
  *   GET  /api/v1/preview?url=             a link card
@@ -21,6 +23,7 @@ import { HAS_TURN, MAX_FILE_BYTES, PREVIEWS, TURN_ONLY, VERSION, originAllowed }
 import { clusterHealth, clusterUrls, fromPeer, linesFor, peopleFor, roomsFor } from './cluster.mjs'
 import { FILE_ID, filesFor, keep, send } from './files.mjs'
 import { ApiError, allow, fail, readJson, reply } from './http.mjs'
+import { LINK_ID, MAX_LINK, putLink, takeLink } from './links.mjs'
 import { openapi } from './openapi.mjs'
 import { gifs, hasGifs, preview } from './preview.mjs'
 import {
@@ -173,6 +176,12 @@ export async function handle(req, res) {
           if (!FILE_ID.test(id)) throw new ApiError(400, 'bad_file', 'That is not a file id.')
           return await send(req, res, room, id)
         }
+      }
+      if (a === 'links' && b && !c) {
+        if (!LINK_ID.test(b)) throw new ApiError(400, 'bad_link', 'That is not a link id.')
+        limited(req)
+        if (method === 'PUT') return reply(res, 200, putLink(b, (await readJson(req, MAX_LINK + 1024))?.blob))
+        if (method === 'GET') return reply(res, 200, takeLink(b))
       }
       if (a === 'people' && b && !c) {
         const id = personOf(b)

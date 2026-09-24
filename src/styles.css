@@ -272,6 +272,54 @@ main {
   min-height: 44px;
 }
 
+.welcome-link {
+  align-self: center;
+  margin-top: -6px;
+  font-size: 13px;
+  color: var(--fg-dim);
+}
+
+/* Linking a device: the QR code, the link, and the code, one under the other. */
+.link-offer {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  padding: 4px 16px 4px;
+}
+
+.link-offer .qr-frame {
+  align-self: center;
+}
+
+.link-or {
+  align-self: center;
+}
+
+.link-code {
+  padding: 10px 8px;
+  font-size: 19px;
+}
+
+.modal:has(.link-offer),
+.modal:has(input[aria-label="The link or code"]) {
+  max-width: 380px;
+}
+
+.modal:has(input[aria-label="The link or code"]) > :not(.row:first-child) {
+  width: auto;
+  margin: 0 16px;
+}
+
+.modal:has(input[aria-label="The link or code"]) {
+  gap: 10px;
+  padding-bottom: 16px;
+}
+
+.modal:has(.link-offer) > .tiny {
+  padding: 0 16px 14px;
+}
+
 /* ---------- the switcher ---------- */
 
 /*
@@ -2987,10 +3035,9 @@ input[type="text"].space-search {
 /* What is attached, above the box, while it goes up. */
 .attach-tray {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 2px 0 4px;
-  overflow-x: auto;
-  scrollbar-width: thin;
 }
 
 .attach-chip {
@@ -2999,7 +3046,10 @@ input[type="text"].space-search {
   display: flex;
   align-items: center;
   gap: 10px;
-  width: 220px;
+  /* As wide as its name wants, up to a point, so a name or a reason is read rather than cut. */
+  width: auto;
+  min-width: 220px;
+  max-width: min(420px, 100%);
   padding: 8px 6px 8px 8px;
   border-radius: 12px;
   background: var(--surface);
@@ -3013,6 +3063,10 @@ input[type="text"].space-search {
 
 .attach-chip.failed .attach-words .tiny {
   color: var(--bad);
+  /* Why it failed is the point, so it wraps rather than being cut off. */
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
 }
 
 .attach-face {
@@ -3545,7 +3599,8 @@ input[type="text"].space-search {
   }
 
   .attach-chip {
-    width: 180px;
+    min-width: 0;
+    flex: 1 1 100%;
   }
 }
 

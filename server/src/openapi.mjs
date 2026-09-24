@@ -127,6 +127,18 @@ export const openapi = {
         },
       },
     },
+    '/api/v1/links/{id}': {
+      put: {
+        summary: 'Leave a sealed device link: everything a new device needs, sealed with a key made from a code. Kept in memory for ten minutes',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', pattern: '^[0-9a-f]{32}$' } }],
+        responses: { 200: { description: 'Waiting' }, 409: { description: 'Already waiting' }, ...errors },
+      },
+      get: {
+        summary: 'Take a device link. It is gone after this',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', pattern: '^[0-9a-f]{32}$' } }],
+        responses: { 200: { description: 'The sealed link' }, 404: { description: 'Used, or run out' } },
+      },
+    },
     '/api/v1/people/{id}': {
       get: { summary: "A person's sealed record of their spaces", parameters: [person], responses: { 200: { description: 'OK' }, ...errors } },
       put: {

@@ -67,13 +67,19 @@ a direct message or a mention in any of them reaches you wherever you are.
 | Files | On the server's disk, sealed, and on every server of its cluster. The key is in the message |
 | Your list of spaces and read marks | The server, in one record per person, sealed with a key made from your identity |
 | Who is here | The server holds it in memory, and says when it changes |
-| Picture and sound | Through the server's TURN relay, encrypted with DTLS-SRTP |
-| Your identity key | This device only. It signs everything you write |
+| Picture and sound | Straight between browsers, or through the server's TURN relay when it has one, encrypted with DTLS-SRTP |
+| Your identity key | Your devices only, and only the ones you link. It signs everything you write |
 | Your server addresses and preferences | This device only |
 
-Nothing about a space is written to IndexedDB or local storage. A second device
-with the same identity (Settings, Link another device) finds all of your
-spaces on the server.
+Nothing about a space is written to IndexedDB or local storage.
+
+**Another device.** Settings, Link another device, shows a QR code, a link
+and a code like `K7M2-9QPT-VB2W`. Scan it with the new device's camera, open
+the link there, or type the code on its first screen under "I already use
+Cathode". The new device becomes you: your key, name and picture, and which
+servers hold your spaces, so it has the same spaces, messages and direct
+messages. What travels is sealed with a key made from the code, waits on your
+server for ten minutes, and can be taken once.
 
 Everything is sealed with AES-GCM under a key made from the space code (and its
 password, if it has one) before it leaves the browser. Every event is signed
@@ -199,6 +205,7 @@ src/
     cluster.ts        the servers of a cluster, and moving to the next
     server-api.ts     sealing a line, link cards, GIF search, health
     files.ts          files: sealed with a key each, uploaded, fetched and opened
+    link.ts           linking a device: what travels, and how it is sealed
     mesh.ts           who is here, from what the server passes on
     voice.ts          voice channels, mic.ts denoise.ts talking.ts around them
     uplink.ts         how much upload Cathode may use, guessed then measured
@@ -240,6 +247,7 @@ test/
   own-server-check.mjs  a page with no server: adding yours, joining from an invite
   files-check.mjs     pictures, a video and a file: sent, sealed, copied, opened
   call-check.mjs      voice off screen, a call rung and answered, kept private, hung up
+  link-check.mjs      a second and a third device, by code and by link, as the same person
   cluster-check.mjs   two servers, two databases, one cluster
   failover-check.mjs  people carrying on when their server dies
   chat-check.mjs      typing, unread, mentions, search, threads

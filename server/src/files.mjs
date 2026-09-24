@@ -40,9 +40,14 @@ async function has(room, id) {
   }
 }
 
+/**
+ * How much a space holds in files, as a number. Postgres sums a bigint into a
+ * numeric, which arrives as text, and text added to a size is the two written
+ * side by side: one file in, and the space looked full for ever after.
+ */
 async function heldBy(room) {
-  const { rows } = await pool.query('select coalesce(sum(size), 0) as bytes from files where room = $1', [room])
-  return rows[0].bytes
+  const { rows } = await pool.query('select coalesce(sum(size), 0)::bigint as bytes from files where room = $1', [room])
+  return Number(rows[0].bytes) || 0
 }
 
 /**
@@ -50,7 +55,7 @@ async function heldBy(room) {
  * is the id it must turn out to have, for a file another server sends on.
  */
 export async function keep(room, source, expected = '') {
-  const declared = Number(source.headers?.['content-length'] ?? 0)
+  const declared = Number(source.headers?.['content-length'] ?? 0) || 0
   if (declared > MAX_FILE_BYTES) throw tooBig()
   if (declared && (await heldBy(room)) + declared > MAX_ROOM_FILE_BYTES) throw spaceFull()
 

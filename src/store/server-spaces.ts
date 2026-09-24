@@ -346,6 +346,18 @@ export function addServer(server: string, mine = false): void {
   }
 }
 
+/**
+ * Take on another device's servers, for a device being linked to it: the
+ * ones it has spaces on, the ones it added itself, and where its new spaces
+ * go. Added to what is here, never instead of it.
+ */
+export function adoptServers(known: string[], own: string[], pick: string): void {
+  const clean = (list: string[]): string[] => list.map(serverUrl).filter(Boolean)
+  writeList(SERVERS_KEY, [...readList(SERVERS_KEY), ...clean(known)])
+  writeList(OWN_KEY, [...(readList(OWN_KEY, null) ?? ownServers()), ...clean(own)])
+  if (serverUrl(pick)) setDefaultServer(serverUrl(pick))
+}
+
 function readList(key: string): string[]
 function readList(key: string, missing: null): string[] | null
 function readList(key: string, missing: string[] | null = []): string[] | null {

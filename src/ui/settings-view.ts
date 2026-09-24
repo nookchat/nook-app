@@ -15,7 +15,7 @@ import { avatarOf } from './chat-panel'
 import { clear, copyText, h } from './dom'
 import { openEmojiPicker, quickReactions, setQuickReactions } from './emoji'
 import { icon } from './icons'
-import { scanLinkCode, showLinkCode } from './link-device'
+import { enterLinkCode, showLinkCode } from './link-device'
 import { askNotify, notifyState, stopNotify } from './notify'
 import { setSounds, soundsOn } from './sounds'
 import { toast } from './toast'
@@ -399,20 +399,9 @@ export function settingsView(actions: SettingsActions): HTMLElement {
           ]),
           h('div', { class: 'row wrap' }, [
             h('button', { text: 'Link another device', on: { click: () => showLinkCode() } }),
-            h('button', {
-              class: 'ghost',
-              text: 'Use a code from another device',
-              on: {
-                click: () =>
-                  scanLinkCode((linked) => {
-                    if (linked.name) saveDisplayName(linked.name)
-                    toast('This device is you now. Starting again.', 'info', 5000)
-                    window.setTimeout(() => window.location.reload(), 1200)
-                  }),
-              },
-            }),
+            h('button', { class: 'ghost', text: 'Use a code from another device', on: { click: () => enterLinkCode() } }),
           ]),
-          note('Your key signs everything you write. It stays on this device; linking copies it to another.'),
+          note('Your key signs everything you write. Linking a device makes it you there too, with the same spaces and messages.'),
         ),
 
         card('Servers', serverList, h('div', { class: 'row' }, [addInput, addButton]), own),

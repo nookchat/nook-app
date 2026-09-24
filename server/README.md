@@ -140,6 +140,8 @@ Version 1, under `/api/v1`. A running server describes it at
 | `WS /api/v1/spaces/:room/socket` | The same for one space. Messages leave out `room` |
 | `POST /api/v1/spaces/:room/files` | Keeps the sealed file in the body. Needs `x-cathode-write`. Answers `{ "id", "size" }`, where `id` is the SHA-256 of the body |
 | `GET /api/v1/spaces/:room/files/:id` | That file, as sealed bytes |
+| `PUT /api/v1/links/:id` | Leaves a sealed device link, `{ "blob" }`. Kept in memory for ten minutes |
+| `GET /api/v1/links/:id` | Takes it. It is gone after one read |
 | `GET /api/v1/people/:id` | One person's sealed record |
 | `PUT /api/v1/people/:id` | Replaces it. Needs `x-cathode-write`. The first write claims it |
 | `GET /api/v1/preview?url=U` | The title, description and picture behind a public link |

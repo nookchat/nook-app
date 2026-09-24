@@ -178,12 +178,18 @@ spaces.fresh.add((space, events) => {
   }
 })
 
-const linked = readLink()
+// A device link in the address is not a space, whatever its letters look like.
+const linked = window.location.hash.startsWith('#link=') ? null : readLink()
 
 // A call can come in from any space, whatever is on screen.
 installCalls((space, key) => void showHome({ room: space.room.id, key }))
 
 async function start(): Promise<void> {
+  // Opened with a link from another device: become that person first. The page starts again after.
+  if (window.location.hash.startsWith('#link=')) {
+    const { linkFromAddress } = await import('./ui/link-device')
+    if (await linkFromAddress(mount)) return
+  }
   // Somebody new says what to call them before any space hears a name at all.
   if (!nameChosen()) {
     const { welcome } = await import('./ui/welcome')
@@ -202,6 +208,11 @@ void start()
  * skipped, because those already opened the space.
  */
 window.addEventListener('hashchange', () => {
+  // A device link opened in a page already running: start again, which is where links are taken.
+  if (window.location.hash.startsWith('#link=')) {
+    window.location.reload()
+    return
+  }
   const next = readLink()
   if (!next) {
     if (active instanceof SpaceView) void showHome()

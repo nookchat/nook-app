@@ -1,68 +1,24 @@
 /**
- * Moving who you are onto another device.
+ * Linking a device, as the screen shows it.
  *
- * Your identity is a key on this machine and nowhere else, which is what makes
- * a name yours and old messages still yours. It also means a second device is a
- * second person unless the key goes with you. Exporting a file and carrying it
- * across works and nobody does it.
+ * On the device you use: Settings, Link another device. It shows a QR code
+ * for a phone's camera, a link to send yourself, and a code to type, and they
+ * all do the same thing for ten minutes, once.
  *
- * So: one device shows the key as a QR code, the other reads it with its
- * camera. No server, no account, no upload. Where a browser has no barcode
- * reader, the same string can be pasted, which is the same thing with more
- * typing.
- *
- * The code on screen is the private key in the clear. It is shown behind a
- * question, it says what it is, and it takes itself away after a minute,
- * because a key left on a screen in an office is a key somebody photographs.
+ * On the new one: open the link, or scan the code with the camera, or type
+ * it where the first screen offers "I already use Cathode". It becomes you,
+ * with your spaces, your messages and your name. See net/link.ts for what
+ * travels and how it is sealed.
  */
 
-import { h, clear } from './dom'
+import { h, clear, copyText } from './dom'
 import { icon } from './icons'
 import { qrSvg } from './qr'
 import { toast } from './toast'
-import { loadIdentity, secretForLinking, takeIdentity } from '../store/identity'
-import { loadAvatar, saveAvatar } from './avatar'
-
-/** How long the key stays on screen before it puts itself away. */
-const SHOW_FOR_MS = 60_000
-
-const PREFIX = 'cathode1:'
-
-/** What travels: the key, the name, and the picture if it is small enough. */
-function payload(): string {
-  const secret = secretForLinking()
-  if (!secret) throw new Error('This browser will not let a key be read back.')
-  const me = loadIdentity()
-  const avatar = loadAvatar()
-  const body = JSON.stringify({ k: secret, n: me.name, a: avatar || undefined })
-  return PREFIX + btoa(unescape(encodeURIComponent(body)))
-}
-
-export interface Linked {
-  name: string
-  avatar: string
-}
-
-/** Read one back. Returns null when the text is not one of ours. */
-export function readPayload(text: string): Linked | null {
-  const trimmed = text.trim()
-  if (!trimmed.startsWith(PREFIX)) return null
-  try {
-    const body = JSON.parse(decodeURIComponent(escape(atob(trimmed.slice(PREFIX.length))))) as {
-      k?: unknown
-      n?: unknown
-      a?: unknown
-    }
-    if (typeof body.k !== 'string' || !/^[0-9a-f]{64}$/.test(body.k)) return null
-    takeIdentity(body.k)
-    const name = typeof body.n === 'string' ? body.n.slice(0, 24) : ''
-    const avatar = typeof body.a === 'string' ? body.a : ''
-    if (avatar) saveAvatar(avatar)
-    return { name, avatar }
-  } catch {
-    return null
-  }
-}
+import { serverTag } from '../backend'
+import { linkInAddress, offerLink, readOffer, takeOffer } from '../net/link'
+import { loadIdentity, nameChosen } from '../store/identity'
+import { newSpaceServer } from '../store/server-spaces'
 
 /** A dialog, with the keyboard kept inside it while it is up. */
 function dialog(title: string, body: HTMLElement[], onClose?: () => void): () => void {
@@ -122,64 +78,55 @@ function dialog(title: string, body: HTMLElement[], onClose?: () => void): () =>
   return close
 }
 
-/**
- * Show the key, as a picture, for a minute.
- *
- * Behind a question first, because what goes on the screen is the thing that
- * signs everything you have ever written here.
- */
+/** Start again as whoever this device just became, on a clean address. */
+function restart(name: string): void {
+  toast(name ? `Linked. Starting again as ${name}.` : 'Linked. Starting again.', 'good', 3000)
+  window.setTimeout(() => window.location.replace(`${window.location.origin}${window.location.pathname}`), 900)
+}
+
+/** On the device you use: make a link, and show it three ways. */
 export function showLinkCode(): void {
-  const ok = window.confirm(
-    'Put your key on the screen as a QR code?\n\n' +
-      'Anybody who photographs it becomes you: your name, your messages, your ' +
-      'spaces. Only do this with your own device, and only when nobody else can ' +
-      'see the screen. It clears itself after a minute.',
-  )
-  if (!ok) return
-
-  let code: string
-  try {
-    code = payload()
-  } catch (err) {
-    toast(err instanceof Error ? err.message : 'The key could not be read.', 'bad', 7000)
-    return
-  }
-
-  const frame = h('div', { class: 'qr-frame' })
-  try {
-    frame.append(qrSvg(code, { pixels: 240 }))
-  } catch {
-    frame.append(h('div', { class: 'small', text: 'That key will not fit in a QR code.' }))
-  }
+  const body = h('div', { class: 'link-offer' }, [h('div', { class: 'tiny faint', text: 'Making a link…' })])
   const left = h('div', { class: 'tiny faint' })
-  const text = h('div', { class: 'tiny mono', style: { overflowWrap: 'anywhere' }, text: code })
-  const reveal = h('details', { class: 'adv' }, [
-    h('summary', { text: 'Show it as text instead' }),
-    text,
-  ])
+  let timer = 0
+  const close = dialog('Link another device', [body, left], () => window.clearInterval(timer))
 
-  const close = dialog(
-    'Scan to become you',
-    [
-      frame,
-      h('div', {
-        class: 'tiny faint',
-        text: 'On the other device: Settings, then Take over from a code.',
-      }),
-      reveal,
-      left,
-    ],
-    () => window.clearInterval(timer),
+  void offerLink().then(
+    (offer) => {
+      const frame = h('div', { class: 'qr-frame' })
+      try {
+        frame.append(qrSvg(offer.link, { pixels: 220 }))
+      } catch {
+        frame.append(h('div', { class: 'small', text: 'That link will not fit in a QR code.' }))
+      }
+      const copy = h('button', { class: 'primary' }, [icon('link', 15), 'Copy link'])
+      copy.addEventListener('click', async () => {
+        const ok = await copyText(offer.link)
+        toast(ok ? 'Link copied. Open it on the other device.' : 'Could not copy it.', ok ? 'info' : 'warn')
+      })
+      body.replaceChildren(
+        h('div', { class: 'tiny faint', text: 'Scan this with the other device’s camera, or open the link there.' }),
+        frame,
+        copy,
+        h('div', { class: 'link-or tiny faint', text: 'or type this code on it' }),
+        h('div', { class: 'share-code link-code', text: offer.code, data: { link: offer.link, server: offer.server } }),
+        h('div', {
+          class: 'tiny faint',
+          text: `It waits on ${serverTag(offer.server)} and works once. Whoever uses it becomes you, so only use it on your own device.`,
+        }),
+      )
+      const tick = (): void => {
+        const seconds = Math.max(0, Math.round((offer.until - Date.now()) / 1000))
+        left.textContent = `Works for ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')} more.`
+        if (seconds <= 0) close()
+      }
+      tick()
+      timer = window.setInterval(tick, 1000)
+    },
+    (err: unknown) => {
+      body.replaceChildren(h('div', { class: 'small', text: err instanceof Error ? err.message : 'The link could not be made.' }))
+    },
   )
-
-  let seconds = Math.round(SHOW_FOR_MS / 1000)
-  const tick = (): void => {
-    seconds -= 1
-    left.textContent = `Clears itself in ${seconds} seconds.`
-    if (seconds <= 0) close()
-  }
-  left.textContent = `Clears itself in ${seconds} seconds.`
-  const timer = window.setInterval(tick, 1000)
 }
 
 interface Reader {
@@ -187,87 +134,90 @@ interface Reader {
 }
 
 /**
- * Read one with the camera.
+ * On the new device: take a link, pasted or typed or read by the camera.
  *
- * The browser's own barcode reader where there is one, which is most phones and
- * every recent Chrome. Where there is not, the same string can be pasted, and
- * that path is always shown rather than hidden behind a failure.
+ * A device that is already somebody (a name chosen, spaces joined) is asked
+ * first, because it stops being them: the other device's person replaces them
+ * here, and their spaces are no longer on this device's list.
  */
-export function scanLinkCode(onDone: (linked: Linked) => void): void {
-  const paste = h('input', {
-    type: 'text',
-    ariaLabel: 'The code, as text',
-    placeholder: 'cathode1:...',
-  })
-  const take = (text: string): void => {
-    const linked = readPayload(text)
-    if (!linked) {
-      toast('That is not a linking code.', 'warn')
-      return
-    }
-    close()
-    onDone(linked)
-  }
-
-  const video = h('video', { class: 'scan-video' })
+export function enterLinkCode(): void {
+  const code = h('input', { type: 'text', ariaLabel: 'The link or code', placeholder: 'Paste the link, or type the code' })
+  const server = h('input', { type: 'text', ariaLabel: 'The server', placeholder: 'Its server, such as cathode.example.org' })
+  server.value = serverTag(newSpaceServer())
+  const serverRow = h('label', { class: 'welcome-field hidden' }, [h('span', { class: 'eyebrow', text: 'Server' }), server])
+  const go = h('button', { class: 'primary', text: 'Link this device' })
+  const note = h('div', { class: 'tiny faint', text: 'On the device you already use: Settings, Link another device.' })
+  const video = h('video', { class: 'scan-video hidden' })
   video.muted = true
   video.playsInline = true
-  const note = h('div', { class: 'tiny faint', text: 'Point the camera at the other screen.' })
+  const scan = h('button', { class: 'ghost' }, [icon('qr', 15), 'Scan with the camera'])
+
+  // A bare code needs its server; a pasted link carries it.
+  const paint = (): void => {
+    const text = code.value.trim()
+    serverRow.classList.toggle('hidden', !text || text.includes('link=') || text.includes('@'))
+  }
+  code.addEventListener('input', paint)
 
   let stream: MediaStream | null = null
   let stopped = false
-  const close = dialog(
-    'Take over from a code',
-    [
-      video,
-      note,
-      h('div', { class: 'row' }, [
-        paste,
-        h('button', { text: 'Use it', on: { click: () => take(paste.value) } }),
-      ]),
-      h('div', {
-        class: 'tiny faint',
-        text: 'This replaces who you are on this device with whoever is on the other one. Your spaces here stay where they are.',
-      }),
-    ],
-    () => {
-      stopped = true
-      for (const track of stream?.getTracks() ?? []) track.stop()
-    },
-  )
+  const close = dialog('Link this device', [note, code, serverRow, h('div', { class: 'row wrap' }, [go, scan]), video], () => {
+    stopped = true
+    for (const track of stream?.getTracks() ?? []) track.stop()
+  })
+  code.focus()
 
-  const Detector = (window as unknown as { BarcodeDetector?: new (o: { formats: string[] }) => Reader })
-    .BarcodeDetector
+  const take = async (text: string): Promise<void> => {
+    const offer = readOffer(text, server.value)
+    if (!offer) {
+      toast('That is not a link or a code. A code is three groups of four.', 'warn')
+      return
+    }
+    if (nameChosen() && !window.confirm(`This device stops being ${loadIdentity().name} and becomes you on the other device. Go on?`)) return
+    go.disabled = true
+    go.textContent = 'Linking…'
+    try {
+      const name = await takeOffer(offer)
+      close()
+      restart(name)
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'That did not work.', 'bad', 7000)
+      go.disabled = false
+      go.textContent = 'Link this device'
+    }
+  }
+  go.addEventListener('click', () => void take(code.value))
+  code.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') void take(code.value)
+  })
+
+  const Detector = (window as unknown as { BarcodeDetector?: new (o: { formats: string[] }) => Reader }).BarcodeDetector
   if (!Detector) {
-    note.textContent = 'This browser has no barcode reader, so paste the code instead.'
-    video.remove()
-    paste.focus()
+    scan.remove()
     return
   }
-
-  void (async () => {
+  scan.addEventListener('click', async () => {
+    scan.remove()
     try {
       stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
       if (stopped) {
         for (const track of stream.getTracks()) track.stop()
         return
       }
+      video.classList.remove('hidden')
       video.srcObject = stream
       await video.play()
     } catch {
-      note.textContent = 'No camera here, or it was refused. Paste the code instead.'
-      video.remove()
-      paste.focus()
+      toast('No camera here, or it was refused. Type the code instead.', 'warn')
       return
     }
     const reader = new Detector({ formats: ['qr_code'] })
     const look = async (): Promise<void> => {
       if (stopped) return
       try {
-        const found = await reader.detect(video)
-        const hit = found.find((f) => f.rawValue.startsWith(PREFIX))
+        const hit = (await reader.detect(video)).find((f) => f.rawValue.includes('#link='))
         if (hit) {
-          take(hit.rawValue)
+          void take(hit.rawValue)
           return
         }
       } catch {
@@ -276,7 +226,39 @@ export function scanLinkCode(onDone: (linked: Linked) => void): void {
       window.setTimeout(() => void look(), 250)
     }
     void look()
-  })()
+  })
+}
+
+/**
+ * The page was opened with a link: link, and start again, before anything
+ * else happens. Resolves false when there was nothing to do or it did not
+ * work, and the page then carries on as it was.
+ */
+export async function linkFromAddress(mount: HTMLElement): Promise<boolean> {
+  const offer = linkInAddress()
+  if (!offer) return false
+  const words = h('p', { class: 'welcome-text', text: `Fetching you from ${serverTag(offer.server)}…` })
+  const card = h('div', { class: 'welcome-card' }, [h('h1', { class: 'welcome-title', text: 'Linking this device' }), words])
+  mount.replaceChildren(h('main', { class: 'welcome' }, [card]))
+  const clean = (): void => history.replaceState(null, '', `${window.location.pathname}${window.location.search}`)
+  if (nameChosen() && !window.confirm(`This device stops being ${loadIdentity().name} and becomes you on the other device. Go on?`)) {
+    clean()
+    return false
+  }
+  try {
+    const name = await takeOffer(offer)
+    clean()
+    words.textContent = name ? `Linked. Welcome back, ${name}.` : 'Linked.'
+    restart(name)
+    return true
+  } catch (err) {
+    clean()
+    words.textContent = err instanceof Error ? err.message : 'That did not work.'
+    const on = h('button', { class: 'primary big welcome-go', text: 'Carry on without it' })
+    card.append(on)
+    await new Promise<void>((done) => on.addEventListener('click', () => done()))
+    return false
+  }
 }
 
 export { clear }

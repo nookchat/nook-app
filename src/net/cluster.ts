@@ -39,6 +39,11 @@ function save(all: Clusters): void {
   }
 }
 
+/** Everything known about clusters, for a device being linked to this one. */
+export function knownClusters(): Record<string, string[]> {
+  return load()
+}
+
 /** Which one answered last, per space server, so it is asked first next time. */
 const lastGood = new Map<string, string>()
 

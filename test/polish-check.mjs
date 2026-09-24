@@ -210,34 +210,26 @@ try {
 
   // ---- linking another device --------------------------------------------
   /*
-   * The key itself, rather than the module's memory of it.
-   *
-   * A dynamic import with an extension is a second copy of the module in the
-   * dev server, so asking that copy who it thinks you are proves nothing. What
-   * a linking code has to do is change the key on this device, which is one
-   * value in one place.
+   * What a new device accepts as a link: the link itself, pasted; the code
+   * with its server; the code alone, with the server asked for beside it; and
+   * nothing else. Taking one, end to end, is test/link-check.mjs.
    */
-  const linking = await page.evaluate(async () => {
-    const { readPayload } = await import('/src/ui/link-device.ts')
-    const KEY = 'cathode.identity.v1'
-    const before = localStorage.getItem(KEY)
-    const body = { k: 'b'.repeat(64), n: 'Carried Over', a: '' }
-    const code = 'cathode1:' + btoa(unescape(encodeURIComponent(JSON.stringify(body))))
-    const taken = readPayload(code)
-    const after = localStorage.getItem(KEY)
-    const rubbish = readPayload('hello')
-    const stillThere = localStorage.getItem(KEY)
-    localStorage.setItem(KEY, before)
-    return { before, after, taken, rubbish, stillThere }
+  const reads = await page.evaluate(async () => {
+    const { readOffer } = await import('/src/net/link.ts')
+    return {
+      link: readOffer('https://cathode.video/#link=K7M29QPTVB2W@cathode.example.org'),
+      typed: readOffer('k7m2-9qpt-vb2w', 'cathode.example.org'),
+      joined: readOffer('K7M2-9QPT-VB2W@cathode.example.org'),
+      bare: readOffer('K7M2-9QPT-VB2W'),
+      rubbish: readOffer('hello'),
+    }
   })
-  check('a linking code carries the name across', linking.taken?.name === 'Carried Over')
   check(
-    'and puts the key it carries on this device',
-    linking.after === 'b'.repeat(64) && linking.after !== linking.before,
-    `${String(linking.after).slice(0, 8)}...`,
+    'a link, or its code with a server, is read the same way',
+    [reads.link, reads.typed, reads.joined].every((r) => r?.code === 'K7M29QPTVB2W' && r.server === 'https://cathode.example.org'),
+    JSON.stringify(reads.link),
   )
-  check('anything else is refused', linking.rubbish === null)
-  check('and refusing it leaves the key alone', linking.stillThere === linking.after)
+  check('a code with no server, and anything else, is refused', reads.bare === null && reads.rubbish === null)
 
   // ---- reachable without a pointer, and out loud ---------------------------
   const roles = await page.evaluate(() => ({
