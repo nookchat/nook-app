@@ -1,0 +1,116 @@
+/**
+ * A space on a cluster of two servers, and one of them going away.
+ *
+ * Two people talk on a space made on server A. The invite names B as well.
+ * A is stopped: both of them carry on through B without doing anything, and
+ * somebody new gets in through B with the link alone. A comes back, catches
+ * up from B, and has everything that was said while it was gone.
+ *
+ *   node test/failover-check.mjs
+ */
+
+import { chromium } from 'playwright-core'
+import { sql, startServer } from './pg.mjs'
+
+const APP_URL = process.argv[2] ?? 'http://localhost:5173/'
+const CHROME =
+  process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+
+const results = []
+const check = (name, ok, detail = '') => {
+  results.push({ name, ok })
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? `  — ${detail}` : ''}`)
+}
+const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+
+const SECRET = 'a-cluster-secret-for-tests'
+const A = 'http://localhost:8811'
+const B = 'http://localhost:8812'
+const cluster = (self, peer) => ({ CATHODE_PUBLIC_URL: self, CATHODE_PEERS: peer, CATHODE_CLUSTER_SECRET: SECRET })
+let a = await startServer(8811, cluster(A, B))
+const b = await startServer(8812, cluster(B, A))
+
+const browser = await chromium.launch({ executablePath: CHROME, headless: process.env.HEADED !== '1' })
+const BOX = '[aria-label="Write a message"]'
+
+async function person(name) {
+  const page = await (await browser.newContext({ viewport: { width: 1280, height: 820 } })).newPage()
+  await page.goto(APP_URL)
+  await page.evaluate((n) => localStorage.setItem('cathode.name.v1', n), name)
+  await page.reload()
+  await page.waitForSelector('input[aria-label="Space name"]')
+  return page
+}
+
+const sees = (page, text, timeout = 25_000) =>
+  page
+    .waitForFunction(
+      (t) => [...document.querySelectorAll('.chat-text')].some((n) => n.textContent.includes(t)),
+      text,
+      { timeout },
+    )
+    .then(() => true)
+    .catch(() => false)
+
+async function say(page, text) {
+  await page.click(BOX)
+  await page.keyboard.type(text)
+  await page.keyboard.press('Enter')
+}
+
+const status = (page) => page.evaluate(() => document.querySelector('.status-bar')?.textContent ?? '')
+
+try {
+  const alice = await person('Alice')
+  await alice.click('button:has-text("Server")')
+  await alice.fill('input[aria-label="Server address"]', 'localhost:8811')
+  await alice.fill('input[aria-label="Space name"]', 'two homes')
+  await alice.click('button:has-text("New space")')
+  await alice.waitForSelector(BOX)
+  await wait(1500)
+  const link = alice.url()
+  check('the invite names both servers', link.includes('@localhost:8811,localhost:8812'), link)
+
+  const bob = await person('Bob')
+  await bob.goto(link)
+  await bob.waitForSelector(BOX)
+  await say(alice, 'while both are up')
+  check('two people talk on the first server', await sees(bob, 'while both are up'))
+
+  // A goes away.
+  a.child.kill()
+  await wait(500)
+  await say(alice, 'said with the first server gone')
+  check('they carry on through the second, without doing anything', await sees(bob, 'said with the first server gone'))
+  const moved = await status(alice)
+  check('and the status line says which server it is on now', moved.includes('localhost:8812'), moved)
+
+  // Somebody new, with only the link, while A is still gone.
+  const carol = await person('Carol')
+  await carol.goto(link)
+  check('somebody new gets in with the link alone', await sees(carol, 'said with the first server gone'))
+  check('and reads what was said before too', await sees(carol, 'while both are up'))
+
+  // A comes back and catches up from B.
+  a = await startServer(8811, { ...cluster(A, B), DATABASE_URL: a.database })
+  const room = (await sql(b.database, 'select room from lines limit 1'))[0].room
+  const count = async (db) => Number((await sql(db, 'select count(*) as n from lines where room = $1', [room]))[0].n)
+  let caught = false
+  for (let i = 0; i < 60 && !caught; i++) {
+    caught = (await count(a.database)) === (await count(b.database))
+    if (!caught) await wait(500)
+  }
+  check('the first server comes back with everything it missed', caught, `${await count(a.database)} and ${await count(b.database)} lines`)
+} catch (err) {
+  console.error('\nThe run stopped early:', err.message)
+  process.exitCode = 1
+} finally {
+  await browser.close()
+  a.child.kill()
+  b.child.kill()
+}
+
+const failed = results.filter((r) => !r.ok).length
+console.log(`\n${results.length - failed}/${results.length} passed`)
+if (failed > 0) process.exitCode = 1
+process.exit()

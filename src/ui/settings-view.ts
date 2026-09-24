@@ -475,7 +475,7 @@ export function settingsView(actions: SettingsActions): HTMLElement {
           notifyButton(),
           h('div', {
             class: 'tiny faint',
-            text: 'Only when somebody says your name or writes to you privately, and only while this tab is open behind something else. There is no server holding your messages, so nothing can reach you once the tab is closed.',
+            text: 'Only when somebody says your name or writes to you privately, and only while this tab is open behind something else. A closed tab cannot be woken, so nothing reaches you once it is closed.',
           }),
         ]),
 
@@ -529,7 +529,7 @@ export function settingsView(actions: SettingsActions): HTMLElement {
               actions.space.admin
                 ? h('div', {
                     class: 'tiny faint',
-                    text: 'Clearing takes the messages, polls and pins off every device that is in the space or joins later. Names, channels and who runs it stay. Anybody who already saved a copy keeps it: there is no server to take it back from.',
+                    text: 'Clearing takes the messages, polls and pins off every device that is in the space or joins later. Names, channels and who runs it stay. Anybody who already saved a copy keeps it.',
                   })
                 : null,
 
@@ -608,7 +608,7 @@ export function settingsView(actions: SettingsActions): HTMLElement {
               h('div', { class: 'row small' }, [icon('server', 14), h('span', { text: serverTag(actions.server) })]),
               h('div', {
                 class: 'tiny faint',
-                text: 'This space runs on a server. Chat, history and every handshake go through it, and it hands out a relay for the picture and the sound when a network blocks peer to peer. Where a space runs is chosen when it is made, and goes out in its invite, so everybody in it talks in the same place.',
+                text: 'This space runs on a server, and the server keeps all of it: the history, your place in your list of spaces, and how far you have read. This device keeps none of it, so any device with your key finds it all there. Chat, calls and screen shares go through the server over one connection. Where a space runs is chosen when it is made, and goes out in its invite, so everybody in it is in the same place.',
               }),
               h('details', { class: 'adv' }, [
                 h('summary', { text: 'What it can see, and what it can do' }),

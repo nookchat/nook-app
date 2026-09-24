@@ -11,9 +11,7 @@
  */
 
 import { chromium } from 'playwright-core'
-import { spawn } from 'node:child_process'
-import { mkdtempSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { startServer } from './pg.mjs'
 import { join } from 'node:path'
 
 const APP_URL = process.argv[2] ?? 'http://localhost:5173/'
@@ -28,18 +26,11 @@ const check = (name, ok, detail = '') => {
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? `  — ${detail}` : ''}`)
 }
 
-const server = spawn(process.execPath, ['server/server.mjs'], {
-  env: {
-    ...process.env,
-    PORT: String(PORT),
-    CATHODE_DATA: mkdtempSync(join(tmpdir(), 'cathode-server-')),
-    // A TURN address nobody has to answer: this checks it is handed out.
-    CATHODE_TURN_URLS: 'turn:turn.invalid:3478',
-    CATHODE_TURN_SECRET: 'test-secret',
-  },
-  stdio: ['ignore', 'pipe', 'inherit'],
+const { child: server } = await startServer(PORT, {
+  // A TURN address nobody has to answer: this checks it is handed out.
+  CATHODE_TURN_URLS: 'turn:turn.invalid:3478',
+  CATHODE_TURN_SECRET: 'test-secret',
 })
-await new Promise((ok) => server.stdout.once('data', ok))
 
 const DARK = ['broker.emqx.io', 'broker.hivemq.com', 'nos.lol', 'relay.snort.social', 'nostr.mom']
 const browser = await chromium.launch({
@@ -84,6 +75,31 @@ const sees = (page, text, timeout = 20_000) =>
     )
     .then(() => true)
     .catch(() => false)
+
+/** What this browser has written down about spaces: events and notes, counted. */
+const onDevice = (page) =>
+  page.evaluate(
+    () =>
+      new Promise((done) => {
+        const request = indexedDB.open('cathode')
+        request.onsuccess = () => {
+          const db = request.result
+          const names = [...db.objectStoreNames]
+          if (names.length === 0) return done({ events: 0, rooms: 0 })
+          const tx = db.transaction(names, 'readonly')
+          const counts = {}
+          let left = names.length
+          for (const name of names) {
+            const r = tx.objectStore(name).count()
+            r.onsuccess = () => {
+              counts[name] = r.result
+              if (--left === 0) done(counts)
+            }
+          }
+        }
+        request.onerror = () => done({ error: true })
+      }),
+  )
 
 async function say(page, text) {
   await page.click(BOX)
@@ -141,6 +157,13 @@ try {
   await say(bob, 'and back again')
   check('and the other', await sees(alice, 'and back again'))
 
+  const stored = await onDevice(alice)
+  check(
+    'nothing about the space is written down in the browser',
+    Object.values(stored).every((n) => n === 0),
+    JSON.stringify(stored),
+  )
+
   const people = await alice
     .waitForFunction(() => document.querySelector('.status-bar')?.textContent?.includes('2 here'), null, {
       timeout: 15_000,
@@ -148,6 +171,33 @@ try {
     .then(() => true)
     .catch(() => false)
   check('both are here, to each other', people)
+
+  // Alice's key on a second device: the space is on her list there, from the server.
+  const key = await alice.evaluate(() => ({
+    id: localStorage.getItem('cathode.identity.v1'),
+    servers: localStorage.getItem('cathode.servers.v1'),
+  }))
+  await wait(800)
+  const second = await person('Alice')
+  await second.evaluate((k) => {
+    localStorage.setItem('cathode.identity.v1', k.id)
+    localStorage.setItem('cathode.servers.v1', k.servers)
+  }, key)
+  await second.reload()
+  const listed = await second
+    .waitForFunction(
+      () => [...document.querySelectorAll('.space-row')].some((r) => r.textContent.includes('on the box')),
+      null,
+      { timeout: 15_000 },
+    )
+    .then(() => true)
+    .catch(() => false)
+  check('a second device with the same key finds the space on the server', listed)
+  if (listed) {
+    await second.click('.space-row .rail-item')
+    check('and opens it with the whole history', await sees(second, 'and back again'))
+  }
+  await second.context().close()
 
   // Somebody arrives after everybody has gone. Only the server can tell them.
   await alice.context().close()
@@ -160,10 +210,14 @@ try {
 
   check(
     'the ICE servers came from the server',
-    requests.some((u) => u.startsWith(`http://${SERVER}/ice`)),
+    requests.some((u) => u.startsWith(`http://${SERVER}/api/v1/ice`)),
   )
-  const elsewhere = sockets.filter((u) => !u.startsWith(`ws://${SERVER}/relay/`) && !u.includes(':5173'))
-  check('no socket went anywhere but the server', elsewhere.length === 0, elsewhere.join(' '))
+  const elsewhere = sockets.filter((u) => !u.startsWith(`ws://${SERVER}/api/v1/spaces/`) && !u.includes(':5173'))
+  check('everything went over the one socket to the server', elsewhere.length === 0, elsewhere.join(' '))
+  check(
+    'and nothing went over plain HTTP but the record of your spaces',
+    !requests.some((u) => u.includes('/events/')),
+  )
 
   // The same page still makes a peer to peer space when asked to.
   const dave = await person('Dave')

@@ -12,7 +12,8 @@
 
 import { checkServer, lastChoice, lastServer, rememberChoice, serverTag, serverUrl } from '../backend'
 import { newSecret, parseLink } from '../room'
-import { forgetRoom, listRooms, type RoomNote } from '../store/db'
+import { ROOMS_CHANGED, type RoomNote } from '../store/db'
+import { forgetSpace, listSpaces } from '../store/spaces'
 import { loadIdentity } from '../store/identity'
 import { clear, h } from './dom'
 import { icon, logo } from './icons'
@@ -80,8 +81,8 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
     serverButton.setAttribute('aria-pressed', String(onServer))
     serverRow.classList.toggle('hidden', !onServer)
     whereNote.textContent = onServer
-      ? 'Chat, history and every handshake go through this server, sealed so it cannot read them. It works on networks that block peer to peer, and it remembers what was said while everybody was away.'
-      : 'Nothing runs anywhere. Everybody connects straight to everybody else, and every device keeps the history.'
+      ? 'Everything is kept on this server: the history, your list of spaces, and how far you have read. It all goes over one connection, calls included, and it is sealed so the server cannot read it. Nothing is kept on this device but your key.'
+      : 'No server at all. Everybody connects straight to everybody else, and every device keeps the whole history.'
   }
   p2pButton.addEventListener('click', () => {
     onServer = false
@@ -140,13 +141,15 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
     const label = room.title || 'this space'
     const yours = room.founder === me
     const ok = window.confirm(
-      yours
+      room.server
+        ? `Leave ${label}? It comes off your list on every device. Its history stays on ${serverTag(room.server)}, and the link still works if you want back in.`
+        : yours
         ? `Leave ${label}? Its history goes from this device. The space itself stays: you made it, so open it and delete it there to close it for everybody.`
         : `Leave ${label}? Its history goes from this device. Anybody else in it keeps theirs, and the link still works if you want back in.`,
     )
     if (!ok) return
-    await forgetRoom(room.room)
-    toast('Left, and forgotten on this device.', 'info')
+    await forgetSpace(room)
+    toast(room.server ? 'Left. It is off your list.' : 'Left, and forgotten on this device.', 'info')
     await paint()
   }
 
@@ -154,7 +157,7 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
   const paint = async (): Promise<void> => {
     // A closed space keeps a note so its link says why it is gone. It is not a
     // space any more, so it is not in the list of them.
-    const rooms = hideShadows((await listRooms()).filter((r) => !r.closed))
+    const rooms = hideShadows((await listSpaces()).filter((r) => !r.closed))
     clear(recent)
     for (const room of rooms.slice(0, 12)) {
       const face = h('span', { class: 'space-tile', text: initials(room.title || 'Unnamed space') })
@@ -217,6 +220,20 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
     }
   }
   await paint()
+  // Spaces on a server arrive when the server answers, so the list draws again then.
+  let queued = 0
+  let shown = false
+  const again = (): void => {
+    // Gone from the page after being on it: stop listening.
+    if (!recent.isConnected && shown) {
+      window.removeEventListener(ROOMS_CHANGED, again)
+      return
+    }
+    shown ||= recent.isConnected
+    window.clearTimeout(queued)
+    queued = window.setTimeout(() => void paint(), 150)
+  }
+  window.addEventListener(ROOMS_CHANGED, again)
 
   return h('main', { class: 'home' }, [
     h('div', { class: 'home-page' }, [

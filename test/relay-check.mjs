@@ -9,10 +9,7 @@
  *   node test/relay-check.mjs
  */
 
-import { spawn } from 'node:child_process'
-import { mkdtempSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { startServer } from './pg.mjs'
 
 const PORT = 8791
 const ROOM_A = 'a'.repeat(32)
@@ -24,11 +21,7 @@ const check = (name, ok, detail = '') => {
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? `  — ${detail}` : ''}`)
 }
 
-const server = spawn(process.execPath, ['server/server.mjs'], {
-  env: { ...process.env, PORT: String(PORT), CATHODE_DATA: mkdtempSync(join(tmpdir(), 'cathode-relay-')) },
-  stdio: ['ignore', 'pipe', 'inherit'],
-})
-await new Promise((ok) => server.stdout.once('data', ok))
+const { child: server } = await startServer(PORT)
 
 /** A socket that is open, with its post box. */
 function join_(room) {

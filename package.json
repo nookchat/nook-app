@@ -42,7 +42,9 @@
     "server": "node server/server.mjs",
     "test:speed": "node test/speed.mjs",
     "test:bench": "node test/server-bench.mjs",
-    "tour": "node test/tour.mjs"
+    "tour": "node test/tour.mjs",
+    "test:cluster": "node test/cluster-check.mjs",
+    "test:failover": "node test/failover-check.mjs"
   },
   "dependencies": {
     "@jitsi/rnnoise-wasm": "^0.2.1",

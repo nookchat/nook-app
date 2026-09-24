@@ -13,10 +13,7 @@
  */
 
 import { chromium } from 'playwright-core'
-import { spawn } from 'node:child_process'
-import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { sql, startServer } from './pg.mjs'
 
 const APP_URL = process.argv[2] ?? 'http://localhost:5173/'
 const CHROME =
@@ -30,15 +27,12 @@ const check = (name, ok, detail = '') => {
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? `  — ${detail}` : ''}`)
 }
 
-const data = mkdtempSync(join(tmpdir(), 'cathode-archive-'))
-const server = spawn('node', ['server/server.mjs'], {
-  // PREVIEW_LOCAL, because the page this test asks about has nowhere to live
-  // but localhost, which the preview endpoint rightly refuses in real life.
-  env: { ...process.env, PORT: String(PORT), CATHODE_DATA: data, CATHODE_PREVIEW_LOCAL: '1' },
-  stdio: ['ignore', 'pipe', 'pipe'],
-})
-server.stdout.on('data', (b) => process.env.LOUD && console.log('  [server]', String(b).trim()))
-server.stderr.on('data', (b) => console.log('  [server error]', String(b).trim()))
+// PREVIEW_LOCAL, because the page this test asks about has nowhere to live
+// but localhost, which the preview endpoint rightly refuses in real life.
+const started = await startServer(PORT, { CATHODE_PREVIEW_LOCAL: '1' })
+const server = started.child
+const db = (text, params) => sql(started.database, text, params)
+const countLines = async () => Number((await db('select count(*) as n from lines'))[0].n)
 
 const up = async () => {
   for (let i = 0; i < 40; i++) {
@@ -100,10 +94,10 @@ try {
   await alice.keyboard.press('Enter')
   await alice.waitForTimeout(2500)
 
-  const stored = readdirSync(data).filter((f) => f.endsWith('.jsonl'))
+  const stored = (await db('select distinct room from lines')).map((r) => r.room)
   check('the archive kept something', stored.length === 1, stored.join())
 
-  const raw = readFileSync(join(data, stored[0]), 'utf8')
+  const raw = (await db(`select string_agg(body, E'\n' order by seq) as raw from lines where room = $1`, [stored[0]]))[0].raw ?? ''
   check(
     'and what it kept is unreadable to it',
     raw.length > 0 && !raw.includes('said while nobody was listening'),
@@ -116,7 +110,7 @@ try {
    * first real write claimed the room with it, so the stranger is refused and
    * cannot fill the room until its trim eats the real history.
    */
-  const room = stored[0].replace('.jsonl', '')
+  const room = stored[0]
   const bare = await fetch(`${ARCHIVE}/events/${room}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -132,7 +126,7 @@ try {
   check("and one with a stranger's token is refused too", wrong.status === 403, `${wrong.status}`)
   check(
     'and neither left a mark on the room',
-    !readFileSync(join(data, stored[0]), 'utf8').split('\n').includes('junk'),
+    Number((await db(`select count(*) as n from lines where body = 'junk'`))[0].n) === 0,
   )
 
   // Alice goes. Nobody in the space holds the history any more.
@@ -178,13 +172,15 @@ try {
   await bob.context().close()
   await new Promise((r) => setTimeout(r, 1500))
 
-  const lines = readFileSync(join(data, stored[0]), 'utf8').split('\n').filter(Boolean)
+  const lines = await db('select seq from lines where room = $1', [stored[0]])
   // Every line, not one, so that nothing gets through for any other reason and
   // the count below means exactly what it says.
-  const meddled = lines.map(
-    (line) => line.slice(0, 30) + (line[30] === 'A' ? 'B' : 'A') + line.slice(31),
+  await db(
+    `update lines set body = substr(body, 1, 30) ||
+       (case when substr(body, 31, 1) = 'A' then 'B' else 'A' end) || substr(body, 32)
+     where room = $1`,
+    [stored[0]],
   )
-  writeFileSync(join(data, stored[0]), meddled.join('\n') + '\n')
 
   const carol = await open('Carol')
   await carol.goto(link)
@@ -241,11 +237,7 @@ try {
   // Wait for the queue to drain rather than for a fixed time.
   const drained = await (async () => {
     for (let i = 0; i < 60; i++) {
-      const room = readdirSync(data).filter((f) => f.endsWith('.jsonl'))
-      const total = room.reduce(
-        (sum, f) => sum + readFileSync(join(data, f), 'utf8').split('\n').filter(Boolean).length,
-        0,
-      )
+      const total = await countLines()
       if (total >= SAID) return total
       await new Promise((r) => setTimeout(r, 500))
     }
@@ -298,23 +290,16 @@ try {
    * when a space grows too large. What the copies pushed out was the history
    * they were copies of.
    */
-  const countLines = () =>
-    readdirSync(data)
-      .filter((f) => f.endsWith('.jsonl'))
-      .reduce(
-        (sum, f) => sum + readFileSync(join(data, f), 'utf8').split('\n').filter(Boolean).length,
-        0,
-      )
 
   await erin.waitForTimeout(2000)
-  const before = countLines()
+  const before = await countLines()
   for (let visit = 0; visit < 3; visit++) {
     await erin.goto('about:blank')
     await erin.goto(floodLink)
     await erin.waitForSelector('.space-name')
     await erin.waitForTimeout(2500)
   }
-  const after = countLines()
+  const after = await countLines()
   check(
     'coming back into a space does not archive it all over again',
     after === before,

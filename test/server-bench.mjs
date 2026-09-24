@@ -8,10 +8,7 @@
  *   node test/server-bench.mjs [lines]
  */
 
-import { spawn } from 'node:child_process'
-import { mkdtempSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { startServer } from './pg.mjs'
 import { randomBytes } from 'node:crypto'
 
 const LINES = Number(process.argv[2] ?? 50_000)
@@ -20,15 +17,11 @@ const BASE = `http://localhost:${PORT}`
 const ROOM = randomBytes(16).toString('hex')
 const TOKEN = 'bench-token'
 
-const server = spawn(process.execPath, ['server/server.mjs'], {
-  env: { ...process.env, PORT: String(PORT), CATHODE_DATA: mkdtempSync(join(tmpdir(), 'cathode-bench-')) },
-  stdio: ['ignore', 'pipe', 'inherit'],
-})
-await new Promise((ok) => server.stdout.once('data', ok))
+const { child: server } = await startServer(PORT)
 
 const line = () => randomBytes(750).toString('base64url')
 const post = (lines) =>
-  fetch(`${BASE}/events/${ROOM}`, {
+  fetch(`${BASE}/api/v1/spaces/${ROOM}/events`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-cathode-write': TOKEN },
     body: JSON.stringify(lines),
@@ -50,14 +43,14 @@ try {
   console.log(`room holds ${LINES} lines, about ${((LINES * 1000) / 1e6).toFixed(0)} MB`)
 
   await time('catch up on the last 10 lines', 10, async () => {
-    const res = await fetch(`${BASE}/events/${ROOM}?from=${LINES - 10}`)
+    const res = await fetch(`${BASE}/api/v1/spaces/${ROOM}/events?after=${LINES - 10}`)
     await res.json()
   })
   for (const [label, limit, enc] of [['read everything, page by page', 5000, 'identity']]) {
     await time(label, 3, async () => {
       let from = 0
       for (;;) {
-        const res = await fetch(`${BASE}/events/${ROOM}?from=${from}&limit=${limit}`, {
+        const res = await fetch(`${BASE}/api/v1/spaces/${ROOM}/events?after=${from}&limit=${limit}`, {
           headers: { 'accept-encoding': enc },
         })
         const page = await res.json()

@@ -1,0 +1,211 @@
+/**
+ * The HTTP API, version 1, and the older paths it replaced.
+ *
+ *   GET  /api/v1/health                   what this is, and its cluster
+ *   GET  /api/v1/ice                      TURN credentials
+ *   GET  /api/v1/spaces/:room/events      sealed lines after a point
+ *   POST /api/v1/spaces/:room/events      keep sealed lines
+ *   WS   /api/v1/spaces/:room/socket      see sockets.mjs
+ *   GET  /api/v1/people/:id               a sealed record of somebody's spaces
+ *   PUT  /api/v1/people/:id               replace it
+ *   GET  /api/v1/preview?url=             a link card
+ *   GET  /api/v1/gifs?q=                  GIF search
+ *   GET  /api/v1/openapi.json             all of the above, described
+ *   GET  /api/v1/cluster/{lines,rooms,people}   between servers only
+ *
+ * The paths from before version 1 (/health, /events, /me, /preview, /gif,
+ * /ice) still answer, the same way, for clients that have not caught up.
+ */
+
+import { HAS_TURN, PREVIEWS, TURN_ONLY, VERSION, originAllowed } from './config.mjs'
+import { clusterHealth, clusterUrls, fromPeer, linesFor, peopleFor, roomsFor } from './cluster.mjs'
+import { ApiError, allow, fail, readJson, reply } from './http.mjs'
+import { openapi } from './openapi.mjs'
+import { gifs, hasGifs, preview } from './preview.mjs'
+import {
+  append,
+  MAX_LINE,
+  MAX_PAGE_LINES,
+  MAX_PERSON,
+  mayWrite,
+  person,
+  PERSON,
+  putPerson,
+  ROOM,
+  since,
+} from './store.mjs'
+import { iceServers } from './turn.mjs'
+
+const int = (value, fallback = 0) => {
+  const n = Math.floor(Number(value))
+  return Number.isFinite(n) && n >= 0 ? n : fallback
+}
+
+function roomOf(value) {
+  if (!ROOM.test(value ?? '')) throw new ApiError(400, 'bad_room', 'That is not a space id.')
+  return value
+}
+
+function personOf(value) {
+  if (!PERSON.test(value ?? '')) throw new ApiError(400, 'bad_person', 'That is not a person id.')
+  return value
+}
+
+function limited(req) {
+  if (!allow(req)) throw new ApiError(429, 'slow_down', 'Too many requests. Try again in a moment.')
+}
+
+function health() {
+  return {
+    ok: true,
+    // Kept from when this was only an archive: every client checks for it.
+    service: 'cathode-archive',
+    name: 'cathode',
+    version: VERSION,
+    api: 1,
+    database: 'postgres',
+    turn: HAS_TURN,
+    relayOnly: HAS_TURN && TURN_ONLY,
+    previews: PREVIEWS,
+    gifs: hasGifs(),
+    cluster: clusterUrls(),
+    peers: clusterHealth().peers,
+  }
+}
+
+async function readEvents(url, room) {
+  const after = int(url.searchParams.get('after') ?? url.searchParams.get('from'))
+  const page = await since(room, after, int(url.searchParams.get('limit')), MAX_PAGE_LINES)
+  return { at: page.at, events: page.lines, more: page.more }
+}
+
+async function writeEvents(req, room) {
+  limited(req)
+  if (!(await mayWrite(room, req.headers['x-cathode-write']))) {
+    throw new ApiError(403, 'wrong_token', 'That is not the write token this space was claimed with.')
+  }
+  const body = await readJson(req)
+  const list = Array.isArray(body) ? body : body?.events
+  if (!Array.isArray(list)) throw new ApiError(400, 'bad_body', 'Expected a list of sealed lines.')
+  /*
+   * Every line has to be a string of a sane size and nothing else is checked,
+   * because nothing else can be: this cannot read them. The devices check
+   * every signature on the way back in, which is the check that matters.
+   */
+  const clean = list.filter((e) => typeof e === 'string' && e.length > 0 && e.length <= MAX_LINE)
+  const fresh = await append(room, clean)
+  return { added: clean.length, fresh: fresh.length, at: fresh.length ? fresh[fresh.length - 1].seq : undefined }
+}
+
+async function writePerson(req, id) {
+  limited(req)
+  const body = await readJson(req, MAX_PERSON + 1024)
+  const blob = body?.blob
+  if (typeof blob !== 'string' || blob.length > MAX_PERSON) {
+    throw new ApiError(413, 'too_large', 'A record is a sealed string of at most 512 KiB.')
+  }
+  const token = req.headers['x-cathode-write']
+  if (typeof token !== 'string' || !token) throw new ApiError(403, 'wrong_token', 'A record needs its write token.')
+  if (!(await putPerson(id, token, blob))) {
+    throw new ApiError(403, 'wrong_token', 'That is not the write token this record was claimed with.')
+  }
+  return { ok: true }
+}
+
+async function linkCard(url) {
+  if (!PREVIEWS) throw new ApiError(404, 'off', 'Link cards are turned off on this server.')
+  const wanted = url.searchParams.get('url') ?? ''
+  if (!wanted || wanted.length > 2048) throw new ApiError(400, 'bad_url', 'That is not a link.')
+  return preview(wanted)
+}
+
+async function gifSearch(url) {
+  if (!hasGifs()) throw new ApiError(404, 'off', 'This server has no GIF key.')
+  const q = (url.searchParams.get('q') ?? '').trim().slice(0, 80)
+  if (!q) throw new ApiError(400, 'bad_query', 'Say what to look for.')
+  const found = await gifs(q)
+  if (!found) throw new ApiError(502, 'upstream', 'Tenor did not answer.')
+  return found
+}
+
+function peerOnly(req) {
+  if (!fromPeer(req)) throw new ApiError(401, 'not_a_peer', 'Only a server in this cluster may ask that.')
+  return String(req.headers['x-cathode-peer'] ?? '')
+}
+
+export async function handle(req, res) {
+  try {
+    if (req.method === 'OPTIONS') return reply(res, 204, '')
+    const url = new URL(req.url ?? '/', 'http://localhost')
+    const parts = url.pathname.split('/').filter(Boolean)
+    const method = req.method ?? 'GET'
+
+    // Only the health check answers a page this server does not serve.
+    const cross = req.headers.origin !== undefined && !originAllowed(req.headers.origin)
+    const isHealth = url.pathname === '/health' || url.pathname === '/api/v1/health'
+    if (cross && !isHealth) throw new ApiError(403, 'origin', 'This server does not answer that page.')
+
+    if (parts[0] === 'api' && parts[1] === 'v1') {
+      const [, , a, b, c] = parts
+      if (a === 'health' && method === 'GET') return reply(res, 200, health())
+      if (a === 'openapi.json' && method === 'GET') return reply(res, 200, openapi)
+      if (a === 'ice' && method === 'GET') return reply(res, 200, iceServers())
+      if (a === 'spaces' && c === 'events') {
+        const room = roomOf(b)
+        if (method === 'GET') return reply(res, 200, await readEvents(url, room))
+        if (method === 'POST') return reply(res, 200, await writeEvents(req, room))
+      }
+      if (a === 'people' && b && !c) {
+        const id = personOf(b)
+        if (method === 'GET') return reply(res, 200, await person(id))
+        if (method === 'PUT' || method === 'POST') return reply(res, 200, await writePerson(req, id))
+      }
+      if (a === 'preview' && method === 'GET') {
+        limited(req)
+        return reply(res, 200, await linkCard(url))
+      }
+      if (a === 'gifs' && method === 'GET') {
+        limited(req)
+        return reply(res, 200, await gifSearch(url))
+      }
+      if (a === 'cluster' && method === 'GET') {
+        const asker = peerOnly(req)
+        const after = int(url.searchParams.get('after'))
+        if (b === 'lines') {
+          return reply(res, 200, await linesFor(asker, after, int(url.searchParams.get('limit')), int(url.searchParams.get('wait'))))
+        }
+        if (b === 'rooms') return reply(res, 200, await roomsFor(after))
+        if (b === 'people') return reply(res, 200, await peopleFor(after))
+      }
+      throw new ApiError(404, 'not_found', 'There is nothing at that address.')
+    }
+
+    // ---- the paths from before version 1 ----
+    if (parts[0] === 'health') return reply(res, 200, health())
+    if (parts[0] === 'ice' && method === 'GET') return reply(res, 200, iceServers())
+    if (parts[0] === 'preview' && method === 'GET') {
+      limited(req)
+      return reply(res, 200, await linkCard(url))
+    }
+    if (parts[0] === 'gif' && method === 'GET') {
+      limited(req)
+      return reply(res, 200, await gifSearch(url))
+    }
+    if (parts[0] === 'me' && parts[1]) {
+      const id = personOf(parts[1])
+      if (method === 'GET') {
+        const held = await person(id)
+        return reply(res, 200, { blob: held.blob, at: held.updated })
+      }
+      if (method === 'POST') return reply(res, 200, await writePerson(req, id))
+    }
+    if (parts[0] === 'events' && parts[1]) {
+      const room = roomOf(parts[1])
+      if (method === 'GET') return reply(res, 200, await readEvents(url, room))
+      if (method === 'POST') return reply(res, 200, await writeEvents(req, room))
+    }
+    throw new ApiError(404, 'not_found', 'There is nothing at that address.')
+  } catch (err) {
+    return fail(res, err)
+  }
+}

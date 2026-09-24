@@ -21,6 +21,7 @@
  */
 
 import { serverTag, serverUrl } from './backend'
+import { endpoints, learn } from './net/cluster'
 
 const enc = new TextEncoder()
 
@@ -212,9 +213,19 @@ function unescapeTag(tag: string): string {
   }
 }
 
+/*
+ * The rest of the cluster rides after the first, comma separated, so somebody
+ * opening the invite while the first server is down still gets in.
+ */
 function linkTail(secret: string, locked: boolean, server: string): string {
-  const tag = server ? serverTag(server) : ''
-  return `${formatSecret(secret)}${locked ? LOCK : ''}${tag ? `${AT}${tag}` : ''}`
+  const tags = server ? endpointsInOrder(server).map(serverTag).filter(Boolean) : []
+  return `${formatSecret(secret)}${locked ? LOCK : ''}${tags.length ? `${AT}${tags.join(',')}` : ''}`
+}
+
+/** The space's own server first, then the rest of its cluster. */
+function endpointsInOrder(server: string): string[] {
+  const first = serverUrl(server)
+  return [first, ...endpoints(first).filter((u) => u !== first)].slice(0, 5)
 }
 
 export interface LinkInfo {
@@ -232,7 +243,9 @@ export function parseLink(raw: string): LinkInfo | null {
   const trimmed = raw.trim()
   const at = trimmed.indexOf(AT)
   const code = at >= 0 ? trimmed.slice(0, at) : trimmed
-  const server = at >= 0 ? serverUrl(unescapeTag(trimmed.slice(at + 1))) : undefined
+  const named = at >= 0 ? unescapeTag(trimmed.slice(at + 1)).split(',').map(serverUrl) : []
+  const server = at >= 0 ? named[0] : undefined
+  if (server && named.length > 1) learn(server, named.slice(1).filter(Boolean))
   // A link that names a server nobody could reach is not half a link.
   if (at >= 0 && !server) return null
   const locked = code.toUpperCase().endsWith(LOCK)

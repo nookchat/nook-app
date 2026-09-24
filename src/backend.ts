@@ -17,6 +17,8 @@
  * on a server says which one after an @ in its link.
  */
 
+import { ask, learn } from './net/cluster'
+
 /** The server a deployment offers, from VITE_CATHODE_SERVER at build time. */
 export const BUILT_IN_SERVER = serverUrl(import.meta.env.VITE_CATHODE_SERVER ?? '')
 
@@ -108,10 +110,13 @@ export async function checkServer(url: string): Promise<boolean> {
   const clean = serverUrl(url)
   if (!clean) return false
   try {
-    const res = await fetch(`${clean}/health`, { mode: 'cors', signal: AbortSignal.timeout(6000) })
+    const res = await fetch(`${clean}/api/v1/health`, { mode: 'cors', signal: AbortSignal.timeout(6000) })
     if (!res.ok) return false
-    const body = (await res.json()) as { service?: string }
-    return body.service === 'cathode-archive'
+    const body = (await res.json()) as { service?: string; cluster?: unknown }
+    if (body.service !== 'cathode-archive') return false
+    // And the others in its cluster, for when this one is down.
+    if (Array.isArray(body.cluster)) learn(clean, body.cluster.filter((u): u is string => typeof u === 'string'))
+    return true
   } catch {
     return false
   }
@@ -122,8 +127,8 @@ export async function fetchIce(
   url: string,
 ): Promise<{ iceServers: RTCIceServer[]; relayOnly: boolean }> {
   try {
-    const res = await fetch(`${serverUrl(url)}/ice`, { mode: 'cors', signal: AbortSignal.timeout(6000) })
-    if (!res.ok) return { iceServers: [], relayOnly: false }
+    const res = await ask(url, '/api/v1/ice')
+    if (!res?.ok) return { iceServers: [], relayOnly: false }
     const body = (await res.json()) as { iceServers?: unknown; relayOnly?: unknown }
     const iceServers = Array.isArray(body.iceServers)
       ? (body.iceServers.filter(

@@ -1,44 +1,49 @@
 # The Cathode server
 
-One file, no dependencies, and a Docker image. It does two jobs.
+The backend for a space that runs on a server. It keeps every space in
+Postgres, carries everything a space does over one WebSocket per space, and
+can run as a **cluster**: several people each run one, and every space is kept
+on all of them, so no one operator holds the only copy and a space outlives any
+one server going down.
 
-**It is the backend for a space that runs on a server.** Every handshake, chat
-line and event goes over one WebSocket to it. It keeps the history, and it
-hands out TURN credentials, so the picture and the sound get through networks
-that block peer to peer. Somebody picks **Server** when they make a space, and
-everybody who opens that invite uses the same server.
+**It cannot read anything it keeps.** Every event is sealed on the device that
+wrote it, with a key made from the space code, before it is sent. The code
+lives in the part of a link that a browser never sends to anybody. See
+[Encryption](#encryption).
 
-**It is an optional archive for a peer to peer space.** Everybody in a space
-keeps the whole history and hands it to whoever turns up, so a space survives
-as long as one person who was in it opens it again. What that cannot do is
-catch you up on something said while **every** person was offline. The archive
-fills that one hole, and does nothing else.
-
-Both ways, it cannot read anything it carries or keeps.
+It also works as an optional archive for a peer to peer space. See
+[As an archive](#as-an-archive-for-a-peer-to-peer-space).
 
 ## Running it on your own machine
 
 You need a Linux machine with Docker, and a DNS name that points at it.
 
-1. Copy the settings, and fill them in:
+1. Get the compose file and its settings:
 
    ```
+   git clone https://github.com/nebbsie/stream.git && cd stream
    cp server/.env.example server/.env
    ```
 
-2. Make the TURN secret:
+2. Fill in `server/.env`. Make the two secrets with `openssl rand -hex 32`:
 
-   ```
-   openssl rand -hex 32
-   ```
-
-   Put the result in `CATHODE_TURN_SECRET`.
+   | Setting | What to put |
+   | --- | --- |
+   | `CATHODE_DOMAIN` | The name this server answers on |
+   | `CATHODE_ORIGINS` | The address of your page, such as `https://cathode.example.vercel.app` |
+   | `POSTGRES_PASSWORD` | A long random password for the database |
+   | `CATHODE_TURN_SECRET` | A long random secret for TURN |
+   | `CATHODE_TURN_URLS` | `turn:<your domain>:3478?transport=udp,turn:<your domain>:3478?transport=tcp` |
+   | `CATHODE_PUBLIC_URL` | `https://<your domain>` |
 
 3. Start everything:
 
    ```
    docker compose -f server/docker-compose.yml up -d
    ```
+
+   This pulls `ghcr.io/nebbsie/cathode-server:latest` and starts four
+   containers: the server, Postgres, coturn, and Caddy for HTTPS.
 
 4. Open these ports in the firewall:
 
@@ -51,17 +56,24 @@ You need a Linux machine with Docker, and a DNS name that points at it.
 5. Check it:
 
    ```
-   curl https://cathode.example.org/health
+   curl https://cathode.example.org/api/v1/health
    ```
 
-6. Build the page with `VITE_CATHODE_SERVER=https://cathode.example.org`.
-   On Vercel, set it under Project, Settings, Environment Variables, and deploy
+6. Build the page with `VITE_CATHODE_SERVER=https://cathode.example.org`. On
+   Vercel, set it under Project, Settings, Environment Variables, and deploy
    again. The page then offers **Server** when somebody makes a space.
 
-`COMPOSE_PROFILES` in `.env` selects the containers. `tls` starts Caddy, and
-`turn` starts coturn. Remove `tls` when you already have a reverse proxy. Set
-`CATHODE_BIND=0.0.0.0` so that the proxy can reach port 8787. Remove `turn`
-when you do not want to relay media.
+To update to the newest image:
+
+```
+docker compose -f server/docker-compose.yml pull
+docker compose -f server/docker-compose.yml up -d
+```
+
+`COMPOSE_PROFILES` in `.env` selects the extra containers: `tls` starts Caddy,
+and `turn` starts coturn. Remove `tls` if you already have a reverse proxy, and
+set `CATHODE_BIND=0.0.0.0` so that the proxy can reach port 8787. Remove `turn`
+if you do not want to relay media.
 
 ### Only the server, to try it
 
@@ -69,83 +81,158 @@ when you do not want to relay media.
 docker compose -f server/docker-compose.yml up -d cathode
 ```
 
-Or without Docker, because it has no dependencies and no build step:
+This starts the server and its database. Use `localhost:8787` as the server
+address. `http://localhost` is the one plain address that an HTTPS page may
+call. Without Docker, run `npm ci` in `server/`, then
+`DATABASE_URL=postgres://... node server/server.mjs`.
 
-```
-node server/server.mjs
-```
+## The database
 
-Then use `localhost:8787` as the server address. `http://localhost` is the one
-plain address that an HTTPS page may call.
+Postgres. The schema is made and upgraded by the server when it starts; each
+migration runs once, in a transaction.
 
-### The image
+| Table | Holds |
+| --- | --- |
+| `rooms` | One row per space: the hash of its write token, and how many bytes it holds |
+| `lines` | Every sealed event of every space, numbered in the order this server kept it |
+| `people` | One sealed record per person: their list of spaces and how far they have read |
+| `peers` | How far this server has read from each other server in its cluster |
+| `schema_version` | Which migrations have run |
 
-A push to `main` that changes `server/` publishes the image to
-`ghcr.io/<owner>/cathode-server` (see `.github/workflows/server-image.yml`).
-To use it and skip the build, replace the `build` and `image` lines of the
-`cathode` service with `image: ghcr.io/<owner>/cathode-server`.
+Every line is ciphertext. A copy of this database is a pile of noise with
+timestamps on it. Back it up like any Postgres database (`pg_dump`), and in a
+cluster the other servers are live copies too.
+
+A server that ran an earlier version kept spaces as files in `CATHODE_DATA`.
+It moves them into the database the first time it starts, once, and leaves
+the files where they are.
+
+## The API
+
+Version 1, under `/api/v1`. A running server describes it at
+`GET /api/v1/openapi.json`. Every error has the same shape:
+`{ "error": { "code": "wrong_token", "message": "..." } }`.
+
+| Route | Does |
+| --- | --- |
+| `GET /api/v1/health` | What this server is, what it offers, and every server in its cluster |
+| `GET /api/v1/ice` | Short lived TURN credentials |
+| `GET /api/v1/spaces/:room/events?after=N&limit=L` | Sealed lines after line `N`, a page at a time. `at` is where the next page starts, and `more` says there is one |
+| `POST /api/v1/spaces/:room/events` | Keeps `{ "events": [sealed lines] }`. Needs `x-cathode-write`. The first write claims the space with its token |
+| `WS /api/v1/spaces/:room/socket` | Everything a space does, on one connection. See below |
+| `GET /api/v1/people/:id` | One person's sealed record |
+| `PUT /api/v1/people/:id` | Replaces it. Needs `x-cathode-write`. The first write claims it |
+| `GET /api/v1/preview?url=U` | The title, description and picture behind a public link |
+| `GET /api/v1/gifs?q=term` | GIF search, when `CATHODE_TENOR_KEY` is set |
+| `GET /api/v1/cluster/lines`, `/rooms`, `/people` | Between servers in a cluster only. Needs the cluster secret |
+
+The space socket speaks JSON, one message per frame:
+
+| Direction | Message | Means |
+| --- | --- | --- |
+| to the server | `hello {from}` | Everything after line `from`, page by page, then live |
+| to the server | `put {id, lines, w}` | Keep these sealed lines. `w` is the write token |
+| to the server | `sig {d}` | A sealed signal (a handshake, typing, presence) for everybody else. Not kept |
+| from the server | `page {at, lines, more}` | History |
+| from the server | `live {at}` | History is done. New lines arrive as `ev` from here on |
+| from the server | `ev {at, lines}` | Lines somebody else wrote, or another server sent |
+| from the server | `ack {id, at}` / `nack {id, code, message}` | The `put` was kept, or refused |
+| from the server | `sig {d}` | Somebody else's signal |
+
+`at` is always the number of the newest line a message brings the reader to.
+The server sends a space's lines in order, so a reader that keeps the highest
+`at` it has seen can reconnect with `hello` from there and miss nothing.
+
+The paths from before version 1 (`/health`, `/events/:room`, `/me/:id`,
+`/preview`, `/gif`, `/ice`, `WS /room/:room`, `WS /relay/:room`) still answer,
+for clients that have not caught up.
+
+## A cluster
+
+A few people each run a server, with their own database, and join them into
+one cluster. Every server then keeps a full copy of every space in the cluster.
+
+1. Each operator sets up a server as above.
+2. Agree on one cluster secret, 16 characters or more (`openssl rand -hex 32`),
+   and share it privately between the operators.
+3. On every server, set:
+
+   ```
+   CATHODE_PUBLIC_URL=https://this-server.example.org
+   CATHODE_PEERS=https://other-one.example.org,https://other-two.example.org
+   CATHODE_CLUSTER_SECRET=the shared secret
+   ```
+
+4. Restart each server. `GET /api/v1/health` lists the cluster, and `peers`
+   says whether each of the others is reachable.
+
+How it works:
+
+- Every server pulls from every other, all the time, over HTTPS: which spaces
+  exist and their claims, every sealed line, and every person's sealed record.
+- Lines are pulled by long polling, so a line written on one server reaches
+  the others in about the time it takes to cross the network.
+- A line two servers both hold is the same line and is kept once.
+- A server that was down asks every other for what it missed when it comes
+  back, and catches up.
+- The page learns the whole cluster from any server's health check, and an
+  invite names the servers after the first. When the server a page is using
+  goes quiet, it moves to the next without anybody doing anything, and
+  somebody opening an invite while the first server is down still gets in.
+
+`test/cluster-check.mjs` and `test/failover-check.mjs` run two servers with two
+databases, stop one, and check that nothing is lost and nobody notices.
+
+What the operators trust each other with is ciphertext. A server in the
+cluster can refuse to pass lines on, forget them, or send junk; it cannot read
+them, and it cannot forge an event, because every event inside is signed by
+the person who wrote it and checked by every device. Choose operators you
+trust not to go quiet, not operators you trust with your messages: none of
+them can read those.
+
+## Encryption
+
+Everything a person writes is end to end encrypted. The server stores and
+relays it, and cannot open it.
+
+| What | Sealed with | Who can open it |
+| --- | --- | --- |
+| Every event in a space (messages, edits, reactions, names, channels) | AES-GCM, with a key made from the space code and its password | Anybody holding the invite link |
+| Private messages | Also sealed with a key only the two people can work out | The two people |
+| Signals (handshakes, presence, typing) | AES-GCM, the same space key | Anybody holding the invite link |
+| Your list of spaces and read marks | AES-GCM, with a key made from your identity key | Your devices |
+| Calls and screen shares | DTLS-SRTP, negotiated between the browsers | The people in the call. TURN relays packets it cannot open |
+
+The space code never reaches a server: it sits after the `#` in the link, and
+a browser never sends that part anywhere. Every event is also signed with its
+author's identity key, and checked by every device when it arrives, so a
+server that alters or invents an event produces one that is dropped.
+
+What a server can see, because it has to:
+
+- Which space ids exist, and how big they are. A space id is a hash of the
+  code and says nothing about it.
+- Who connects, from which address, when, and how much they send.
+- Which links are previewed, if link cards are on. Set `CATHODE_PREVIEWS=0`
+  to turn them off.
+- What is searched for, if GIF search is on.
 
 ## As an archive, for a peer to peer space
 
-Open Settings in any peer to peer space, put the address under **Archive**,
-and press Use it. Nothing else changes. Turn it off by clearing the box.
-
-## What it can see
-
-Nothing. Every event is sealed with the key made from the space code before it
-leaves the browser, and the code lives in the fragment of a link, which a
-browser never sends to a server. The archive holds a pile of ciphertext and
-cannot tell you what any of it says.
-
-## What it can do
-
-Forget, or refuse. Both leave you with a working space and no archive.
-
-It cannot lie usefully. Every event inside is signed by whoever wrote it and is
-checked on the way back in exactly like an event from a person, so an archive
-that alters one produces one that fails and is dropped. `test/archive-check.mjs`
-starts a real server, meddles with every byte it holds, and checks that not one
-altered event gets through.
-
-## Who may write
-
-Anybody may read, because what they read is ciphertext and the key is the
-space code. Writing is narrower. The room id is also the relay topic, so a
-stranger watching a relay learns it without ever holding the code, and junk
-appended under it would count against the room's cap until the trim ate the
-oldest half of the real history.
-
-So every write carries a token in the `x-cathode-write` header, derived from
-the space code the same way the key is. The first write claims the room with
-it and every write after that has to match, or it is refused with a 403. The
-disk keeps a hash of the token beside the room, in `<room>.token`, so the file
-is not the credential. Delete that file and the next writer claims the room
-afresh.
-
-Two consequences worth knowing:
-
-- A client from before the token cannot write to this server. It can still
-  read everything.
-- Claiming is first come. A stranger who raced the very first write would own
-  an empty room, and the space would simply have no archive here, which is
-  where it started. Attach the archive before sharing the link and the race
-  does not exist.
+Open Settings in any peer to peer space, put the server's address under
+**Archive**, and press Use it. The space stays peer to peer; the server keeps
+a sealed copy, so somebody who comes back after everybody was offline still
+catches up, and carries its handshakes beside the public relays.
 
 ## Put it behind TLS
 
-The server speaks plain HTTP. Run it behind a reverse proxy that terminates
-TLS (Caddy, nginx, Traefik), for two reasons:
-
-- The write token travels in a header, and plain HTTP shows it to the network.
-- The app is served over HTTPS, and a secure page may not call an insecure
-  address. Pointing a space at `http://your-server:8787` will fail in the
-  browser as mixed content. `http://localhost:8787` is the one exception
-  browsers allow, which is why local testing works without any of this.
-
-The smallest working Caddyfile:
+The server speaks plain HTTP. Caddy in the compose file puts HTTPS in front of
+it. With your own proxy, pass WebSocket upgrades through, and keep read
+timeouts above 30 seconds, because servers in a cluster hold requests open
+while they wait for new lines. The smallest working Caddyfile:
 
 ```
-archive.example.org {
+cathode.example.org {
     reverse_proxy localhost:8787
 }
 ```
@@ -153,68 +240,33 @@ archive.example.org {
 ## TURN
 
 About one connection in eight fails peer to peer, because of symmetric NAT or
-a strict firewall. TURN is the fix: a relay that carries the media. The
-compose file runs coturn beside the server. The server then gives every space
-on it a set of credentials that expire after a day. The credentials are made
-from `CATHODE_TURN_SECRET` in the way that coturn's `use-auth-secret` expects,
-so the secret itself never leaves the machine.
+a strict firewall. TURN relays the media instead. The server gives every space
+on it credentials that expire after a day, made from `CATHODE_TURN_SECRET` in
+the way coturn's `use-auth-secret` expects.
 
-By default a call tries a direct path first and uses TURN only when that
-fails. Set `CATHODE_TURN_ONLY=1` to send every call through TURN. Then nobody
-learns the address of anybody else, but the server carries every stream.
-
-Only a space on this server asks for the credentials. A peer to peer space
-that uses this machine as an archive does not ask for them.
+By default every call and screen share in a space on this server goes through
+TURN, so media never goes straight between people and nobody learns anybody
+else's address. It stays encrypted end to end all the same. Set
+`CATHODE_TURN_ONLY=0` to let a call try a direct path first. Without TURN,
+calls go straight between browsers.
 
 ## Settings
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `PORT` | `8787` | Port to listen on |
-| `CATHODE_DATA` | `./data` | Where the ciphertext goes |
+| `DATABASE_URL` | `postgres://cathode:cathode@localhost:5432/cathode` | The Postgres database |
+| `CATHODE_ORIGINS` | `*` | The pages that may use this server, comma separated. Set it, or any website can use your server and your TURN bandwidth |
 | `CATHODE_MAX_ROOM_BYTES` | `268435456` | Per space, before the oldest half is dropped |
-| `CATHODE_ORIGINS` | `*` | The pages that may use this server, comma separated, such as `https://cathode.example.vercel.app`. Set it, or any website can use your relay and your TURN bandwidth |
+| `CATHODE_PUBLIC_URL` | (empty) | This server's own address, as pages and other servers reach it |
+| `CATHODE_PEERS` | (empty) | The other servers in the cluster, comma separated |
+| `CATHODE_CLUSTER_SECRET` | (empty) | Shared by every server in the cluster, 16 characters or more |
 | `CATHODE_TURN_URLS` | (empty) | The TURN addresses to hand out, comma separated |
 | `CATHODE_TURN_SECRET` | (empty) | The secret shared with coturn. TURN is off until this and the URLs are set |
 | `CATHODE_TURN_TTL` | `86400` | How long a TURN credential lasts, in seconds |
-| `CATHODE_TURN_ONLY` | `0` | `1` sends every call through TURN |
-| `CATHODE_TENOR_KEY` | (empty) | Turns on `/gif` search for spaces using this archive. A free key comes from https://developers.google.com/tenor. Search terms reach Tenor; leave it empty and the feature stays off |
-
-## Endpoints
-
-| Route | Does |
-|---|---|
-| `GET /health` | Says what it is, and whether it has TURN |
-| `GET /ice` | Short lived TURN credentials, for a space on this server |
-| `GET /events/:room?from=N` | Lines after N, and where that leaves you |
-| `POST /events/:room` | Appends a list of sealed lines. Needs `x-cathode-write` |
-| `GET /preview?url=U` | Reads a public page's OpenGraph tags, for link cards in chat |
-| `GET /gif?q=term` | GIF search via Tenor. 404 until `CATHODE_TENOR_KEY` is set |
-| `WS /relay/:room` | The relay. Every frame goes, unread, to everybody else in the room. It carries all the traffic of a space on this server, and the handshakes of a peer to peer space that uses it as an archive |
-
-## The relay
-
-The handshakes that start a space normally ride public MQTT brokers and Nostr
-relays: other people's machines, free, and occasionally all having a bad night
-at once. An archive is a machine the space already trusts, so it carries the
-handshakes too. Any space pointed at this archive uses its relay automatically;
-the public relays stay on the roster as spares. Nothing is stored and nothing
-is readable: the frames are sealed the same way they are everywhere else, and
-the room id in the path is the topic the public relays already see.
-
-The reverse proxy in front of it has to pass WebSocket upgrades through. Caddy
-does by default; nginx needs the usual `Upgrade` and `Connection` headers on
-the `/relay/` path.
-
-An archive is one of two ways to search for a GIF, and the better one when a
-space has an archive: the key sits on this machine rather than on everybody's.
-The other way needs no archive at all. Anybody can paste their own Klipy, Tenor
-or Giphy key under Settings, GIFs, and their browser searches with it directly.
-Klipy is the quickest of the three to get a key from. The picker looks for that
-key first and falls back to the archive.
-
-The relay takes frames up to 512 KiB. A space on this server sends its chat
-here, and a batch of history is sized to stay under that limit.
-
-A room id is 32 hex characters, derived from the space code. It gives away
-nothing about the code, and the archive cannot work backwards from it.
+| `CATHODE_TURN_ONLY` | `1` | `0` lets a call try a direct path before TURN |
+| `CATHODE_PREVIEWS` | `1` | `0` turns link cards off, so this server never learns which links are shared |
+| `CATHODE_TENOR_KEY` | (empty) | Turns on GIF search. A free key comes from https://developers.google.com/tenor |
+| `CATHODE_MAX_ROOM_SOCKETS` | `200` | Connections one space may hold |
+| `CATHODE_RATE`, `CATHODE_RATE_BURST` | `30`, `120` | Requests one address may make per second, and in a burst |
+| `CATHODE_DATA` | `/data` | Where an earlier version kept its files, read once on upgrade |

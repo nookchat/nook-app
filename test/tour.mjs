@@ -11,10 +11,8 @@
  */
 
 import { chromium } from 'playwright-core'
-import { spawn } from 'node:child_process'
-import { mkdirSync, mkdtempSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { startServer } from './pg.mjs'
+import { mkdirSync } from 'node:fs'
 
 const APP_URL = process.argv[2] ?? 'http://localhost:5173/'
 const PORT = 8794
@@ -24,11 +22,7 @@ mkdirSync(OUT, { recursive: true })
 const CHROME =
   process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 
-const server = spawn(process.execPath, ['server/server.mjs'], {
-  env: { ...process.env, PORT: String(PORT), CATHODE_DATA: mkdtempSync(join(tmpdir(), 'cathode-tour-')) },
-  stdio: ['ignore', 'pipe', 'inherit'],
-})
-await new Promise((ok) => server.stdout.once('data', ok))
+const { child: server } = await startServer(PORT)
 
 const STUB = `(() => {
   const c = document.createElement('canvas'); c.width = 1600; c.height = 900

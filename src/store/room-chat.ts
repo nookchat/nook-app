@@ -12,6 +12,7 @@ import { mentionsMe } from '../chat'
 import { loadIdentity, sharedKey } from './identity'
 import { deleteEvents, getRoom, loadRoom, noteRoom, putEvents } from './db'
 import { compact, limitsForNow } from './compact'
+import { openEvents } from './verify-pool'
 import {
   cleanChannel,
   cleanAvatar,
@@ -22,7 +23,6 @@ import {
   trimToBytes,
   trimToWire,
   oneEmoji,
-  openEvent,
   packEvent,
   RoomLog,
   type ChannelInfo,
@@ -106,7 +106,16 @@ export class RoomChat {
   /** Told when a private message is opened, so the panel can draw it. */
   onDirect: (() => void) | null = null
 
-  constructor(roomId: string, secret: string, founder = '') {
+  /**
+   * Whether this device keeps the log. True for a peer to peer space, where
+   * every device is the history. False for a space on a server, where the
+   * server is, and this device holds the log in memory while the space is open
+   * and writes none of it down.
+   */
+  readonly persist: boolean
+
+  constructor(roomId: string, secret: string, founder = '', persist = true) {
+    this.persist = persist
     this.log = new RoomLog(roomId)
     this.log.founder = founder
     this.secret = secret
@@ -129,6 +138,8 @@ export class RoomChat {
    * and the guess is what used to throw away real edits.
    */
   async load(): Promise<void> {
+    // Nothing kept here to read: the server hands the history over instead.
+    if (!this.persist) return
     const note = await getRoom(this.log.room)
     if (note?.floor) this.log.floor = note.floor
     const stored = await loadRoom(this.log.room)
@@ -299,7 +310,7 @@ export class RoomChat {
   ): Promise<LogEvent> {
     const event = await makeEvent(this.log.room, this.me, this.log.nextLamport(), kind, body)
     this.log.add(event)
-    void putEvents([event])
+    if (this.persist) void putEvents([event])
     this.onLocal?.(event)
     this.onChange?.()
     return event
@@ -597,6 +608,7 @@ export class RoomChat {
 
   /** Keep the floor across a reload, or the next peer undoes the trimming. */
   private async rememberFloor(): Promise<void> {
+    if (!this.persist) return
     const note = await getRoom(this.log.room)
     if (!note) return
     await noteRoom({ ...note, floor: this.log.floor })
@@ -630,7 +642,7 @@ export class RoomChat {
     })
     if (limited) this.raiseFloor(keep)
     this.log.replace(keep)
-    await deleteEvents(drop)
+    if (this.persist) await deleteEvents(drop)
     this.onChange?.()
   }
 
@@ -727,16 +739,18 @@ export class RoomChat {
    */
   async absorb(candidates: unknown[]): Promise<LogEvent[]> {
     const fresh: LogEvent[] = []
-    for (const candidate of candidates) {
-      const event = await openEvent(candidate, this.log.room)
+    // Checked in parallel, off this thread, and added in the order given.
+    for (const event of await openEvents(candidates, this.log.room)) {
       if (!event) continue
       if (this.log.add(event)) fresh.push(event)
     }
     if (fresh.length) {
       this.pinFounder()
-      void putEvents(fresh)
+      if (this.persist) void putEvents(fresh)
       this.sinceCompaction += fresh.length
-      if (this.sinceCompaction > 200) void this.tidy()
+      // Trimming is for a device short of room to keep the history. One that
+      // keeps none has nothing to trim, and would only hide what the server has.
+      if (this.persist && this.sinceCompaction > 200) void this.tidy()
       this.onChange?.()
     }
     return fresh

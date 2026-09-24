@@ -10,10 +10,7 @@
  */
 
 import { chromium } from 'playwright-core'
-import { spawn } from 'node:child_process'
-import { mkdtempSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { startServer } from './pg.mjs'
 
 const APP_URL = process.argv[2] ?? 'http://localhost:5173/'
 const ARCHIVE_PORT = 8792
@@ -26,15 +23,7 @@ const check = (name, ok, detail = '') => {
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? `  — ${detail}` : ''}`)
 }
 
-const server = spawn(process.execPath, ['server/server.mjs'], {
-  env: {
-    ...process.env,
-    PORT: String(ARCHIVE_PORT),
-    CATHODE_DATA: mkdtempSync(join(tmpdir(), 'cathode-self-relay-')),
-  },
-  stdio: ['ignore', 'pipe', 'inherit'],
-})
-await new Promise((ok) => server.stdout.once('data', ok))
+const { child: server } = await startServer(ARCHIVE_PORT)
 
 /* Every public relay, gone. The names stop resolving, which is a fair
    portrait of the bad night this feature exists for. */

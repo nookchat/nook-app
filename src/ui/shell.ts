@@ -102,14 +102,14 @@ export function aboutCard(): HTMLElement {
       h('hr'),
       h('ul', { class: 'support-list' }, [
         h('li', {
-          text: 'Free public relays carry the first handshake only, and every message on them is encrypted with the key in your link.',
+          text: 'A space runs on a Cathode server or peer to peer. Either way, everything is encrypted with the key in your link before it leaves this browser.',
         }),
         h('li', { text: 'That key sits after the # in the link, so the webserver never receives it.' }),
         h('li', {
           text: 'Your screen goes out once per viewer, so your upload speed sets the viewer limit.',
         }),
         h('li', {
-          text: 'There is no relay for the media itself. On a strict network a connection can fail, and you are told when it does.',
+          text: 'On a server, calls and screen shares go through the server. Peer to peer, they go straight between browsers, and on a strict network a connection can fail.',
         }),
       ]),
     ]),

@@ -113,6 +113,18 @@ function wrap(event: LogEvent): Envelope {
   return { v: 1, id: event.id, from: event.author, t: event.at, type: 'ping', data: event }
 }
 
+/** One event as the line a server keeps. The same line the archive keeps. */
+export function sealEvent(key: CryptoKey, event: LogEvent): Promise<string> {
+  return seal(key, wrap(event))
+}
+
+/** A kept line back to the event it carries, unchecked, or null. */
+export async function openLine(key: CryptoKey, line: unknown): Promise<unknown> {
+  if (typeof line !== 'string') return null
+  const env = await unseal(key, line)
+  return env?.data ?? null
+}
+
 export class Archive {
   private readonly key: CryptoKey
   private readonly room: string

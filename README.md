@@ -64,14 +64,43 @@ same place.
 
 | | Peer to peer | Server |
 | --- | --- | --- |
-| Handshakes | public MQTT brokers and Nostr relays | the server's WebSocket relay |
+| Handshakes | public MQTT brokers and Nostr relays | one WebSocket to the server |
 | Chat | a data channel between every pair | the same WebSocket |
-| History | every device | every device, and the server |
-| Picture and sound | straight between browsers, STUN only | straight, or through the server's TURN relay |
-| Needs running | nothing | `server/docker-compose.yml` |
+| History | every device, in IndexedDB | Postgres on the server, and on every server in its cluster |
+| Your list of spaces, read marks | this device | the server, in a record sealed with your key |
+| Picture and sound | straight between browsers | through the server's TURN relay |
+| Survives | as long as one person who was in it comes back | as long as one server in its cluster is up |
+| Needs running | nothing | `server/docker-compose.yml`, on one machine or several |
 
 Both ways, everything is sealed with the key made from the space code before
-it leaves the browser. A server cannot read what it carries or keeps.
+it leaves the browser. A server cannot read what it carries or keeps. See
+[Encryption in server/README.md](server/README.md#encryption) for exactly what
+is sealed and what a server can still see.
+
+**Several servers, one space.** A few people can each run the Docker backend
+and join them into a cluster. Every space is then kept on all of them, they
+sync all the time, and when one goes down the page moves to another without
+anybody doing anything. See [A cluster](server/README.md#a-cluster).
+
+**A space on a server keeps nothing in the browser.** Its history is held in
+memory while it is open, read from the server each time, and never written
+to IndexedDB or local storage. Your list of spaces and how far you have read
+in each are kept on the server too, in one record per person that is sealed
+with a key made from your identity. A second device with the same identity
+(Settings, Link a device) finds all of it there.
+
+What does stay on the device, and why:
+
+| Kept on the device | Why |
+| --- | --- |
+| Your identity key | It is who you are: it signs everything you write. A server that held it could write as you |
+| The addresses of your servers | The device has to know where to ask for the rest |
+| Preferences: your name, sounds, quick reactions, GIF key, the rail order | They belong to this device, not to a space |
+
+Opening a space on a server reads its whole history and checks every
+signature, on a pool of Web Workers so the page never waits on it: about
+100 ms for 3000 messages in a fresh tab. A space opened once is held in the
+tab's memory, so going back to it is instant.
 
 A space on a server names it after an `@` in its link:
 
@@ -270,6 +299,8 @@ test/
   speed.mjs           how long opening, switching and sending take
   server-bench.mjs    how fast the server reads, writes and relays
   server-check.mjs    a space on a server, with no public relay and no WebRTC
+  cluster-check.mjs   two servers, two databases, one cluster, one stopped
+  failover-check.mjs  people carrying on through the second server when the first dies
   chat-check.mjs      typing, unread, mentions, search, threads, multi-line
   extras-check.mjs    markdown, slash commands, private messages, avatars
   polish-check.mjs    redraw cost, thread list, search filters, contrast

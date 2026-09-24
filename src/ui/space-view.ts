@@ -24,7 +24,7 @@ import { AudioMixer } from '../media/mixer'
 import { Mesh } from '../net/mesh'
 import { Voice } from '../net/voice'
 import { UplinkMeter } from '../net/uplink'
-import { deriveRoom, formatSecret, newPeerId, roomLink, type Room } from '../room'
+import { deriveRoom, formatSecret, newPeerId, roomLink, setLinkSecret, type Room } from '../room'
 import { HostPeer } from '../rtc/host-peer'
 import { ViewerPeer } from '../rtc/viewer-peer'
 import { NO_HARDWARE, probeHardwareEncoders, type HardwareProbe } from '../rtc/hardware'
@@ -46,7 +46,9 @@ import { SignalBus } from '../signal/bus'
 import type { Envelope } from '../signal/envelope'
 import { loadSettings, saveSettings, type HostSettings } from '../settings'
 import { cleanName, mentionsMe } from '../chat'
-import { forgetRoom, getRoom, noteRoom, tombstoneRoom } from '../store/db'
+import { forgetRoom, getRoom, noteRoom, tombstoneRoom, type RoomNote } from '../store/db'
+import { addServer, bookFor, type ServerBook } from '../store/server-spaces'
+import { ServerLink } from '../net/server-link'
 import { loadIdentity, saveDisplayName, shortKey, signClaim, verifyClaim } from '../store/identity'
 import { Archive, defaultArchive } from '../store/archive'
 import { buzzNudge, chirpJoin, chirpLeave, chirpMessage, isNews, speak } from './sounds'
@@ -139,6 +141,43 @@ const COMMANDS = [
   { name: 'help', note: 'List these' },
 ]
 
+/**
+ * Where a space's own note is kept: this device for peer to peer, the server
+ * for a space on one. The same four things either way.
+ */
+interface NoteStore {
+  get(room: string): Promise<RoomNote | null>
+  put(note: RoomNote): Promise<void>
+  forget(room: string): Promise<void>
+  /** Gone for everybody: keep only the proof, where that is this device's job. */
+  close(note: RoomNote, keep: LogEvent[]): Promise<void>
+}
+
+const onDevice: NoteStore = {
+  get: getRoom,
+  put: noteRoom,
+  forget: forgetRoom,
+  close: tombstoneRoom,
+}
+
+function onServer(book: ServerBook): NoteStore {
+  return {
+    get: (room) => book.get(room),
+    put: (note) => book.put(note),
+    forget: (room) => book.forget(room),
+    // The close is an event the server already keeps; the note says so.
+    close: (note) => book.put({ ...note, closed: true }),
+  }
+}
+
+/*
+ * Spaces on a server opened in this tab, held in memory, so going back to one
+ * is instant: the log is already here, and the server is asked only for what
+ * was said since. Memory only, and gone with the tab. A handful at most.
+ */
+const HELD_MAX = 8
+const held = new Map<string, { chat: RoomChat; read: Map<string, number> }>()
+
 export class SpaceView {
   private readonly root: HTMLElement
   private readonly chrome: WindowChrome | null
@@ -162,12 +201,13 @@ export class SpaceView {
    * Fixed for the life of the space, because everybody in it has to agree.
    */
   readonly server: string
-  /** Whether the server's relay was up last time anybody looked. */
-  private serverUp = false
-  /** Whether it has ever been up, so the first connection is not a return. */
-  private serverSeen = false
   /** The catch up under way, so two are never run at once. */
   private catching: Promise<void> | null = null
+  /** Where this space's note lives. */
+  private readonly notes: NoteStore
+  private readonly book: ServerBook | null
+  /** The one socket to the server, for a space on one. */
+  private link: ServerLink | null = null
   /** True when this person just made the space, so they claim it. */
   private readonly fresh: boolean
   private readonly wantedName: string
@@ -309,6 +349,8 @@ export class SpaceView {
     this.fresh = lock.fresh === true
     this.wantedName = lock.name ?? ''
     this.server = lock.server ?? ''
+    this.book = this.server ? bookFor(this.server) : null
+    this.notes = this.book ? onServer(this.book) : onDevice
     this.onLeave = onLeave
     chrome?.setActions({
       minimise: () => this.root.classList.toggle('rail-hidden'),
@@ -350,9 +392,16 @@ export class SpaceView {
      * first redraw, which is late enough that closing the tab straight away
      * left the space unopenable from the list.
      */
+    if (this.server) addServer(this.server)
     await this.remember({})
-    const note = await getRoom(this.room.id)
-    const chat = new RoomChat(this.room.id, this.secret, note?.founder ?? '')
+    const note = await this.notes.get(this.room.id)
+    /*
+     * A space on a server keeps nothing on this device: its log lives in
+     * memory, filled from the server, and is held for the tab's life so that
+     * coming back to it is instant.
+     */
+    const kept = this.server ? held.get(this.room.id) : undefined
+    const chat = kept?.chat ?? new RoomChat(this.room.id, this.secret, note?.founder ?? '', !this.server)
     chat.onChange = () => this.draw()
     chat.onDirect = () => this.draw()
     chat.onFounder = (pubkey) => void this.remember({ founder: pubkey })
@@ -377,11 +426,13 @@ export class SpaceView {
         if (!this.stopped) useServedIce(ice.iceServers, ice.relayOnly)
       })
     }
-    const bus = new SignalBus(
-      this.room,
-      this.selfId,
-      this.server ? [new WsRelayTransport(this.server, serverTag(this.server))] : undefined,
-    )
+    if (this.server) {
+      const link = new ServerLink(this.server, this.room, serverTag(this.server), kept?.read)
+      link.onEvents = (events) => void this.takeFromServer(events)
+      link.onRefused = (why) => toast(`The server would not keep that. ${why}`, 'bad', 8000)
+      this.link = link
+    }
+    const bus = new SignalBus(this.room, this.selfId, this.link ? [this.link] : undefined)
     const voice = new Voice(bus, this.selfId)
     voice.onChange = () => this.draw()
     voice.onArrival = (arrived) => (arrived ? chirpJoin() : chirpLeave())
@@ -418,6 +469,8 @@ export class SpaceView {
      * anybody deciding who is in charge of remembering.
      */
     mesh.onReady = (peerId) => {
+      // On a server nobody hands anybody history: the server has all of it.
+      if (this.server) return
       for (const raw of chat.backfill()) mesh.sendTo(peerId, raw)
       // And how far back we reach, so a peer that is short can ask for more.
       mesh.sendTo(peerId, chat.summary())
@@ -426,17 +479,6 @@ export class SpaceView {
     bus.onHealth = () => {
       this.status()
       this.watchRelays()
-      /*
-       * Back on the server after being off it. Whatever was said in between
-       * went past this device, and the server kept it, so ask. The first time
-       * is the catch up on the way in, which is already under way.
-       */
-      if (this.server) {
-        const up = bus.connected
-        if (up && !this.serverUp && this.serverSeen) void this.catchUp()
-        if (up) this.serverSeen = true
-        this.serverUp = up
-      }
     }
     bus.start()
     mesh.start()
@@ -444,6 +486,11 @@ export class SpaceView {
     this.mesh = mesh
 
     chat.onLocal = (event) => {
+      // On a server, to the server, which keeps it and hands it to everybody.
+      if (this.link) {
+        void this.link.put([event])
+        return
+      }
       for (const raw of chat.encode([event])) mesh.broadcast(raw)
       // And to the archive, if this space has one. Never waited on.
       this.archive?.push([event])
@@ -467,7 +514,13 @@ export class SpaceView {
           ? note.archive
           : defaultArchive()
       this.archive = archive
-      if (wanted) {
+      /*
+       * On a server the link does all of the keeping. The archive is kept
+       * only for what else the server answers: link cards and GIF search.
+       */
+      if (this.server) {
+        archive.use(this.server)
+      } else if (wanted) {
         // A cursor counts lines in one archive, so the server's is kept apart.
         archive.use(wanted, this.server ? note?.serverAt ?? 0 : note?.archiveAt ?? 0)
         void this.catchUp()
@@ -479,6 +532,21 @@ export class SpaceView {
          */
         if (!this.server) this.bus?.addRelay(new WsRelayTransport(wanted))
       }
+    }
+
+    /*
+     * On a server, the history first. Everything below reads the log (who
+     * runs the place, whether your name is already said) and would write
+     * things twice if it ran against an empty one. Not for ever, though: a
+     * server that is slow to answer still gets a space you can type in.
+     */
+    if (this.link) {
+      await Promise.race([this.link.loaded, new Promise((r) => window.setTimeout(r, 6000))])
+      if (this.stopped) return
+      // By now the rest of the cluster is known, so the link in the address
+      // bar names it too, and a link copied from there survives the first
+      // server being down.
+      setLinkSecret(this.secret, this.locked, this.server)
     }
 
     // Whoever made the space claims it, once, and becomes its first admin.
@@ -592,6 +660,12 @@ export class SpaceView {
     this.archive?.dispose()
     // The next space starts from the ICE servers the page ships with.
     if (this.server) useServedIce()
+    if (this.link && this.chat && this.room && !this.forgotten) {
+      held.delete(this.room.id)
+      held.set(this.room.id, { chat: this.chat, read: this.link.read })
+      while (held.size > HELD_MAX) held.delete(held.keys().next().value as string)
+    }
+    void this.book?.flush()
     document.title = 'Cathode'
   }
 
@@ -738,6 +812,23 @@ export class SpaceView {
     }
   }
 
+  /** What the server says was written, by anybody, opened and ready to check. */
+  private async takeFromServer(events: unknown[]): Promise<void> {
+    const fresh = (await this.chat?.absorb(events)) ?? []
+    if (fresh.length) this.noticeFresh(fresh)
+  }
+
+  /** Something arrived that was not here before: say so, the way a chat app does. */
+  private noticeFresh(fresh: LogEvent[]): void {
+    // Anything private that just arrived, opened before it is drawn.
+    if (fresh.some((e) => e.kind === 'dm')) void this.chat?.readDirect()
+    // Somebody else said something, and said it just now rather than last week.
+    if (fresh.some((e) => e.kind === 'said' && e.author !== this.chat?.me && isNews(e.at))) {
+      chirpMessage()
+    }
+    this.noticeMentions(fresh)
+  }
+
   private async onMeshData(from: string, raw: string): Promise<void> {
     // Somebody is writing. Not an event: it is true for four seconds and then
     // it is not, and a log is for things that stay true.
@@ -747,15 +838,11 @@ export class SpaceView {
     if (this.takeSpoken(from, raw)) return
     if (this.takeSync(from, raw)) return
 
+    // On a server, events come from the server and nowhere else.
+    if (this.server) return
     const fresh = (await this.chat?.ingest(raw)) ?? []
     if (fresh.length === 0) return
-    // Anything private that just arrived, opened before it is drawn.
-    if (fresh.some((e) => e.kind === 'dm')) void this.chat?.readDirect()
-    // Somebody else said something, and said it just now rather than last week.
-    if (fresh.some((e) => e.kind === 'said' && e.author !== this.chat?.me && isNews(e.at))) {
-      chirpMessage()
-    }
-    this.noticeMentions(fresh)
+    this.noticeFresh(fresh)
     // Pass on what was new, so a line reaches people we are not linked to.
     for (const wire of this.chat?.encode(fresh) ?? []) this.mesh?.forward(from, wire)
     /*
@@ -1841,8 +1928,8 @@ export class SpaceView {
     }>,
   ): Promise<void> {
     if (!this.room || this.forgotten) return
-    const existing = await getRoom(this.room.id)
-    await noteRoom({
+    const existing = await this.notes.get(this.room.id)
+    await this.notes.put({
       room: this.room.id,
       secret: this.secret,
       lastSeen: Date.now(),
@@ -1898,7 +1985,7 @@ export class SpaceView {
       what,
       `${people} here`,
       this.server
-        ? `${relays > 0 ? 'on' : 'cannot reach'} ${serverTag(this.server)}`
+        ? `${relays > 0 ? 'on' : 'cannot reach'} ${serverTag(this.link?.serving ?? this.server)}`
         : relays === 0
           ? 'no relays'
           : `${relays} relay${relays === 1 ? '' : 's'}`,
@@ -1931,7 +2018,7 @@ export class SpaceView {
       this.relayWarned = true
       toast(
         this.server
-          ? `Cathode cannot reach ${serverTag(this.server)}, so nobody can be found and nothing will sync until it answers. The server may be down, or this network may block it.`
+          ? `Cathode cannot reach ${serverTag(this.server)} or any server in its cluster, so nothing will sync until one answers. They may be down, or this network may block them.`
           : 'Cathode cannot reach a signal relay, so nobody new can be found and nothing will sync. A VPN or a firewall on this network is the usual cause.',
         'bad',
         12_000,
@@ -2300,11 +2387,13 @@ export class SpaceView {
   private async leaveSpace(): Promise<void> {
     const name = this.chat?.spaceName() || 'this space'
     const ok = window.confirm(
-      `Leave ${name}? Its history goes from this device. Everybody else keeps theirs, and the link still works if you want back in.`,
+      this.server
+        ? `Leave ${name}? It comes off your list on every device. Its history stays on ${serverTag(this.server)}, and the link still works if you want back in.`
+        : `Leave ${name}? Its history goes from this device. Everybody else keeps theirs, and the link still works if you want back in.`,
     )
     if (!ok) return
     await this.forget(false)
-    toast('Left, and forgotten on this device.', 'info')
+    toast(this.server ? 'Left. It is off your list.' : 'Left, and forgotten on this device.', 'info')
   }
 
   /**
@@ -2352,15 +2441,17 @@ export class SpaceView {
     if (this.forgotten) return
     this.forgotten = true
     const room = this.room
-    const note = room ? await getRoom(room.id) : null
+    const note = room ? await this.notes.get(room.id) : null
     // The close, and the roles that decide whether it counts. Nothing else.
     const keep = (this.chat?.log.all() ?? []).filter(
       (e) => e.kind === 'close' || e.kind === 'role',
     )
+    if (room) held.delete(room.id)
     this.destroy()
     if (room) {
-      if (closed && note) await tombstoneRoom(note, keep)
-      else await forgetRoom(room.id)
+      if (closed && note) await this.notes.close(note, keep)
+      else await this.notes.forget(room.id)
+      await this.book?.flush()
     }
     this.onLeave()
   }
@@ -3337,8 +3428,10 @@ export class SpaceView {
       'Clear the history in this space for everybody?\n\n' +
         'Messages, polls and pins go, on every device that is in the space or ' +
         'joins it later. Names, channels and who runs the place stay.\n\n' +
-        'Anybody who has already saved a copy of the history keeps it. There is ' +
-        'no server to take it back from them.',
+        (this.server
+          ? 'The server stops handing the old history to anybody. A copy somebody already saved stays theirs.'
+          : 'Anybody who has already saved a copy of the history keeps it. There is ' +
+            'no server to take it back from them.'),
     )
     if (!ok) return
     await this.publish((c) => c.reset())

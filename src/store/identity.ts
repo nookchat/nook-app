@@ -218,3 +218,17 @@ export function verify(idHex: string, sigHex: string, pubkeyHex: string): boolea
 export function shortKey(pubkey: string): string {
   return `#${pubkey.slice(0, 6)}`
 }
+
+/**
+ * Bytes only this identity can work out, one set per purpose.
+ *
+ * The private key hashed with a label, so what comes out says nothing about
+ * the key and nothing about any other label's bytes. A server keeps your own
+ * record under one of these, sealed with another, and writable with a third;
+ * it learns none of them from the others, and none of them from who you are.
+ */
+export async function personalBytes(label: string): Promise<Uint8Array> {
+  loadIdentity()
+  const material = new Uint8Array([...(priv as Uint8Array), ...new TextEncoder().encode(label)])
+  return new Uint8Array(await crypto.subtle.digest('SHA-256', material as BufferSource))
+}

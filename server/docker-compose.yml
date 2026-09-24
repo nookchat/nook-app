@@ -3,18 +3,26 @@
 #   cp server/.env.example server/.env    then fill it in
 #   docker compose -f server/docker-compose.yml up -d
 #
-# Three containers:
+# Four containers:
 #
-#   cathode   history, the WebSocket relay, link previews, TURN credentials
-#   turn      coturn, which carries the picture and the sound when peer to
-#             peer cannot get through
+#   cathode   the server: spaces, the WebSocket per space, the API, TURN credentials
+#   db        Postgres, where the spaces are kept (as ciphertext)
+#   turn      coturn, which carries calls and screen shares
 #   caddy     HTTPS for cathode, with a certificate from Let's Encrypt
 #
 # The page itself stays where it is (Vercel, or any static host). Build it with
 # VITE_CATHODE_SERVER=https://<CATHODE_DOMAIN> and "Server" is offered, and
 # preselected, when somebody makes a space.
 #
-# Only the server, for a try on this machine:
+# A cluster: several people each run this on their own machine, with the same
+# CATHODE_CLUSTER_SECRET and each other's addresses in CATHODE_PEERS. Every
+# space is then kept on all of them. See server/README.md.
+#
+# Update to the newest published image:
+#
+#   docker compose -f server/docker-compose.yml pull && docker compose -f server/docker-compose.yml up -d
+#
+# Only the server and its database, for a try on this machine:
 #
 #   docker compose -f server/docker-compose.yml up -d cathode
 #
@@ -24,17 +32,22 @@ name: cathode
 
 services:
   cathode:
+    image: ${CATHODE_IMAGE:-ghcr.io/nebbsie/cathode-server:latest}
     build: .
-    image: cathode-server
     container_name: cathode
     restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
     ports:
       # Plain HTTP, so only this machine by default: the world comes in through
       # Caddy. Set CATHODE_BIND=0.0.0.0 to put your own proxy in front instead.
       - '${CATHODE_BIND:-127.0.0.1}:8787:8787'
     volumes:
+      # Only read once, if you are upgrading from the file store.
       - cathode-data:/data
     environment:
+      DATABASE_URL: postgres://cathode:${POSTGRES_PASSWORD:-cathode}@db:5432/cathode
       # How much ciphertext one space may keep before the oldest is dropped.
       CATHODE_MAX_ROOM_BYTES: ${CATHODE_MAX_ROOM_BYTES:-268435456}
       # The pages that may use this server. * is any page.
@@ -42,9 +55,31 @@ services:
       # TURN, handed to every space on this server. Empty turns it off.
       CATHODE_TURN_URLS: ${CATHODE_TURN_URLS:-}
       CATHODE_TURN_SECRET: ${CATHODE_TURN_SECRET:-}
-      CATHODE_TURN_ONLY: ${CATHODE_TURN_ONLY:-0}
+      CATHODE_TURN_ONLY: ${CATHODE_TURN_ONLY:-1}
+      # The cluster. Leave CATHODE_PEERS empty to run on your own.
+      CATHODE_PUBLIC_URL: ${CATHODE_PUBLIC_URL:-}
+      CATHODE_PEERS: ${CATHODE_PEERS:-}
+      CATHODE_CLUSTER_SECRET: ${CATHODE_CLUSTER_SECRET:-}
+      # Link cards: 0 stops this server learning which links people preview.
+      CATHODE_PREVIEWS: ${CATHODE_PREVIEWS:-1}
       # Optional GIF search for /gif. See server/README.md.
       CATHODE_TENOR_KEY: ${CATHODE_TENOR_KEY:-}
+
+  db:
+    image: postgres:17-alpine
+    container_name: cathode-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: cathode
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cathode}
+      POSTGRES_DB: cathode
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U cathode -d cathode']
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   turn:
     image: coturn/coturn:4.6
@@ -96,4 +131,5 @@ services:
 
 volumes:
   cathode-data:
+  db-data:
   caddy-data:

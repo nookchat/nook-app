@@ -11,7 +11,8 @@
  * cannot learn. A new space goes on the end.
  */
 
-import { listRooms, ROOMS_CHANGED, type RoomNote } from '../store/db'
+import { ROOMS_CHANGED, type RoomNote } from '../store/db'
+import { listSpaces } from '../store/spaces'
 import { serverTag } from '../backend'
 import { h } from './dom'
 import { icon, logo } from './icons'
@@ -44,7 +45,7 @@ function saveOrder(order: string[]): void {
 
 /** The spaces worth a button, in the rail's own order. */
 export async function railRooms(): Promise<RoomNote[]> {
-  const rooms = hideShadows((await listRooms()).filter((r) => !r.closed))
+  const rooms = hideShadows((await listSpaces()).filter((r) => !r.closed))
   const known = loadOrder()
   const byRoom = new Map(rooms.map((r) => [r.room, r]))
   // Newest first from the store, so the ones not in the order yet go on the

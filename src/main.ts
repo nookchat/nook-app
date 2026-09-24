@@ -12,7 +12,7 @@ import { createWindow, type WindowChrome } from './ui/shell'
 import { spaceList } from './ui/space-list'
 import { mountSpaceRail } from './ui/space-rail'
 import { SpaceView } from './ui/space-view'
-import { findBySecret } from './store/db'
+import { findSpace } from './store/spaces'
 import { toast } from './ui/toast'
 import { checkSupport } from './diagnostics'
 
@@ -50,7 +50,7 @@ function freshWindow(title: string, space: string | null): WindowChrome {
 
 async function showList(making = false): Promise<void> {
   clearLink()
-  const chrome = freshWindow('Cathode', null)
+  const chrome = freshWindow('Cathode: chat, voice and screen sharing', null)
   chrome.setStatus(['Pick a space, or make one'])
   chrome.setActions({})
   chrome.body.append(
@@ -110,7 +110,7 @@ async function enter(
   name = '',
   server?: string,
 ): Promise<void> {
-  const known = fresh ? null : await findBySecret(secret)
+  const known = fresh ? null : await findSpace(secret, server)
   const where = server ?? known?.server ?? ''
   const needsPassword = locked ?? known?.locked === true
   let pass = password
