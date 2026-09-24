@@ -14,6 +14,7 @@ import { openEvents } from './verify-pool'
 import {
   cleanChannel,
   cleanAvatar,
+  cleanFiles,
   DEFAULT_CHANNEL,
   makeEvent,
   MAX_DM_BYTES,
@@ -26,6 +27,7 @@ import {
   type LogEvent,
   type ThreadInfo,
   type Message,
+  type Attachment,
 } from './log'
 
 /** Base64, for the two byte strings a sealed message is made of. */
@@ -79,6 +81,8 @@ export class RoomChat {
    * every redraw, which would mean asking the browser to decrypt on a frame.
    */
   private readonly opened = new Map<string, string>()
+  /** The files a private message carries, opened with its text. */
+  private readonly openedFiles = new Map<string, Attachment[]>()
   /** Told when a private message is opened, so the panel can draw it. */
   onDirect: (() => void) | null = null
 
@@ -261,6 +265,7 @@ export class RoomChat {
     replyTo?: string | null,
     inThread = false,
     emote = false,
+    files: Attachment[] = [],
   ): Promise<LogEvent> {
     const body: Record<string, unknown> = {
       // The composer stops a person here first and says so. This is the
@@ -271,6 +276,8 @@ export class RoomChat {
     if (replyTo) body.replyTo = replyTo
     if (replyTo && inThread) body.thread = true
     if (emote) body.emote = true
+    const attached = cleanFiles(files)
+    if (attached.length) body.files = attached
     return this.write('said', body)
   }
 
@@ -392,18 +399,35 @@ export class RoomChat {
    * without a server: delivery rides on the log everybody already shares, and
    * the price is that the shape of the traffic is not hidden.
    */
-  async sayDirect(to: string, text: string): Promise<LogEvent> {
+  async sayDirect(to: string, text: string, files: Attachment[] = []): Promise<LogEvent> {
     const key = await sharedKey(to)
-    const iv = crypto.getRandomValues(new Uint8Array(12))
-    const sealed = new Uint8Array(
-      await crypto.subtle.encrypt(
-        { name: 'AES-GCM', iv: iv as BufferSource },
-        key,
-        new TextEncoder().encode(trimToBytes(text, MAX_DM_BYTES)) as BufferSource,
-      ),
-    )
-    const event = await this.write('dm', { to, iv: b64(iv), box: b64(sealed) })
+    const seal = async (plain: string): Promise<{ iv: string; box: string }> => {
+      const iv = crypto.getRandomValues(new Uint8Array(12))
+      const box = new Uint8Array(
+        await crypto.subtle.encrypt(
+          { name: 'AES-GCM', iv: iv as BufferSource },
+          key,
+          new TextEncoder().encode(plain) as BufferSource,
+        ),
+      )
+      return { iv: b64(iv), box: b64(box) }
+    }
+    const words = await seal(trimToBytes(text, MAX_DM_BYTES))
+    const body: Record<string, unknown> = { to, iv: words.iv, box: words.box }
+    /*
+     * Files in a box of their own, beside the words, so a device that only
+     * knows about words still opens the words. Their keys are in here, so
+     * only the two of you can fetch anything that makes sense.
+     */
+    const attached = cleanFiles(files)
+    if (attached.length) {
+      const sealed = await seal(JSON.stringify(attached))
+      body.fiv = sealed.iv
+      body.fbox = sealed.box
+    }
+    const event = await this.write('dm', body)
     this.opened.set(event.id, trimToBytes(text, MAX_DM_BYTES))
+    if (attached.length) this.openedFiles.set(event.id, attached)
     this.onDirect?.()
     return event
   }
@@ -424,6 +448,14 @@ export class RoomChat {
           unb64(String(e.body.box ?? '')) as BufferSource,
         )
         this.opened.set(e.id, new TextDecoder().decode(plain))
+        if (typeof e.body.fbox === 'string') {
+          const files = await crypto.subtle.decrypt(
+            { name: 'AES-GCM', iv: unb64(String(e.body.fiv ?? '')) as BufferSource },
+            key,
+            unb64(e.body.fbox) as BufferSource,
+          )
+          this.openedFiles.set(e.id, cleanFiles(JSON.parse(new TextDecoder().decode(files))))
+        }
         fresh = true
       } catch {
         // Not for us, or not what it claims to be. Either way it is not shown.
@@ -465,7 +497,8 @@ export class RoomChat {
       if (them !== other) continue
       if (!mine && to !== this.me) continue
       const text = this.opened.get(e.id)
-      if (!text) continue
+      const files = this.openedFiles.get(e.id) ?? []
+      if (!text && files.length === 0) continue
       out.push({
         id: e.id,
         author: e.author,
@@ -473,8 +506,9 @@ export class RoomChat {
         channel: '',
         at: e.at,
         lamport: e.lamport,
-        text,
+        text: text ?? '',
         replyTo: null,
+        files,
         edited: false,
         retracted: false,
         reactions: new Map(),

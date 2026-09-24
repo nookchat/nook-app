@@ -11,22 +11,28 @@ import { ANY_ORIGIN, RATE_BURST, RATE_PER_S, originAllowed } from './config.mjs'
 /** The most one request may carry. */
 export const MAX_BODY = 4 * 1024 * 1024
 
-export function reply(res, code, body) {
-  const text = body === undefined || body === '' ? '' : JSON.stringify(body)
-  const origin = res.req?.headers.origin
-  res.writeHead(code, {
-    'content-type': 'application/json; charset=utf-8',
-    'content-length': Buffer.byteLength(text),
-    /*
-     * By default any page may talk to it, because what decides who may read a
-     * space is the key, not the origin. CATHODE_ORIGINS narrows it to the pages
-     * you serve, which decides whose bandwidth this is.
-     */
+/*
+ * By default any page may talk to it, because what decides who may read a
+ * space is the key, not the origin. CATHODE_ORIGINS narrows it to the pages
+ * you serve, which decides whose bandwidth this is.
+ */
+export function corsHeaders(req) {
+  const origin = req?.headers.origin
+  return {
     'access-control-allow-origin': ANY_ORIGIN ? '*' : originAllowed(origin) ? origin : 'null',
     vary: 'origin',
     'access-control-allow-headers': 'content-type,x-cathode-write,authorization',
     'access-control-allow-methods': 'GET,POST,PUT,OPTIONS',
     'access-control-max-age': '86400',
+  }
+}
+
+export function reply(res, code, body) {
+  const text = body === undefined || body === '' ? '' : JSON.stringify(body)
+  res.writeHead(code, {
+    'content-type': 'application/json; charset=utf-8',
+    'content-length': Buffer.byteLength(text),
+    ...corsHeaders(res.req),
     'cache-control': 'no-store',
     'x-content-type-options': 'nosniff',
   })

@@ -14,7 +14,7 @@ import { ChatPanel, avatarOf } from './chat-panel'
 import { h } from './dom'
 import { icon } from './icons'
 import { spaces } from '../space/registry'
-import type { SpaceRuntime } from '../space/runtime'
+import { filesFor, type SpaceRuntime } from '../space/runtime'
 import { ROOMS_CHANGED } from '../store/notes'
 import type { WindowChrome } from './shell'
 import { homeFace, switcherButton } from './space-switcher'
@@ -176,7 +176,7 @@ export class HomeView {
     panel.onDirect = (key) => void this.show(key ? { room: ref.room, key } : null)
     panel.actions = {
       say: () => undefined,
-      sayDirect: (to, text) => void space.chat.sayDirect(to, text),
+      sayDirect: (to, text, files) => void space.chat.sayDirect(to, text, files),
       edit: (id, text) => void space.chat.edit(id, text),
       react: (id, emoji, on) => void space.chat.react(id, emoji, on),
       retract: (id) => void space.chat.retract(id),
@@ -185,6 +185,7 @@ export class HomeView {
       vote: () => undefined,
     }
     panel.setEnabled(true)
+    panel.setFiles(filesFor(space))
     this.panel = panel
     const back = h(
       'button',

@@ -40,6 +40,10 @@ with voice does it.
 - **Voice**: click a voice channel to join it. The voice bar has the
   microphone, Share screen, and Leave. Somebody who is sharing has a LIVE badge
   in the voice channel, and a click on it watches them.
+- **Files**: the clip in the box, a file dropped on the conversation, or one
+  pasted in. Each is encrypted on your device with a key of its own before it
+  goes up. Pictures show in the message and open full screen; videos show
+  their first frame and play in place; anything else is a card with Save.
 - **Watching** is a choice. A share is offered in the strip above the
   conversation, and nothing is on your screen until you pick it. Pick two, and
   the stage splits. Close, or `Esc`, takes them all off.
@@ -52,6 +56,7 @@ a direct message or a mention in any of them reaches you wherever you are.
 | What | Where |
 | --- | --- |
 | Messages, channels, roles, reactions | Postgres on the server, and on every server of its cluster |
+| Files | On the server's disk, sealed, and on every server of its cluster. The key is in the message |
 | Your list of spaces and read marks | The server, in one record per person, sealed with a key made from your identity |
 | Who is here | The server holds it in memory, and says when it changes |
 | Picture and sound | Through the server's TURN relay, encrypted with DTLS-SRTP |
@@ -124,9 +129,9 @@ the right. No column is spent on a list of spaces.
 
 - **Floating panes.** The canvas is near black, and the channels, the
   conversation, and the members are separate rounded panes on it.
-- **The beam.** The one accent is a cyan that runs into a periwinkle, the
-  colour of a cathode ray tube that lights up. It is on what you press most,
-  on the channel you are in, and on the space you are in.
+- **The beam.** The one accent is a flat cyan, the colour of a cathode ray
+  tube that lights up. It is on what you press most, on the channel you are
+  in, and on the space you are in. There are no gradients.
 - **Live is red.** A person who is sharing, and the strip of shares above the
   conversation, use the same red.
 
@@ -161,7 +166,7 @@ on it. A channel draws its newest few screens, and a scroll up draws more.
 | A signal between two sockets | 0.1 ms |
 
 Nothing polls. The page says who it is when that changes, the server says when
-somebody arrives or goes, and the only timer is the server's 30 second ping.
+somebody arrives or goes, and the only timer is the server's 15 second ping.
 
 ## Development
 
@@ -185,6 +190,7 @@ src/
     connection.ts     one WebSocket per server, carrying every space on it
     cluster.ts        the servers of a cluster, and moving to the next
     server-api.ts     sealing a line, link cards, GIF search, health
+    files.ts          files: sealed with a key each, uploaded, fetched and opened
     mesh.ts           who is here, from what the server passes on
     voice.ts          voice channels, mic.ts denoise.ts talking.ts around them
     uplink.ts         how much upload Cathode may use, guessed then measured
@@ -206,6 +212,7 @@ src/
     space-view.ts     a space: channels, voice, sharing, search, people
     space-list.ts     the home page: your spaces, making and joining one
     chat-panel.ts     the conversation, drawn as nodes and never as HTML
+    attachments.ts    files in a message, the picture viewer, and the upload tray
     settings-view.ts  profile, identity, servers, this space, preferences
     space-switcher.ts going from one space to another, behind the space name
     video-surface.ts  fit, fill, and one to one with zoom and pan
@@ -220,6 +227,7 @@ test/
   server-check.mjs    a space on a server, and nothing kept in the browser
   tamper-check.mjs    what the server cannot read, and forged lines refused
   own-server-check.mjs  a page with no server: adding yours, joining from an invite
+  files-check.mjs     pictures, a video and a file: sent, sealed, copied, opened
   cluster-check.mjs   two servers, two databases, one cluster
   failover-check.mjs  people carrying on when their server dies
   chat-check.mjs      typing, unread, mentions, search, threads

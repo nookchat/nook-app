@@ -104,7 +104,7 @@ try {
 
   const standing = await alice
     .waitForFunction(
-      (s) => document.querySelector('.status-bar')?.textContent?.includes(`on ${s}`),
+      (s) => document.querySelector('.status-bar')?.title === `Connected to ${s}`,
       SERVER,
       { timeout: 10_000 },
     )

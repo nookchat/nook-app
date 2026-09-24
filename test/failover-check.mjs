@@ -65,7 +65,11 @@ async function say(page, text) {
   await page.keyboard.press('Enter')
 }
 
-const status = (page) => page.evaluate(() => document.querySelector('.status-bar')?.textContent ?? '')
+const status = (page) =>
+  page.evaluate(() => {
+    const bar = document.querySelector('.status-bar')
+    return `${bar?.textContent ?? ''} | ${bar?.title ?? ''}`
+  })
 
 try {
   const alice = await person('Alice')

@@ -119,11 +119,15 @@ checked by every device.
 
 ## Backups
 
-Everything is in Postgres. Back it up like any Postgres database:
+Messages are in Postgres, and files are in the `cathode-data` volume. Back up
+both:
 
 ```
 docker exec cathode-db pg_dump -U cathode cathode > cathode-backup.sql
+docker run --rm -v cathode_cathode-data:/data -v "$PWD":/out alpine tar czf /out/cathode-files.tgz -C /data files
 ```
+
+Everything in both is encrypted, so a backup is safe to keep anywhere.
 
 In a cluster, every other server is a live copy as well.
 

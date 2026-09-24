@@ -104,6 +104,29 @@ export const openapi = {
         responses: { 101: { description: 'Switching protocols' } },
       },
     },
+    '/api/v1/spaces/{room}/files': {
+      post: {
+        summary: 'Keep a sealed file. The body is the file, encrypted on the device with a key of its own',
+        parameters: [room, write],
+        requestBody: { required: true, content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } } },
+        responses: {
+          200: { description: 'Kept. `id` is the SHA-256 of the body, and names it from now on.' },
+          413: { description: 'Bigger than CATHODE_MAX_FILE_BYTES', content: { 'application/json': { schema: error } } },
+          507: { description: 'The space has used CATHODE_MAX_ROOM_FILE_BYTES', content: { 'application/json': { schema: error } } },
+          ...errors,
+        },
+      },
+    },
+    '/api/v1/spaces/{room}/files/{file}': {
+      get: {
+        summary: 'A sealed file, fetched from another server of the cluster first if this one has not got it yet',
+        parameters: [room, { name: 'file', in: 'path', required: true, schema: { type: 'string', pattern: '^[0-9a-f]{64}$' } }],
+        responses: {
+          200: { description: 'The sealed bytes', content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } } },
+          404: { description: 'No such file', content: { 'application/json': { schema: error } } },
+        },
+      },
+    },
     '/api/v1/people/{id}': {
       get: { summary: "A person's sealed record of their spaces", parameters: [person], responses: { 200: { description: 'OK' }, ...errors } },
       put: {
@@ -146,6 +169,9 @@ export const openapi = {
     },
     '/api/v1/cluster/people': {
       get: { summary: 'Between servers: the sealed person records', security: cluster, responses: { 200: { description: 'OK' } } },
+    },
+    '/api/v1/cluster/files': {
+      get: { summary: 'Between servers: which files are kept, in the order they came', security: cluster, responses: { 200: { description: 'OK' } } },
     },
   },
 }

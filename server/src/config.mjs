@@ -5,7 +5,7 @@
  * a filled in set.
  */
 
-import { resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 
 const env = process.env
 
@@ -22,6 +22,15 @@ export const DATABASE_URL = env.DATABASE_URL ?? 'postgres://cathode:cathode@loca
 
 /** Where the old file store lived. Read once, into the database, if anything is there. */
 export const DATA = resolve(env.CATHODE_DATA ?? './data')
+
+/** Where uploaded files are kept, as ciphertext, one file on disk each. */
+export const FILES = resolve(env.CATHODE_FILES ?? join(DATA, 'files'))
+
+/** The largest one file may be, in bytes, after it is sealed. */
+export const MAX_FILE_BYTES = Number(env.CATHODE_MAX_FILE_BYTES ?? 100 * 1024 * 1024)
+
+/** How much in files one space may keep. Past this an upload is refused. */
+export const MAX_ROOM_FILE_BYTES = Number(env.CATHODE_MAX_ROOM_FILE_BYTES ?? 5 * 1024 * 1024 * 1024)
 
 /** How much ciphertext one space may keep. Past this the oldest half goes. */
 export const MAX_ROOM_BYTES = Number(env.CATHODE_MAX_ROOM_BYTES ?? 256 * 1024 * 1024)
@@ -73,4 +82,4 @@ export const MAX_ROOM_SOCKETS = Number(env.CATHODE_MAX_ROOM_SOCKETS ?? 200)
 export const RATE_PER_S = Number(env.CATHODE_RATE ?? 30)
 export const RATE_BURST = Number(env.CATHODE_RATE_BURST ?? 120)
 
-export const VERSION = '1.2.0'
+export const VERSION = '1.3.0'

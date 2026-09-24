@@ -54,6 +54,12 @@ export type IconName =
   | 'enter'
   | 'user-plus'
   | 'leave'
+  | 'paperclip'
+  | 'download'
+  | 'play'
+  | 'file'
+  | 'music'
+  | 'chevron-right'
 
 const PATHS: Record<IconName, string> = {
   copy: 'M9 9.5A1.5 1.5 0 0 1 10.5 8h8A1.5 1.5 0 0 1 20 9.5v8a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 9 17.5zM5.5 16A1.5 1.5 0 0 1 4 14.5v-8A1.5 1.5 0 0 1 5.5 5h8A1.5 1.5 0 0 1 15 6.5',
@@ -111,10 +117,20 @@ const PATHS: Record<IconName, string> = {
   'user-plus': 'M10 11.5a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4zM4 19.5c0-3 2.7-4.8 6-4.8s6 1.8 6 4.8M18.5 8v6M15.5 11h6',
   // Out through a door: the frame, and an arrow leaving it.
   leave: 'M14 4.5H6.5A1.5 1.5 0 0 0 5 6v12a1.5 1.5 0 0 0 1.5 1.5H14M10 12h10M16.5 8.5 20 12l-3.5 3.5',
+  // A clip bent back on itself, holding a page.
+  paperclip: 'M20 11.5 12.2 19.3a4.8 4.8 0 0 1-6.8-6.8l8.3-8.3a3.2 3.2 0 0 1 4.5 4.5l-8.3 8.3a1.6 1.6 0 0 1-2.3-2.3l7.6-7.6',
+  // Into the tray: an arrow down onto a line.
+  download: 'M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14',
+  play: 'M8 5.2v13.6a.8.8 0 0 0 1.2.7l10.6-6.8a.8.8 0 0 0 0-1.4L9.2 4.5A.8.8 0 0 0 8 5.2z',
+  // A page with its corner turned down.
+  file: 'M13.5 3.5H7A1.5 1.5 0 0 0 5.5 5v14A1.5 1.5 0 0 0 7 20.5h10a1.5 1.5 0 0 0 1.5-1.5V8.5zM13.5 3.5v5h5',
+  // Two notes on a beam.
+  music: 'M9 18V6l10-2v12M9 18a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0zM19 16a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z',
+  'chevron-right': 'M9.5 6 15.5 12l-6 6',
 }
 
 /** Icons drawn as solid shapes rather than strokes. */
-const FILLED = new Set<IconName>(['qr', 'stop', 'crown'])
+const FILLED = new Set<IconName>(['qr', 'stop', 'crown', 'play'])
 
 export function icon(name: IconName, size = 18): SVGSVGElement {
   const ns = 'http://www.w3.org/2000/svg'

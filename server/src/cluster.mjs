@@ -6,6 +6,7 @@
  *   rooms    which spaces exist, and the hash of each one's write token
  *   lines    every sealed line, after the last one it read from that server
  *   people   every sealed record of whose spaces are whose
+ *   files    every sealed file, fetched from whichever server has it
  *
  * Lines are pulled by long polling: a request waits on the other server until
  * something new arrives, so a line written on one server reaches the rest in
@@ -28,6 +29,7 @@
 import { timingSafeEqual } from 'node:crypto'
 import { CLUSTER_SECRET, CLUSTERED, PEERS, PUBLIC_URL } from './config.mjs'
 import { pool } from './db.mjs'
+import { pullFiles } from './files.mjs'
 import { append, kept, takeClaim, takePerson } from './store.mjs'
 
 /** Lines one pull may take. */
@@ -133,7 +135,10 @@ async function ask(peer, path, signal) {
 
 async function cursor(peer) {
   await pool.query('insert into peers (peer) values ($1) on conflict do nothing', [peer])
-  const { rows } = await pool.query('select lines_after, rooms_after, people_after from peers where peer = $1', [peer])
+  const { rows } = await pool.query(
+    'select lines_after, rooms_after, people_after, files_after from peers where peer = $1',
+    [peer],
+  )
   return rows[0]
 }
 
@@ -219,6 +224,8 @@ async function followSide(peer) {
       const at = await cursor(peer)
       await pullRooms(peer, at)
       await pullPeople(peer, at)
+      // After the rooms, so a file never arrives for a space this server has not heard of.
+      at.files_after = await pullFiles(peer, at.files_after, (after) => remember(peer, 'files_after', after))
     } catch {
       // The lines loop says whether the peer is up; this just tries again.
     }

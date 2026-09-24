@@ -10,9 +10,8 @@
 #   turn      coturn, which carries calls and screen shares
 #   caddy     HTTPS for cathode, with a certificate from Let's Encrypt
 #
-# The page itself stays where it is (Vercel, or any static host). Build it with
-# VITE_CATHODE_SERVER=https://<CATHODE_DOMAIN> and "Server" is offered, and
-# preselected, when somebody makes a space.
+# The page itself stays where it is (Vercel, or any static host). People add
+# this server in the page, under Add your server, or join it from an invite.
 #
 # A cluster: several people each run this on their own machine, with the same
 # CATHODE_CLUSTER_SECRET and each other's addresses in CATHODE_PEERS. Every
@@ -44,7 +43,7 @@ services:
       # Caddy. Set CATHODE_BIND=0.0.0.0 to put your own proxy in front instead.
       - '${CATHODE_BIND:-127.0.0.1}:8787:8787'
     volumes:
-      # Only read once, if you are upgrading from the file store.
+      # Uploaded files, sealed, in /data/files. Back this up beside the database.
       - cathode-data:/data
     environment:
       DATABASE_URL: postgres://cathode:${POSTGRES_PASSWORD:-cathode}@db:5432/cathode
@@ -64,6 +63,9 @@ services:
       CATHODE_PREVIEWS: ${CATHODE_PREVIEWS:-1}
       # Optional GIF search for /gif. See server/README.md.
       CATHODE_TENOR_KEY: ${CATHODE_TENOR_KEY:-}
+      # Files: the largest one may be, and how much one space may keep.
+      CATHODE_MAX_FILE_BYTES: ${CATHODE_MAX_FILE_BYTES:-104857600}
+      CATHODE_MAX_ROOM_FILE_BYTES: ${CATHODE_MAX_ROOM_FILE_BYTES:-5368709120}
 
   db:
     image: postgres:17-alpine

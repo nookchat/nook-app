@@ -66,8 +66,12 @@ export async function freshDatabase(label = 'test') {
 export async function startServer(port, env = {}) {
   const { spawn } = await import('node:child_process')
   const database = env.DATABASE_URL ?? (await freshDatabase(`p${port}`))
+  const { mkdtempSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const files = env.CATHODE_FILES ?? mkdtempSync(join(tmpdir(), `cathode-files-${port}-`))
   const child = spawn(process.execPath, ['server/server.mjs'], {
-    env: { ...process.env, PORT: String(port), DATABASE_URL: database, CATHODE_DATA: '/nonexistent', ...env },
+    env: { ...process.env, PORT: String(port), DATABASE_URL: database, CATHODE_DATA: '/nonexistent', CATHODE_FILES: files, ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   child.stdout.on('data', (b) => process.env.LOUD && console.log(`  [${port}]`, String(b).trim()))
@@ -75,7 +79,7 @@ export async function startServer(port, env = {}) {
   for (let i = 0; i < 100; i++) {
     try {
       const res = await fetch(`http://localhost:${port}/api/v1/health`)
-      if (res.ok) return { child, database, url: `http://localhost:${port}` }
+      if (res.ok) return { child, database, files, url: `http://localhost:${port}` }
     } catch {
       /* not yet */
     }

@@ -5,18 +5,21 @@
  *   GET  /api/v1/ice                      TURN credentials
  *   GET  /api/v1/spaces/:room/events      sealed lines after a point
  *   POST /api/v1/spaces/:room/events      keep sealed lines
+ *   POST /api/v1/spaces/:room/files       keep a sealed file, named by its hash
+ *   GET  /api/v1/spaces/:room/files/:id   send one back
  *   WS   /api/v1/spaces/:room/socket      see sockets.mjs
  *   GET  /api/v1/people/:id               a sealed record of somebody's spaces
  *   PUT  /api/v1/people/:id               replace it
  *   GET  /api/v1/preview?url=             a link card
  *   GET  /api/v1/gifs?q=                  GIF search
  *   GET  /api/v1/openapi.json             all of the above, described
- *   GET  /api/v1/cluster/{lines,rooms,people}   between servers only
+ *   GET  /api/v1/cluster/{lines,rooms,people,files}   between servers only
  *   WS   /api/v1/socket                 every space a device is in, on one connection
  */
 
-import { HAS_TURN, PREVIEWS, TURN_ONLY, VERSION, originAllowed } from './config.mjs'
+import { HAS_TURN, MAX_FILE_BYTES, PREVIEWS, TURN_ONLY, VERSION, originAllowed } from './config.mjs'
 import { clusterHealth, clusterUrls, fromPeer, linesFor, peopleFor, roomsFor } from './cluster.mjs'
+import { FILE_ID, filesFor, keep, send } from './files.mjs'
 import { ApiError, allow, fail, readJson, reply } from './http.mjs'
 import { openapi } from './openapi.mjs'
 import { gifs, hasGifs, preview } from './preview.mjs'
@@ -66,6 +69,7 @@ function health() {
     relayOnly: HAS_TURN && TURN_ONLY,
     previews: PREVIEWS,
     gifs: hasGifs(),
+    files: { max: MAX_FILE_BYTES },
     cluster: clusterUrls(),
     peers: clusterHealth().peers,
   }
@@ -93,6 +97,14 @@ async function writeEvents(req, room) {
   const clean = list.filter((e) => typeof e === 'string' && e.length > 0 && e.length <= MAX_LINE)
   const fresh = await append(room, clean)
   return { added: clean.length, fresh: fresh.length, at: fresh.length ? fresh[fresh.length - 1].seq : undefined }
+}
+
+async function writeFile(req, room) {
+  limited(req)
+  if (!(await mayWrite(room, req.headers['x-cathode-write']))) {
+    throw new ApiError(403, 'wrong_token', 'That is not the write token this space was claimed with.')
+  }
+  return keep(room, req)
 }
 
 async function writePerson(req, id) {
@@ -153,6 +165,15 @@ export async function handle(req, res) {
         if (method === 'GET') return reply(res, 200, await readEvents(url, room))
         if (method === 'POST') return reply(res, 200, await writeEvents(req, room))
       }
+      if (a === 'spaces' && c === 'files') {
+        const room = roomOf(b)
+        const id = parts[5]
+        if (method === 'POST' && !id) return reply(res, 200, await writeFile(req, room))
+        if (method === 'GET' && id) {
+          if (!FILE_ID.test(id)) throw new ApiError(400, 'bad_file', 'That is not a file id.')
+          return await send(req, res, room, id)
+        }
+      }
       if (a === 'people' && b && !c) {
         const id = personOf(b)
         if (method === 'GET') return reply(res, 200, await person(id))
@@ -174,6 +195,7 @@ export async function handle(req, res) {
         }
         if (b === 'rooms') return reply(res, 200, await roomsFor(after))
         if (b === 'people') return reply(res, 200, await peopleFor(after))
+        if (b === 'files') return reply(res, 200, await filesFor(after))
       }
       throw new ApiError(404, 'not_found', 'There is nothing at that address.')
     }

@@ -9,6 +9,8 @@
  *   lines     every sealed event, in the order this server received them
  *   people    one sealed record per person: their list of spaces
  *   peers     how far this server has read from each other server
+ *   files     every uploaded file, by space and by the hash of its bytes;
+ *             the bytes themselves are on disk, see files.mjs
  *
  * Migrations run on start, in order, each once, each in a transaction.
  */
@@ -60,6 +62,19 @@ const MIGRATIONS = [
     people_after  bigint not null default 0,
     seen          timestamptz
   );
+  `,
+  `
+  create sequence files_change_seq;
+  create table files (
+    room        text not null references rooms (room) on delete cascade,
+    id          text not null,
+    size        bigint not null,
+    created_at  timestamptz not null default now(),
+    change      bigint not null default nextval('files_change_seq'),
+    primary key (room, id)
+  );
+  create index files_change on files (change);
+  alter table peers add column files_after bigint not null default 0;
   `,
 ]
 

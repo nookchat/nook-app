@@ -8,9 +8,9 @@
  * The look is a dark room with the furniture floating in it. The canvas is
  * near black, and each part of the app (the channels, the conversation, who is
  * here) is its own rounded pane on it, lifted by shade rather than outlined.
- * The one colour is the beam: a cyan running into a periwinkle, the colour of
- * a cathode ray tube lighting up. It marks what is yours to press and what is
- * live, and it glows a little, which is the only decoration anything gets.
+ * The one colour is the beam: a flat cyan, the colour of a cathode ray tube
+ * lighting up. It marks what is yours to press and what is live. No
+ * gradients: a flat colour reads as a button, a gradient reads as an advert.
  */
 
 :root {
@@ -33,10 +33,11 @@
 
   /* The beam. The fill is bright, so what sits on it is dark. */
   --accent: #3cc8ff;
-  --accent-2: #7b8cff;
   --accent-fg: #03121c;
   --accent-text: #7fd6ff;
-  --beam: linear-gradient(135deg, var(--accent), var(--accent-2));
+  /* One flat colour: no gradient anywhere. The name stays for every rule that uses it. */
+  --beam: var(--accent);
+  --accent-hover: #6cd6ff;
   --glow: 0 0 18px rgb(60 200 255 / 32%);
   --accent-wash: rgb(60 200 255 / 9%);
   /* What is selected is raised rather than painted. */
@@ -427,9 +428,7 @@ button.primary {
 }
 
 button.primary:hover:not(:disabled) {
-  background: var(--beam);
-  filter: brightness(1.08) saturate(1.05);
-  box-shadow: var(--glow);
+  background: var(--accent-hover);
   border-color: transparent;
 }
 
@@ -799,10 +798,7 @@ main.home {
   font-size: 34px;
   font-weight: 800;
   letter-spacing: -0.025em;
-  background: linear-gradient(90deg, var(--fg) 30%, var(--accent-text));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: var(--fg);
 }
 
 .home-tag {
@@ -2503,6 +2499,7 @@ input[type="text"].space-search {
 
 /* The conversation, with nothing drawn around it. */
 .chat-panel {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -2880,14 +2877,432 @@ input[type="text"].space-search {
 }
 
 .send-button:hover:not(:disabled) {
-  background: var(--beam);
-  filter: brightness(1.08);
-  box-shadow: var(--glow);
+  background: var(--accent-hover);
 }
 
 .send-button:disabled {
   background: var(--surface-2);
   color: var(--fg-disabled);
+}
+
+/* Pressed while files were still going up: it breathes until they are there, then sends. */
+.send-button.waiting {
+  animation: live-pulse 1.2s ease-in-out infinite;
+}
+
+/* ---------- files ---------- */
+
+/* The clip sits at the start of the box, where the eye starts. */
+.compose-box:has(.attach-button:not(.hidden)) {
+  padding-left: 4px;
+}
+
+.attach-button {
+  align-self: flex-end;
+  color: var(--fg-faint);
+}
+
+.attach-button:hover:not(:disabled) {
+  color: var(--fg);
+}
+
+/* What is attached, above the box, while it goes up. */
+.attach-tray {
+  display: flex;
+  gap: 8px;
+  padding: 2px 0 4px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.attach-chip {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 220px;
+  padding: 8px 6px 8px 8px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  overflow: hidden;
+}
+
+.attach-chip.failed {
+  border-color: color-mix(in srgb, var(--bad) 55%, transparent);
+}
+
+.attach-chip.failed .attach-words .tiny {
+  color: var(--bad);
+}
+
+.attach-face {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--fg-dim);
+  object-fit: cover;
+}
+
+.attach-words {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 2px;
+}
+
+.attach-name {
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.attach-remove {
+  align-self: flex-start;
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
+  min-height: 22px;
+}
+
+/* How far it has gone, along the bottom edge. */
+.attach-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--beam);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 160ms var(--ease), opacity 300ms var(--ease);
+}
+
+.attach-chip.done .attach-bar,
+.attach-chip.failed .attach-bar {
+  opacity: 0;
+}
+
+/* A file held over the conversation. */
+.drop-cover {
+  position: absolute;
+  inset: 8px;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  border: 2px dashed color-mix(in srgb, var(--accent) 60%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  backdrop-filter: blur(4px);
+  pointer-events: none;
+}
+
+.drop-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  color: var(--accent-text);
+}
+
+.drop-words {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--fg);
+}
+
+/* In a message: pictures and videos in a row, other files as cards under them. */
+.att-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 4px;
+  max-width: 100%;
+}
+
+.att-media {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 100%;
+}
+
+.att-tile {
+  position: relative;
+  display: block;
+  max-width: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line-soft);
+  cursor: zoom-in;
+}
+
+.att-tile:hover:not(:disabled) {
+  background: var(--surface);
+}
+
+.att-blur {
+  position: absolute;
+  inset: -12px;
+  background-size: cover;
+  background-position: center;
+  filter: blur(14px) saturate(1.2);
+  opacity: 0.85;
+}
+
+.att-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 220ms var(--ease);
+}
+
+.att-tile.ready .att-img {
+  opacity: 1;
+}
+
+.att-tile.failed::after {
+  content: "Could not open";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--fg-faint);
+  font-size: 12px;
+}
+
+.att-video {
+  cursor: pointer;
+}
+
+.att-play {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  margin: -27px 0 0 -27px;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 55%);
+  color: #fff;
+  backdrop-filter: blur(6px);
+  transition: transform 160ms var(--ease), background 160ms var(--ease);
+}
+
+.att-play > .icon {
+  margin-left: 3px;
+}
+
+.att-video:hover .att-play {
+  transform: scale(1.08);
+  background: rgb(0 0 0 / 70%);
+}
+
+/* The share of it that has arrived, over the play mark while it loads. */
+.att-video.loading .att-play > .icon {
+  display: none;
+}
+
+.att-progress {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.att-meta {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-shadow: 0 1px 3px rgb(0 0 0 / 70%);
+  pointer-events: none;
+}
+
+.att-video.playing {
+  cursor: default;
+  background: #000;
+}
+
+.att-player {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: #000;
+}
+
+.att-file {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: min(380px, 100%);
+  padding: 10px 8px 10px 12px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+}
+
+.att-file-icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
+  background: var(--accent-wash);
+  color: var(--accent-text);
+}
+
+.att-file-icon.audio {
+  background: color-mix(in srgb, var(--good) 14%, transparent);
+  color: var(--good);
+}
+
+.att-file-words {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 2px;
+}
+
+.att-file-name {
+  color: var(--fg);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.att-audio {
+  width: min(380px, 100%);
+  height: 36px;
+}
+
+/* ---------- the picture viewer ---------- */
+
+.viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  display: flex;
+  flex-direction: column;
+  background: rgb(4 5 8 / 94%);
+  backdrop-filter: blur(10px);
+  animation: appear 140ms var(--ease);
+}
+
+.viewer-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px 12px 20px;
+}
+
+.viewer-words {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 2px;
+}
+
+.viewer-name {
+  color: var(--fg);
+  font-weight: 650;
+}
+
+.viewer-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  padding: 0 72px 28px;
+  overflow: hidden;
+}
+
+.viewer-img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 6px;
+  box-shadow: 0 20px 60px rgb(0 0 0 / 60%);
+  cursor: zoom-in;
+  transition: filter 200ms var(--ease);
+}
+
+.viewer-img.soft {
+  filter: blur(18px);
+}
+
+/* Looked at closely: its own size, and the stage scrolls. */
+.viewer.zoomed .viewer-stage {
+  place-items: start center;
+  overflow: auto;
+}
+
+.viewer.zoomed .viewer-img {
+  max-width: none;
+  max-height: none;
+  cursor: zoom-out;
+}
+
+.viewer-step {
+  position: absolute;
+  top: 50%;
+  width: 46px;
+  height: 46px;
+  min-height: 46px;
+  margin-top: -23px;
+  padding: 0;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 8%);
+  color: var(--fg);
+}
+
+.viewer-step:hover:not(:disabled) {
+  background: rgb(255 255 255 / 16%);
+}
+
+.viewer-step.back {
+  left: 14px;
+}
+
+.viewer-step.next {
+  right: 14px;
+}
+
+@media (max-width: 780px) {
+  .viewer-stage {
+    padding: 0 8px 16px;
+  }
+
+  .viewer-step {
+    top: auto;
+    bottom: 18px;
+  }
+
+  .attach-chip {
+    width: 180px;
+  }
 }
 
 /* ---------- faces ---------- */

@@ -47,6 +47,7 @@ import { addServer, bookFor } from '../store/server-spaces'
 import type { SpaceRuntime } from '../space/runtime'
 import { spaces } from '../space/registry'
 import { spaceFace, switcherButton } from './space-switcher'
+import { filesFor } from '../space/runtime'
 import { gifs as serverGifs, preview, serverHasGifs } from '../net/server-api'
 import { loadIdentity, saveDisplayName, shortKey, signClaim, verifyClaim } from '../store/identity'
 import { chirpJoin, chirpLeave, chirpMessage, isNews, speak } from './sounds'
@@ -324,6 +325,7 @@ export class SpaceView {
     if (this.stopped) return
     addServer(this.server)
     this.room = space.room
+    this.chatPanel?.setFiles(filesFor(space))
     const chat = space.chat
     this.chat = chat
     this.bus = space.bus
@@ -1553,11 +1555,11 @@ export class SpaceView {
     // messages: the number on a tab has to be one worth turning for.
     const name = this.capture ? 'Sharing your screen' : `#${this.channel}`
     this.chrome.setTitle(`Cathode | ${this.mentions ? `(${this.mentions}) ` : ''}${name}`)
-    this.chrome.setStatus([
-      what,
-      `${people} here`,
-      `${up ? 'on' : 'cannot reach'} ${serverTag(this.space.channel?.serving ?? this.server)}`,
-    ])
+    // Who is here, and the server only when it is not answering: that is the one time it is news.
+    const serving = serverTag(this.space.channel?.serving ?? this.server)
+    this.chrome.setStatus([what, `${people} here`, ...(up ? [] : [`cannot reach ${serving}`])])
+    // Which one, for whoever wants to know, on the line itself.
+    this.chrome.status.title = up ? `Connected to ${serving}` : `Cannot reach ${serving}`
   }
 
   /**
@@ -1633,9 +1635,9 @@ export class SpaceView {
     this.chatPanel.onSound = () => this.openBoard(this.chatPanel?.soundAnchor ?? null)
     this.chatPanel.commands = COMMANDS
     this.chatPanel.actions = {
-      say: (text, replyTo, inThread) =>
-        void this.publish((c) => c.say(text, this.channel, replyTo, inThread)),
-      sayDirect: (to, text) => void this.publish((c) => c.sayDirect(to, text)),
+      say: (text, replyTo, inThread, files) =>
+        void this.publish((c) => c.say(text, this.channel, replyTo, inThread, false, files)),
+      sayDirect: (to, text, files) => void this.publish((c) => c.sayDirect(to, text, files)),
       edit: (id, text) => void this.publish((c) => c.edit(id, text)),
       react: (id, emoji, on) => void this.publish((c) => c.react(id, emoji, on)),
       retract: (id) => void this.publish((c) => c.retract(id)),

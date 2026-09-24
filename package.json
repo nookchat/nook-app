@@ -38,7 +38,8 @@
     "test:failover": "node test/failover-check.mjs",
     "stack": "node test/stack.mjs",
     "test:tamper": "node test/tamper-check.mjs",
-    "test:own": "node test/own-server-check.mjs"
+    "test:own": "node test/own-server-check.mjs",
+    "test:files": "node test/files-check.mjs"
   },
   "dependencies": {
     "@jitsi/rnnoise-wasm": "^0.2.1",

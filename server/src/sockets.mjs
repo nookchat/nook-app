@@ -51,7 +51,13 @@ const MAX_FRAME = 1024 * 1024
 const MAX_SIGNAL = 512 * 1024
 /** Spaces one connection may be in at once. */
 const MAX_JOINED = 500
-const PING_MS = 30_000
+/*
+ * A tab that closes says so, and is gone for everybody at once. One that
+ * dies without a word (a laptop lid, a dropped network) is only found by
+ * this, within two of them, so it is short enough that nobody is shown as
+ * here for long after they went. A ping is two bytes.
+ */
+const PING_MS = 15_000
 
 /*
  * Who is in each space: room -> the memberships in it. A membership is one

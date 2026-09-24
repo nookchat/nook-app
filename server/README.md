@@ -97,11 +97,28 @@ migration runs once, in a transaction.
 | `lines` | Every sealed event of every space, numbered in the order this server kept it |
 | `people` | One sealed record per person: their list of spaces and how far they have read |
 | `peers` | How far this server has read from each other server in its cluster |
+| `files` | Every uploaded file: its space, its id (the SHA-256 of its sealed bytes), and its size |
 | `schema_version` | Which migrations have run |
 
 Every line is ciphertext. A copy of this database is a pile of noise with
 timestamps on it. Back it up like any Postgres database (`pg_dump`), and in a
 cluster the other servers are live copies too.
+
+## Files
+
+Pictures, videos and any other file somebody attaches. The page gives each
+file a key of its own, encrypts the file with it, and puts the key in the
+message that carries the file, which is sealed with the space's key. So the
+server keeps bytes it cannot open, and never sees a key.
+
+The bytes are on disk, one file each, in `CATHODE_FILES` (`/data/files` in the
+container, on the `cathode-data` volume). Back that folder up beside the
+database. In a cluster every server copies every file from the others, and a
+server asked for a file it has not got yet fetches it from the others first.
+
+A file may be at most `CATHODE_MAX_FILE_BYTES` (100 MB) once sealed, and one
+space may hold `CATHODE_MAX_ROOM_FILE_BYTES` (5 GB) of them. Past either an
+upload is refused, and the page says why.
 
 A server that ran an earlier version kept spaces as files in `CATHODE_DATA`.
 It moves them into the database the first time it starts, once, and leaves
@@ -121,11 +138,13 @@ Version 1, under `/api/v1`. A running server describes it at
 | `POST /api/v1/spaces/:room/events` | Keeps `{ "events": [sealed lines] }`. Needs `x-cathode-write`. The first write claims the space with its token |
 | `WS /api/v1/socket` | Everything every space on this device does, on one connection. See below |
 | `WS /api/v1/spaces/:room/socket` | The same for one space. Messages leave out `room` |
+| `POST /api/v1/spaces/:room/files` | Keeps the sealed file in the body. Needs `x-cathode-write`. Answers `{ "id", "size" }`, where `id` is the SHA-256 of the body |
+| `GET /api/v1/spaces/:room/files/:id` | That file, as sealed bytes |
 | `GET /api/v1/people/:id` | One person's sealed record |
 | `PUT /api/v1/people/:id` | Replaces it. Needs `x-cathode-write`. The first write claims it |
 | `GET /api/v1/preview?url=U` | The title, description and picture behind a public link |
 | `GET /api/v1/gifs?q=term` | GIF search, when `CATHODE_TENOR_KEY` is set |
-| `GET /api/v1/cluster/lines`, `/rooms`, `/people` | Between servers in a cluster only. Needs the cluster secret |
+| `GET /api/v1/cluster/lines`, `/rooms`, `/people`, `/files` | Between servers in a cluster only. Needs the cluster secret |
 
 The socket speaks JSON, one message per frame. Every message carries the
 `room` it is about, so one connection carries every space a device is in:
@@ -148,7 +167,9 @@ Nothing is sent on a timer. Presence goes out when it changes: the server
 holds each session's latest, gives it to whoever arrives, and says `left` the
 moment a socket goes. A space that is open and quiet sends nothing at all. The
 only regular traffic is the WebSocket heartbeat, a ping from the server every
-30 seconds, which the browser answers by itself.
+15 seconds, which the browser answers by itself. A connection that misses one
+is closed, so somebody whose network dropped is shown as away within 30
+seconds.
 
 `at` is always the number of the newest line a message brings the reader to.
 The server sends a space's lines in order, so a reader that keeps the highest
@@ -206,6 +227,7 @@ relays it, and cannot open it.
 | --- | --- | --- |
 | Every event in a space (messages, edits, reactions, names, channels) | AES-GCM, with a key made from the space code and its password | Anybody holding the invite link |
 | Private messages | Also sealed with a key only the two people can work out | The two people |
+| Files | AES-GCM, with a key made for each file, which travels only inside its sealed message | Whoever can read that message |
 | Signals (handshakes, presence, typing) | AES-GCM, the same space key | Anybody holding the invite link |
 | Your list of spaces and read marks | AES-GCM, with a key made from your identity key | Your devices |
 | Calls and screen shares | DTLS-SRTP, negotiated between the browsers | The people in the call. TURN relays packets it cannot open |
@@ -219,6 +241,7 @@ What a server can see, because it has to:
 
 - Which space ids exist, and how big they are. A space id is a hash of the
   code and says nothing about it.
+- How many files a space holds, and how big each one is.
 - Who connects, from which address, when, and how much they send.
 - Which links are previewed, if link cards are on. Set `CATHODE_PREVIEWS=0`
   to turn them off.
@@ -270,4 +293,7 @@ calls try to go straight between browsers.
 | `CATHODE_TENOR_KEY` | (empty) | Turns on GIF search. A free key comes from https://developers.google.com/tenor |
 | `CATHODE_MAX_ROOM_SOCKETS` | `200` | Connections one space may hold |
 | `CATHODE_RATE`, `CATHODE_RATE_BURST` | `30`, `120` | Requests one address may make per second, and in a burst |
-| `CATHODE_DATA` | `/data` | Where an earlier version kept its files, read once on upgrade |
+| `CATHODE_FILES` | `/data/files` | Where uploaded files are kept, sealed |
+| `CATHODE_MAX_FILE_BYTES` | `104857600` | The largest one file may be, sealed |
+| `CATHODE_MAX_ROOM_FILE_BYTES` | `5368709120` | How much in files one space may keep |
+| `CATHODE_DATA` | `/data` | Where an earlier version kept its spaces, read once on upgrade |

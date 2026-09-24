@@ -174,7 +174,7 @@ try {
     async () =>
       host.evaluate(() => {
         const text = document.querySelector('.status-bar')?.innerText ?? ''
-        return /\bon \S+/.test(text) && !text.includes('cannot reach') ? text : null
+        return /\d+ here/.test(text) && !text.includes('cannot reach') ? text : null
       }),
     30_000,
     'the server to report open',

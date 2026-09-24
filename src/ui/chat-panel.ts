@@ -10,7 +10,10 @@
  * message from a stranger cannot become a script.
  */
 
-import { MAX_DM_BYTES, MAX_TEXT, type Message } from '../store/log'
+import { MAX_DM_BYTES, MAX_TEXT, type Attachment, type Message } from '../store/log'
+import type { SpaceFiles } from '../net/files'
+import { AttachTray, attachmentBlock } from './attachments'
+import { toast } from './toast'
 import type { LinkPreview } from '../net/server-api'
 import { cleanName, EVERYONE, findMentions, mentionsMe } from '../chat'
 import { shortKey } from '../store/identity'
@@ -124,9 +127,9 @@ function quickRow(): string[] {
 }
 
 export interface ChatActions {
-  say(text: string, replyTo: string | null, inThread?: boolean): void
+  say(text: string, replyTo: string | null, inThread?: boolean, files?: Attachment[]): void
   /** Say it to one person, sealed so the room carries it and cannot read it. */
-  sayDirect?(to: string, text: string): void
+  sayDirect?(to: string, text: string, files?: Attachment[]): void
   edit(id: string, text: string): void
   react(id: string, emoji: string, on: boolean): void
   retract(id: string): void
@@ -181,6 +184,14 @@ export class ChatPanel {
   private readonly roomLeft: HTMLSpanElement
   /** Whether the space is in a state where anything may be said at all. */
   private enabled = false
+  /** Where this conversation's files go and come from. Null where the server takes none. */
+  private files: SpaceFiles | null = null
+  private readonly tray: AttachTray
+  private readonly attachButton: HTMLButtonElement
+  private readonly fileInput: HTMLInputElement
+  private readonly dropCover: HTMLDivElement
+  /** Send was pressed while files were still going up; it sends when they are done. */
+  private sendWaiting = false
   private readonly title: HTMLSpanElement
   private readonly backButton: HTMLButtonElement
   private readonly head: HTMLDivElement
@@ -296,6 +307,42 @@ export class ChatPanel {
       { class: 'send-button', title: 'Send (Enter)', ariaLabel: 'Send', on: { click: () => this.submit() } },
       [icon('send', 18)],
     )
+
+    /*
+     * Files: the clip, a file dropped anywhere on the conversation, or one
+     * pasted into the box. Each starts going up the moment it is attached, so
+     * by the time the words are written it is usually there.
+     */
+    this.tray = new AttachTray(() => this.files)
+    this.tray.onChange = () => {
+      this.sendButton.classList.toggle('waiting', this.sendWaiting && this.tray.busy)
+    }
+    this.fileInput = h('input', { type: 'file', class: 'hidden', ariaLabel: 'Choose files' })
+    this.fileInput.multiple = true
+    this.fileInput.addEventListener('change', () => {
+      this.tray.add([...(this.fileInput.files ?? [])])
+      this.fileInput.value = ''
+      this.textInput.focus()
+    })
+    this.attachButton = h(
+      'button',
+      {
+        class: 'ghost icon-only attach-button hidden',
+        title: 'Attach files. You can drop or paste them too.',
+        ariaLabel: 'Attach files',
+        on: { click: () => this.fileInput.click() },
+      },
+      [icon('paperclip', 19)],
+    )
+    this.textInput.addEventListener('paste', (ev) => {
+      const files = [...(ev.clipboardData?.files ?? [])]
+      if (files.length === 0 || !this.files || this.editing) return
+      ev.preventDefault()
+      this.tray.add(files)
+    })
+    this.dropCover = h('div', { class: 'drop-cover hidden' }, [
+      h('div', { class: 'drop-card' }, [icon('paperclip', 26), h('span', { class: 'drop-words', text: 'Drop to attach' })]),
+    ])
     this.emojiButton = h('button', {
       class: 'ghost icon-only',
       title: 'Emoji',
@@ -421,7 +468,10 @@ export class ChatPanel {
         this.typingLine,
         this.replyBar,
         this.nameRow,
+        this.tray.root,
         h('div', { class: 'row compose-box' }, [
+          this.attachButton,
+          this.fileInput,
           this.textInput,
           this.roomLeft,
           this.gifButton,
@@ -430,7 +480,48 @@ export class ChatPanel {
           this.sendButton,
         ]),
       ]),
+      this.dropCover,
     ])
+    this.watchDrops()
+  }
+
+  /** Where files go, for a conversation whose server takes them. Null hides the clip. */
+  setFiles(files: SpaceFiles | null): void {
+    this.files = files
+    this.attachButton.classList.toggle('hidden', !files)
+  }
+
+  /**
+   * A file dragged over the conversation: the whole of it is the target, and
+   * says so, and a drop attaches. Only files: a dragged link or picture from
+   * the page is left to do what it does.
+   */
+  private watchDrops(): void {
+    const carriesFiles = (ev: DragEvent): boolean => !!ev.dataTransfer && [...ev.dataTransfer.types].includes('Files')
+    let depth = 0
+    this.root.addEventListener('dragenter', (ev) => {
+      if (!carriesFiles(ev) || !this.files || !this.enabled) return
+      ev.preventDefault()
+      depth += 1
+      this.dropCover.classList.remove('hidden')
+    })
+    this.root.addEventListener('dragover', (ev) => {
+      if (!carriesFiles(ev) || !this.files || !this.enabled) return
+      ev.preventDefault()
+      if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'copy'
+    })
+    this.root.addEventListener('dragleave', () => {
+      depth = Math.max(0, depth - 1)
+      if (depth === 0) this.dropCover.classList.add('hidden')
+    })
+    this.root.addEventListener('drop', (ev) => {
+      depth = 0
+      this.dropCover.classList.add('hidden')
+      if (!carriesFiles(ev) || !this.files || !this.enabled) return
+      ev.preventDefault()
+      this.tray.add([...(ev.dataTransfer?.files ?? [])])
+      this.textInput.focus()
+    })
   }
 
   get currentName(): string {
@@ -633,6 +724,9 @@ export class ChatPanel {
   useDraft(key: string): void {
     if (key === this.draftKey) return
     this.keepDraft()
+    // Files attached here were meant for here, so moving on takes them off.
+    this.tray.clear()
+    this.sendWaiting = false
     this.draftKey = key
     this.textInput.value = this.drafts.get(key) ?? ''
     this.grow()
@@ -1123,6 +1217,8 @@ export class ChatPanel {
     const parent = m.replyTo ? byId.get(m.replyTo) : null
     return [
       m.text,
+      // Files, and whether there is anywhere to fetch them from yet.
+      `${m.files?.map((f) => f.id.slice(0, 8)).join(',') ?? ''}${this.files ? '+' : ''}`,
       m.name ?? '',
       this.avatars.get(m.author) ?? '',
       m.at,
@@ -1216,7 +1312,7 @@ export class ChatPanel {
           class: 'chat-reply truncate',
           title: parent ? 'Go to what this answers' : 'That message is no longer here',
           text: parent
-            ? `${parent.name || shortKey(parent.author)}: ${parent.text.slice(0, 60)}`
+            ? `${parent.name || shortKey(parent.author)}: ${parent.text.slice(0, 60) || (parent.files?.length ? 'a file' : '')}`
             : 'a message that is gone',
           on: { click: () => parent && this.jumpTo(parent.id) },
         }),
@@ -1287,12 +1383,14 @@ export class ChatPanel {
        * picture is not jammed into the middle of a sentence.
        */
       if (pictures.length > 0) line.classList.add('has-picture')
-      if (!bare && !svg) {
+      const onlyFiles = !m.text && (m.files?.length ?? 0) > 0
+      if (!bare && !svg && !onlyFiles) {
         if (pictures.length > 0) text.classList.add('boxed')
         for (const node of formatText(m.text, this.names, this.me)) text.append(node)
         line.append(text)
       }
       for (const src of pictures) line.append(embed(src))
+      if (m.files?.length) line.append(attachmentBlock(m.files, this.files))
       this.attachPreview(line, m.text)
     }
 
@@ -1730,10 +1828,30 @@ export class ChatPanel {
 
   private submit(): void {
     const text = this.textInput.value.trim()
-    if (!text) return
+    const attaching = this.tray.count > 0 && !this.editing
+    if (!text && !attaching) return
     // Past the limit nobody would receive it, so it does not leave the box.
     // The count beside Send has been saying so since the last stretch.
     if (!this.enabled || this.tooLong()) return
+    if (attaching) {
+      if (this.tray.failed) {
+        toast('A file did not upload. Take it off, or attach it again.', 'warn')
+        return
+      }
+      // Still going up: it goes the moment they are all there.
+      if (this.tray.busy) {
+        this.sendWaiting = true
+        this.sendButton.classList.add('waiting')
+        void this.tray.whenSettled().then(() => {
+          if (!this.sendWaiting) return
+          this.sendWaiting = false
+          this.sendButton.classList.remove('waiting')
+          this.submit()
+        })
+        return
+      }
+    }
+    const files = attaching ? this.tray.ready : []
     /*
      * A line starting with a slash is an instruction rather than something to
      * say. The panel does not know what any of them mean: it hands the line to
@@ -1744,7 +1862,7 @@ export class ChatPanel {
      * scolded with "There is no /", which helped nobody say "/ 10" about a
      * film.
      */
-    if (/^\/[^/\s]/.test(text) && !this.editing) {
+    if (/^\/[^/\s]/.test(text) && !this.editing && !attaching) {
       /*
        * Emptied before the command runs, not after.
        *
@@ -1767,18 +1885,19 @@ export class ChatPanel {
     this.textInput.value = ''
     this.grow()
     this.closeSuggestions()
+    if (files.length) this.tray.clear()
     if (this.editing) {
       this.actions?.edit(this.editing.id, text)
     } else if (this.directWith) {
-      this.actions?.sayDirect?.(this.directWith, text)
+      this.actions?.sayDirect?.(this.directWith, text, files)
     } else if (text.startsWith('//')) {
-      this.actions?.say(text.slice(1), this.replyTo?.id ?? null)
+      this.actions?.say(text.slice(1), this.replyTo?.id ?? null, false, files)
     } else if (this.threadRoot) {
       // Everything written in a thread answers its root, whichever message in
       // it was being looked at. Flat, like every thread anybody reads.
-      this.actions?.say(text, this.threadRoot, true)
+      this.actions?.say(text, this.threadRoot, true, files)
     } else {
-      this.actions?.say(text, this.replyTo?.id ?? null)
+      this.actions?.say(text, this.replyTo?.id ?? null, false, files)
     }
     this.cancelPending()
   }

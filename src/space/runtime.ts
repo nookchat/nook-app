@@ -12,6 +12,7 @@
 import { deriveRoom, newPeerId, type Room } from '../room'
 import { serverTag } from '../backend'
 import { Channel, connectionTo } from '../net/connection'
+import { SpaceFiles } from '../net/files'
 import { Mesh } from '../net/mesh'
 import { SignalBus } from '../signal/bus'
 import type { Envelope } from '../signal/envelope'
@@ -262,4 +263,20 @@ export class SpaceRuntime {
     if (bus) window.setTimeout(() => bus.stop(), 200)
     for (const set of Object.values(this.listeners)) set.clear()
   }
+}
+
+const fileStores = new WeakMap<SpaceRuntime, SpaceFiles>()
+
+/**
+ * Where a space's files go and come from: its server, the one it is talking
+ * to first, and its write token, which a server wants before it keeps
+ * anything. One per space, so what one view opened another draws at once.
+ */
+export function filesFor(space: SpaceRuntime): SpaceFiles {
+  let held = fileStores.get(space)
+  if (!held) {
+    held = new SpaceFiles(space.server, space.room.id, space.room.write, () => space.channel?.serving ?? space.server)
+    fileStores.set(space, held)
+  }
+  return held
 }

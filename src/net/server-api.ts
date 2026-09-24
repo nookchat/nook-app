@@ -88,6 +88,8 @@ export interface ServerHealth {
   version?: string
   turn?: boolean
   gifs?: boolean
+  /** Whether it takes files, and the largest it takes. Absent on a server from before files. */
+  files?: { max: number }
   cluster: string[]
   peers: { url: string; up: boolean }[]
 }
@@ -102,6 +104,7 @@ export async function health(server: string): Promise<ServerHealth> {
       version: body.version,
       turn: body.turn,
       gifs: body.gifs,
+      files: body.files && typeof body.files.max === 'number' ? { max: body.files.max } : undefined,
       cluster: Array.isArray(body.cluster) ? body.cluster : [],
       peers: Array.isArray(body.peers) ? body.peers : [],
     }

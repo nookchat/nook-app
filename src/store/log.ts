@@ -818,6 +818,7 @@ export class RoomLog {
           inThread: e.body.thread === true,
           emote: e.body.emote === true,
           live: e.body.live === true,
+          files: cleanFiles(e.body.files),
           edited: false,
           retracted: false,
           reactions: new Map(),
@@ -850,6 +851,7 @@ export class RoomLog {
         if (e.author !== target.author && roles.get(e.author) !== 'admin') continue
         target.retracted = true
         target.text = ''
+        target.files = []
         target.reactions.clear()
         effective?.add(e.id)
       } else if (e.kind === 'react') {
@@ -1083,6 +1085,79 @@ export interface ChannelInfo {
   topic: string
 }
 
+/**
+ * A file hanging off a message.
+ *
+ * The bytes are on the server, sealed with `key`, which is made fresh for
+ * each file and travels only here, inside the message, which is sealed with
+ * the space's key in turn. The server keeps the file under `id`, the SHA-256
+ * of the sealed bytes, and never sees the key. What a picture or a video
+ * looks like, `w` by `h`, and a tiny blurred `thumb` ride along so it can be
+ * given its space and a hint of itself before a byte of it has arrived.
+ */
+export interface Attachment {
+  id: string
+  name: string
+  type: string
+  /** Of the file itself, before it was sealed. */
+  size: number
+  /** The file's own key: 32 bytes, base64url. */
+  key: string
+  w?: number
+  h?: number
+  /** Seconds, for a video or a sound. */
+  dur?: number
+  /** A few hundred bytes of JPEG, as a data URL. */
+  thumb?: string
+  /** A video's first frame, sealed with the same key and kept as its own file. */
+  poster?: string
+}
+
+/** The most files one message may carry. */
+export const MAX_FILES = 10
+
+/**
+ * Attachments as a message states them, with anything that does not hold up
+ * dropped. Everything here reaches the page from somebody else, so nothing is
+ * taken on trust: sizes are numbers, ids are hashes, a thumb is a picture.
+ */
+export function cleanFiles(raw: unknown): Attachment[] {
+  if (!Array.isArray(raw)) return []
+  const out: Attachment[] = []
+  const count = (v: unknown, most: number): number | undefined =>
+    typeof v === 'number' && Number.isFinite(v) && v > 0 && v <= most ? v : undefined
+  for (const item of raw.slice(0, MAX_FILES)) {
+    if (!item || typeof item !== 'object') continue
+    const f = item as Record<string, unknown>
+    const id = String(f.id ?? '')
+    const key = String(f.key ?? '')
+    const size = Number(f.size)
+    if (!/^[0-9a-f]{64}$/.test(id) || !/^[A-Za-z0-9_-]{43}$/.test(key)) continue
+    if (!Number.isFinite(size) || size < 0) continue
+    const file: Attachment = {
+      id,
+      key,
+      size: Math.floor(size),
+      name: String(f.name ?? '').slice(0, 120).trim() || 'file',
+      type: /^[\w.+-]+\/[\w.+-]+$/.test(String(f.type ?? '')) ? String(f.type).slice(0, 80) : 'application/octet-stream',
+    }
+    const w = count(f.w, 20_000)
+    const h = count(f.h, 20_000)
+    if (w && h) {
+      file.w = Math.round(w)
+      file.h = Math.round(h)
+    }
+    const dur = count(f.dur, 1_000_000)
+    if (dur) file.dur = dur
+    if (typeof f.thumb === 'string' && f.thumb.length <= 4000 && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(f.thumb)) {
+      file.thumb = f.thumb
+    }
+    if (typeof f.poster === 'string' && /^[0-9a-f]{64}$/.test(f.poster)) file.poster = f.poster
+    out.push(file)
+  }
+  return out
+}
+
 export interface Message {
   id: string
   author: string
@@ -1105,6 +1180,8 @@ export interface Message {
   inThread?: boolean
   /** Written with /me, so it reads as an action rather than as speech. */
   emote?: boolean
+  /** Files it carries, in the order they were attached. */
+  files?: Attachment[]
   /**
    * Said by starting a stream.
    *

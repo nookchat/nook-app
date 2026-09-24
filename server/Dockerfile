@@ -10,7 +10,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 COPY server.mjs ./
 COPY src ./src
 
-# Only read, once, when upgrading from the file store. See src/import.mjs.
+# Uploaded files, in /data/files, and the old file store, read once on upgrade.
 ENV CATHODE_DATA=/data
 RUN mkdir -p /data && chown node:node /data
 EXPOSE 8787
