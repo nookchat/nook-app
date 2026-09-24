@@ -1,9 +1,9 @@
 /**
  * A QR encoder, byte mode, error correction level M, versions 1 to 10.
  *
- * Cathode needs one QR code, for one short link, and a library would cost more
+ * Nook needs one QR code, for one short link, and a library would cost more
  * than the code below. Ten versions carry 213 bytes, which is far more than any
- * Cathode link.
+ * Nook link.
  *
  * Correctness here is not a matter of opinion: the end to end test renders the
  * output and reads it back with the QR decoder built into Chrome. Look for

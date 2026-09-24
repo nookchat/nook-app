@@ -2,7 +2,7 @@
  * The same person, with the same spaces and messages, on a second device.
  *
  *   by the code   Ana makes a link; a new device, at its first screen, says
- *                 it already uses Cathode and types the code and its server
+ *                 it already uses Nook and types the code and its server
  *   once only     a third device opens the same link after, and is refused
  *   by the link   Ana makes another; the third device opens it, and is her
  *
@@ -32,7 +32,7 @@ const fresh = async () => (await browser.newContext({ viewport: { width: 1280, h
 
 async function makeLink(page) {
   await page.click('button[aria-label="Settings"]')
-  await page.click('button:has-text("Link another device")')
+  await page.click('button:text-is("Link a device")')
   const code = page.locator('.link-code')
   await code.waitFor({ timeout: 15_000 })
   const offer = { code: (await code.textContent()).trim(), link: await code.getAttribute('data-link') }
@@ -85,11 +85,11 @@ try {
   // ---- a new device, by typing the code ----
   const two = await fresh()
   await two.goto(APP_URL)
-  await two.click('button:has-text("I already use Cathode")')
+  await two.click('button:has-text("I have an account")')
   check('linking asks for no name: the name comes with the account', (await two.$('input[aria-label="Your name"]:visible')) === null)
   await two.fill('input[aria-label="The link or code"]', first.code.toLowerCase())
   await two.fill('input[aria-label="The server"]', 'localhost:8787')
-  await two.click('button:has-text("Link this device")')
+  await two.click('button:text-is("Link")')
   await two.waitForURL((url) => !url.hash, { timeout: 15_000 }).catch(() => undefined)
   await wait(1500)
   const asTwo = await whoIs(two)
@@ -108,8 +108,8 @@ try {
     .waitForFunction(() => document.querySelector('.welcome-text')?.textContent?.includes('used') ?? false, null, { timeout: 15_000 })
     .then(() => true, () => false)
   check('a code works once', refused)
-  await three.click('button:has-text("Carry on without it")')
-  await three.waitForSelector('button:has-text("I already use Cathode")', { timeout: 10_000 })
+  await three.click('button:text-is("Skip")')
+  await three.waitForSelector('button:has-text("I have an account")', { timeout: 10_000 })
 
   // ---- a fresh link, opened ----
   const second = await makeLink(ana)

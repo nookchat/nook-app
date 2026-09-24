@@ -1,7 +1,7 @@
 /**
  * What this browser can do, in plain words.
  *
- * Cathode checks this before the host presses Start, so nobody meets a broken
+ * Nook checks this before the host presses Start, so nobody meets a broken
  * feature halfway through a session.
  */
 

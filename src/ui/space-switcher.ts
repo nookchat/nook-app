@@ -191,7 +191,7 @@ async function openSwitcher(
       }
     }),
     {
-      label: 'Make or join a space',
+      label: 'Add a space',
       lead: h('span', { class: 'space-face add' }, [icon('plus', 16)]),
       run: () => options.nav.add(),
     },

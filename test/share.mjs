@@ -13,7 +13,7 @@ export async function hostAndShare(host) {
   await host.waitForSelector('.voice-bar:not(.hidden)', { timeout: 15_000 })
   await host.click('button[aria-label="Share screen"]')
   await host.click('.space-title-button')
-  await host.click('.menu-item:has-text("Invite people")')
+  await host.click('.menu-item:has-text("Invite")')
   const box = host.locator('.share-code')
   await box.waitFor({ timeout: 15_000 })
   const link = await box.getAttribute('data-link')

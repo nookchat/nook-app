@@ -238,7 +238,7 @@ export class HomeView {
         void space.remember({ readDm: marks })
       }
     }
-    this.chrome.setTitle(`Cathode | ${name}`)
+    this.chrome.setTitle(`Nook | ${name}`)
   }
 
   /** The conversation on screen, so a notification for it can stay quiet. */

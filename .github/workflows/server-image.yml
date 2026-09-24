@@ -1,4 +1,4 @@
-# Build the Cathode server image and publish it to the GitHub container
+# Build the Nook server image and publish it to the GitHub container
 # registry, as ghcr.io/<owner>/cathode-server. Runs when the server changes on
 # main, and on a v* tag, which also tags the image with the version.
 

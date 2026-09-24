@@ -6,7 +6,7 @@
  * all do the same thing for ten minutes, once.
  *
  * On the new one: open the link, or scan the code with the camera, or type
- * it where the first screen offers "I already use Cathode". It becomes you,
+ * it where the first screen offers "I already use Nook". It becomes you,
  * with your spaces, your messages and your name. See net/link.ts for what
  * travels and how it is sealed.
  */
@@ -137,7 +137,7 @@ export function showBackup(): void {
   const save = h('button', { class: 'primary' }, [icon('download', 15), 'Download backup'])
   const close = dialog('Back up your account', [
     h('div', { class: 'backup-words' }, [
-      h('p', { class: 'small', text: 'This saves your account as one small file. If this browser’s data is ever cleared, open Cathode, choose “I already use Cathode”, and restore it. Your spaces and messages come back.' }),
+      h('p', { class: 'small', text: 'This saves your account as one small file. If this browser’s data is ever cleared, open Nook, choose “I have an account”, and restore it. Your spaces and messages come back.' }),
       h('p', { class: 'tiny faint', text: 'Anybody with the file can be you, so keep it somewhere private, such as a password manager. A password makes it useless to anybody else, but it cannot be recovered if you forget it.' }),
     ]),
     password,
@@ -162,7 +162,7 @@ function restoreFrom(file: File, passwordRow: HTMLElement, password: HTMLInputEl
   void file.text().then((text) => {
     const seen = readBackup(text)
     if (!seen) {
-      toast('That file is not a Cathode backup.', 'warn')
+      toast('That file is not a Nook backup.', 'warn')
       return
     }
     const restore = async (): Promise<void> => {
@@ -197,19 +197,19 @@ interface Reader {
  */
 export function enterLinkCode(): void {
   const code = h('input', { type: 'text', ariaLabel: 'The link or code', placeholder: 'Paste the link, or type the code' })
-  const server = h('input', { type: 'text', ariaLabel: 'The server', placeholder: 'Its server, such as cathode.example.org' })
+  const server = h('input', { type: 'text', ariaLabel: 'The server', placeholder: 'Its server, such as nook.example.org' })
   server.value = serverTag(newSpaceServer())
   const serverRow = h('label', { class: 'welcome-field hidden' }, [h('span', { class: 'eyebrow', text: 'Server' }), server])
-  const go = h('button', { class: 'primary', text: 'Link this device' })
+  const go = h('button', { class: 'primary', text: 'Link' })
   const note = h('div', { class: 'tiny faint', text: 'On the device you already use: Settings, Link another device.' })
   const video = h('video', { class: 'scan-video hidden' })
   video.muted = true
   video.playsInline = true
-  const scan = h('button', { class: 'ghost' }, [icon('qr', 15), 'Scan with the camera'])
+  const scan = h('button', { class: 'ghost' }, [icon('qr', 15), 'Scan'])
   // Or a backup, for a device that has nothing to link from.
   const picker = h('input', { type: 'file', class: 'hidden', ariaLabel: 'Backup file' })
   picker.accept = 'application/json,.json'
-  const restoreButton = h('button', { class: 'ghost start' }, [icon('file', 15), 'Restore from a backup file'])
+  const restoreButton = h('button', { class: 'ghost start' }, [icon('file', 15), 'Restore backup'])
   const password = h('input', { type: 'password', ariaLabel: 'The backup’s password', placeholder: 'The backup’s password' })
   const passwordRow = h('label', { class: 'welcome-field hidden' }, [h('span', { class: 'eyebrow', text: 'Password' }), password])
   restoreButton.addEventListener('click', () => picker.click())
@@ -325,7 +325,7 @@ export async function linkFromAddress(mount: HTMLElement): Promise<boolean> {
   } catch (err) {
     clean()
     words.textContent = err instanceof Error ? err.message : 'That did not work.'
-    const on = h('button', { class: 'primary big welcome-go', text: 'Carry on without it' })
+    const on = h('button', { class: 'primary big welcome-go', text: 'Skip' })
     card.append(on)
     await new Promise<void>((done) => on.addEventListener('click', () => done()))
     return false

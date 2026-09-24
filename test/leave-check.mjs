@@ -51,7 +51,7 @@ async function makeSpace(page, name, password = '') {
   await page.fill('input[aria-label="Space name"]', name)
   if (password) {
     page.once('dialog', (d) => d.accept(password))
-    await page.click('button:has-text("Add a password")')
+    await page.click('button:text-is("Password")')
   } else {
     await page.click('button:has-text("New space")')
   }
@@ -64,7 +64,7 @@ async function makeSpace(page, name, password = '') {
 
 async function openSettings(page) {
   await page.click('button[aria-label="Settings"]')
-  await page.waitForSelector('button:has-text("Leave this space")')
+  await page.waitForSelector('button:text-is("Leave")')
 }
 
 /** Wait for the opening screen, however we got there. */
@@ -120,7 +120,7 @@ try {
   admin.once('dialog', (d) => d.accept('staff room'))
   await admin.click('.card button:text-is("Rename")')
   await admin.waitForTimeout(800)
-  const shown = await admin.textContent('.card:has(button:has-text("Leave this space")) .small')
+  const shown = await admin.textContent('.card:has(button:text-is("Leave")) .small')
   check('the settings card shows the name it was just given', shown === 'staff room', shown)
   await admin.click('button[aria-label="Close settings"]')
   await admin.waitForFunction(
@@ -130,11 +130,11 @@ try {
   )
 
   await openSettings(member)
-  const memberCanDelete = await member.$('button:has-text("Delete for everybody")')
+  const memberCanDelete = await member.$('button:text-is("Delete space")')
   check('a member is not offered the delete button', memberCanDelete === null)
 
   member.once('dialog', (d) => d.accept())
-  await member.click('button:has-text("Leave this space")')
+  await member.click('button:text-is("Leave")')
   await atList(member)
   check('leaving lands back on the list', (await rows(member)).length === 0)
 
@@ -152,7 +152,7 @@ try {
 
   await openSettings(admin)
   admin.once('dialog', (d) => d.accept())
-  await admin.click('button:has-text("Delete for everybody")')
+  await admin.click('button:text-is("Delete space")')
   await atList(admin)
   check('the admin who deletes it lands back on the list', (await rows(admin)).length === 0)
 

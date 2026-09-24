@@ -88,7 +88,7 @@ export function settingsView(actions: SettingsActions): HTMLElement {
 
   // ---- profile ----
   const name = h('input', { type: 'text', value: identity.name, ariaLabel: 'Your name', placeholder: 'Your name' })
-  const save = h('button', { class: 'primary', text: 'Save name' })
+  const save = h('button', { class: 'primary', text: 'Save', ariaLabel: 'Save name' })
   const commit = (): void => {
     const next = cleanName(name.value)
     if (!next) {
@@ -106,7 +106,7 @@ export function settingsView(actions: SettingsActions): HTMLElement {
 
   // A picture travels inside the signed event that carries your name, shrunk to fit.
   const picture = h('button', { class: 'welcome-face profile-face', ariaLabel: 'Change your picture', title: 'Change your picture' })
-  const removePicture = h('button', { class: 'ghost tiny-btn hidden', text: 'Remove picture' })
+  const removePicture = h('button', { class: 'ghost tiny-btn hidden', text: 'Remove' })
   const pickPicture = h('input', { type: 'text', ariaLabel: 'Choose a picture' })
   pickPicture.type = 'file'
   pickPicture.accept = 'image/*'
@@ -167,7 +167,7 @@ export function settingsView(actions: SettingsActions): HTMLElement {
               ? h('span', { class: 'pill', text: 'Default', title: 'New spaces go here' })
               : h('button', {
                   class: 'ghost tiny-btn',
-                  text: 'Use for new spaces',
+                  text: 'Make default',
                   title: mine ? '' : 'Only if whoever runs it is happy for you to',
                   on: {
                     click: () => {
@@ -205,7 +205,7 @@ export function settingsView(actions: SettingsActions): HTMLElement {
 
   const addInput = h('input', { type: 'text', placeholder: 'cathode.example.org', ariaLabel: 'Add a server' })
   const addRow = h('div', { class: 'row hidden' })
-  const addOpen = h('button', { class: 'ghost small start' }, [icon('plus', 14), 'Add a server'])
+  const addOpen = h('button', { class: 'ghost small start' }, [icon('plus', 14), 'Add server'])
   addOpen.addEventListener('click', () => {
     addRow.classList.remove('hidden')
     addOpen.classList.add('hidden')
@@ -221,7 +221,7 @@ export function settingsView(actions: SettingsActions): HTMLElement {
           return
         }
         if (!(await checkServer(url))) {
-          toast(`No Cathode server answered at ${serverTag(url)}.`, 'bad', 6000)
+          toast(`No Nook server answered at ${serverTag(url)}.`, 'bad', 6000)
           return
         }
         addServer(url, true)
@@ -249,7 +249,7 @@ export function settingsView(actions: SettingsActions): HTMLElement {
   guide.target = '_blank'
   guide.rel = 'noopener'
   const own = h('details', { class: 'adv' }, [
-    h('summary', { text: 'Run your own server' }),
+    h('summary', { text: 'Run a server' }),
     h('div', { class: 'stack tight' }, [
       note('On a Linux machine with Docker, and a domain pointed at it, run this. It asks for the domain and does the rest.'),
       h('pre', { class: 'code-block', text: commands.join('\n') }),
@@ -278,7 +278,7 @@ export function settingsView(actions: SettingsActions): HTMLElement {
                   h('span', { class: 'truncate tiny', text: p.name, title: `ID ${p.key}` }),
                   h('button', {
                     class: 'small',
-                    text: 'Let them back in',
+                    text: 'Unban',
                     on: {
                       click: () => {
                         p.restore()
@@ -292,9 +292,9 @@ export function settingsView(actions: SettingsActions): HTMLElement {
             ])
           : null,
         h('div', { class: 'row wrap' }, [
-          h('button', { text: 'Leave this space', on: { click: () => void space.leave() } }),
+          h('button', { text: 'Leave', on: { click: () => void space.leave() } }),
           space.admin
-            ? h('button', { class: 'danger', text: 'Delete for everybody', on: { click: () => void space.remove() } })
+            ? h('button', { class: 'danger', text: 'Delete space', on: { click: () => void space.remove() } })
             : null,
         ]),
       )
@@ -439,14 +439,14 @@ export function settingsView(actions: SettingsActions): HTMLElement {
 
         card(
           'Your account',
-          note('Use Cathode on your phone or another computer, with the same spaces and messages.'),
+          note('Use Nook on your phone or another computer, with the same spaces and messages.'),
           h('div', { class: 'row wrap' }, [
-            h('button', { text: 'Link another device', on: { click: () => showLinkCode() } }),
-            h('button', { class: 'ghost', text: 'I have a code', on: { click: () => enterLinkCode() } }),
+            h('button', { text: 'Link a device', on: { click: () => showLinkCode() } }),
+            h('button', { class: 'ghost', text: 'Enter a code', on: { click: () => enterLinkCode() } }),
           ]),
           note('Keep a backup, in case this browser’s data is ever cleared.'),
           h('div', { class: 'row wrap' }, [
-            h('button', { on: { click: () => showBackup() } }, [icon('download', 15), 'Download a backup']),
+            h('button', { on: { click: () => showBackup() } }, [icon('download', 15), 'Backup']),
           ]),
         ),
 
@@ -455,7 +455,7 @@ export function settingsView(actions: SettingsActions): HTMLElement {
         // What most people never need, closed until somebody looks.
         h('section', { class: 'card stack tight' }, [
           h('details', { class: 'adv settings-more' }, [
-            h('summary', { text: 'More: your ID, quick reactions, GIFs' }),
+            h('summary', { text: 'More' }),
             h('div', { class: 'stack tight' }, [
               h('span', { class: 'eyebrow', text: 'Your ID' }),
               h('div', { class: 'row' }, [

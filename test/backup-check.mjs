@@ -32,7 +32,7 @@ const fresh = async () => (await browser.newContext({ acceptDownloads: true, vie
 
 async function backUp(page, password = '') {
   await page.evaluate(() => document.querySelector('button[aria-label="Settings"]').click())
-  await page.click('button:has-text("Download a backup")')
+  await page.click('button:text-is("Backup")')
   if (password) await page.fill('input[aria-label="Password for the backup"]', password)
   const [download] = await Promise.all([page.waitForEvent('download'), page.click('button:has-text("Download backup")')])
   const path = await download.path()
@@ -42,7 +42,7 @@ async function backUp(page, password = '') {
 
 async function restore(page, path, password = '') {
   await page.goto(APP_URL)
-  await page.click('button:has-text("I already use Cathode")')
+  await page.click('button:has-text("I have an account")')
   await page.setInputFiles('input[aria-label="Backup file"]', path)
   if (password !== null && password !== '') {
     await page.waitForSelector('input[aria-label="The backup’s password"]:visible')
@@ -89,7 +89,7 @@ try {
   const plain = await backUp(ana)
   const file = JSON.parse(plain.text)
   check('and the backup does not carry it: it is on the server', !plain.text.includes('data:image'), `${plain.text.length} bytes`)
-  check('a backup is one file, named for its owner, that says what it is', plain.name === 'cathode-Ana.json' && file.cathode === 'backup' && /private/.test(file.keep), plain.name)
+  check('a backup is one file, named for its owner, that says what it is', plain.name === 'nook-Ana.json' && file.cathode === 'backup' && /private/.test(file.keep), plain.name)
 
   // ---- a browser with nothing in it ----
   const two = await fresh()

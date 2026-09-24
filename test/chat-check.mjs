@@ -226,7 +226,7 @@ try {
   check('a channel with something new in it says so', general?.unread === true, JSON.stringify(rail))
   check('and a mention in it is counted', general?.badge === '1', JSON.stringify(general))
   const tab = await bob.title()
-  check('the tab says the app first, then the mention count', tab.startsWith('Cathode | (1)'), tab)
+  check('the tab says the app first, then the mention count', tab.startsWith('Nook | (1)'), tab)
 
   await bob.click('.rail-left .rail-item:has-text("general")')
   await bob.waitForTimeout(1200)
@@ -398,7 +398,7 @@ try {
   const onBob = await menuFor(alice, 'Bob')
   check(
     'one ellipsis opens everything an admin can do about somebody',
-    onBob.some((t) => t === 'Make an admin') && onBob.some((t) => t.startsWith('Remove')),
+    onBob.some((t) => t === 'Make admin') && onBob.some((t) => t.startsWith('Remove')),
     onBob.join(' | '),
   )
   await alice.keyboard.press('Escape')
@@ -421,7 +421,7 @@ try {
 
   // Tagging somebody from the list of who is here.
   await menuFor(alice, 'Bob')
-  await alice.click('.menu-item:has-text("Mention Bob")')
+  await alice.click('.menu-item:has(.menu-label:text-is("Mention"))')
   await alice.waitForTimeout(300)
   const composed = await alice.inputValue(BOX)
   check('a person can be tagged from the members list', composed === '@Bob ', JSON.stringify(composed))

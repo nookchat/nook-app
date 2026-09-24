@@ -70,14 +70,14 @@ export function welcome(mount: HTMLElement, invited: boolean): Promise<void> {
   name.addEventListener('input', paint)
 
   /*
-   * First, which of the two you are. Somebody who already uses Cathode is
+   * First, which of the two you are. Somebody who already uses Nook is
    * never asked for a name: they are somebody already, and linking this
    * device or restoring a backup brings that name with them.
    */
   const fresh = h('button', { class: 'primary big welcome-go', text: 'I’m new' })
-  const known = h('button', { class: 'big welcome-go', text: 'I already use Cathode' })
+  const known = h('button', { class: 'big welcome-go', text: 'I have an account' })
   const choose = h('div', { class: 'welcome-step' }, [
-    h('h1', { class: 'welcome-title', text: invited ? 'You have been invited' : 'Welcome to Cathode' }),
+    h('h1', { class: 'welcome-title', text: invited ? 'You have been invited' : 'Welcome to Nook' }),
     h('p', {
       class: 'welcome-text',
       text: invited ? 'Somebody sent you an invite to a space.' : 'Chat, voice and screen sharing with your friends.',

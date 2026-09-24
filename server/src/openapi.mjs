@@ -29,10 +29,10 @@ const cluster = [{ bearer: [] }]
 export const openapi = {
   openapi: '3.1.0',
   info: {
-    title: 'Cathode server',
+    title: 'Nook server',
     version: VERSION,
     description:
-      'Keeps spaces for Cathode. Everything it holds is sealed on the device that wrote it with a key this server never sees: a space line with the key made from the space code, a person record with a key made from their identity. The server stores and relays ciphertext, and cannot read or forge any of it.',
+      'Keeps spaces for Nook. Everything it holds is sealed on the device that wrote it with a key this server never sees: a space line with the key made from the space code, a person record with a key made from their identity. The server stores and relays ciphertext, and cannot read or forge any of it.',
   },
   components: {
     securitySchemes: { bearer: { type: 'http', scheme: 'bearer', description: 'CATHODE_CLUSTER_SECRET' } },

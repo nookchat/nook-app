@@ -1,5 +1,5 @@
 /**
- * Cathode: spaces with text channels, voice and screen sharing, kept on a
+ * Nook: spaces with text channels, voice and screen sharing, kept on a
  * server, sealed end to end. Read README.md.
  *
  * On opening, every space you are in starts at once (space/registry.ts), so
@@ -58,7 +58,7 @@ function freshWindow(title: string): WindowChrome {
 /** Home: direct messages on the left, and your spaces or a conversation beside them. */
 async function showHome(dm: DirectRef | null = null, making = false): Promise<void> {
   clearLink()
-  const chrome = freshWindow('Cathode: chat, voice and screen sharing')
+  const chrome = freshWindow('Nook: chat, voice and screen sharing')
   const home = new HomeView(chrome.body, chrome, {
     page: () =>
       spaceList({
@@ -79,7 +79,7 @@ async function showHome(dm: DirectRef | null = null, making = false): Promise<vo
 }
 
 async function showSettings(): Promise<void> {
-  const chrome = freshWindow('Cathode | Settings')
+  const chrome = freshWindow('Nook | Settings')
   const { settingsView } = await import('./ui/settings-view')
   chrome.body.append(
     settingsView({
@@ -95,7 +95,7 @@ async function showSettings(): Promise<void> {
 }
 
 function openSpace(space: SpaceRuntime): void {
-  const chrome = freshWindow('Cathode')
+  const chrome = freshWindow('Nook')
   setLinkSecret(space.secret, space.locked, space.server)
   const view = new SpaceView(
     chrome.body,

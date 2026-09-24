@@ -57,7 +57,7 @@ try {
   await page.waitForTimeout(800)
   // The invite lives in the space's menu.
   await page.click('.space-title-button')
-  await page.click('.menu-item:has-text("Invite people")')
+  await page.click('.menu-item:has-text("Invite")')
   await page.locator('.share-code').waitFor({ timeout: 15_000 })
 
   const code = (await page.locator('.share-code').textContent())?.trim() ?? ''

@@ -209,7 +209,7 @@ function watchPicture(video: HTMLVideoElement, tile: HTMLElement, file: Attachme
     video.removeEventListener('timeupdate', check)
     const frames = video.getVideoPlaybackQuality?.().totalVideoFrames ?? 1
     if (video.videoWidth > 0 && frames > 0) return
-    const save = h('button', { class: 'small' }, [icon('download', 14), 'Save it'])
+    const save = h('button', { class: 'small' }, [icon('download', 14), 'Save'])
     save.addEventListener('click', async () => saveFile(await source.open(file), file.name))
     tile.append(
       h('div', { class: 'att-cant' }, [

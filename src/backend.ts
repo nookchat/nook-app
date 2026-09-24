@@ -1,5 +1,5 @@
 /**
- * The servers Cathode uses.
+ * The servers Nook uses.
  *
  * Every space lives on a server: its history, its members, and your list of
  * spaces are kept there, sealed so the server cannot read them.
@@ -83,7 +83,7 @@ export function setDefaultServer(url: string): void {
 }
 
 /**
- * Is a Cathode server answering there?
+ * Is a Nook server answering there?
  *
  * A server says what it is in its health answer. Servers from before 1.2
  * said cathode-archive, and they speak the same API, so both are accepted.

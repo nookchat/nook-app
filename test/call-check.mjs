@@ -216,8 +216,8 @@ try {
   await cat.evaluate(() => [...document.querySelectorAll('.voice-channel .rail-item')].find((b) => b.textContent.includes('lounge'))?.click())
   await cat.waitForSelector('.voice-bar:not(.voice-dock):not(.hidden)', { timeout: 15_000 })
   await cat.click('button[aria-label="Settings"]')
-  await cat.waitForSelector('button:has-text("Test microphone")')
-  await cat.click('button:has-text("Test microphone")')
+  await cat.waitForSelector('button:has-text("Test mic")')
+  await cat.click('button:has-text("Test mic")')
   const moved = await waitFor(
     () => cat.evaluate(() => (parseFloat(document.querySelector('.meter > i')?.style.width ?? '0') > 5 ? document.querySelector('.meter > i').style.width : null)),
     10_000,
@@ -243,7 +243,7 @@ try {
     10_000,
   )
   check('and choosing another during a call moves the call to it', !!inCall, inCall ?? 'still the old one')
-  await cat.click('summary:has-text("More voice options")')
+  await cat.click('summary:text-is("More")')
   await cat.click('button:has-text("Test connection")')
   const relay = await waitFor(() => cat.evaluate(() => document.querySelector('.relay-result')?.textContent ?? null), 15_000)
   check('and the connection test says what the relay is doing', !!relay, relay ?? 'nothing')

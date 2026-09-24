@@ -1,7 +1,7 @@
 /**
  * End to end smoke test.
  *
- * Two real Chrome pages, one Cathode server, and a real peer connection.
+ * Two real Chrome pages, one Nook server, and a real peer connection.
  * The only thing we fake is the operating system picker: getDisplayMedia gives
  * back a canvas stream plus a tone, so the test needs no screen permission and
  * stays the same on every machine.
@@ -116,7 +116,7 @@ try {
   await host.goto(APP_URL, { waitUntil: 'domcontentloaded' })
 
   // Somebody new says so, and is asked what to call them before anything else.
-  await host.waitForSelector('button:has-text("I already use Cathode")', { timeout: 10_000 })
+  await host.waitForSelector('button:has-text("I have an account")', { timeout: 10_000 })
   await host.click('.welcome-step:not(.hidden) button.primary')
   await host.waitForSelector('input[aria-label="Your name"]', { timeout: 10_000 })
   const emptyStops = await host.evaluate(() => document.querySelector('.welcome-step:not(.hidden) .welcome-go')?.disabled === true)
@@ -139,7 +139,7 @@ try {
   await host.getByRole('button', { name: 'New space' }).click()
   // The invite is in the space's menu, because it is not something done often.
   await host.click('.space-title-button')
-  await host.click('.menu-item:has-text("Invite people")')
+  await host.click('.menu-item:has-text("Invite")')
   const codeBox = host.locator('.share-code')
   await codeBox.waitFor({ timeout: 15_000 })
   const link = await codeBox.getAttribute('data-link')
@@ -189,7 +189,7 @@ try {
   )
   check('the space is on its server', !!serverOpen, serverOpen ?? 'nothing')
 
-  // Cathode must name where encoding happens, without pretending either way.
+  // Nook must name where encoding happens, without pretending either way.
   const gpu = await host.evaluate(async () => {
     const { probeHardwareEncoders } = await import('/src/rtc/hardware.ts')
     const { availableCodecs } = await import('/src/rtc/quality.ts')
@@ -197,7 +197,7 @@ try {
     return { hardware: probe.hardware, checked: probe.checked, note: probe.note }
   })
   check(
-    'Cathode probes for a hardware encoder and reports what it found',
+    'Nook probes for a hardware encoder and reports what it found',
     gpu.checked === true && Array.isArray(gpu.hardware) && gpu.note.length > 20,
     gpu.hardware.length ? `hardware: ${gpu.hardware.join(', ')}` : 'no hardware encoder here',
   )
@@ -251,7 +251,7 @@ try {
   await viewer.goto(link, { waitUntil: 'domcontentloaded' })
 
   // Somebody arriving on an invite is asked too, and then goes straight in.
-  await viewer.waitForSelector('button:has-text("I already use Cathode")', { timeout: 10_000 })
+  await viewer.waitForSelector('button:has-text("I have an account")', { timeout: 10_000 })
   const invitedTitle = await viewer.$eval('.welcome-title', (el) => el.textContent)
   await viewer.click('.welcome-step:not(.hidden) button.primary')
   await viewer.waitForSelector('input[aria-label="Your name"]', { timeout: 10_000 })

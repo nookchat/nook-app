@@ -162,7 +162,7 @@ export function voiceSettings(more: HTMLElement[] = []): HTMLElement {
     if (test) void restart()
   })
   // Before the page may see the microphones' names, it cannot offer them.
-  const named = h('button', { class: 'ghost small start hidden', text: 'Show my microphones' })
+  const named = h('button', { class: 'ghost small start hidden', text: 'Show microphones' })
   named.addEventListener('click', async () => {
     try {
       const probe = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -179,7 +179,7 @@ export function voiceSettings(more: HTMLElement[] = []): HTMLElement {
   const bar = h('i')
   const meter = h('div', { class: 'meter', role: 'meter', ariaLabel: 'Microphone level' }, [bar])
   const which = h('span', { class: 'tiny faint truncate' })
-  const testButton = h('button', {}, [icon('mic', 15), 'Test microphone'])
+  const testButton = h('button', {}, [icon('mic', 15), 'Test mic'])
   const hearButton = h('button', { class: 'ghost hidden' }, [icon('volume', 15), 'Hear yourself'])
   let test: Test | null = null
   let hearing = false
@@ -256,7 +256,7 @@ export function voiceSettings(more: HTMLElement[] = []): HTMLElement {
     h('div', { class: 'mic-test' }, [h('div', { class: 'row wrap' }, [testButton, hearButton]), meter, which]),
     // The rest is for when something is wrong, or for somebody who likes switches.
     h('details', { class: 'adv' }, [
-      h('summary', { text: 'More voice options' }),
+      h('summary', { text: 'More' }),
       h('div', { class: 'stack tight' }, [...more, h('div', { class: 'row wrap' }, [relayButton]), results]),
     ]),
   ])

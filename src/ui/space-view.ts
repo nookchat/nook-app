@@ -490,7 +490,7 @@ export class SpaceView {
     this.bus = null
     useServedIce()
     void bookFor(this.server).flush()
-    document.title = 'Cathode'
+    document.title = 'Nook'
   }
 
   /**
@@ -919,7 +919,7 @@ export class SpaceView {
     if (!this.chat?.isAdmin) return []
     const items: MenuItem[] = [
       {
-        label: 'Rename it',
+        label: 'Rename',
         note: `Shown instead of ${channel.name}`,
         run: () => {
           const raw = window.prompt('What should this channel be called?', channel.label) ?? ''
@@ -939,7 +939,7 @@ export class SpaceView {
     ]
     if (channel.name !== DEFAULT_CHANNEL) {
       items.push({
-        label: 'Delete it',
+        label: 'Delete',
         note: 'Takes the channel and everything said in it',
         danger: true,
         run: () => {
@@ -1552,7 +1552,7 @@ export class SpaceView {
     // The app first, then where you are. A count of mentions rather than of
     // messages: the number on a tab has to be one worth turning for.
     const name = this.capture ? 'Sharing your screen' : `#${this.channel}`
-    this.chrome.setTitle(`Cathode | ${this.mentions ? `(${this.mentions}) ` : ''}${name}`)
+    this.chrome.setTitle(`Nook | ${this.mentions ? `(${this.mentions}) ` : ''}${name}`)
     // Who is here, and the server only when it is not answering: that is the one time it is news.
     const serving = serverTag(this.space.channel?.serving ?? this.server)
     this.chrome.setStatus([what, `${people} here`, ...(up ? [] : [`cannot reach ${serving}`])])
@@ -1584,7 +1584,7 @@ export class SpaceView {
       if (this.stopped || this.serverWarned || open() > 0) return
       this.serverWarned = true
       toast(
-        `Cathode cannot reach ${serverTag(this.server)} or any server in its cluster, so nothing will sync until one answers. They may be down, or this network may block them.`,
+        `Nook cannot reach ${serverTag(this.server)} or any server in its cluster, so nothing will sync until one answers. They may be down, or this network may block them.`,
         'bad',
         12_000,
       )
@@ -1663,9 +1663,9 @@ export class SpaceView {
       name: this.spaceTitle,
       nav: this.chrome?.nav ?? { home: () => this.goHome(), add: () => this.goHome(), open: () => undefined },
       more: () => [
-        { label: 'Invite people', lead: h('span', { class: 'menu-icon' }, [icon('user-plus', 16)]), run: () => void this.showInvite() },
-        { label: 'Space settings', lead: h('span', { class: 'menu-icon' }, [icon('settings', 16)]), run: () => void this.openSettings() },
-        { label: 'Leave space', danger: true, lead: h('span', { class: 'menu-icon' }, [icon('leave', 16)]), run: () => void this.leaveSpace() },
+        { label: 'Invite', lead: h('span', { class: 'menu-icon' }, [icon('user-plus', 16)]), run: () => void this.showInvite() },
+        { label: 'Settings', lead: h('span', { class: 'menu-icon' }, [icon('settings', 16)]), run: () => void this.openSettings() },
+        { label: 'Leave', danger: true, lead: h('span', { class: 'menu-icon' }, [icon('leave', 16)]), run: () => void this.leaveSpace() },
       ],
     })
 
@@ -2057,7 +2057,7 @@ export class SpaceView {
     } catch {
       frame.append(h('div', { class: 'small', text: 'This link is too long for a QR code.' }))
     }
-    const copy = h('button', { class: 'primary grow' }, [icon('link', 15), 'Copy invite link'])
+    const copy = h('button', { class: 'primary grow' }, [icon('link', 15), 'Copy link'])
     copy.addEventListener('click', async () => {
       const ok = await copyText(link)
       toast(ok ? 'Invite link copied.' : 'Could not copy it.', ok ? 'info' : 'warn')
@@ -2430,7 +2430,7 @@ export class SpaceView {
     const range = h('input', { type: 'range', min: '0', max: '100', step: '1', ariaLabel: `Volume for ${name}` })
     range.value = String(Math.round(volumeFor(key) * 100))
     const mute = h('button', { class: 'switch-row menu-switch', role: 'switch' }, [
-      h('span', { class: 'switch-words' }, [h('span', { class: 'switch-label', text: 'Mute for me' })]),
+      h('span', { class: 'switch-words' }, [h('span', { class: 'switch-label', text: 'Mute' })]),
       h('span', { class: 'switch' }, [h('i')]),
     ])
     const paint = (): void => {
@@ -2471,13 +2471,13 @@ export class SpaceView {
      * name to the room.
      */
     items.push({
-      label: `Message ${name}`,
+      label: 'Message',
       note: 'Privately, sealed to the two of you',
       run: () => this.openDirect(key),
     })
     if (here) {
       items.push({
-        label: `Call ${name}`,
+        label: 'Call',
         note: 'A voice call, just the two of you',
         run: () => void this.callPerson(key),
       })
@@ -2485,7 +2485,7 @@ export class SpaceView {
 
     if (chat.nameOf(key)) {
       items.push({
-        label: `Mention ${name}`,
+        label: 'Mention',
         note: 'Puts @' + name + ' in the message you are writing',
         run: () => {
           this.chatPanel?.insert(`@${name} `)
@@ -2496,7 +2496,7 @@ export class SpaceView {
 
 
     items.push({
-      label: 'Copy their ID',
+      label: 'Copy ID',
       note: shortKey(key),
       run: () => {
         void copyText(key).then((ok) =>
@@ -2519,24 +2519,24 @@ export class SpaceView {
     }
     if (role !== 'admin') {
       items.push({
-        label: 'Make an admin',
+        label: 'Make admin',
         note: 'They can rename, pin, clear and remove people',
         run: () => void this.setRole(key, 'admin'),
       })
     } else if (key !== chat.founder) {
       items.push({
-        label: 'Take admin away',
+        label: 'Remove admin',
         run: () => void this.setRole(key, 'member'),
       })
     }
     if (role === 'kicked') {
       items.push({
-        label: 'Let them back in',
+        label: 'Unban',
         run: () => void this.setRole(key, 'member'),
       })
     } else if (key !== chat.founder) {
       items.push({
-        label: `Remove ${name}`,
+        label: 'Remove',
         note: 'Everything they write after this is ignored by everybody',
         danger: true,
         run: () => {
@@ -2703,14 +2703,14 @@ export class SpaceView {
     const hereCount = visible.filter((r) => r.here).length
     const awayCount = visible.length - hereCount
     this.peopleList.append(
-      h('div', { class: 'rail-head' }, [h('span', { class: 'eyebrow', text: `Here — ${hereCount}` })]),
+      h('div', { class: 'rail-head' }, [h('span', { class: 'eyebrow', text: `Here · ${hereCount}` })]),
     )
     let drawnOffline = false
     for (const row of order) {
       if (!row.here && !drawnOffline) {
         drawnOffline = true
         this.peopleList.append(
-          h('div', { class: 'rail-head' }, [h('span', { class: 'eyebrow', text: `Not here — ${awayCount}` })]),
+          h('div', { class: 'rail-head' }, [h('span', { class: 'eyebrow', text: `Away · ${awayCount}` })]),
         )
       }
 

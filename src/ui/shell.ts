@@ -91,11 +91,11 @@ export function createWindow(title: string, nav: Navigation): WindowChrome {
   }
 }
 
-/** Browser support and the short version of how Cathode works, behind a disclosure. */
+/** Browser support and the short version of how Nook works, behind a disclosure. */
 export function aboutCard(): HTMLElement {
   const support = checkSupport()
   return h('details', { class: 'adv' }, [
-    h('summary', { text: 'Browser check and how it works' }),
+    h('summary', { text: 'Browser check' }),
     h('div', { class: 'card stack tight' }, [
       h(
         'div',
@@ -110,7 +110,7 @@ export function aboutCard(): HTMLElement {
       h('hr'),
       h('ul', { class: 'support-list' }, [
         h('li', {
-          text: 'A space lives on a Cathode server. Everything is encrypted with the key in your link before it leaves this browser, so the server cannot read it.',
+          text: 'A space lives on a Nook server. Everything is encrypted with the key in your link before it leaves this browser, so the server cannot read it.',
         }),
         h('li', { text: 'That key sits after the # in the link, so the webserver never receives it.' }),
         h('li', {

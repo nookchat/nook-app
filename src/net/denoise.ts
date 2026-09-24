@@ -95,7 +95,7 @@ export async function denoise(mic: MediaStream): Promise<Denoiser | null> {
       const done = window.setTimeout(() => resolve(false), 8000)
       node.onprocessorerror = (e) => {
         window.clearTimeout(done)
-        console.warn('Cathode denoiser worklet died:', e)
+        console.warn('Nook denoiser worklet died:', e)
         resolve(false)
       }
       node.port.onmessage = (event: MessageEvent) => {
@@ -106,7 +106,7 @@ export async function denoise(mic: MediaStream): Promise<Denoiser | null> {
         }
         if (data?.type === 'failed') {
           window.clearTimeout(done)
-          console.warn('Cathode could not start the denoiser:', data.why)
+          console.warn('Nook could not start the denoiser:', data.why)
           resolve(false)
         }
       }

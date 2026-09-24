@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Screen share, voice and chat. Peer to peer, or on a Cathode server you run.",
+  "description": "Screen share, voice and chat. Peer to peer, or on a Nook server you run.",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",

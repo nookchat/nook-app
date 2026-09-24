@@ -1,5 +1,5 @@
 /**
- * The Cathode server.
+ * The Nook server.
  *
  * A space that runs on a server is kept here, in Postgres: every event, sealed
  * on the device that wrote it with a key made from the space code, which this

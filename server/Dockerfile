@@ -1,8 +1,8 @@
-# The Cathode server. Node and one dependency, the Postgres driver.
+# The Nook server. Node and one dependency, the Postgres driver.
 FROM node:22-alpine
 
 LABEL org.opencontainers.image.title="cathode" \
-      org.opencontainers.image.description="Cathode server: end to end encrypted spaces in Postgres, one WebSocket per space, clustered across several operators"
+      org.opencontainers.image.description="Nook server: end to end encrypted spaces in Postgres, one WebSocket per space, clustered across several operators"
 
 WORKDIR /app
 COPY package.json package-lock.json ./

@@ -153,7 +153,7 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
     h('div', { class: 'home-page' }, [
       h('header', { class: 'home-hero' }, [
         h('div', { class: 'stack tight' }, [
-          h('h1', { class: 'home-title', text: 'Cathode' }),
+          h('h1', { class: 'home-title', text: 'Nook' }),
           h('div', { class: 'home-tag', text: 'Chat, voice and screen sharing. End to end encrypted.' }),
         ]),
       ]),
@@ -171,13 +171,13 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
                   h('button', {
                     class: 'big',
                     title: 'People need the password as well as the link',
-                    text: 'Add a password',
+                    text: 'Password',
                     on: { click: () => make(true) },
                   }),
                 ]),
               ]),
           h('div', { class: 'card stack tight' }, [
-            h('span', { class: 'eyebrow', text: 'Join a space' }),
+            h('span', { class: 'eyebrow', text: 'Join' }),
             h('div', { class: 'row' }, [
               join,
               h('button', { class: 'join-button', text: 'Join', on: { click: go } }, [icon('enter', 15)]),
@@ -208,7 +208,7 @@ function addServerCard(actions: SpaceListActions): HTMLElement {
     const up = await checkServer(url)
     add.disabled = false
     if (!up) {
-      toast(`No Cathode server answered at ${serverTag(url)}.`, 'bad', 6000)
+      toast(`No Nook server answered at ${serverTag(url)}.`, 'bad', 6000)
       return
     }
     addServer(url, true)
@@ -224,8 +224,8 @@ function addServerCard(actions: SpaceListActions): HTMLElement {
   guide.target = '_blank'
   guide.rel = 'noopener'
   return h('div', { class: 'card stack tight' }, [
-    h('span', { class: 'eyebrow', text: 'Add your server' }),
-    h('div', { class: 'tiny faint', text: 'Your spaces live on a Cathode server that you or a friend runs.' }),
+    h('span', { class: 'eyebrow', text: 'Add server' }),
+    h('div', { class: 'tiny faint', text: 'Your spaces live on a Nook server that you or a friend runs.' }),
     h('div', { class: 'row' }, [input, add]),
     guide,
   ])

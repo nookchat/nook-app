@@ -1,7 +1,7 @@
 /**
  * ICE configuration.
  *
- * Cathode ships with public STUN only, which keeps the promise of no server. STUN
+ * Nook ships with public STUN only, which keeps the promise of no server. STUN
  * tells a peer its public address. It never carries media.
  *
  * About one connection in eight fails with STUN alone, because of symmetric NAT
@@ -26,7 +26,7 @@ export const STUN_SERVERS: RTCIceServer[] = [
  *
  * Use short lived credentials. A key in a static site is a public key.
  *
- * A space on a Cathode server needs none of this: the server hands out its
+ * A space on a Nook server needs none of this: the server hands out its
  * own short lived TURN credentials, and useServedIce puts them here for as
  * long as that space is open.
  */

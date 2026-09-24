@@ -1,5 +1,5 @@
 #!/bin/sh
-# A Cathode server, in one command:
+# A Nook server, in one command:
 #
 #   curl -fsSL https://raw.githubusercontent.com/nebbsie/stream/main/server/install.sh | sh
 #
@@ -24,7 +24,7 @@ REPO="${CATHODE_REPO:-https://raw.githubusercontent.com/nebbsie/stream/main/serv
 DIR="${CATHODE_DIR:-cathode}"
 
 say() { printf '%s\n' "$*"; }
-fail() { printf 'Cathode: %s\n' "$*" >&2; exit 1; }
+fail() { printf 'Nook: %s\n' "$*" >&2; exit 1; }
 
 command -v docker >/dev/null 2>&1 || fail "Docker is not installed. See https://docs.docker.com/engine/install/"
 docker compose version >/dev/null 2>&1 || fail "Docker's compose plugin is missing. See https://docs.docker.com/compose/install/"
@@ -41,7 +41,7 @@ secret() {
 }
 
 if [ -f .env ]; then
-  say "Updating the Cathode server in $(pwd). Your settings in .env are kept."
+  say "Updating the Nook server in $(pwd). Your settings in .env are kept."
 else
   domain="${CATHODE_DOMAIN:-}"
   if [ -z "$domain" ]; then
@@ -60,7 +60,7 @@ else
 
   umask 077
   cat > .env <<EOF
-# Cathode server settings. Change any of them and run: docker compose up -d
+# Nook server settings. Change any of them and run: docker compose up -d
 # Every other setting has a default; see server/README.md to override one.
 CATHODE_DOMAIN=$domain
 POSTGRES_PASSWORD=$(secret 24)
@@ -72,7 +72,7 @@ fi
 
 curl -fsSL "$REPO/docker-compose.yml" -o docker-compose.yml || fail "Could not download the compose file from $REPO."
 
-say "Starting Cathode..."
+say "Starting Nook..."
 docker compose pull --quiet
 docker compose up -d --remove-orphans
 
@@ -100,10 +100,10 @@ until curl -fsS "$url/api/v1/health" >/dev/null 2>&1; do
 done
 
 say ""
-say "Cathode is running at https://$domain"
+say "Nook is running at https://$domain"
 grep -q '^COMPOSE_PROFILES=.*tls' .env || say "  (behind your own proxy: send https://$domain to port 8787 here, with CATHODE_BIND=0.0.0.0 if it runs elsewhere)"
 say ""
-say "  Use it:     open Cathode, choose Add your server, and type $domain"
+say "  Use it:     open Nook, choose Add server, and type $domain"
 say "  Update:     run this command again"
 say "  Settings:   $(pwd)/.env, then: docker compose up -d"
 say "  Logs:       cd $(pwd) && docker compose logs -f"

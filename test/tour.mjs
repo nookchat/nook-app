@@ -126,7 +126,7 @@ try {
   await ada.click('.space-title-button')
   await wait(200)
   await shot(ada, 'space-menu-desktop')
-  await ada.click('.menu-item:has-text("Invite people")')
+  await ada.click('.menu-item:has-text("Invite")')
   await wait(500)
   await shot(ada, 'invite-desktop')
   await ada.keyboard.press('Escape')

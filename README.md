@@ -1,8 +1,8 @@
-# Cathode
+# Nook
 
 **[cathode.video](https://cathode.video)**
 
-Chat, voice and screen share, in spaces that live on Cathode servers. Anybody
+Chat, voice and screen share, in spaces that live on Nook servers. Anybody
 can run a server from the Docker image in `server/`, and a few people can join
 theirs into a cluster, so a space keeps going when one of them is down.
 Everything is encrypted on the device that wrote it: a server keeps and passes
@@ -74,17 +74,17 @@ a direct message or a mention in any of them reaches you wherever you are.
 
 Nothing about a space is written to IndexedDB or local storage.
 
-**A backup.** Settings, Your account, Download a backup, saves your account
+**A backup.** Settings, Your account, Backup, saves your account
 as one small file, with a password if you want one. If a browser's data is
-ever cleared, open Cathode, choose "I already use Cathode", then "Restore from
-a backup file", and you are back with every space and message. Anybody with
+ever cleared, open Nook, choose "I have an account", then "Restore
+backup", and you are back with every space and message. Anybody with
 the file can be you, so keep it somewhere private.
 
-**Another device.** Settings, Link another device, shows a QR code, a link
+**Another device.** Settings, Link a device, shows a QR code, a link
 and a code like `K7M2-9QPT-VB2W`. Scan it with the new device's camera, open
-the link there, or type the code on its first screen under "I already use
-Cathode". The new device becomes you: your key, name and picture, and which
-servers hold your spaces, so it has the same spaces, messages and direct
+the link there, or type the code on its first screen under "I have an
+account". The new device becomes you: your key, your name, and which servers
+hold your spaces (your picture comes from them), so it has the same spaces, messages and direct
 messages. What travels is sealed with a key made from the code, waits on your
 server for ten minutes, and can be taken once.
 
@@ -215,7 +215,7 @@ src/
     link.ts           linking a device, and backups: what travels, and how it is sealed
     mesh.ts           who is here, from what the server passes on
     voice.ts          voice channels, mic.ts denoise.ts talking.ts around them
-    uplink.ts         how much upload Cathode may use, guessed then measured
+    uplink.ts         how much upload Nook may use, guessed then measured
   signal/
     bus.ts            signals in and out of a space, de-duplicated
     envelope.ts       AES-GCM seal and open, replay guard

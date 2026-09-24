@@ -1,4 +1,4 @@
-# The Cathode server, on a machine of your own.
+# The Nook server, on a machine of your own.
 #
 # The easy way, which writes this file and a .env beside it and starts it:
 #
@@ -20,7 +20,7 @@
 #
 #   docker compose up -d cathode
 #
-# and use http://localhost:8787 as the server address in Cathode.
+# and use http://localhost:8787 as the server address in Nook.
 #
 # Update to the newest server: run the installer again, or
 #

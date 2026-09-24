@@ -1,5 +1,5 @@
 /**
- * The whole thing, for the browser tests: Postgres, a Cathode server on 8787,
+ * The whole thing, for the browser tests: Postgres, a Nook server on 8787,
  * and the page served by Vite with that server built in.
  *
  *   node test/stack.mjs           starts all three and waits

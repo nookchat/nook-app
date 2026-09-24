@@ -191,8 +191,8 @@ interface BackupFile {
 }
 
 const KEEP =
-  'This file is your Cathode account. Anybody who has it can be you, so keep it somewhere private. ' +
-  'To use it, open Cathode, choose "I already use Cathode", then "Restore from a backup file".'
+  'This file is your Nook account. Anybody who has it can be you, so keep it somewhere private. ' +
+  'To use it, open Nook, choose "I have an account", then "Restore backup".'
 
 async function passwordKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
   const base = await crypto.subtle.importKey('raw', enc.encode(password) as BufferSource, 'PBKDF2', false, ['deriveKey'])
@@ -221,7 +221,7 @@ export async function backupFile(password = ''): Promise<{ name: string; blob: B
     file.account = account
   }
   const safe = (account.n || 'account').replace(/[^\w -]+/g, '').trim().replace(/\s+/g, '-') || 'account'
-  return { name: `cathode-${safe}.json`, blob: new Blob([JSON.stringify(file, null, 2)], { type: 'application/json' }) }
+  return { name: `nook-${safe}.json`, blob: new Blob([JSON.stringify(file, null, 2)], { type: 'application/json' }) }
 }
 
 /** Whether a backup needs its password, or null when the text is not a backup at all. */
@@ -251,6 +251,6 @@ export async function restoreBackup(text: string, password = ''): Promise<string
       throw new Error('That is not the password this backup was saved with.')
     }
   }
-  if (!account || typeof account.k !== 'string') throw new Error('That file is not a Cathode backup.')
+  if (!account || typeof account.k !== 'string') throw new Error('That file is not a Nook backup.')
   return adopt(account)
 }

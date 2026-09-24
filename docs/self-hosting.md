@@ -1,6 +1,6 @@
-# Run your own Cathode server
+# Run your own Nook server
 
-A Cathode server keeps spaces: their messages, who is in them, and each
+A Nook server keeps spaces: their messages, who is in them, and each
 person's list of spaces. Everything it keeps is encrypted on the device that
 wrote it, so the server cannot read any of it. Calls and screen shares pass
 through it, encrypted too.
@@ -37,7 +37,7 @@ It asks for your domain, and does the rest:
   a TURN relay for calls
 - waits until your server answers, and says so
 
-Then open Cathode, type your domain under **Add your server** on the home
+Then open Nook, type your domain under **Add server** on the home
 page, and press **Add**. Your new spaces go there.
 
 Nobody else sees your server until you send them an invite. An invite names
@@ -97,7 +97,7 @@ noticing, and it catches up when it comes back.
    docker compose up -d
    ```
 
-5. In Cathode, **Settings**, **Servers** shows each server in the cluster and
+5. In Nook, **Settings**, **Servers** shows each server in the cluster and
    whether it is up.
 
 The servers trust each other with encrypted data only. None of them can read a
@@ -106,7 +106,7 @@ checked by every device.
 
 ## When calls do not connect
 
-Open Cathode, **Settings, Voice**:
+Open Nook, **Settings, Voice**:
 
 1. **Test microphone.** The bar moves when you talk. If it does not, pick
    another microphone above it.

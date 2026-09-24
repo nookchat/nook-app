@@ -104,7 +104,7 @@ export async function explainMicRefusal(err: unknown): Promise<string> {
   if (name === 'NotReadableError') {
     return 'Another app is holding the microphone. Close it and join again.'
   }
-  return 'Cathode could not open your microphone.'
+  return 'Nook could not open your microphone.'
 }
 
 /** What to ask getUserMedia for. */

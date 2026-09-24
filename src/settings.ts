@@ -24,7 +24,7 @@ export interface HostSettings {
   fps: number
   bitrateScale: number
   budgetKbps: number
-  /** True while Cathode sets the budget from what it measures. */
+  /** True while Nook sets the budget from what it measures. */
   budgetAuto: boolean
   maxViewers: number
   approve: boolean

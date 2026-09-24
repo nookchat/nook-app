@@ -1,6 +1,6 @@
-# The Cathode server
+# The Nook server
 
-The backend for Cathode. Every space lives on a server. It keeps every space
+The backend for Nook. Every space lives on a server. It keeps every space
 in Postgres, carries everything a space does over one WebSocket per device, and
 can run as a **cluster**: several people each run one, and every space is kept
 on all of them, so no one operator holds the only copy and a space outlives any

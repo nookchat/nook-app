@@ -90,7 +90,7 @@ const results = await page.evaluate(async () => {
     out.push({ name: 'the lift stops at what is available', ok: m.estimateKbps <= 18000, value: m.estimateKbps })
   }
 
-  // A small demand must not make Cathode go hunting for bandwidth it cannot use.
+  // A small demand must not make Nook go hunting for bandwidth it cannot use.
   {
     const m = new UplinkMeter({ ...start })
     let now = 0

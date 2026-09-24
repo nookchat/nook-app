@@ -2,7 +2,7 @@
  * The icon set.
  *
  * Stroked outlines on a 24 unit grid, drawn in the current text colour, so one
- * icon works on a button and on a dark video overlay. Cathode used emoji here
+ * icon works on a button and on a dark video overlay. Nook used emoji here
  * before, which changed shape on every platform and never matched the weight of
  * the text beside it.
  */
@@ -97,8 +97,9 @@ const PATHS: Record<IconName, string> = {
   more: 'M6 12h.01M12 12h.01M18 12h.01',
   menu: 'M4 7h16M4 12h16M4 17h16',
   hash: 'M5 9h14M5 15h14M10.5 4 8.5 20M15.5 4l-2 16',
-  // Two sliders, which reads as settings without the fiddly teeth of a cog.
-  settings: 'M4 7.5h8.5M16.5 7.5H20M4 16.5h3.5M11.5 16.5H20M14.5 5.5v4M9.5 14.5v4',
+  // A cog, which is what everybody looks for.
+  settings:
+    'M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z',
   send: 'M20.5 3.5 10 14M20.5 3.5 14 20.5l-4-6.5-6.5-4z',
   smile: 'M12 3.5a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0-17zM8.5 14a4.2 4.2 0 0 0 7 0M9 9.8h.01M15 9.8h.01',
   reply: 'M9.5 7 4.5 12l5 5M4.5 12H14a5.5 5.5 0 0 1 5.5 5.5V19',

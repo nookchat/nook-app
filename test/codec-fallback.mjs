@@ -1,7 +1,7 @@
 /**
  * A viewer without the hardware codec must still get a picture.
  *
- * Cathode asks for a hardware codec first on moving pictures, and on an Apple
+ * Nook asks for a hardware codec first on moving pictures, and on an Apple
  * machine that is HEVC. Plenty of viewers cannot decode HEVC: older Chrome,
  * most Linux machines, Firefox. Codec preferences only order the offer, so the
  * answer decides, and this proves that path rather than trusting it.

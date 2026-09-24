@@ -191,7 +191,7 @@ try {
   await row.locator('.person-more').click()
   await alice.waitForSelector('.menu')
   alice.once('dialog', (d) => d.accept())
-  await alice.click('.menu-item:has-text("Delete it")')
+  await alice.click('.menu-item:has(.menu-label:text-is("Delete"))')
   await alice.waitForTimeout(900)
   const afterDelete = await alice.$$eval('.rail-left .rail-item', (els) =>
     els.map((e) => e.textContent.trim()),

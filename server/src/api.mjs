@@ -64,7 +64,7 @@ function limited(req) {
 function health() {
   return {
     ok: true,
-    // What a page checks for to know it has found a Cathode server.
+    // What a page checks for to know it has found a Nook server.
     service: 'cathode-server',
     name: 'cathode',
     version: VERSION,
