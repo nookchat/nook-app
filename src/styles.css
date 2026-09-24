@@ -181,147 +181,83 @@ main {
   overflow-x: hidden;
 }
 
-/* ---------- the rail of spaces ---------- */
-
-.space-rail {
-  flex: 0 0 72px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  scrollbar-width: none;
-}
-
-.space-rail::-webkit-scrollbar {
-  display: none;
-}
-
-.rail-sep {
-  flex: 0 0 auto;
-  width: 30px;
-  height: 2px;
-  border-radius: 2px;
-  background: var(--line);
-  margin: 2px 0;
-}
+/* ---------- the switcher ---------- */
 
 /*
- * A space, as a tile. Round until it is under the pointer or open, when it
- * squares off a little, and a bar on the rail's edge says which one you are
- * in: the gesture every chat app with a rail has taught everybody.
+ * A space's tile, the size its container asks for: its initials on its own
+ * colour, squared off a little. Home's is the mark; making one is a plus.
  */
-.rail-tile {
-  position: relative;
+.space-face {
+  --size: 28px;
   flex: 0 0 auto;
-  width: 48px;
-  height: 48px;
-  min-height: 48px;
-  padding: 0;
-  border-radius: 24px;
-  background: var(--surface);
-  color: var(--fg);
-  font-size: 15px;
-  font-weight: 650;
-  letter-spacing: 0.01em;
-  transition: border-radius 160ms var(--ease), background 160ms var(--ease), box-shadow 160ms var(--ease);
-}
-
-.rail-tile:not(.home):not(.add) {
+  display: grid;
+  place-items: center;
+  width: var(--size);
+  height: var(--size);
+  border-radius: calc(var(--size) * 0.3);
   background: hsl(var(--hue, 210) 42% 26%);
   color: hsl(var(--hue, 210) 90% 88%);
+  font-size: calc(var(--size) * 0.4);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1;
 }
 
-.rail-tile:hover:not(:disabled),
-.rail-tile.on {
-  border-radius: 15px;
+.space-face.home {
+  background: var(--surface-2);
+  color: var(--fg);
 }
 
-.rail-tile:not(.home):not(.add):hover:not(:disabled) {
-  background: hsl(var(--hue, 210) 48% 32%);
-}
-
-.rail-tile.on {
-  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px color-mix(in srgb, var(--accent) 70%, transparent), var(--glow);
-}
-
-/* The bar on the rail's edge: a dot for under the pointer, a line for open. */
-.rail-tile::before {
-  content: "";
-  position: absolute;
-  left: -12px;
-  top: 50%;
-  width: 4px;
-  height: 8px;
-  border-radius: 0 4px 4px 0;
-  background: var(--fg);
-  transform: translateY(-50%) scale(0);
-  transition: transform 160ms var(--ease), height 160ms var(--ease);
-}
-
-.rail-tile:hover::before {
-  transform: translateY(-50%) scale(1);
-}
-
-.rail-tile.on::before {
-  height: 36px;
-  transform: translateY(-50%) scale(1);
-  background: var(--beam);
-}
-
-.rail-tile.home {
-  background: var(--surface);
-}
-
-.rail-tile.home.on,
-.rail-tile.home:hover:not(:disabled) {
-  background: var(--beam);
-  color: var(--accent-fg);
-}
-
-.rail-tile.add {
-  background: var(--surface);
+.space-face.add {
+  background: var(--surface-2);
   color: var(--good);
 }
 
-.rail-tile.add:hover:not(:disabled) {
-  background: var(--good);
-  color: var(--accent-fg);
+.space-face-slot {
+  display: contents;
 }
 
-.rail-tile-badge {
-  position: absolute;
-  right: -2px;
-  bottom: -2px;
+/* On the switcher's button: a dot for news elsewhere, a count for what is aimed at you. */
+.switch-mark {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--fg);
+}
+
+.switch-mark.loud,
+.switch-count {
+  flex: 0 0 auto;
   display: grid;
   place-items: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--surface-2);
-  color: var(--accent-text);
-  box-shadow: 0 0 0 3px var(--bg);
+  min-width: 20px;
+  width: auto;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--live);
+  color: var(--on-live);
+  font-size: 11px;
+  font-weight: 800;
 }
 
-/* The name of a tile, beside it, for a pointer that rests on it. */
-.rail-tile[data-tip]:hover::after {
-  content: attr(data-tip);
-  position: fixed;
-  left: 78px;
-  transform: translateY(-50%);
-  margin-top: 24px;
-  z-index: 90;
-  padding: 6px 10px;
-  border-radius: 8px;
-  background: var(--surface-2);
-  color: var(--fg);
-  font-size: 13px;
-  font-weight: 600;
-  white-space: nowrap;
-  box-shadow: var(--shadow);
-  pointer-events: none;
+.switch-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--fg);
+}
+
+.menu.switcher {
+  width: 288px;
+  max-width: calc(100vw - 16px);
+  max-height: min(72vh, 560px);
+  overflow-y: auto;
+  padding: 6px;
+  border-radius: 12px;
 }
 
 /* The mark: the screen in the text colour, the beam in the accent. */
@@ -336,11 +272,6 @@ main {
   stroke-width: 2.4;
   stroke-linecap: round;
   stroke-linejoin: round;
-}
-
-.rail-tile.home.on .logo-beam,
-.rail-tile.home:hover .logo-beam {
-  stroke: currentColor;
 }
 
 /* ---------- status line ---------- */
@@ -812,7 +743,7 @@ hr {
 /* ---------- settings ---------- */
 
 main.settings {
-  margin: var(--gap) var(--gap) var(--gap) 0;
+  margin: var(--gap);
   background: var(--face);
   border-radius: var(--pane-radius);
 }
@@ -1020,30 +951,6 @@ main.home {
     border-radius: 17px;
   }
 
-  /* A phone gets the rail as a row along the top, which is where a thumb
-     expects the other places to be. */
-  .app-shell:not(:has(.space-grid)) {
-    flex-direction: column;
-  }
-
-  .app-shell:not(:has(.space-grid)) .space-rail {
-    flex: 0 0 auto;
-    flex-direction: row;
-    padding: 10px 12px;
-    overflow-x: auto;
-    overflow-y: hidden;
-  }
-
-  .app-shell:not(:has(.space-grid)) .rail-sep {
-    width: 2px;
-    height: 30px;
-    margin: 0 2px;
-  }
-
-  .app-shell:not(:has(.space-grid)) .rail-tile::before,
-  .app-shell:not(:has(.space-grid)) .rail-tile[data-tip]:hover::after {
-    display: none;
-  }
 }
 
 .host-grid {
@@ -1571,7 +1478,7 @@ details.adv[open] > summary {
   display: grid;
   grid-template-columns: 248px minmax(0, 1fr) 248px;
   gap: var(--gap);
-  padding: var(--gap) var(--gap) var(--gap) 0;
+  padding: var(--gap);
   background: var(--bg);
 }
 
@@ -1984,8 +1891,8 @@ details.adv[open] > summary {
 .space-title-button {
   flex: 1 1 auto;
   min-width: 0;
-  justify-content: space-between;
-  gap: 6px;
+  justify-content: flex-start;
+  gap: 10px;
   min-height: 36px;
   margin: 0 -8px;
   padding: 0 8px;
@@ -2002,7 +1909,8 @@ details.adv[open] > summary {
   color: var(--fg-faint);
 }
 
-.space-title-button .space-name {
+.space-title-button .space-name,
+.space-title-button .pane-name {
   text-align: left;
 }
 
@@ -2143,27 +2051,84 @@ details.adv[open] > summary {
   }
 }
 
-/* The count on a rail tile: mentions in a space, messages waiting at home. */
-.rail-tile-count {
-  position: absolute;
-  right: -4px;
-  bottom: -4px;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 5px;
-  display: grid;
-  place-items: center;
+/* Settings: a preference, said in words, with the switch at the end. */
+.switch-list {
+  display: flex;
+  flex-direction: column;
   border-radius: 10px;
-  background: var(--live);
-  color: var(--on-live);
-  font-size: 11px;
-  font-weight: 800;
-  box-shadow: 0 0 0 3px var(--bg);
+  background: var(--bg);
+  overflow: hidden;
 }
 
-/* Something new in a space you are not looking at: a dot on the rail's edge. */
-.rail-tile.unread::before {
-  transform: translateY(-50%) scale(1);
+.switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  width: 100%;
+  min-height: 52px;
+  padding: 8px 14px;
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+  font-weight: 500;
+}
+
+.switch-row + .switch-row {
+  border-top: 1px solid var(--line-soft);
+}
+
+.switch-row:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.switch-words {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.switch-label {
+  color: var(--fg);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 38px;
+  height: 22px;
+  border-radius: 11px;
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+  transition: background 160ms var(--ease);
+}
+
+.switch > i {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--fg-faint);
+  transition: transform 160ms var(--ease), background 160ms var(--ease);
+}
+
+.switch-row[aria-checked="true"] .switch {
+  background: var(--beam);
+  box-shadow: var(--glow);
+}
+
+.switch-row[aria-checked="true"] .switch > i {
+  transform: translateX(16px);
+  background: var(--accent-fg);
+}
+
+.switch-row:disabled .switch {
+  opacity: 0.4;
 }
 
 /* Settings: servers, and the three commands to run one. */
@@ -2215,10 +2180,59 @@ details.adv[open] > summary {
 }
 
 .invite-modal {
-  max-width: 360px;
+  max-width: 380px;
+}
+
+.invite-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 18px 14px 4px 20px;
+}
+
+.invite-words {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  gap: 4px;
+  min-width: 0;
+}
+
+.invite-title {
+  font-size: 17px;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+  color: var(--fg);
+}
+
+.invite-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 20px 20px;
+}
+
+.invite-body .share-code {
+  padding: 12px 8px;
+  font-size: 19px;
+}
+
+.invite-body > .primary {
+  min-height: 40px;
 }
 
 .invite-modal .qr-frame {
+  align-self: center;
+  margin-top: 6px;
+  padding: 12px;
+  border-radius: 14px;
+}
+
+.invite-modal .qr-frame svg {
+  width: min(58vw, 200px);
+}
+
+.invite-scan {
   align-self: center;
 }
 
@@ -2371,7 +2385,12 @@ input[type="text"].space-search {
 }
 
 .stream-bar {
-  margin: 10px 12px 0;
+  margin: 10px 12px 4px;
+}
+
+/* The conversation fades out under the picture rather than being cut off by it. */
+.space-main:has(.stage:not(.hidden)) .chat-log {
+  mask-image: linear-gradient(to bottom, transparent 0, #000 20px);
 }
 
 .search-results {
@@ -2420,11 +2439,6 @@ input[type="text"].space-search {
  * have to dismiss twice.
  */
 @media (max-width: 780px) {
-  /* The rail of spaces lives at home on a phone: there is no room for it here. */
-  .app-shell:has(.space-grid) .space-rail {
-    display: none;
-  }
-
   .space-grid,
   .space-grid.members-hidden {
     grid-template-columns: minmax(0, 1fr);
@@ -3022,10 +3036,16 @@ input[type="text"].space-search {
 /* ---------- a row in the rail that carries a menu ---------- */
 
 .rail-row {
+  position: relative;
   gap: 2px;
 }
 
+/* Over the end of the row rather than beside it, so every row is the full width. */
 .rail-row .person-more {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
   opacity: 0;
 }
 
@@ -3230,6 +3250,57 @@ input[type="text"].space-search {
 .menu-item .tiny {
   white-space: normal;
   line-height: 1.3;
+}
+
+.menu-words {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 1px;
+}
+
+/* An item with a face or an icon in front: one row, the words beside it. */
+.menu-item.has-lead {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+
+.menu-item.current {
+  background: var(--select);
+  color: var(--select-fg);
+  font-weight: 600;
+}
+
+.menu-icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  color: var(--fg-faint);
+}
+
+.menu-item.danger .menu-icon {
+  color: inherit;
+}
+
+.menu-heading {
+  padding: 10px 8px 4px;
+  color: var(--heading);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.menu-line {
+  height: 1px;
+  margin: 6px 4px;
+  background: var(--line-soft);
 }
 
 /* ---------- mention autocomplete ---------- */
@@ -3816,15 +3887,24 @@ input[type="text"].gif-search {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 6px 5px 12px;
-  border: 1px solid color-mix(in srgb, var(--live) 28%, transparent);
+  padding: 4px;
   border-radius: 12px;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--live) 12%, var(--surface)), var(--surface) 60%);
+  background: var(--face);
   overflow-x: auto;
+  scrollbar-width: none;
 }
 
 .stream-bar .eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 0 6px;
   color: var(--bad);
+}
+
+/* Close goes at the far end, away from the streams it is not one of. */
+.stream-tab.quiet {
+  margin-left: auto;
 }
 
 .stream-tab {
@@ -3882,7 +3962,7 @@ input[type="text"].gif-search {
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--good) 45%, transparent);
 }
 
-.voice-member.talking span {
+.voice-member.talking > span.grow {
   color: var(--good);
   font-weight: bold;
 }

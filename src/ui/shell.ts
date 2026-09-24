@@ -1,9 +1,9 @@
 /**
  * The shell.
  *
- * The app fills the window. Down the left edge is the rail of your spaces, one
- * button each, so going from one to another is a click and not a trip through
- * the list. The line saying what is happening (where you are, how many people
+ * The app fills the window, and a screen fills the app. Going from one space
+ * to another is the switcher behind the name at the top of each screen (see
+ * space-switcher.ts), so no column is spent on it. The line saying what is happening (where you are, how many people
  * are here, what it is connected to) is handed to the screen, which puts it
  * where it belongs: in a space, under your own name.
  *
@@ -15,7 +15,16 @@
  */
 
 import { checkSupport, supportRows } from '../diagnostics'
+import type { RoomNote } from '../store/notes'
 import { fmtBytes, fmtDuration, h } from './dom'
+
+/** The ways between screens, which every screen's switcher offers. */
+export interface Navigation {
+  home(): void
+  /** Make or join one: home, with the name field ready. */
+  add(): void
+  open(room: RoomNote): void
+}
 
 export interface SessionSummary {
   seconds: number
@@ -36,8 +45,8 @@ export interface WindowChrome {
   readonly root: HTMLElement
   /** Where a screen mounts itself. */
   readonly body: HTMLElement
-  /** Where the rail of spaces goes. */
-  readonly rail: HTMLElement
+  /** The ways to the other screens. */
+  readonly nav: Navigation
   /** The status line. Not on the page until a screen puts it somewhere. */
   readonly status: HTMLElement
   setTitle(text: string): void
@@ -45,14 +54,13 @@ export interface WindowChrome {
   setActions(actions: WindowActions): void
 }
 
-export function createWindow(title: string): WindowChrome {
+export function createWindow(title: string, nav: Navigation): WindowChrome {
   // setTitle still means something: it names the browser tab.
   document.title = title
 
   const body = h('div', { class: 'app-body' })
   const status = h('div', { class: 'status-bar' })
-  const rail = h('nav', { class: 'space-rail', ariaLabel: 'Spaces' })
-  const root = h('div', { class: 'app-shell' }, [rail, body])
+  const root = h('div', { class: 'app-shell' }, [body])
 
   const setStatus = (panels: (HTMLElement | string)[]): void => {
     status.replaceChildren()
@@ -68,7 +76,7 @@ export function createWindow(title: string): WindowChrome {
   return {
     root,
     body,
-    rail,
+    nav,
     status,
     setTitle: (text) => {
       document.title = text

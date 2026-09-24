@@ -148,7 +148,10 @@ try {
   await linus.keyboard.press('Enter')
   await wait(1500)
   await shot(linus, 'home-dm-desktop')
-  await ada.click('.rail-tile.home')
+  await ada.click('button[aria-label="Switch space"]')
+  await wait(400)
+  await shot(ada, 'switcher-desktop')
+  await ada.click('.menu.switcher .menu-item:has-text("Home")')
   await wait(1200)
   await shot(ada, 'home-desktop')
 

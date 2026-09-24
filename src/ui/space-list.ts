@@ -19,7 +19,7 @@ import { loadIdentity } from '../store/identity'
 import { spaces } from '../space/registry'
 import { clear, h } from './dom'
 import { icon, logo } from './icons'
-import { hideShadows, initials, spaceHue } from './space-rail'
+import { hideShadows, initials, spaceHue } from './space-switcher'
 import { toast } from './toast'
 
 export interface SpaceListActions {

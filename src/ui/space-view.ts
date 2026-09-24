@@ -46,6 +46,7 @@ import { cleanName, mentionsMe } from '../chat'
 import { addServer, bookFor } from '../store/server-spaces'
 import type { SpaceRuntime } from '../space/runtime'
 import { spaces } from '../space/registry'
+import { spaceFace, switcherButton } from './space-switcher'
 import { gifs as serverGifs, preview, serverHasGifs } from '../net/server-api'
 import { loadIdentity, saveDisplayName, shortKey, signClaim, verifyClaim } from '../store/identity'
 import { chirpJoin, chirpLeave, chirpMessage, isNews, speak } from './sounds'
@@ -162,6 +163,7 @@ export class SpaceView {
    */
   readonly server: string
   private spaceTitle!: HTMLSpanElement
+  private spaceFace!: HTMLSpanElement
   private voice: Voice | null = null
   private stopped = false
   private timers: number[] = []
@@ -1476,6 +1478,12 @@ export class SpaceView {
       this.spaceTitle.textContent = label
       if (named) void this.remember({ name: named })
     }
+    // The colour comes from the room id, which is known a moment after the name box is.
+    const faceKey = `${this.room?.id ?? ''}|${named}`
+    if (this.room && this.spaceFace.dataset.key !== faceKey) {
+      this.spaceFace.dataset.key = faceKey
+      this.spaceFace.replaceChildren(spaceFace(this.room.id, named, 24))
+    }
     // Somebody with the right to do it has shut the space down. Not us: the
     // one who pressed the button has their own path out, and it waits for the
     // news to leave the building first.
@@ -1641,26 +1649,23 @@ export class SpaceView {
 
     // Empty rather than a guess. The name arrives with the log.
     this.spaceTitle = h('span', { class: 'space-name truncate', text: '' })
+    this.spaceFace = h('span', { class: 'space-face-slot' })
     /*
-     * The space's name is its menu, the way every chat app does it: inviting
-     * people, settings and leaving are all rare, and all live here.
+     * The space's name is the switcher, the way every chat app does it: every
+     * other space is behind it, and under them this one's own actions, all of
+     * them rare (inviting, settings, leaving).
      */
-    const spaceMenu = h(
-      'button',
-      {
-        class: 'space-title-button',
-        title: 'Invite people, settings, leave',
-        on: {
-          click: () =>
-            openMenu(spaceMenu, [
-              { label: 'Invite people', run: () => void this.showInvite() },
-              { label: 'Settings', run: () => void this.openSettings() },
-              { label: 'Leave space', danger: true, run: () => void this.leaveSpace() },
-            ]),
-        },
-      },
-      [this.spaceTitle, icon('chevron-down', 16)],
-    )
+    const spaceMenu = switcherButton({
+      active: this.secret,
+      face: this.spaceFace,
+      name: this.spaceTitle,
+      nav: this.chrome?.nav ?? { home: () => this.goHome(), add: () => this.goHome(), open: () => undefined },
+      more: () => [
+        { label: 'Invite people', lead: h('span', { class: 'menu-icon' }, [icon('user-plus', 16)]), run: () => void this.showInvite() },
+        { label: 'Space settings', lead: h('span', { class: 'menu-icon' }, [icon('settings', 16)]), run: () => void this.openSettings() },
+        { label: 'Leave space', danger: true, lead: h('span', { class: 'menu-icon' }, [icon('leave', 16)]), run: () => void this.leaveSpace() },
+      ],
+    })
 
     this.meFace = h('span', { class: 'me-face' })
     this.meName = h('span', { class: 'me-name truncate' })
@@ -2073,14 +2078,24 @@ export class SpaceView {
     const scrim = h('div', { class: 'scrim', on: { click: (ev) => ev.target === scrim && close() } })
     scrim.append(
       h('div', { class: 'modal invite-modal' }, [
-        h('div', { class: 'row spread' }, [
-          h('span', { class: 'eyebrow', text: 'Invite people' }),
-          h('button', { ariaLabel: 'Close', on: { click: close } }, [icon('close', 14)]),
+        h('div', { class: 'invite-head' }, [
+          h('div', { class: 'invite-words' }, [
+            h('div', { class: 'invite-title', text: `Invite people to ${this.chat?.spaceName() || 'this space'}` }),
+            h('div', {
+              class: 'tiny faint',
+              text: this.locked
+                ? 'They need the password too. Send it separately.'
+                : 'Anyone with the link can join. It holds the key, so send it privately.',
+            }),
+          ]),
+          h('button', { class: 'ghost icon-only', ariaLabel: 'Close', on: { click: close } }, [icon('close', 16)]),
         ]),
-        h('div', { class: 'share-code', text: formatSecret(this.secret), title: 'The code for this space', data: { link } }),
-        h('div', { class: 'row' }, [copy]),
-        frame,
-        this.locked ? h('div', { class: 'tiny faint', text: 'This space has a password. Send it separately.' }) : null,
+        h('div', { class: 'invite-body' }, [
+          h('div', { class: 'share-code', text: formatSecret(this.secret), title: 'The code for this space', data: { link } }),
+          copy,
+          frame,
+          h('div', { class: 'tiny faint invite-scan', text: 'Or scan it with a phone.' }),
+        ]),
       ]),
     )
     document.body.append(scrim)

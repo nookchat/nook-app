@@ -15,19 +15,22 @@ people in it. A screen is shared from a voice channel, the way every chat app
 with voice does it.
 
 ```
-┌────┬──────────────┬──────────────────────────────┬──────────┐
-│ ⌂  │ Space name ▾ │ # general          ⌕   ☺☺    │ Here — 3 │
-│ US │ # general    │ ┌──────────────────────────┐ │ ● Ada    │
-│ +  │ # dev        │ │ a shared screen, if any  │ │ ● Grace  │
-│    │ 🔈 lounge    │ └──────────────────────────┘ │ ● Linus  │
-│    │   Ada  LIVE  │ chat                         │          │
-│    │ [mic][⧉][✕]  │                              │          │
-│    │ You      ⚙   │ [say something]              │          │
-└────┴──────────────┴──────────────────────────────┴──────────┘
+┌─────────────────┬──────────────────────────────┬──────────┐
+│ NS Space name ▾ │ # general          ⌕   ☺☺    │ Here — 3 │
+│ # general       │ ┌──────────────────────────┐ │ ● Ada    │
+│ # dev           │ │ a shared screen, if any  │ │ ● Grace  │
+│ 🔈 lounge       │ └──────────────────────────┘ │ ● Linus  │
+│   Ada  LIVE     │ chat                         │          │
+│ [mic][⧉][✕]     │                              │          │
+│ You      ⚙      │ [say something]              │          │
+└─────────────────┴──────────────────────────────┴──────────┘
 ```
 
-- **The rail** on the left has Home and one tile per space. A tile with unread
-  messages has a mark, and a mention has a count.
+- **The switcher** is the space name at the top left. Press it for Home,
+  every space you are in, and making or joining one, with this space's own
+  actions under them: Invite people, Space settings, Leave space. A dot on it
+  says there is news in another space, and a red count says somebody
+  mentioned you or sent you a direct message.
 - **Home** has your direct messages from every space, the way Discord does it.
   A direct message is still kept in the log of the space where you met, sealed
   so only the two of you can read it.
@@ -115,9 +118,9 @@ with the QR decoder built into Chrome.
 
 ## Look
 
-Dark, and built the way people already know a chat app: a rail of spaces down
-the left, the channels beside it, the conversation in the middle, and who is
-here on the right.
+Dark, and built the way people already know a chat app: the channels on the
+left under the switcher, the conversation in the middle, and who is here on
+the right. No column is spent on a list of spaces.
 
 - **Floating panes.** The canvas is near black, and the channels, the
   conversation, and the members are separate rounded panes on it.
@@ -204,7 +207,7 @@ src/
     space-list.ts     the home page: your spaces, making and joining one
     chat-panel.ts     the conversation, drawn as nodes and never as HTML
     settings-view.ts  profile, identity, servers, this space, preferences
-    space-rail.ts     the rail of spaces down the left edge
+    space-switcher.ts going from one space to another, behind the space name
     video-surface.ts  fit, fill, and one to one with zoom and pan
     qr.ts             a QR encoder, byte mode, level M, versions 1 to 10
 server/               the server and its Docker image; see server/README.md
@@ -262,4 +265,4 @@ trackpad pinch, zooms anywhere.
 | --- | --- |
 | `Ctrl`/`Cmd`+`Shift`+`M` | Mute or unmute your microphone in voice |
 | `Ctrl`/`Cmd`+`K` | Search this space |
-| `Ctrl`/`Cmd`+`1`-`9` | Jump to a channel, in the order of the rail |
+| `Ctrl`/`Cmd`+`1`-`9` | Jump to a channel, in the order of the list |

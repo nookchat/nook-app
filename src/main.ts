@@ -3,7 +3,7 @@
  * server, sealed end to end. Read README.md.
  *
  * On opening, every space you are in starts at once (space/registry.ts), so
- * the rail shows what is new everywhere and home lists every direct message.
+ * the switcher shows what is new everywhere and home lists every direct message.
  * One screen is on show at a time: home, or one space.
  */
 
@@ -21,7 +21,6 @@ import { notify } from './ui/notify'
 import { createWindow, type WindowChrome } from './ui/shell'
 import { chirpMessage, isNews } from './ui/sounds'
 import { spaceList } from './ui/space-list'
-import { mountSpaceRail } from './ui/space-rail'
 import { SpaceView } from './ui/space-view'
 import { toast } from './ui/toast'
 import { checkSupport } from './diagnostics'
@@ -41,25 +40,24 @@ interface Screen {
 
 let active: Screen | null = null
 
-function freshWindow(title: string, space: string | null): WindowChrome {
+function freshWindow(title: string): WindowChrome {
   active?.destroy()
   active = null
   clear(mount)
-  const chrome = createWindow(title)
-  mount.append(chrome.root)
-  mountSpaceRail(chrome.rail, space, {
+  const chrome = createWindow(title, {
     home: () => void showHome(),
     add: () => void showHome(null, true),
     open: (room) =>
       void enter(room.secret, room.locked === true, room.password ?? '', false, '', room.server ?? ''),
   })
+  mount.append(chrome.root)
   return chrome
 }
 
 /** Home: direct messages on the left, and your spaces or a conversation beside them. */
 async function showHome(dm: DirectRef | null = null, making = false): Promise<void> {
   clearLink()
-  const chrome = freshWindow('Cathode: chat, voice and screen sharing', null)
+  const chrome = freshWindow('Cathode: chat, voice and screen sharing')
   const home = new HomeView(chrome.body, chrome, {
     page: () =>
       spaceList({
@@ -80,7 +78,7 @@ async function showHome(dm: DirectRef | null = null, making = false): Promise<vo
 }
 
 async function showSettings(): Promise<void> {
-  const chrome = freshWindow('Cathode | Settings', null)
+  const chrome = freshWindow('Cathode | Settings')
   const { settingsView } = await import('./ui/settings-view')
   chrome.body.append(
     settingsView({
@@ -96,7 +94,7 @@ async function showSettings(): Promise<void> {
 }
 
 function openSpace(space: SpaceRuntime): void {
-  const chrome = freshWindow('Cathode', space.secret)
+  const chrome = freshWindow('Cathode')
   setLinkSecret(space.secret, space.locked, space.server)
   const view = new SpaceView(
     chrome.body,

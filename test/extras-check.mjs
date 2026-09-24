@@ -63,6 +63,12 @@ async function sayLines(page, lines) {
 const texts = (page) =>
   page.$$eval('.chat-text', (els) => els.map((e) => e.textContent.trim()))
 
+/** Open the switcher behind the name at the top, and pick a place in it. */
+async function switchTo(page, label) {
+  await page.click('button[aria-label="Switch space"]')
+  await page.click(`.menu.switcher .menu-item:has-text("${label}")`)
+}
+
 try {
   const alice = await person('Alice')
   await alice.fill('input[aria-label="Space name"]', 'everything')
@@ -233,14 +239,14 @@ try {
   check('and holds what was said', (await texts(alice)).includes('a private word'))
 
   const bobGot = await bob
-    .waitForFunction(() => document.querySelector('.rail-tile.home .rail-tile-count')?.textContent === '1', null, {
+    .waitForFunction(() => document.querySelector('.space-title-button .switch-mark.loud')?.textContent === '1', null, {
       timeout: 30_000,
     })
     .then(() => true)
     .catch(() => false)
   check('it reaches the person it is for, wherever they are looking', bobGot)
 
-  await bob.click('.rail-tile.home')
+  await switchTo(bob, 'Home')
   await bob.waitForSelector('.dm-item', { timeout: 10_000 })
   const listed = await bob.$eval('.dm-item', (el) => el.textContent)
   check('home lists it, with the space it belongs to', listed.includes('Alice') && listed.includes('everything'), listed)
@@ -268,9 +274,9 @@ try {
   check('what the space stores is sealed', sealed.length > 0 && !sealed.includes('private word'), sealed.slice(0, 60))
 
   // Back into the space, and Bob too.
-  await alice.click('.rail-tile:not(.home):not(.add)')
+  await switchTo(alice, 'everything')
   await alice.waitForSelector(BOX)
-  await bob.click('.rail-tile:not(.home):not(.add)')
+  await switchTo(bob, 'everything')
   await bob.waitForSelector(BOX)
   await alice.waitForTimeout(600)
 

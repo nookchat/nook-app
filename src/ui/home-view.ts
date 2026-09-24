@@ -17,6 +17,7 @@ import { spaces } from '../space/registry'
 import type { SpaceRuntime } from '../space/runtime'
 import { ROOMS_CHANGED } from '../store/notes'
 import type { WindowChrome } from './shell'
+import { homeFace, switcherButton } from './space-switcher'
 
 export interface HomeActions {
   /** The home page itself: your spaces, and making or joining one. */
@@ -77,7 +78,14 @@ export class HomeView {
       ),
     ])
     const left = h('div', { class: 'rail rail-left', role: 'navigation', ariaLabel: 'Direct messages' }, [
-      h('div', { class: 'space-title' }, [h('span', { class: 'pane-name', text: 'Home' })]),
+      h('div', { class: 'space-title' }, [
+        switcherButton({
+          active: null,
+          face: homeFace(24),
+          name: h('span', { class: 'pane-name truncate', text: 'Home' }),
+          nav: chrome.nav,
+        }),
+      ]),
       h('div', { class: 'rail-scroll' }, [
         h('div', { class: 'rail-head' }, [h('span', { class: 'eyebrow', text: 'Direct messages' })]),
         this.list,

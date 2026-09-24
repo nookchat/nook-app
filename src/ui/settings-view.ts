@@ -42,12 +42,11 @@ const card = (title: string, ...children: (Node | null)[]): HTMLElement =>
 
 const note = (text: string): HTMLElement => h('div', { class: 'tiny faint', text })
 
-/** A button that says what it is and flips when pressed. */
-function toggle(label: string, on: () => boolean, set: (next: boolean) => void, title = ''): HTMLButtonElement {
-  const button = h('button', { title })
+/** A row that says what it is, with a switch at the end that flips when pressed. */
+function toggle(label: string, on: () => boolean, set: (next: boolean) => void, about = ''): HTMLButtonElement {
+  const button = switchRow(label, about)
   const paint = (): void => {
-    button.textContent = `${label}: ${on() ? 'on' : 'off'}`
-    button.classList.toggle('on', on())
+    button.setAttribute('aria-checked', String(on()))
   }
   button.addEventListener('click', () => {
     set(!on())
@@ -55,6 +54,16 @@ function toggle(label: string, on: () => boolean, set: (next: boolean) => void, 
   })
   paint()
   return button
+}
+
+function switchRow(label: string, about = ''): HTMLButtonElement {
+  return h('button', { class: 'switch-row', role: 'switch' }, [
+    h('span', { class: 'switch-words' }, [
+      h('span', { class: 'switch-label', text: label }),
+      about ? h('span', { class: 'tiny faint switch-about', text: about }) : null,
+    ]),
+    h('span', { class: 'switch' }, [h('i')]),
+  ])
 }
 
 export function settingsView(actions: SettingsActions): HTMLElement {
@@ -278,19 +287,20 @@ export function settingsView(actions: SettingsActions): HTMLElement {
     : null
 
   // ---- preferences ----
-  const notifyButton = h('button', {})
+  const notifyButton = switchRow('Notifications', 'For mentions and direct messages, when the tab is behind')
   const paintNotify = (): void => {
     const state = notifyState()
-    notifyButton.className = state === 'on' ? 'on' : ''
+    notifyButton.setAttribute('aria-checked', String(state === 'on'))
     notifyButton.disabled = state === 'blocked' || state === 'unsupported'
-    notifyButton.textContent =
-      state === 'on'
-        ? 'Notifications: on'
-        : state === 'blocked'
-          ? 'Notifications: blocked by the browser'
+    const about = notifyButton.querySelector('.switch-about')
+    if (about) {
+      about.textContent =
+        state === 'blocked'
+          ? 'Blocked by the browser. Allow them in the site settings.'
           : state === 'unsupported'
-            ? 'Notifications: not available'
-            : 'Notifications: off'
+            ? 'This browser has none.'
+            : 'For mentions and direct messages, when the tab is behind'
+    }
   }
   notifyButton.addEventListener('click', () => {
     if (notifyState() === 'on') {
@@ -302,8 +312,8 @@ export function settingsView(actions: SettingsActions): HTMLElement {
   })
   paintNotify()
 
-  const mic = (key: keyof MicSettings, label: string): HTMLButtonElement =>
-    toggle(label, () => micSettings()[key], (next) => setMicSettings({ ...micSettings(), [key]: next }))
+  const mic = (key: keyof MicSettings, label: string, about: string): HTMLButtonElement =>
+    toggle(label, () => micSettings()[key], (next) => setMicSettings({ ...micSettings(), [key]: next }), about)
 
   const quick = h('div', { class: 'row quick-slots' })
   const paintQuick = (): void => {
@@ -410,13 +420,16 @@ export function settingsView(actions: SettingsActions): HTMLElement {
 
         card(
           'Preferences',
-          h('div', { class: 'row wrap' }, [notifyButton, toggle('Sounds', soundsOn, setSounds)]),
+          h('div', { class: 'switch-list' }, [
+            notifyButton,
+            toggle('Sounds', soundsOn, setSounds, 'A chirp for new messages, and the soundboard'),
+          ]),
           h('span', { class: 'eyebrow', text: 'Microphone' }),
-          h('div', { class: 'row wrap' }, [
-            mic('smart', 'Noise removal'),
-            mic('denoise', 'Noise suppression'),
-            mic('echo', 'Echo cancellation'),
-            mic('gain', 'Auto volume'),
+          h('div', { class: 'switch-list' }, [
+            mic('smart', 'Noise removal', 'Takes out keyboards, fans and dogs'),
+            mic('denoise', 'Noise suppression', "The browser's own, lighter filter"),
+            mic('echo', 'Echo cancellation', 'Stops others hearing themselves through your speakers'),
+            mic('gain', 'Auto volume', 'Keeps your voice at a steady level'),
           ]),
           h('span', { class: 'eyebrow', text: 'Quick reactions' }),
           quick,

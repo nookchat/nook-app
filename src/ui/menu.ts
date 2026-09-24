@@ -21,7 +21,21 @@ export interface MenuItem {
   note?: string
   /** Red, for the ones that take something away. */
   danger?: boolean
+  /** A face or an icon before the label. */
+  lead?: HTMLElement
+  /** A count or a mark after it. */
+  trail?: HTMLElement | null
+  /** The one you are already on. */
+  current?: boolean
   run(): void
+}
+
+/** A label over a group of items, or a line between two groups. */
+export type MenuEntry = MenuItem | { heading: string } | 'line'
+
+export interface MenuOptions {
+  /** An extra class, for a menu that is laid out differently. */
+  className?: string
 }
 
 /** Only one is ever open, for the same reason only one picker is. */
@@ -31,31 +45,40 @@ export function closeMenu(): void {
   open?.()
 }
 
-export function openMenu(anchor: HTMLElement, items: MenuItem[]): void {
+export function openMenu(anchor: HTMLElement, items: MenuEntry[], options: MenuOptions = {}): void {
   closeMenu()
   if (items.length === 0) return
 
-  const menu = h('div', { class: 'menu', role: 'menu' })
+  const menu = h('div', { class: `menu${options.className ? ` ${options.className}` : ''}`, role: 'menu' })
   for (const item of items) {
-    menu.append(
-      h(
-        'button',
-        {
-          class: `menu-item${item.danger ? ' danger' : ''}`,
-          role: 'menuitem',
-          on: {
-            click: () => {
-              close()
-              item.run()
-            },
+    if (item === 'line') {
+      menu.append(h('div', { class: 'menu-line', role: 'separator' }))
+      continue
+    }
+    if ('heading' in item) {
+      menu.append(h('div', { class: 'menu-heading', text: item.heading }))
+      continue
+    }
+    const words = h('span', { class: 'menu-words' }, [
+      h('span', { class: 'menu-label truncate', text: item.label }),
+      item.note ? h('span', { class: 'tiny faint', text: item.note }) : null,
+    ])
+    const button = h(
+      'button',
+      {
+        class: `menu-item${item.danger ? ' danger' : ''}${item.lead ? ' has-lead' : ''}${item.current ? ' current' : ''}`,
+        role: 'menuitem',
+        on: {
+          click: () => {
+            close()
+            item.run()
           },
         },
-        [
-          h('span', { text: item.label }),
-          item.note ? h('span', { class: 'tiny faint', text: item.note }) : null,
-        ],
-      ),
+      },
+      item.lead ? [item.lead, words, item.trail ?? null] : [words, item.trail ?? null],
     )
+    if (item.current) button.setAttribute('aria-current', 'true')
+    menu.append(button)
   }
 
   function close(): void {

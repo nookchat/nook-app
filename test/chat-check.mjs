@@ -342,10 +342,10 @@ try {
     await more.first().evaluate((el) => el.focus())
     await more.first().click()
     await page.waitForSelector('.menu', { timeout: 5000 })
-    // The label only. A note sits in a second span with no separator between
-    // them, so textContent runs the two together.
+    // The label only. A note sits beside it with no separator between them,
+    // so textContent runs the two together.
     return page.$$eval('.menu-item', (els) =>
-      els.map((e) => e.querySelector('span')?.textContent?.trim() ?? ''),
+      els.map((e) => e.querySelector('.menu-label')?.textContent?.trim() ?? ''),
     )
   }
 

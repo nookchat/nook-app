@@ -52,6 +52,8 @@ export type IconName =
   | 'phone-off'
   | 'link'
   | 'enter'
+  | 'user-plus'
+  | 'leave'
 
 const PATHS: Record<IconName, string> = {
   copy: 'M9 9.5A1.5 1.5 0 0 1 10.5 8h8A1.5 1.5 0 0 1 20 9.5v8a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 9 17.5zM5.5 16A1.5 1.5 0 0 1 4 14.5v-8A1.5 1.5 0 0 1 5.5 5h8A1.5 1.5 0 0 1 15 6.5',
@@ -105,6 +107,10 @@ const PATHS: Record<IconName, string> = {
   // Two units in a rack, each with its light on.
   server: 'M5.5 4.5h13a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1zM5.5 13.5h13a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1zM8 7.5h.01M8 16.5h.01',
   people: 'M9 11.5a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4zM3 19.5c0-3 2.7-4.8 6-4.8s6 1.8 6 4.8M16 5.4a3.2 3.2 0 0 1 0 6.2M17.5 14.9c2.1.5 3.5 1.9 3.5 4.6',
+  // One person, and a plus beside them.
+  'user-plus': 'M10 11.5a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4zM4 19.5c0-3 2.7-4.8 6-4.8s6 1.8 6 4.8M18.5 8v6M15.5 11h6',
+  // Out through a door: the frame, and an arrow leaving it.
+  leave: 'M14 4.5H6.5A1.5 1.5 0 0 0 5 6v12a1.5 1.5 0 0 0 1.5 1.5H14M10 12h10M16.5 8.5 20 12l-3.5 3.5',
 }
 
 /** Icons drawn as solid shapes rather than strokes. */
