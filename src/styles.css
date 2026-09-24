@@ -885,9 +885,18 @@ main.settings .sheet {
   margin-bottom: 6px;
 }
 
-.settings-head > button {
-  flex-direction: row-reverse;
-  padding-left: 8px;
+.settings-close {
+  width: 38px;
+  min-width: 38px;
+  height: 38px;
+  min-height: 38px;
+  border-radius: 50%;
+  color: var(--fg-dim);
+}
+
+.settings-close:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--fg);
 }
 
 .settings-title {
@@ -3238,7 +3247,8 @@ input[type="text"].space-search {
 }
 
 .att-play > .icon {
-  margin-left: 3px;
+  /* The triangle already sits right of the middle of its own box, which is where the eye puts a play mark. */
+  margin: 0;
 }
 
 .att-video:hover .att-play {
@@ -3273,6 +3283,23 @@ input[type="text"].space-search {
 .att-video.playing {
   cursor: default;
   background: #000;
+}
+
+.att-cant {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgb(0 0 0 / 72%);
+  color: #fff;
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .att-player {
@@ -3531,15 +3558,21 @@ input[type="text"].space-search {
   position: relative;
   flex: 1 1 auto;
   min-height: 0;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 0 72px 28px;
   overflow: hidden;
 }
 
+/*
+ * Inside the window, whatever its shape. A percentage of the stage did not
+ * hold a tall picture, because the stage took the picture's height, so the
+ * limit is the window itself, less the bar above and the margins.
+ */
 .viewer-img {
-  max-width: 100%;
-  max-height: 100%;
+  max-width: min(100%, calc(100vw - 144px));
+  max-height: min(100%, calc(100dvh - 96px));
   object-fit: contain;
   border-radius: 6px;
   box-shadow: 0 20px 60px rgb(0 0 0 / 60%);
@@ -3553,11 +3586,13 @@ input[type="text"].space-search {
 
 /* Looked at closely: its own size, and the stage scrolls. */
 .viewer.zoomed .viewer-stage {
-  place-items: start center;
+  align-items: flex-start;
+  justify-content: flex-start;
   overflow: auto;
 }
 
 .viewer.zoomed .viewer-img {
+  margin: auto;
   max-width: none;
   max-height: none;
   cursor: zoom-out;
@@ -3591,6 +3626,11 @@ input[type="text"].space-search {
 @media (max-width: 780px) {
   .viewer-stage {
     padding: 0 8px 16px;
+  }
+
+  .viewer-img {
+    max-width: calc(100vw - 16px);
+    max-height: calc(100dvh - 150px);
   }
 
   .viewer-step {
@@ -3698,9 +3738,9 @@ input[type="text"].space-search {
   left: 50%;
   bottom: 8px;
   transform: translateX(-50%);
-  z-index: 2;
-  min-height: 24px;
-  padding: 0 12px;
+  z-index: 5;
+  min-height: 30px;
+  padding: 0 14px;
   border-radius: var(--pill-radius);
   background: var(--accent);
   color: var(--accent-fg);
@@ -4431,7 +4471,14 @@ input[type="text"].gif-search {
   grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
   gap: 6px;
   max-height: 300px;
+  min-height: 0;
   overflow-y: auto;
+}
+
+/* Hung off its button rather than centred: see openGifPicker. */
+.gif-pop.placed {
+  width: min(460px, calc(100vw - 16px));
+  transform: none;
 }
 
 .gif-choice {
@@ -4564,12 +4611,13 @@ input[type="text"].gif-search {
 
 /* Who is live in this channel. One card each, the watched one pressed in. */
 .stream-bar {
+  /* Its own height, always: a strip that scrolls sideways cuts off whatever it is squeezed out of. */
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px;
-  border-radius: 12px;
-  background: var(--face);
+  padding: 2px 0;
+  background: transparent;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -4590,27 +4638,44 @@ input[type="text"].gif-search {
 .stream-tab {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   min-height: 32px;
-  max-width: 240px;
-  padding: 4px 12px 4px 6px;
+  max-width: 260px;
+  padding: 4px 12px 4px 5px;
   font-size: 13px;
+  font-weight: 600;
   white-space: nowrap;
   flex: 0 0 auto;
-  border-radius: 9px;
-  background: var(--surface-2);
-}
-
-.stream-tab.on {
-  background: var(--select);
-  color: var(--select-fg);
-  border-color: transparent;
-  font-weight: bold;
-}
-
-.stream-tab.quiet {
-  padding: 4px 11px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--pill-radius);
+  background: var(--surface);
   color: var(--fg-dim);
+}
+
+.stream-tab:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--fg);
+}
+
+/* The one on your screen: a thin ring of the live red, not a block of grey. */
+.stream-tab.on {
+  border-color: color-mix(in srgb, var(--live) 55%, transparent);
+  background: color-mix(in srgb, var(--live) 9%, var(--surface));
+  color: var(--fg);
+}
+
+/* Close: words, not another card. */
+.stream-tab.quiet {
+  padding: 4px 12px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--fg-faint);
+  font-weight: 600;
+}
+
+.stream-tab.quiet:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--fg);
 }
 
 /* Live is red and it breathes, which is what live has meant since television. */

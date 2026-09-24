@@ -229,6 +229,77 @@ try {
   check('and a click plays it', !!playing, playing ?? 'not playing')
   await shot(bob, 'playing')
 
+  // ---- videos only some browsers can show ----
+  const hevc = await alice.evaluate(async () => {
+    const { isHevc, reencode } = await import('/src/net/files.ts')
+    const tag = (s) => [...s].map((c) => c.charCodeAt(0))
+    const fake = new Blob([new Uint8Array([0, 0, 0, 24, ...tag('ftypqt  '), 0, 0, 0, 0, ...tag('moov'), ...tag('hvc1')])])
+    const clip = [...document.querySelectorAll('.att-video')].length
+    // A clip this browser records, played and recorded again, as a conversion is.
+    const canvas = document.createElement('canvas')
+    canvas.width = 160
+    canvas.height = 120
+    const ctx = canvas.getContext('2d')
+    const rec = new MediaRecorder(canvas.captureStream(30), { mimeType: 'video/webm' })
+    const parts = []
+    rec.ondataavailable = (e) => parts.push(e.data)
+    const paint = setInterval(() => {
+      ctx.fillStyle = `hsl(${Math.random() * 360} 80% 50%)`
+      ctx.fillRect(0, 0, 160, 120)
+    }, 33)
+    rec.start()
+    await new Promise((r) => setTimeout(r, 1200))
+    rec.stop()
+    await new Promise((r) => (rec.onstop = r))
+    clearInterval(paint)
+    const original = new File(parts, 'clip.webm', { type: 'video/webm' })
+    const again = await reencode(original, () => undefined)
+    let width = 0
+    if (again) {
+      const v = document.createElement('video')
+      v.muted = true
+      v.src = URL.createObjectURL(again)
+      await new Promise((ok) => (v.onloadeddata = ok))
+      width = v.videoWidth
+    }
+    return { found: await isHevc(fake), plain: await isHevc(original), again: again ? `${again.type}, ${width}px` : null, clip }
+  })
+  check('an HEVC video is known by its tag, and an ordinary one is not', hevc.found === true && hevc.plain === false)
+  check('and a conversion comes out as a video that plays, with its picture', !!hevc.again && !hevc.again.endsWith(' 0px'), hevc.again ?? 'nothing')
+
+  // A video whose picture cannot be shown here: sound only. It says so, and offers to save it.
+  await alice.evaluate(async () => {
+    const ctx = new AudioContext()
+    const tone = ctx.createOscillator()
+    const out = ctx.createMediaStreamDestination()
+    tone.connect(out)
+    tone.start()
+    const rec = new MediaRecorder(out.stream, { mimeType: 'audio/webm' })
+    const parts = []
+    rec.ondataavailable = (e) => parts.push(e.data)
+    rec.start()
+    await new Promise((r) => setTimeout(r, 2500))
+    rec.stop()
+    await new Promise((r) => (rec.onstop = r))
+    const data = new DataTransfer()
+    data.items.add(new File(parts, 'sound-only.webm', { type: 'video/webm' }))
+    for (const t of ['dragenter', 'dragover', 'drop']) {
+      document.querySelector('.chat-panel').dispatchEvent(new DragEvent(t, { dataTransfer: data, bubbles: true, cancelable: true }))
+    }
+  })
+  await alice.waitForSelector('.attach-chip.done', { timeout: 15_000 })
+  await alice.click('[aria-label="Write a message"]')
+  await alice.keyboard.press('Enter')
+  await bob.waitForFunction(() => document.querySelectorAll('.att-video').length === 2, null, { timeout: 20_000 })
+  await bob.locator('.att-video').nth(1).click()
+  const said = await waitFor(() => bob.evaluate(() => document.querySelector('.att-cant')?.textContent ?? null), 15_000)
+  check('a video whose picture this browser cannot show says so, and offers to save it', !!said && said.includes('Save'), said ?? 'black box')
+  const oneAtATime = await bob.evaluate(() => {
+    const players = [...document.querySelectorAll('.att-video video')]
+    return players.map((v) => (v.paused ? 'paused' : 'playing'))
+  })
+  check('and starting it stopped the other one', oneAtATime.join() === 'paused,playing', oneAtATime.join())
+
   const [download] = await Promise.all([
     bob.waitForEvent('download', { timeout: 20_000 }),
     bob.click('.att-file button[aria-label="Save notes.txt"]'),
@@ -297,7 +368,7 @@ try {
   // ---- what the server has ----
   const kept = onDisk(a.files)
   const blobs = [...kept.values()]
-  check('the server keeps each file, and a poster for the video', kept.size === 9, `${kept.size} files`)
+  check('the server keeps each file, and a poster for the video', kept.size === 10, `${kept.size} files`)
   check(
     'none of it is readable',
     blobs.every(
@@ -310,7 +381,7 @@ try {
     [...kept].every(([id, blob]) => createHash('sha256').update(blob).digest('hex') === id),
   )
   const rows = await sql(a.database, 'select room, id, size from files')
-  check('and the database lists them', rows.length === 9, `${rows.length} rows`)
+  check('and the database lists them', rows.length === 10, `${rows.length} rows`)
 
   const room = rows[0]?.room
   const bare = await fetch(`${A}/api/v1/spaces/${room}/files`, { method: 'POST', body: 'junk' })

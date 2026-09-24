@@ -16,7 +16,7 @@
  */
 
 import { rtcConfig } from '../rtc/config'
-import { explainMicRefusal, micConstraints, micSettings, playOn } from './mic'
+import { DEVICES_CHANGED, explainMicRefusal, micSettings, openMic, playOn } from './mic'
 import { denoise, type Denoiser } from './denoise'
 import { Talking } from './talking'
 import type { SignalBus } from '../signal/bus'
@@ -60,15 +60,26 @@ export class Voice {
 
   private readonly config: () => RTCConfiguration
 
+  /** A new microphone or speaker chosen, or one plugged in or out: the call moves to it. */
+  private readonly onDevices = (): void => {
+    for (const call of this.calls.values()) call.speakers()
+    void this.switchMic()
+  }
+  private switching = false
+
   constructor(bus: SignalBus, selfId: string, config: () => RTCConfiguration = () => rtcConfig()) {
     this.bus = bus
     this.selfId = selfId
     this.config = config
+    window.addEventListener(DEVICES_CHANGED, this.onDevices)
+    navigator.mediaDevices?.addEventListener?.('devicechange', this.onDevices)
     this.talking.onChange = () => this.onChange?.()
     this.timer = window.setInterval(() => this.retry(), 5000)
   }
 
   dispose(): void {
+    window.removeEventListener(DEVICES_CHANGED, this.onDevices)
+    navigator.mediaDevices?.removeEventListener?.('devicechange', this.onDevices)
     if (this.timer !== null) window.clearInterval(this.timer)
     this.timer = null
     this.leave()
@@ -105,10 +116,7 @@ export class Voice {
     if (this.channel === channel) return
     this.leave()
     try {
-      this.rawMic = await navigator.mediaDevices.getUserMedia({
-        audio: micConstraints(),
-        video: false,
-      })
+      this.rawMic = await openMic()
     } catch (err) {
       // The browser asks on its own whenever asking is still possible. This
       // is for when it will not: say which switch is set to no, and where.
@@ -133,6 +141,45 @@ export class Voice {
     this.talking.add(this.selfId, this.mic)
     this.onChange?.()
     for (const peer of this.membersOf(channel)) this.considerCall(peer)
+  }
+
+  /**
+   * Open the microphone again, as Settings now says, and send that instead,
+   * without dropping anybody: every connection swaps the track it sends.
+   */
+  private async switchMic(): Promise<void> {
+    if (!this.channel || this.switching) return
+    this.switching = true
+    try {
+      const raw = await openMic()
+      let mic = raw
+      let cleaner: Denoiser | null = null
+      if (micSettings().smart) {
+        cleaner = await denoise(raw)
+        if (cleaner) mic = cleaner.stream
+      }
+      if (!this.channel) {
+        cleaner?.close()
+        raw.getTracks().forEach((t) => t.stop())
+        return
+      }
+      for (const t of [...raw.getAudioTracks(), ...mic.getAudioTracks()]) t.enabled = !this.muted
+      for (const call of this.calls.values()) await call.useMic(mic)
+      const old = { raw: this.rawMic, mic: this.mic, cleaner: this.cleaner }
+      this.rawMic = raw
+      this.mic = mic
+      this.cleaner = cleaner
+      old.cleaner?.close()
+      old.raw?.getTracks().forEach((t) => t.stop())
+      old.mic?.getTracks().forEach((t) => t.stop())
+      this.talking.remove(this.selfId)
+      this.talking.add(this.selfId, mic)
+      this.onChange?.()
+    } catch {
+      // The one it has keeps going: a call on the old microphone beats none.
+    } finally {
+      this.switching = false
+    }
   }
 
   leave(): void {
@@ -162,6 +209,11 @@ export class Voice {
   /** The live microphone, so the settings screen can say what it really got. */
   get stream(): MediaStream | null {
     return this.mic
+  }
+
+  /** The microphone itself, before any cleaning: whose name it has is which device it is. */
+  get source(): MediaStream | null {
+    return this.rawMic
   }
 
   /** Everyone we can actually hear right now. */
@@ -305,7 +357,7 @@ class Call {
   }
 
   private readonly pc: RTCPeerConnection
-  private readonly mic: MediaStream
+  private mic: MediaStream
   private readonly hooks: CallHooks
   private readonly sink: HTMLAudioElement
   private pending: RTCIceCandidateInit[] = []
@@ -362,6 +414,19 @@ class Call {
       }
       hooks.onChange()
     }
+  }
+
+  /** Send another microphone, on the same connection. */
+  async useMic(mic: MediaStream): Promise<void> {
+    this.mic = mic
+    const track = mic.getAudioTracks()[0]
+    const audio = this.pc.getTransceivers().find((t) => t.sender.track?.kind === 'audio' || t.receiver.track?.kind === 'audio')
+    if (track && audio && !this.closed) await audio.sender.replaceTrack(track).catch(() => undefined)
+  }
+
+  /** Play through whichever speaker Settings says now. */
+  speakers(): void {
+    playOn(this.sink)
   }
 
   async dial(): Promise<void> {

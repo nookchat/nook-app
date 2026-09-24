@@ -79,7 +79,8 @@ try {
   const lockedLink = locker.url()
   check('a locked space keeps its lock in the link', /\.P(@|$)/.test(lockedLink), lockedLink)
 
-  await locker.click('button[aria-label="Your spaces"]')
+  await locker.click('button[aria-label="Switch space"]')
+  await locker.click('.menu.switcher .menu-item:has-text("Home")')
   await atList(locker)
   check('one space in the list, not two', (await rows(locker)).length === 1)
 
@@ -121,7 +122,7 @@ try {
   await admin.waitForTimeout(800)
   const shown = await admin.textContent('.card:has(button:has-text("Leave this space")) .small')
   check('the settings card shows the name it was just given', shown === 'staff room', shown)
-  await admin.click('button:has-text("Back")')
+  await admin.click('button[aria-label="Close settings"]')
   await admin.waitForFunction(
     () => document.querySelector('.space-name')?.textContent === 'staff room',
     null,

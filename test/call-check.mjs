@@ -186,6 +186,9 @@ try {
   check('declining tells the caller', !!(await toastSays(ada, 'declined')))
 
   // ---- the settings that find out why ----
+  // Cat stands in the lounge first, so there is a call for a new microphone to move.
+  await cat.evaluate(() => [...document.querySelectorAll('.voice-channel .rail-item')].find((b) => b.textContent.includes('lounge'))?.click())
+  await cat.waitForSelector('.voice-bar:not(.voice-dock):not(.hidden)', { timeout: 15_000 })
   await cat.click('button[aria-label="Settings"]')
   await cat.waitForSelector('button:has-text("Test microphone")')
   await cat.click('button:has-text("Test microphone")')
@@ -194,6 +197,26 @@ try {
     10_000,
   )
   check('the microphone test moves its meter', !!moved, moved ?? 'flat')
+
+  // The microphone chosen is the one that opens, for the test and for the call.
+  const pick = async (label) => {
+    const value = await cat.$eval('select[aria-label="Microphone"]', (s, l) => [...s.options].find((o) => o.text === l)?.value ?? '', label)
+    await cat.selectOption('select[aria-label="Microphone"]', value)
+  }
+  await pick('Fake Audio Input 1')
+  const tested = await waitFor(() => cat.evaluate(() => (document.querySelector('.mic-test .tiny')?.textContent === 'Fake Audio Input 1' ? true : null)), 10_000)
+  check('choosing a microphone is the one the test opens', !!tested)
+  await pick('Fake Audio Input 2')
+  const inCall = await waitFor(
+    () =>
+      cat.evaluate(async () => {
+        const { spaces } = await import('/src/space/registry.ts')
+        const label = spaces.all()[0]?.voice.source?.getAudioTracks()[0]?.label
+        return label === 'Fake Audio Input 2' ? label : null
+      }),
+    10_000,
+  )
+  check('and choosing another during a call moves the call to it', !!inCall, inCall ?? 'still the old one')
   await cat.click('button:has-text("Test connection")')
   const relay = await waitFor(() => cat.evaluate(() => document.querySelector('.relay-result')?.textContent ?? null), 15_000)
   check('and the connection test says what the relay is doing', !!relay, relay ?? 'nothing')

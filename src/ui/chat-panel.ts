@@ -397,14 +397,20 @@ export class ChatPanel {
       class: 'to-bottom hidden',
       text: 'Jump to the newest',
       title: 'Go to the end of the conversation',
-      on: {
-        click: () => {
-          this.pinned = true
-          this.log.scrollTop = this.log.scrollHeight
-          this.toBottom.classList.add('hidden')
-        },
-      },
     })
+    // On the press, not the release, so nothing that moves in between can take the click.
+    let pressed = 0
+    this.toBottom.addEventListener('pointerdown', (ev) => {
+      if (ev.button !== 0) return
+      ev.preventDefault()
+      pressed = Date.now()
+      this.jumpToNewest()
+    })
+    // The keyboard, and anything that clicks without pressing first.
+    this.toBottom.addEventListener('click', () => {
+      if (Date.now() - pressed > 600) this.jumpToNewest()
+    })
+    this.toBottom.addEventListener('pointerleave', () => this.showJump())
     this.log.addEventListener('scroll', () => {
       this.pinned = this.isAtBottom()
       this.showJump()
@@ -536,6 +542,11 @@ export class ChatPanel {
 
   get soundAnchor(): HTMLElement {
     return this.soundButton
+  }
+
+  /** What the GIF picker opens above. */
+  get gifAnchor(): HTMLElement {
+    return this.gifButton
   }
 
   setMe(pubkey: string): void {
@@ -702,9 +713,23 @@ export class ChatPanel {
   }
 
   /** Whether the way back down is needed. */
+  /*
+   * Shown once well up, and gone only once nearly at the end, or while the
+   * pointer is on it. One line for both used to hide it under a finger: a
+   * trackpad still gliding, or a picture loading, crossed the line between the
+   * press and the release, and the click fell on the message under it.
+   */
   private showJump(): void {
-    const far = this.log.scrollHeight - this.log.scrollTop - this.log.clientHeight > 220
-    this.toBottom.classList.toggle('hidden', !far)
+    const gap = this.log.scrollHeight - this.log.scrollTop - this.log.clientHeight
+    const shown = !this.toBottom.classList.contains('hidden')
+    const want = shown ? gap > 60 || this.toBottom.matches(':hover') : gap > 300
+    this.toBottom.classList.toggle('hidden', !want)
+  }
+
+  private jumpToNewest(): void {
+    this.pinned = true
+    this.log.scrollTop = this.log.scrollHeight
+    this.toBottom.classList.add('hidden')
   }
 
   /**

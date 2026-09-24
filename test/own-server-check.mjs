@@ -99,7 +99,8 @@ try {
     .then(() => true, () => false)
   check('somebody with no server can join from an invite', joined)
 
-  await bob.click('button[aria-label="Your spaces"]')
+  await bob.click('button[aria-label="Switch space"]')
+  await bob.click('.menu.switcher .menu-item:has-text("Home")')
   await bob.waitForSelector('input[aria-label="Room code"]')
   check('her server is not where his own spaces go', await has(bob, 'input[aria-label="Your server"]'))
   check('and the space he joined is on his list', (await bob.$$('.space-row .rail-item')).length === 1)

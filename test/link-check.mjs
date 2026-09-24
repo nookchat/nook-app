@@ -37,7 +37,7 @@ async function makeLink(page) {
   await code.waitFor({ timeout: 15_000 })
   const offer = { code: (await code.textContent()).trim(), link: await code.getAttribute('data-link') }
   await page.keyboard.press('Escape')
-  await page.click('button:has-text("Back")')
+  await page.click('button[aria-label="Close settings"]')
   return offer
 }
 
@@ -57,7 +57,7 @@ async function whoIs(page) {
     name: document.querySelector('input[aria-label="Your name"]')?.value ?? '',
     id: [...document.querySelectorAll('.share-code')].map((e) => e.textContent).find((t) => t?.startsWith('#')) ?? '',
   }))
-  await page.click('button:has-text("Back")')
+  await page.click('button[aria-label="Close settings"]')
   return { ...me, spaces }
 }
 
@@ -74,7 +74,8 @@ try {
   await ana.keyboard.type(SAID)
   await ana.keyboard.press('Enter')
   await wait(1500)
-  await ana.click('button[aria-label="Your spaces"]')
+  await ana.click('button[aria-label="Switch space"]')
+  await ana.click('.menu.switcher .menu-item:has-text("Home")')
   const her = await whoIs(ana)
 
   const first = await makeLink(ana)

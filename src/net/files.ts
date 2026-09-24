@@ -119,6 +119,111 @@ async function lookAtVideo(file: File): Promise<Look> {
   }
 }
 
+/*
+ * HEVC, which is what an iPhone records. Safari and a Mac play it; Chrome on
+ * Windows or Linux, and Firefox, play its sound over a black picture. The
+ * sample entry names it, near the start of the file or near the end, where
+ * the index is: hvc1 or hev1, or dvh1 or dvhe for Dolby Vision.
+ */
+const HEVC = ['hvc1', 'hev1', 'dvh1', 'dvhe'].map((tag) => [...tag].map((c) => c.charCodeAt(0)))
+
+function namesHevc(bytes: Uint8Array): boolean {
+  for (let i = 0; i + 4 <= bytes.length; i++) {
+    for (const tag of HEVC) {
+      if (bytes[i] === tag[0] && bytes[i + 1] === tag[1] && bytes[i + 2] === tag[2] && bytes[i + 3] === tag[3]) return true
+    }
+  }
+  return false
+}
+
+/** Whether a video is one only some browsers can show the picture of. */
+export async function isHevc(file: Blob): Promise<boolean> {
+  const SPAN = 4 * 1024 * 1024
+  const head = new Uint8Array(await file.slice(0, SPAN).arrayBuffer())
+  if (namesHevc(head)) return true
+  if (file.size <= SPAN) return false
+  return namesHevc(new Uint8Array(await file.slice(Math.max(SPAN, file.size - SPAN)).arrayBuffer()))
+}
+
+/**
+ * Play a video through this browser and record it again, as H.264 where the
+ * browser records that and VP9 or VP8 where it does not, which every browser
+ * plays. It takes as long as the video lasts, which is the price of doing it
+ * here rather than on a server that would then see it. Null when this
+ * browser cannot play it either, or cannot record.
+ */
+export async function reencode(file: File, onPart: (part: number) => void): Promise<File | null> {
+  if (typeof MediaRecorder === 'undefined') return null
+  const type = [
+    'video/mp4;codecs=avc1.42E01F,mp4a.40.2',
+    'video/mp4;codecs=avc1',
+    'video/mp4',
+    'video/webm;codecs=vp9,opus',
+    'video/webm;codecs=vp8,opus',
+    'video/webm',
+  ].find((t) => MediaRecorder.isTypeSupported(t))
+  if (!type) return null
+  const url = URL.createObjectURL(file)
+  const video = document.createElement('video')
+  video.playsInline = true
+  video.preload = 'auto'
+  video.src = url
+  const ctx = new AudioContext()
+  try {
+    await new Promise<void>((ok, fail) => {
+      video.onloadeddata = () => ok()
+      video.onerror = () => fail(new Error('not playable here'))
+    })
+    const w = video.videoWidth
+    const h = video.videoHeight
+    if (!w || !h) return null
+    const scale = Math.min(1, 1920 / Math.max(w, h))
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.round((w * scale) / 2) * 2
+    canvas.height = Math.round((h * scale) / 2) * 2
+    const draw = canvas.getContext('2d')
+    if (!draw) return null
+    // The sound goes into the recording and nowhere else: not out of the speakers.
+    const sound = ctx.createMediaStreamDestination()
+    ctx.createMediaElementSource(video).connect(sound)
+    await ctx.resume().catch(() => undefined)
+    const stream = new MediaStream([...canvas.captureStream(30).getVideoTracks(), ...sound.stream.getAudioTracks()])
+    const recorder = new MediaRecorder(stream, { mimeType: type, videoBitsPerSecond: 5_000_000, audioBitsPerSecond: 128_000 })
+    const parts: Blob[] = []
+    recorder.ondataavailable = (ev) => ev.data.size && parts.push(ev.data)
+    const done = new Promise<void>((ok) => (recorder.onstop = () => ok()))
+    let running = true
+    const frame = (): void => {
+      if (!running) return
+      draw.drawImage(video, 0, 0, canvas.width, canvas.height)
+      if (Number.isFinite(video.duration) && video.duration > 0) onPart(Math.min(1, video.currentTime / video.duration))
+      const v = video as HTMLVideoElement & { requestVideoFrameCallback?: (cb: () => void) => number }
+      if (v.requestVideoFrameCallback) v.requestVideoFrameCallback(frame)
+      else requestAnimationFrame(frame)
+    }
+    recorder.start(1000)
+    frame()
+    await video.play()
+    await new Promise<void>((ok) => (video.onended = () => ok()))
+    running = false
+    recorder.stop()
+    await done
+    stream.getTracks().forEach((t) => t.stop())
+    const blob = new Blob(parts, { type: type.split(';')[0] })
+    if (blob.size === 0) return null
+    const name = file.name.replace(/\.[^.]+$/, '') + (type.startsWith('video/mp4') ? '.mp4' : '.webm')
+    return new File([blob], name, { type: blob.type })
+  } catch {
+    return null
+  } finally {
+    video.pause()
+    video.removeAttribute('src')
+    video.load()
+    URL.revokeObjectURL(url)
+    void ctx.close().catch(() => undefined)
+  }
+}
+
 async function lookAt(file: File): Promise<Look> {
   // Within a few seconds or not at all: a file that will not say is still a file.
   const within = <T>(work: Promise<T>): Promise<T | Look> =>
@@ -182,8 +287,17 @@ export class SpaceFiles {
     return now && all.includes(now) ? [now, ...all.filter((b) => b !== now)] : all
   }
 
-  /** Look at a file, seal it, send it, and say how to find it again. */
-  async send(file: File, onProgress: Progress, signal: AbortSignal): Promise<Attachment> {
+  /**
+   * Look at a file, seal it, send it, and say how to find it again. A video
+   * only some browsers can show is made into one they all can first.
+   */
+  async send(file: File, onProgress: Progress, signal: AbortSignal, onStage?: (words: string) => void): Promise<Attachment> {
+    if (file.type.startsWith('video/') && (await isHevc(file))) {
+      onStage?.('Converting so everyone can watch it')
+      const converted = await reencode(file, (part) => onStage?.(`Converting so everyone can watch it · ${Math.floor(part * 100)}%`))
+      if (signal.aborted) throw new DOMException('Stopped', 'AbortError')
+      if (converted) file = converted
+    }
     const look = await lookAt(file)
     const key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt'])
     const raw = new Uint8Array(await crypto.subtle.exportKey('raw', key))

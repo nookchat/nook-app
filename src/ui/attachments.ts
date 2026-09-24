@@ -179,6 +179,7 @@ function videoTile(file: Attachment, source: SpaceFiles | null, most: { w: numbe
       tile.replaceChildren(video)
       tile.removeAttribute('role')
       tile.removeAttribute('tabindex')
+      watchPicture(video, tile, file, source)
       await video.play().catch(() => undefined)
     } catch {
       started = false
@@ -196,6 +197,46 @@ function videoTile(file: Attachment, source: SpaceFiles | null, most: { w: numbe
   })
   return tile
 }
+
+/**
+ * A video whose sound plays and whose picture does not: this browser cannot
+ * decode the picture (HEVC, most often, on anything but Safari or a Mac). Said
+ * over the black, with a way to save it, rather than left as a black box.
+ */
+function watchPicture(video: HTMLVideoElement, tile: HTMLElement, file: Attachment, source: SpaceFiles): void {
+  const check = (): void => {
+    if (video.currentTime < 0.8) return
+    video.removeEventListener('timeupdate', check)
+    const frames = video.getVideoPlaybackQuality?.().totalVideoFrames ?? 1
+    if (video.videoWidth > 0 && frames > 0) return
+    const save = h('button', { class: 'small' }, [icon('download', 14), 'Save it'])
+    save.addEventListener('click', async () => saveFile(await source.open(file), file.name))
+    tile.append(
+      h('div', { class: 'att-cant' }, [
+        h('span', { text: 'This browser can play the sound but not the picture of this video.' }),
+        h('span', { class: 'tiny faint', text: 'Save it to watch it in another app, or open it in Safari.' }),
+        save,
+      ]),
+    )
+  }
+  video.addEventListener('timeupdate', check)
+}
+
+/*
+ * One at a time. Starting a video or a sound here stops whichever other one
+ * was playing, the way two people talking at once is nobody talking.
+ */
+document.addEventListener(
+  'play',
+  (ev) => {
+    const started = ev.target
+    if (!(started instanceof HTMLMediaElement) || !started.matches('.att-player, .att-audio')) return
+    for (const other of document.querySelectorAll<HTMLMediaElement>('.att-player, .att-audio')) {
+      if (other !== started && !other.paused) other.pause()
+    }
+  },
+  true,
+)
 
 function fileCard(file: Attachment, source: SpaceFiles | null): HTMLElement {
   const kind = kindOf(file)
@@ -418,6 +459,7 @@ export class AttachTray {
           detail.textContent = `${Math.floor(part * 100)}% of ${sizeLabel(file.size)}`
         },
         item.stop.signal,
+        (words) => (detail.textContent = words),
       )
       .then(
         (attachment) => {

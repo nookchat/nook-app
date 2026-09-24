@@ -16,7 +16,7 @@
 
 import { fetchIce, serverTag } from '../backend'
 import { denoise, type Denoiser } from '../net/denoise'
-import { audioDevices, explainMicRefusal, micConstraints, micSettings, playOn, setMicSettings } from '../net/mic'
+import { audioDevices, DEVICES_CHANGED, explainMicRefusal, micSettings, openMic, playOn, setMicSettings } from '../net/mic'
 import { knownServers } from '../store/server-spaces'
 import { h } from './dom'
 import { icon } from './icons'
@@ -29,7 +29,7 @@ interface Test {
 async function startTest(onLevel: (level: number, label: string) => void): Promise<Test> {
   let raw: MediaStream
   try {
-    raw = await navigator.mediaDevices.getUserMedia({ audio: micConstraints(), video: false })
+    raw = await openMic()
   } catch (err) {
     throw new Error(await explainMicRefusal(err))
   }
@@ -130,27 +130,49 @@ export function voiceSettings(): HTMLElement {
   const fill = async (): Promise<void> => {
     const { inputs, outputs } = await audioDevices()
     const s = micSettings()
-    const options = (select: HTMLSelectElement, list: MediaDeviceInfo[], chosen: string, what: string): void => {
-      select.replaceChildren(h('option', { value: '', text: `The system’s ${what}` }))
-      list.forEach((d, i) => {
-        if (d.deviceId === 'default') return
-        select.append(h('option', { value: d.deviceId, text: d.label || `${what} ${i + 1}` }))
-      })
+    /*
+     * The system's own first, which is where a new device starts and what
+     * follows it when something is plugged in. Then each device by name. A
+     * browser gives no names, and no ids to choose by, until the page has
+     * been allowed the microphone once, so until then there is a way to ask.
+     */
+    const options = (select: HTMLSelectElement, list: MediaDeviceInfo[], chosen: string, what: string): number => {
+      const system = list.find((d) => d.deviceId === 'default')?.label.replace(/^Default - /, '')
+      select.replaceChildren(h('option', { value: '', text: system ? `The system’s ${what} (${system})` : `The system’s ${what}` }))
+      const real = list.filter((d) => d.deviceId && d.deviceId !== 'default')
+      real.forEach((d, i) => select.append(h('option', { value: d.deviceId, text: d.label || `${what} ${i + 1}` })))
       select.value = [...select.options].some((o) => o.value === chosen) ? chosen : ''
+      return real.length
     }
-    options(input, inputs, s.input ?? '', 'microphone')
+    const mics = options(input, inputs, s.input ?? '', 'microphone')
     options(output, outputs, s.output ?? '', 'speaker')
+    named.classList.toggle('hidden', mics > 0 || inputs.length === 0)
     // A browser without a way to choose the speaker says so by not listing one.
     output.disabled = outputs.length === 0 || !('setSinkId' in HTMLMediaElement.prototype)
   }
+  // A call that is running moves to the new choice at once: see Voice.switchMic.
   input.addEventListener('change', () => {
     setMicSettings({ ...micSettings(), input: input.value })
+    window.dispatchEvent(new Event(DEVICES_CHANGED))
     if (test) void restart()
   })
   output.addEventListener('change', () => {
     setMicSettings({ ...micSettings(), output: output.value })
+    window.dispatchEvent(new Event(DEVICES_CHANGED))
     if (test) void restart()
   })
+  // Before the page may see the microphones' names, it cannot offer them.
+  const named = h('button', { class: 'ghost small hidden', text: 'Show my microphones' })
+  named.addEventListener('click', async () => {
+    try {
+      const probe = await navigator.mediaDevices.getUserMedia({ audio: true })
+      probe.getTracks().forEach((t) => t.stop())
+    } catch (err) {
+      which.textContent = await explainMicRefusal(err)
+    }
+    void fill()
+  })
+  navigator.mediaDevices?.addEventListener?.('devicechange', () => void fill())
   void fill()
 
   // ---- the microphone test ----
@@ -229,6 +251,7 @@ export function voiceSettings(): HTMLElement {
 
   const root = h('div', { class: 'stack tight' }, [
     h('label', { class: 'field-row' }, [h('span', { class: 'field-label', text: 'Microphone' }), input]),
+    named,
     h('label', { class: 'field-row' }, [h('span', { class: 'field-label', text: 'Speaker' }), output]),
     h('div', { class: 'mic-test' }, [h('div', { class: 'row wrap' }, [testButton, hearButton]), meter, which]),
     h('div', { class: 'row wrap' }, [relayButton]),

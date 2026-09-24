@@ -114,8 +114,29 @@ export function micConstraints(): MediaTrackConstraints {
     echoCancellation: s.echo,
     noiseSuppression: s.denoise,
     autoGainControl: s.gain,
-    // Ideal rather than exact: a microphone that was unplugged falls back to the next, not to silence.
-    ...(s.input ? { deviceId: { ideal: s.input } } : {}),
+    // Exact: a browser may take "ideal" as a suggestion and open the default instead. See openMic.
+    ...(s.input ? { deviceId: { exact: s.input } } : {}),
+  }
+}
+
+/** Said when the microphone or speaker chosen in Settings changes, so a call can move to it. */
+export const DEVICES_CHANGED = 'cathode:devices'
+
+/**
+ * Open the chosen microphone, or the system's own when none is chosen.
+ *
+ * The chosen one exactly: asked for as a preference, a browser was free to
+ * open the default instead, and did. When it is not there any more (unplugged,
+ * or another machine's id), the system's own opens rather than nothing.
+ */
+export async function openMic(): Promise<MediaStream> {
+  try {
+    return await navigator.mediaDevices.getUserMedia({ audio: micConstraints(), video: false })
+  } catch (err) {
+    const name = err instanceof Error ? err.name : ''
+    if (!micSettings().input || (name !== 'OverconstrainedError' && name !== 'NotFoundError')) throw err
+    const { deviceId: _gone, ...rest } = micConstraints()
+    return navigator.mediaDevices.getUserMedia({ audio: rest, video: false })
   }
 }
 

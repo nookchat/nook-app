@@ -68,6 +68,22 @@ function switchRow(label: string, about = ''): HTMLButtonElement {
 }
 
 export function settingsView(actions: SettingsActions): HTMLElement {
+  /*
+   * Closed with the cross at the top right, or Escape, the way every
+   * dialog-shaped thing closes. Escape is left alone while something inside
+   * settings has it, such as a dialog or a picker on top.
+   */
+  const close = (): void => {
+    window.removeEventListener('keydown', onEscape, true)
+    actions.back()
+  }
+  // Heard before anything opened on top of settings, which is then still open, and has the key.
+  const onEscape = (ev: KeyboardEvent): void => {
+    if (ev.key !== 'Escape' || ev.defaultPrevented) return
+    if (document.querySelector('.scrim, .menu, .emoji-picker, .emoji-pop, .viewer, .gif-pop')) return
+    close()
+  }
+  window.addEventListener('keydown', onEscape, true)
   const identity = loadIdentity()
 
   // ---- profile ----
@@ -385,8 +401,12 @@ export function settingsView(actions: SettingsActions): HTMLElement {
     h('div', { class: 'center-page' }, [
       h('div', { class: 'sheet stack' }, [
         h('div', { class: 'row settings-head' }, [
-          h('button', { class: 'ghost', text: 'Back', on: { click: actions.back } }, [icon('chevron-left', 16)]),
-          h('h1', { class: 'settings-title', text: 'Settings' }),
+          h('h1', { class: 'settings-title grow', text: 'Settings' }),
+          h(
+            'button',
+            { class: 'ghost icon-only settings-close', ariaLabel: 'Close settings', title: 'Close (Esc)', on: { click: close } },
+            [icon('close', 20)],
+          ),
         ]),
 
         card('Profile', h('div', { class: 'row' }, [name, save]), picture, pickPicture),

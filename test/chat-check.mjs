@@ -329,6 +329,35 @@ try {
   const grouped = await alice.$$eval('.chat-at.on-hover', (els) => els.length)
   check('a run from one person shows one clock, not five', grouped > 0, `${grouped} hidden`)
 
+  /*
+   * The way back down takes the press, whatever moves under it. It used to
+   * hide the moment the log crossed its line, and a glide that crossed it
+   * between the press and the release sent the click to the message beneath.
+   */
+  for (let i = 0; i < 30; i++) await say(alice, `filler ${i}`)
+  await alice.evaluate(() => {
+    const log = document.querySelector('.chat-log')
+    log.scrollTop = log.scrollHeight - log.clientHeight - 320
+    log.dispatchEvent(new Event('scroll'))
+    window.__under = []
+    log.addEventListener('click', (ev) => window.__under.push(ev.target.className), true)
+  })
+  await alice.waitForSelector('.to-bottom:not(.hidden)', { timeout: 5000 })
+  const r = await alice.$eval('.to-bottom', (el) => {
+    const b = el.getBoundingClientRect()
+    return { x: b.left + b.width / 2, y: b.top + b.height / 2 }
+  })
+  await alice.mouse.move(r.x, r.y)
+  await alice.mouse.down()
+  const onPress = await alice.evaluate(() => {
+    const log = document.querySelector('.chat-log')
+    return log.scrollHeight - log.scrollTop - log.clientHeight < 5
+  })
+  await alice.mouse.up()
+  await alice.waitForTimeout(200)
+  const under = await alice.evaluate(() => window.__under)
+  check('the way back down goes down on the press, and nothing under it is clicked', onPress && under.length === 0, JSON.stringify({ onPress, under }))
+
   // ---- who runs the place, and what you can do about people ---------------
   const crowns = await alice.$$eval('.rail-person', (els) =>
     els.map((e) => ({ who: e.textContent.trim(), crown: !!e.querySelector('.crown') })),

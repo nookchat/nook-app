@@ -1681,23 +1681,7 @@ export class SpaceView {
         },
         [icon('settings', 17)],
       ),
-      /*
-       * The way out, and the only one there was not.
-       *
-       * Nothing is given up by pressing it: the space stays on this device and
-       * the link still opens it. The rail of spaces does the same job on a
-       * screen wide enough to show it; this is the one a phone can reach.
-       */
-      h(
-        'button',
-        {
-          title: 'Home',
-          ariaLabel: 'Your spaces',
-          class: 'ghost icon-only me-home',
-          on: { click: () => this.goHome() },
-        },
-        [icon('home', 17)],
-      ),
+      // Home is in the switcher at the top, on a phone too, inside the channels drawer.
     ])
 
     const left = h('div', { class: 'rail rail-left', role: 'navigation', ariaLabel: 'Channels, threads and conversations' }, [
@@ -2803,6 +2787,21 @@ export class SpaceView {
       pop.remove()
       window.removeEventListener('keydown', onKey, true)
       window.removeEventListener('pointerdown', onAway, true)
+      window.removeEventListener('resize', place)
+    }
+    /*
+     * Above the button that opened it, its right edge on the button's, the
+     * way the emoji picker hangs off its own: a picker in the middle of the
+     * screen is a picker the eye has to go and find.
+     */
+    const place = (): void => {
+      const at = this.chatPanel?.gifAnchor.getBoundingClientRect()
+      if (!at || at.width === 0) return
+      pop.classList.add('placed')
+      const width = pop.offsetWidth
+      pop.style.left = `${Math.round(Math.max(8, Math.min(at.right - width, window.innerWidth - width - 8)))}px`
+      pop.style.bottom = `${Math.round(window.innerHeight - at.top + 8)}px`
+      pop.style.maxHeight = `${Math.round(at.top - 16)}px`
     }
     window.addEventListener('keydown', onKey, true)
     window.addEventListener('pointerdown', onAway, true)
@@ -2872,6 +2871,8 @@ export class SpaceView {
     })
 
     document.body.append(pop)
+    place()
+    window.addEventListener('resize', place)
     box.focus()
     await run()
   }
