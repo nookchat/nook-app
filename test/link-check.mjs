@@ -65,6 +65,7 @@ try {
   // ---- the device Ana already uses ----
   const ana = await fresh()
   await ana.goto(APP_URL)
+  await ana.click('.welcome-step:not(.hidden) button.primary')
   await ana.fill('input[aria-label="Your name"]', 'Ana')
   await ana.keyboard.press('Enter')
   await ana.fill('input[aria-label="Space name"]', 'linked')
@@ -84,8 +85,8 @@ try {
   // ---- a new device, by typing the code ----
   const two = await fresh()
   await two.goto(APP_URL)
-  await two.waitForSelector('input[aria-label="Your name"]')
   await two.click('button:has-text("I already use Cathode")')
+  check('linking asks for no name: the name comes with the account', (await two.$('input[aria-label="Your name"]:visible')) === null)
   await two.fill('input[aria-label="The link or code"]', first.code.toLowerCase())
   await two.fill('input[aria-label="The server"]', 'localhost:8787')
   await two.click('button:has-text("Link this device")')
@@ -108,7 +109,7 @@ try {
     .then(() => true, () => false)
   check('a code works once', refused)
   await three.click('button:has-text("Carry on without it")')
-  await three.waitForSelector('input[aria-label="Your name"]', { timeout: 10_000 })
+  await three.waitForSelector('button:has-text("I already use Cathode")', { timeout: 10_000 })
 
   // ---- a fresh link, opened ----
   const second = await makeLink(ana)

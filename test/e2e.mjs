@@ -115,9 +115,11 @@ try {
   await host.addInitScript(DISPLAY_STUB)
   await host.goto(APP_URL, { waitUntil: 'domcontentloaded' })
 
-  // Somebody new is asked what to call them before anything else.
+  // Somebody new says so, and is asked what to call them before anything else.
+  await host.waitForSelector('button:has-text("I already use Cathode")', { timeout: 10_000 })
+  await host.click('.welcome-step:not(.hidden) button.primary')
   await host.waitForSelector('input[aria-label="Your name"]', { timeout: 10_000 })
-  const emptyStops = await host.evaluate(() => document.querySelector('.welcome-go')?.disabled === true)
+  const emptyStops = await host.evaluate(() => document.querySelector('.welcome-step:not(.hidden) .welcome-go')?.disabled === true)
   check('somebody new is asked for a name first, and cannot go on without one', emptyStops)
   await host.fill('input[aria-label="Your name"]', 'Hana Host')
   await host.keyboard.press('Enter')
@@ -249,14 +251,16 @@ try {
   await viewer.goto(link, { waitUntil: 'domcontentloaded' })
 
   // Somebody arriving on an invite is asked too, and then goes straight in.
+  await viewer.waitForSelector('button:has-text("I already use Cathode")', { timeout: 10_000 })
+  const invitedTitle = await viewer.$eval('.welcome-title', (el) => el.textContent)
+  await viewer.click('.welcome-step:not(.hidden) button.primary')
   await viewer.waitForSelector('input[aria-label="Your name"]', { timeout: 10_000 })
   const invitedWords = await viewer.evaluate(() => ({
-    title: document.querySelector('.welcome-title')?.textContent ?? '',
-    go: document.querySelector('.welcome-go')?.textContent ?? '',
+    go: document.querySelector('.welcome-step:not(.hidden) .welcome-go')?.textContent ?? '',
   }))
-  check('an invite asks for a name before joining', invitedWords.go === 'Join', JSON.stringify(invitedWords))
+  check('an invite asks for a name before joining', invitedTitle === 'You have been invited' && invitedWords.go === 'Join', JSON.stringify({ invitedTitle, ...invitedWords }))
   await viewer.fill('input[aria-label="Your name"]', 'Vic Viewer')
-  await viewer.click('.welcome-go')
+  await viewer.click('.welcome-step:not(.hidden) .welcome-go')
   await viewer.waitForSelector('.space-name', { timeout: 15_000 })
   check('and then drops you straight into the space', true)
 

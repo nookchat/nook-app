@@ -272,6 +272,12 @@ main {
   min-height: 44px;
 }
 
+.welcome-step {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
 .welcome-link {
   align-self: center;
   margin-top: -6px;
@@ -912,18 +918,9 @@ main.settings .sheet {
 }
 
 .settings-close {
-  width: 38px;
-  min-width: 38px;
-  height: 38px;
-  min-height: 38px;
-  border-radius: 50%;
   color: var(--fg-dim);
 }
 
-.settings-close:hover:not(:disabled) {
-  background: var(--surface-2);
-  color: var(--fg);
-}
 
 .settings-title {
   font-size: 24px;

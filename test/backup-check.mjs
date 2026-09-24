@@ -42,7 +42,6 @@ async function backUp(page, password = '') {
 
 async function restore(page, path, password = '') {
   await page.goto(APP_URL)
-  await page.waitForSelector('input[aria-label="Your name"]')
   await page.click('button:has-text("I already use Cathode")')
   await page.setInputFiles('input[aria-label="Backup file"]', path)
   if (password !== null && password !== '') {
@@ -64,6 +63,7 @@ try {
   // ---- Ana, with a space and something said in it ----
   const ana = await fresh()
   await ana.goto(APP_URL)
+  await ana.click('.welcome-step:not(.hidden) button.primary')
   await ana.fill('input[aria-label="Your name"]', 'Ana')
   await ana.keyboard.press('Enter')
   await ana.fill('input[aria-label="Space name"]', 'kept')
@@ -74,8 +74,21 @@ try {
   await ana.keyboard.press('Enter')
   await wait(1500)
 
+  // A picture, set in settings: it goes to the server, not into the browser.
+  const { writeFileSync } = await import('node:fs')
+  const shot = new URL('../test-output/backup-face.png', import.meta.url).pathname
+  writeFileSync(shot, await ana.screenshot({ clip: { x: 0, y: 0, width: 120, height: 120 } }))
+  await ana.evaluate(() => document.querySelector('button[aria-label="Settings"]').click())
+  await ana.setInputFiles('input[aria-label="Choose a picture"]', shot)
+  await ana.waitForSelector('.profile-face img', { timeout: 10_000 })
+  await ana.click('button[aria-label="Close settings"]')
+  await wait(3000)
+  const inBrowser = await ana.evaluate(() => localStorage.getItem('cathode.avatar.v1'))
+  check('your picture is not kept in the browser', inBrowser === null, String(inBrowser).slice(0, 30))
+
   const plain = await backUp(ana)
   const file = JSON.parse(plain.text)
+  check('and the backup does not carry it: it is on the server', !plain.text.includes('data:image'), `${plain.text.length} bytes`)
   check('a backup is one file, named for its owner, that says what it is', plain.name === 'cathode-Ana.json' && file.cathode === 'backup' && /private/.test(file.keep), plain.name)
 
   // ---- a browser with nothing in it ----
@@ -92,6 +105,10 @@ try {
   check('and the same messages', read)
   const name = await two.evaluate(() => document.querySelector('.me-name')?.textContent ?? '')
   check('and the same name', name === 'Ana', name)
+  await two.evaluate(() => document.querySelector('button[aria-label="Settings"]').click())
+  const face = await two.waitForSelector('.profile-face img', { timeout: 15_000 }).then(() => true, () => false)
+  check('and the same picture, from the server', face)
+  await two.click('button[aria-label="Close settings"]')
 
   // ---- with a password ----
   const sealed = await backUp(ana, 'correct horse')

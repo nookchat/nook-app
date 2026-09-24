@@ -21,7 +21,7 @@ import { serverTag, serverUrl } from '../backend'
 import { formatSecret, newSecret, parseSecret } from '../room'
 import { loadIdentity, saveDisplayName, secretForLinking, takeIdentity } from '../store/identity'
 import { adoptServers, knownServers, newSpaceServer, ownServers } from '../store/server-spaces'
-import { loadAvatar, saveAvatar } from '../ui/avatar'
+import { saveAvatar } from '../ui/avatar'
 import { knownClusters, learn } from './cluster'
 
 const ROUNDS = 200_000
@@ -72,7 +72,7 @@ function bundleOfThisDevice(): Bundle {
   return {
     k: secret,
     n: loadIdentity().name,
-    a: loadAvatar() || undefined,
+    // No picture: it is on your servers, and arrives with your record.
     servers: knownServers(),
     own: ownServers(),
     pick: newSpaceServer(),
@@ -84,7 +84,8 @@ function bundleOfThisDevice(): Bundle {
 function adopt(bundle: Bundle): string {
   if (!takeIdentity(bundle.k)) throw new Error('This browser will not keep a key.')
   if (bundle.n) saveDisplayName(bundle.n)
-  saveAvatar(typeof bundle.a === 'string' ? bundle.a : '')
+  // A link made before the picture lived on the server may still carry one.
+  if (typeof bundle.a === 'string' && bundle.a) saveAvatar(bundle.a)
   adoptServers(
     Array.isArray(bundle.servers) ? bundle.servers : [],
     Array.isArray(bundle.own) ? bundle.own : [],

@@ -26,7 +26,8 @@ import { loadIdentity } from '../store/identity'
 import type { RoomNote } from '../store/notes'
 import { RoomChat, type Unread } from '../store/room-chat'
 import { bookFor, stable } from '../store/server-spaces'
-import { loadAvatar } from '../ui/avatar'
+import { avatarKnown, loadAvatar } from '../ui/avatar'
+import { PREFS_CHANGED } from '../store/prefs'
 
 /** How stale "when you were last here" may get before it is written again. */
 const LAST_SEEN_MS = 60 * 60 * 1000
@@ -246,7 +247,19 @@ export class SpaceRuntime {
       await this.remember({ founder: chat.me })
       if (open.name) await chat.setSpaceName(open.name)
     }
-    await chat.announceName(chat.displayName, loadAvatar())
+    // The picture only once it is known: announcing none before the record arrived would take it away.
+    await chat.announceName(chat.displayName, avatarKnown() ? loadAvatar() : undefined)
+    window.addEventListener(PREFS_CHANGED, this.onPrefs)
+    this.emit('changed')
+  }
+
+  /** Your name or picture changed on another device: said here too. */
+  private readonly onPrefs = (ev: Event): void => {
+    const which = (ev as CustomEvent<string[]>).detail ?? []
+    if (!which.includes('cathode.avatar.v1') && !which.includes('cathode.name.v1')) return
+    const name = loadIdentity().name
+    this.mesh?.setName(name)
+    void this.chat.announceName(name, avatarKnown() ? loadAvatar() : undefined)
     this.emit('changed')
   }
 
@@ -518,6 +531,7 @@ export class SpaceRuntime {
     if (this.stopped) return
     this.stopped = true
     running.delete(this)
+    window.removeEventListener(PREFS_CHANGED, this.onPrefs)
     this.endCall()
     this.voice?.dispose()
     document.removeEventListener('visibilitychange', this.onVisible)

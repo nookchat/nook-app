@@ -1,39 +1,36 @@
 /**
  * A picture of you, small enough to travel inside one signed event.
  *
- * There is nowhere to upload anything to, which is the whole design, so an
- * avatar cannot be a link to a file on a server. It is the picture itself,
- * carried in the profile event next to the name, and an event has a size limit
- * that every device enforces. So the picture is shrunk here, on the way in,
- * until it fits with room to spare: a square thumbnail, WebP where the browser
- * has it, JPEG where it does not.
+ * It is the picture itself, carried in the profile event next to the name in
+ * every space, and an event has a size limit that every device enforces. So
+ * the picture is shrunk here, on the way in, until it fits with room to spare:
+ * a square thumbnail, WebP where the browser has it, JPEG where it does not.
  *
- * Kept on this device as well as in the log, so settings can show it before any
- * space is open.
+ * Yours is kept in your record on your servers, sealed, and in this page's
+ * memory while it is open, not in the browser. See store/prefs.ts.
  */
 
 import { MAX_AVATAR } from '../store/log'
+import { memoryPref, setMemoryPref } from '../store/prefs'
 
 const KEY = 'cathode.avatar.v1'
 
 /** How wide the thumbnail is. Drawn at 44 pixels at the most, so this is plenty. */
 const SIDE = 48
 
+/** Your picture, from your record on the server, or empty when there is none or it has not arrived yet. */
 export function loadAvatar(): string {
-  try {
-    return localStorage.getItem(KEY) ?? ''
-  } catch {
-    return ''
-  }
+  return memoryPref(KEY) ?? ''
 }
 
+/** Whether your picture is known yet: arrived from your record, or set here. */
+export function avatarKnown(): boolean {
+  return memoryPref(KEY) !== undefined
+}
+
+/** Your picture, kept in your record on your servers. See store/prefs.ts. */
 export function saveAvatar(picture: string): void {
-  try {
-    if (picture) localStorage.setItem(KEY, picture)
-    else localStorage.removeItem(KEY)
-  } catch {
-    /* the picture lasts for this session only */
-  }
+  setMemoryPref(KEY, picture || null)
 }
 
 /**

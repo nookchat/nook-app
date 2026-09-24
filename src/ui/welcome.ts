@@ -69,26 +69,46 @@ export function welcome(mount: HTMLElement, invited: boolean): Promise<void> {
   })
   name.addEventListener('input', paint)
 
-  const page = h('main', { class: 'welcome' }, [
-    h('div', { class: 'welcome-card' }, [
-      h('h1', { class: 'welcome-title', text: invited ? 'You have been invited' : 'Welcome to Cathode' }),
-      h('p', {
-        class: 'welcome-text',
-        text: 'Choose the name people will see. You can change it, and your picture, in Settings.',
-      }),
-      h('div', { class: 'welcome-picture' }, [face, h('div', { class: 'row' }, [pictureButton, removeButton]), picker]),
-      h('label', { class: 'welcome-field' }, [h('span', { class: 'eyebrow', text: 'Your name' }), name]),
-      go,
-      h('button', {
-        class: 'ghost welcome-link',
-        text: 'I already use Cathode',
-        on: { click: () => void import('./link-device').then((m) => m.enterLinkCode()) },
-      }),
-    ]),
+  /*
+   * First, which of the two you are. Somebody who already uses Cathode is
+   * never asked for a name: they are somebody already, and linking this
+   * device or restoring a backup brings that name with them.
+   */
+  const fresh = h('button', { class: 'primary big welcome-go', text: 'I’m new' })
+  const known = h('button', { class: 'big welcome-go', text: 'I already use Cathode' })
+  const choose = h('div', { class: 'welcome-step' }, [
+    h('h1', { class: 'welcome-title', text: invited ? 'You have been invited' : 'Welcome to Cathode' }),
+    h('p', {
+      class: 'welcome-text',
+      text: invited ? 'Somebody sent you an invite to a space.' : 'Chat, voice and screen sharing with your friends.',
+    }),
+    fresh,
+    known,
   ])
+  const back = h('button', { class: 'ghost welcome-link', text: 'Back' })
+  const naming = h('div', { class: 'welcome-step hidden' }, [
+    h('h1', { class: 'welcome-title', text: 'What should people call you?' }),
+    h('p', { class: 'welcome-text', text: 'You can change it, and your picture, in Settings.' }),
+    h('div', { class: 'welcome-picture' }, [face, h('div', { class: 'row' }, [pictureButton, removeButton]), picker]),
+    h('label', { class: 'welcome-field' }, [h('span', { class: 'eyebrow', text: 'Your name' }), name]),
+    go,
+    back,
+  ])
+  fresh.addEventListener('click', () => {
+    choose.classList.add('hidden')
+    naming.classList.remove('hidden')
+    name.focus()
+  })
+  back.addEventListener('click', () => {
+    naming.classList.add('hidden')
+    choose.classList.remove('hidden')
+    fresh.focus()
+  })
+  known.addEventListener('click', () => void import('./link-device').then((m) => m.enterLinkCode()))
+  const page = h('main', { class: 'welcome' }, [h('div', { class: 'welcome-card' }, [choose, naming])])
   paint()
   mount.replaceChildren(page)
-  name.focus()
+  fresh.focus()
 
   return new Promise((done) => {
     const finish = (): void => {
