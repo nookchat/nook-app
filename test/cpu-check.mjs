@@ -17,6 +17,7 @@
  */
 
 import { chromium } from 'playwright-core'
+import { hostAndShare, joinAndWatch } from './share.mjs'
 
 const FPS = Number(process.argv[2] ?? 60)
 const APP_URL = process.argv[3] ?? 'http://localhost:5173/'
@@ -114,24 +115,16 @@ for (const codec of CODECS) {
   // Baseline: the page is open and the canvas is animating, nothing is encoded.
   const idleCores = await coresUsed(hostCdp, 8000)
 
-  await host.getByRole('button', { name: 'New space' }).click()
-  await host.getByRole('button', { name: 'Share screen' }).click()
-  const box = host.locator('.share-code')
-  await box.waitFor({ timeout: 15_000 })
-  const link = await box.getAttribute('data-link')
+  const link = await hostAndShare(host)
 
   const viewer = await (await viewerBrowser.newContext()).newPage()
-  await viewer.goto(link, { waitUntil: 'domcontentloaded' })
+  await joinAndWatch(viewer, link)
 
   await sleep(SETTLE_MS)
   const liveCores = await coresUsed(hostCdp, SAMPLE_MS)
 
-  const shot = await host.evaluate(() => {
-    const text = Array.from(document.querySelectorAll('.viewer-row .pill')).map(
-      (p) => p.textContent ?? '',
-    )
-    return text.join(' ')
-  })
+  // What the viewer's tile says is arriving: size, rate, bitrate and codec.
+  const shot = await viewer.evaluate(() => document.querySelector('.stage-tile')?.title ?? '')
 
   const row = { codec, idleCores, liveCores, encodeCores: liveCores - idleCores, shot }
   rows.push(row)

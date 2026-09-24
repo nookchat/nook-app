@@ -1,122 +1,66 @@
 /**
- * The opening screen: the spaces you have been in.
+ * The home page: your spaces, and making or joining one.
  *
- * Every space you visit is remembered on this device, so coming back is a click
- * rather than a hunt for a link. New space makes a code; Join takes one that
- * somebody sent you, in whatever shape they sent it.
+ * Your list of spaces is kept on your server, sealed, so any device with your
+ * key sees the same list. New space makes a code on your server; Join takes
+ * one somebody sent you, in whatever shape they sent it.
  *
- * Making one is also where you say where it runs, peer to peer or on a
- * server. The choice is the space's for good and goes out in its invite, so
- * it is asked once, here, and nowhere else. See backend.ts.
+ * The page comes with no server. Somebody with none is asked for theirs in
+ * place of New space, and can still join anything they are sent, because an
+ * invite names its server.
  */
 
-import { checkServer, lastChoice, lastServer, rememberChoice, serverTag, serverUrl } from '../backend'
+import { SELF_HOSTING_URL, checkServer, serverTag, serverUrl } from '../backend'
 import { newSecret, parseLink } from '../room'
-import { ROOMS_CHANGED, type RoomNote } from '../store/db'
+import { ROOMS_CHANGED, type RoomNote } from '../store/notes'
+import { addServer, newSpaceServer, ownServers } from '../store/server-spaces'
 import { forgetSpace, listSpaces } from '../store/spaces'
 import { loadIdentity } from '../store/identity'
+import { spaces } from '../space/registry'
 import { clear, h } from './dom'
 import { icon, logo } from './icons'
 import { hideShadows, initials, spaceHue } from './space-rail'
 import { toast } from './toast'
 
 export interface SpaceListActions {
-  /** A name means the space is being made. A server means it runs on one. */
+  /** A name means the space is being made. */
   open(secret: string, locked?: boolean, password?: string, name?: string, server?: string): void
+  /** Draw the page again, as after adding a server. */
+  refresh(): void
 }
 
 export async function spaceList(actions: SpaceListActions): Promise<HTMLElement> {
   const me = loadIdentity().pubkey
 
-  const join = h('input', {
-    type: 'text',
-    placeholder: 'Paste a code or a link',
-    ariaLabel: 'Room code',
-  })
+  const join = h('input', { type: 'text', placeholder: 'Paste an invite link or code', ariaLabel: 'Room code' })
   const go = (): void => {
     const raw = join.value.trim()
     const link = parseLink(raw.includes('#') ? raw.slice(raw.lastIndexOf('#') + 1) : raw)
     if (!link) {
       join.value = ''
-      join.placeholder = 'That is not a code'
+      join.placeholder = 'That is not an invite'
       return
     }
-    /*
-     * The password is not asked for here.
-     *
-     * Whoever opens the space asks, and only when this device does not already
-     * have it. Asking here meant being asked for the password of a space you
-     * made yourself, every time somebody pasted you its link.
-     */
+    // The password is asked for when the space opens, and only if this device
+    // does not already have it.
     actions.open(link.secret, link.locked ? true : undefined, undefined, undefined, link.server)
   }
   join.addEventListener('keydown', (ev) => {
     if ((ev as KeyboardEvent).key === 'Enter') go()
   })
 
-  const title = h('input', {
-    type: 'text',
-    placeholder: 'Name it. Weeknight raids, book club, work.',
-    ariaLabel: 'Space name',
-  })
-  /*
-   * Where it runs. Whatever was picked last time, which on a page built with
-   * a server is that server until somebody says otherwise.
-   */
-  let onServer = lastChoice().server !== ''
-  const serverInput = h('input', {
-    type: 'text',
-    placeholder: 'cathode.example.org',
-    ariaLabel: 'Server address',
-    value: serverTag(lastChoice().server || lastServer()),
-  })
-  const p2pButton = h('button', { class: 'chip', text: 'Peer to peer' })
-  const serverButton = h('button', { class: 'chip' }, [icon('server', 13), 'Server'])
-  const whereNote = h('div', { class: 'tiny faint' })
-  const serverRow = h('div', { class: 'row' }, [serverInput])
-  const paintWhere = (): void => {
-    p2pButton.classList.toggle('on', !onServer)
-    serverButton.classList.toggle('on', onServer)
-    p2pButton.setAttribute('aria-pressed', String(!onServer))
-    serverButton.setAttribute('aria-pressed', String(onServer))
-    serverRow.classList.toggle('hidden', !onServer)
-    whereNote.textContent = onServer
-      ? 'Everything is kept on this server: the history, your list of spaces, and how far you have read. It all goes over one connection, calls included, and it is sealed so the server cannot read it. Nothing is kept on this device but your key.'
-      : 'No server at all. Everybody connects straight to everybody else, and every device keeps the whole history.'
-  }
-  p2pButton.addEventListener('click', () => {
-    onServer = false
-    paintWhere()
-  })
-  serverButton.addEventListener('click', () => {
-    onServer = true
-    paintWhere()
-    if (!serverInput.value) serverInput.focus()
-  })
-  paintWhere()
+  const title = h('input', { type: 'text', placeholder: 'Name your space', ariaLabel: 'Space name' })
 
-  /** The server to make the space on, checked, or null when it cannot be used. */
-  const pickServer = async (): Promise<string | null> => {
-    if (!onServer) return ''
-    const url = serverUrl(serverInput.value)
-    if (!url) {
-      toast('Say which server. It looks like cathode.example.org.', 'warn')
-      serverInput.focus()
-      return null
-    }
-    if (!(await checkServer(url))) {
-      toast(`No Cathode server answered at ${serverTag(url)}.`, 'bad', 6000)
-      return null
-    }
-    return url
-  }
+  // Which of your servers, only when there is a choice to make.
+  const servers = ownServers()
+  const where = h('select', { ariaLabel: 'Server' })
+  for (const server of servers) where.append(h('option', { value: server, text: serverTag(server) }))
+  where.value = newSpaceServer()
 
-  /** Make a space and walk in as its founder. */
-  const make = async (locked: boolean): Promise<void> => {
+  const make = (locked: boolean): void => {
+    const server = where.value || newSpaceServer()
+    if (!server) return
     const name = title.value.trim().slice(0, 60)
-    const server = await pickServer()
-    if (server === null) return
-    rememberChoice({ server })
     if (!locked) {
       actions.open(newSecret(), false, '', name, server)
       return
@@ -125,41 +69,31 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
     if (password) actions.open(newSecret(), true, password, name, server)
   }
   title.addEventListener('keydown', (ev) => {
-    if ((ev as KeyboardEvent).key === 'Enter') void make(false)
+    if ((ev as KeyboardEvent).key === 'Enter') make(false)
   })
 
   const recent = h('div', { class: 'stack tight' })
 
-  /**
-   * Take a space off this device.
-   *
-   * Only off this device. Deleting a space for everybody has to be announced,
-   * and announcing it means being in the space, so it lives in there. From out
-   * here the honest word is leave, and it is what the button says.
-   */
+  /** Off your list, on every device. Deleting it for everybody is inside the space. */
   const leave = async (room: RoomNote): Promise<void> => {
     const label = room.title || 'this space'
     const yours = room.founder === me
     const ok = window.confirm(
-      room.server
-        ? `Leave ${label}? It comes off your list on every device. Its history stays on ${serverTag(room.server)}, and the link still works if you want back in.`
-        : yours
-        ? `Leave ${label}? Its history goes from this device. The space itself stays: you made it, so open it and delete it there to close it for everybody.`
-        : `Leave ${label}? Its history goes from this device. Anybody else in it keeps theirs, and the link still works if you want back in.`,
+      yours
+        ? `Leave ${label}? It comes off your list. You made it, so it keeps going for everybody else: delete it from inside to close it.`
+        : `Leave ${label}? It comes off your list. The link still works if you want back in.`,
     )
     if (!ok) return
+    spaces.drop(room.room)
     await forgetSpace(room)
-    toast(room.server ? 'Left. It is off your list.' : 'Left, and forgotten on this device.', 'info')
+    toast('Left.', 'info')
     await paint()
   }
 
-  /** Draw the list from the store, so leaving a space is visible at once. */
   const paint = async (): Promise<void> => {
-    // A closed space keeps a note so its link says why it is gone. It is not a
-    // space any more, so it is not in the list of them.
     const rooms = hideShadows((await listSpaces()).filter((r) => !r.closed))
     clear(recent)
-    for (const room of rooms.slice(0, 12)) {
+    for (const room of rooms.slice(0, 24)) {
       const face = h('span', { class: 'space-tile', text: initials(room.title || 'Unnamed space') })
       face.style.setProperty('--hue', String(spaceHue(room.room)))
       recent.append(
@@ -168,43 +102,24 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
             'button',
             {
               class: 'rail-item grow',
-              // The lock and the password travel with the space, or the code
-              // alone derives a different room: same code, empty, and a second
-              // row in this list next time.
               on: {
                 click: () =>
-                  actions.open(
-                    room.secret,
-                    room.locked === true,
-                    room.password ?? '',
-                    undefined,
-                    room.server ?? '',
-                  ),
+                  actions.open(room.secret, room.locked === true, room.password ?? '', undefined, room.server ?? ''),
               },
             },
             [
               face,
               h('span', { class: 'space-row-text' }, [
                 h('span', { class: 'truncate space-row-name', text: room.title || 'Unnamed space' }),
-                h('span', {
-                  class: 'tiny faint truncate',
-                  text: `${room.server ? serverTag(room.server) : 'Peer to peer'} · ${whenLabel(room.lastSeen)}`,
-                }),
+                h('span', { class: 'tiny faint truncate', text: whenLabel(room.lastSeen) }),
               ]),
-              room.server
-                ? h('span', { class: 'tiny faint', title: `Runs on ${serverTag(room.server)}` }, [
-                    icon('server', 13),
-                  ])
-                : null,
-              room.locked
-                ? h('span', { class: 'tiny faint', title: 'Needs a password' }, [icon('shield', 13)])
-                : null,
+              room.locked ? h('span', { class: 'tiny faint', title: 'Needs a password' }, [icon('shield', 13)]) : null,
             ],
           ),
           h('button', {
             class: 'ghost tiny-btn',
             text: 'Leave',
-            title: 'Take this space off this device',
+            title: 'Take this space off your list',
             on: { click: () => void leave(room) },
           }),
         ]),
@@ -220,11 +135,10 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
     }
   }
   await paint()
-  // Spaces on a server arrive when the server answers, so the list draws again then.
+  // Spaces arrive when the server answers, so the list draws again then.
   let queued = 0
   let shown = false
   const again = (): void => {
-    // Gone from the page after being on it: stop listening.
     if (!recent.isConnected && shown) {
       window.removeEventListener(ROOMS_CHANGED, again)
       return
@@ -241,54 +155,80 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
         h('span', { class: 'home-mark' }, [logo(40)]),
         h('div', { class: 'stack tight' }, [
           h('h1', { class: 'home-title', text: 'Cathode' }),
-          h('div', {
-            class: 'home-tag',
-            text: 'Chat, voice and screen sharing. Peer to peer, or on your own server. Sealed end to end either way.',
-          }),
+          h('div', { class: 'home-tag', text: 'Chat, voice and screen sharing. End to end encrypted.' }),
         ]),
       ]),
       h('div', { class: 'home-grid' }, [
-        h('section', { class: 'card stack tight home-spaces' }, [
-          h('span', { class: 'eyebrow', text: 'Your spaces' }),
-          recent,
-        ]),
+        h('section', { class: 'card stack tight home-spaces' }, [h('span', { class: 'eyebrow', text: 'Your spaces' }), recent]),
         h('div', { class: 'stack home-side' }, [
-        h('div', { class: 'card stack tight' }, [
-          h('span', { class: 'eyebrow', text: 'Make one' }),
-          title,
-          h('div', { class: 'chips', role: 'group', ariaLabel: 'Where it runs' }, [
-            p2pButton,
-            serverButton,
-          ]),
-          serverRow,
-          whereNote,
-          h('div', { class: 'row' }, [
-            h('button', { class: 'primary big grow', on: { click: () => void make(false) } }, [
-              icon('plus', 16),
-              'New space',
+          servers.length === 0
+            ? addServerCard(actions)
+            : h('div', { class: 'card stack tight' }, [
+                h('span', { class: 'eyebrow', text: 'New space' }),
+                title,
+                servers.length > 1 ? where : null,
+                h('div', { class: 'row' }, [
+                  h('button', { class: 'primary big grow', on: { click: () => make(false) } }, [icon('plus', 16), 'New space']),
+                  h('button', {
+                    class: 'big',
+                    title: 'People need the password as well as the link',
+                    text: 'Add a password',
+                    on: { click: () => make(true) },
+                  }),
+                ]),
+              ]),
+          h('div', { class: 'card stack tight' }, [
+            h('span', { class: 'eyebrow', text: 'Join a space' }),
+            h('div', { class: 'row' }, [
+              join,
+              h('button', { class: 'join-button', text: 'Join', on: { click: go } }, [icon('enter', 15)]),
             ]),
-            h('button', {
-              class: 'big',
-              title: 'Nobody can join with the link alone: they need the password too',
-              text: 'Add a password',
-              on: { click: () => void make(true) },
-            }),
           ]),
-          h('div', {
-            class: 'tiny faint',
-            text: 'Whoever makes a space is its admin. Everybody else joins as a member until you say otherwise.',
-          }),
-        ]),
-        h('div', { class: 'card stack tight' }, [
-          h('span', { class: 'eyebrow', text: 'Join one' }),
-          h('div', { class: 'row' }, [
-            join,
-            h('button', { class: 'join-button', text: 'Join', on: { click: go } }, [icon('enter', 15)]),
-          ]),
-        ]),
         ]),
       ]),
     ]),
+  ])
+}
+
+/**
+ * In place of New space, for somebody with no server of their own yet.
+ *
+ * A space has to live somewhere, and the page has nowhere of its own to put
+ * it, so the first thing to make is a server. Joining needs none of this.
+ */
+function addServerCard(actions: SpaceListActions): HTMLElement {
+  const input = h('input', { type: 'text', placeholder: 'cathode.example.org', ariaLabel: 'Your server' })
+  const add = h('button', { class: 'primary', text: 'Add' })
+  const submit = async (): Promise<void> => {
+    const url = serverUrl(input.value)
+    if (!url) {
+      toast('That is not a server address.', 'warn')
+      return
+    }
+    add.disabled = true
+    const up = await checkServer(url)
+    add.disabled = false
+    if (!up) {
+      toast(`No Cathode server answered at ${serverTag(url)}.`, 'bad', 6000)
+      return
+    }
+    addServer(url, true)
+    toast('Server added. You can make a space now.', 'good')
+    actions.refresh()
+  }
+  add.addEventListener('click', () => void submit())
+  input.addEventListener('keydown', (ev) => {
+    if ((ev as KeyboardEvent).key === 'Enter') void submit()
+  })
+  const guide = h('a', { class: 'button-link', text: 'How to run one' })
+  guide.href = SELF_HOSTING_URL
+  guide.target = '_blank'
+  guide.rel = 'noopener'
+  return h('div', { class: 'card stack tight' }, [
+    h('span', { class: 'eyebrow', text: 'Add your server' }),
+    h('div', { class: 'tiny faint', text: 'Your spaces live on a Cathode server that you or a friend runs.' }),
+    h('div', { class: 'row' }, [input, add]),
+    guide,
   ])
 }
 

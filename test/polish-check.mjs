@@ -8,6 +8,13 @@
 
 import { chromium } from 'playwright-core'
 
+/** Search is an icon until it is opened. */
+const openSearch = (page) =>
+  page.evaluate(() => {
+    if (!document.querySelector('.search-wrap.open')) document.querySelector('button[aria-label="Search"]')?.click()
+  })
+
+
 const APP_URL = process.argv[2] ?? 'http://localhost:5173/'
 const CHROME =
   process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -181,6 +188,7 @@ try {
   // ---- search filters -----------------------------------------------------
   const SEARCH = 'input[aria-label="Search this space"]'
   const hits = async (query) => {
+    await openSearch(page)
     await page.fill(SEARCH, query)
     await page.waitForTimeout(350)
     return page.$$eval('.search-hit', (els) => els.map((e) => e.textContent))
@@ -195,6 +203,7 @@ try {
   check('has:link finds the message with a link', links.length === 1, JSON.stringify(links))
   check('has:image finds the picture', (await hits('has:image')).length === 1)
   check('filters combine with words', (await hits('from:alice in:general luna')).length === 1)
+  await openSearch(page)
   await page.fill(SEARCH, '')
 
   // ---- linking another device --------------------------------------------

@@ -13,6 +13,7 @@
  */
 
 import { chromium } from 'playwright-core'
+import { hostAndShare, joinAndWatch } from './share.mjs'
 
 const FPS = Number(process.argv[2] ?? 60)
 const APP_URL = process.argv[3] ?? 'http://localhost:5173/'
@@ -95,15 +96,11 @@ for (const codec of CODECS) {
   await host.addInitScript(displayStub(FPS))
   await host.addInitScript(PC_SPY)
   await host.goto(APP_URL, { waitUntil: 'domcontentloaded' })
-  await host.getByRole('button', { name: 'New space' }).click()
-  await host.getByRole('button', { name: 'Share screen' }).click()
-  const box = host.locator('.share-code')
-  await box.waitFor({ timeout: 15_000 })
-  const link = await box.getAttribute('data-link')
+  const link = await hostAndShare(host)
 
   const viewer = await context.newPage()
   await viewer.addInitScript(PC_SPY)
-  await viewer.goto(link, { waitUntil: 'domcontentloaded' })
+  await joinAndWatch(viewer, link)
 
   // Let the encoder settle and the bandwidth estimate open up.
   await host.waitForTimeout(22_000)

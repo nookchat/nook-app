@@ -11,18 +11,16 @@
  */
 
 import { chromium } from 'playwright-core'
-import { startServer } from './pg.mjs'
 import { mkdirSync } from 'node:fs'
 
 const APP_URL = process.argv[2] ?? 'http://localhost:5173/'
-const PORT = 8794
-const SERVER = `localhost:${PORT}`
 const OUT = new URL('../test-output/tour/', import.meta.url).pathname
 mkdirSync(OUT, { recursive: true })
 const CHROME =
   process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 
-const { child: server } = await startServer(PORT)
+// The page's own server, from test/stack.mjs.
+const server = { kill: () => undefined }
 
 const STUB = `(() => {
   const c = document.createElement('canvas'); c.width = 1600; c.height = 900
@@ -70,8 +68,6 @@ try {
   console.log(`list painted in ${Date.now() - t0} ms`)
   await shot(ada, 'list-desktop')
 
-  await ada.click('button:has-text("Server")')
-  await ada.fill('input[aria-label="Server address"]', SERVER)
   await ada.fill('input[aria-label="Space name"]', 'Night Shift')
   const t1 = Date.now()
   await ada.click('button:has-text("New space")')
@@ -125,30 +121,40 @@ try {
   await wait(300)
   await shot(ada, 'menu-desktop')
   await ada.keyboard.press('Escape')
-  await ada.click('button[aria-label="Show a QR code"]').catch(() => undefined)
-  await wait(400)
-  await shot(ada, 'qr-desktop')
+  await ada.click('.space-title-button')
+  await wait(200)
+  await shot(ada, 'space-menu-desktop')
+  await ada.click('.menu-item:has-text("Invite people")')
+  await wait(500)
+  await shot(ada, 'invite-desktop')
   await ada.keyboard.press('Escape')
 
-  // Share a screen and have somebody watch it.
-  await ada.click('button:has-text("Share screen")')
+  // Voice, then a screen shared into it, then somebody watching it.
+  await ada.click('.rail-item:has-text("Lounge")')
+  await wait(1500)
+  await ada.click('button[aria-label="Share screen"]')
   await wait(2500)
   await shot(ada, 'sharing-desktop')
-  const watch = await grace.$('.stream-tab')
-  if (watch) {
-    await watch.click()
-    await wait(3500)
-  }
-  await shot(grace, 'watching-desktop')
-
-  // Voice.
-  await linus.click('.rail-item:has-text("Lounge")').catch(() => undefined)
+  await grace.click('.rail-item:has-text("Lounge")')
   await wait(1500)
+  await grace.click('.live-badge').catch(() => undefined)
+  await wait(3500)
+  await shot(grace, 'watching-desktop')
   await shot(linus, 'voice-desktop')
+
+  // A direct message, and home with it on.
+  await linus.click(BOX)
+  await linus.keyboard.type('/dm Ada are you free later?')
+  await linus.keyboard.press('Enter')
+  await wait(1500)
+  await shot(linus, 'home-dm-desktop')
+  await ada.click('.rail-tile.home')
+  await wait(1200)
+  await shot(ada, 'home-desktop')
 
   // Settings.
   await grace.click('button[aria-label="Settings"]').catch(() => undefined)
-  await wait(500)
+  await wait(800)
   await shot(grace, 'settings-desktop', true)
 
   // A phone.

@@ -1,14 +1,14 @@
 /**
  * End to end smoke test.
  *
- * Two real Chrome pages, the real public relays, and a real peer connection.
+ * Two real Chrome pages, one Cathode server, and a real peer connection.
  * The only thing we fake is the operating system picker: getDisplayMedia gives
  * back a canvas stream plus a tone, so the test needs no screen permission and
  * stays the same on every machine.
  *
  *   node test/e2e.mjs [url]
  *
- * Run `npm run dev` first, or pass the URL of a built preview.
+ * Run `node test/stack.mjs` first, which starts a server and the page.
  */
 
 import { chromium } from 'playwright-core'
@@ -84,20 +84,10 @@ async function waitFor(fn, timeoutMs, label) {
 }
 
 const errors = { host: [], viewer: [] }
-const relayNoise = { host: 0, viewer: 0 }
-
-/**
- * A public relay that refuses a connection is normal, and Cathode is built to ride
- * it out on another relay. The browser still logs it, so we count it apart from
- * a real application error.
- */
-const isRelayNoise = (text) => /WebSocket connection to '(wss|ws):/.test(text)
-
 function watch(page, who) {
   page.on('console', (m) => {
     if (m.type() !== 'error') return
-    if (isRelayNoise(m.text())) relayNoise[who] += 1
-    else errors[who].push(m.text())
+    errors[who].push(m.text())
   })
   page.on('pageerror', (e) => errors[who].push(String(e)))
 }
@@ -139,12 +129,15 @@ try {
   check('the app opens on your spaces', opening.list && opening.make)
 
   await host.getByRole('button', { name: 'New space' }).click()
+  // The invite is in the space's menu, because it is not something done often.
+  await host.click('.space-title-button')
+  await host.click('.menu-item:has-text("Invite people")')
   const codeBox = host.locator('.share-code')
   await codeBox.waitFor({ timeout: 15_000 })
   const link = await codeBox.getAttribute('data-link')
   check(
     'a new space has a code and a link',
-    /#[0-9A-HJKMNP-TV-Z]{4}(-[0-9A-HJKMNP-TV-Z]{4}){2}$/.test(link),
+    /#[0-9A-HJKMNP-TV-Z]{4}(-[0-9A-HJKMNP-TV-Z]{4}){2}@/.test(link),
     link,
   )
 
@@ -177,17 +170,16 @@ try {
     `channels: ${room.channels.join(', ')}`,
   )
 
-  const relayOpen = await waitFor(
+  const serverOpen = await waitFor(
     async () =>
       host.evaluate(() => {
-        const text = document.querySelector('.status-bar')?.textContent ?? ''
-        const m = text.match(/(\d+) relay/)
-        return m && Number(m[1]) > 0 ? Number(m[1]) : null
+        const text = document.querySelector('.status-bar')?.innerText ?? ''
+        return /\bon \S+/.test(text) && !text.includes('cannot reach') ? text : null
       }),
     30_000,
-    'at least one relay to report open',
+    'the server to report open',
   )
-  check('a signal relay came up', relayOpen > 0, `${relayOpen} relays`)
+  check('the space is on its server', !!serverOpen, serverOpen ?? 'nothing')
 
   // Cathode must name where encoding happens, without pretending either way.
   const gpu = await host.evaluate(async () => {
@@ -203,7 +195,6 @@ try {
   )
 
   // The QR must carry the exact link. Chrome's own decoder is the judge.
-  await host.getByRole('button', { name: 'Show a QR code' }).click()
   await host.locator('.qr-frame svg').waitFor({ timeout: 5000 })
   const scanned = await host.evaluate(async () => {
     const svg = document.querySelector('.qr-frame svg')
@@ -253,7 +244,7 @@ try {
 
   check('an invite link drops you straight into the space', true)
 
-  // The two of them find each other with nobody hosting anything.
+  // The server tells each of them the other is here.
   const meshUp = await waitFor(
     async () =>
       viewer.evaluate(() => {
@@ -262,12 +253,14 @@ try {
         return m && Number(m[1]) >= 2 ? Number(m[1]) : null
       }),
     45_000,
-    'the two peers to meet on the mesh',
+    'the two people to see each other',
   )
-  check('the peers meet on the mesh with nobody sharing', meshUp >= 2, `${meshUp} here`)
+  check('the two see each other with nobody sharing', meshUp >= 2, `${meshUp} here`)
 
-  // Only now does somebody share a screen, inside the channel they are in.
-  await host.getByRole('button', { name: 'Share screen' }).click()
+  // Only now does somebody share a screen, from the voice channel they are in.
+  await host.click('.voice-channel .rail-item:has-text("lounge")')
+  await host.waitForSelector('.voice-bar:not(.hidden)', { timeout: 15_000 })
+  await host.click('button[aria-label="Share screen"]')
 
   /*
    * Watching is a choice now. A screen appearing on yours because somebody
@@ -292,24 +285,11 @@ try {
   const notYet = await viewer.evaluate(() => !document.querySelector('video'))
   check('and nothing is on their screen until they ask', notYet)
 
-  // The chat says so too, and the saying is a way in.
-  const invited = await waitFor(
-    async () =>
-      viewer.evaluate(() => {
-        const line = [...document.querySelectorAll('.chat-text.emote')].find((t) =>
-          t.textContent.includes('started sharing their screen'),
-        )
-        const button = document.querySelector('.chat-join')
-        return line && button ? button.textContent.trim() : null
-      }),
-    30_000,
-    'the chat to carry the invitation',
-  )
-  check('the chat announces the stream with a way in', invited === 'Join stream', invited ?? 'none')
-
-  // Joining goes through the message rather than the bar, so the new door is
-  // the one this run walks through. The bar was asserted just above.
-  await viewer.click('.chat-join')
+  // The card in the stream bar is the way in.
+  await viewer.evaluate(() => {
+    const button = [...document.querySelectorAll('.stream-tab')].find((b) => b.dataset.watch === 'peer')
+    button?.click()
+  })
 
   const playing = await waitFor(
     async () =>
@@ -352,16 +332,13 @@ try {
   const stats = await waitFor(
     async () =>
       viewer.evaluate(() => {
-        const text = Array.from(document.querySelectorAll('.surface-badges .pill')).map(
-          (p) => p.textContent ?? '',
-        )
-        const kb = text.find((t) => /kb\/s|Mb\/s/.test(t))
-        return kb && !/^0\b/.test(kb) ? text : null
+        const title = document.querySelector('.stage-tile')?.title ?? ''
+        return /[1-9][\d.]* ?(kb\/s|Mb\/s)/.test(title) ? title : null
       }),
     30_000,
-    'the viewer stats badges to show a real bitrate',
+    'the viewer tile to report a real bitrate',
   )
-  check('viewer stats report a bitrate', true, stats.join(' | '))
+  check('viewer stats report a bitrate', !!stats, stats ?? 'none')
 
   const audioFlowing = await waitFor(
     async () =>
@@ -380,15 +357,16 @@ try {
   const sharingLine = await waitFor(
     async () =>
       host.evaluate(() => {
-        const text = document.querySelector('.plan-box')?.textContent ?? ''
+        const tab = document.querySelector('.stream-tab[data-watch="self"]')
+        const text = tab?.textContent ?? ''
         return /watching/.test(text) ? text.replace(/\s+/g, ' ').trim() : null
       }),
     30_000,
-    'the share panel to report a watcher',
+    'the stream bar to report a watcher',
   )
   check('the sharer sees who is watching', /1 watching/.test(sharingLine), sharingLine.slice(0, 90))
 
-  // Chat runs on the same peer connection, with the host repeating each line.
+  // Chat goes through the server, beside the call.
   const chatWorks = await waitFor(
     async () => viewer.evaluate(() => (document.querySelector('.chat-log') ? true : null)),
     10_000,
@@ -412,7 +390,7 @@ try {
     15_000,
     'the host to receive the chat line',
   )
-  check('a viewer line reaches the host over the data channel', !!hostGotLine)
+  check('a viewer line reaches the host', !!hostGotLine)
 
   await host.fill('[aria-label="Write a message"]', 'and hello back')
   await host.press('[aria-label="Write a message"]', 'Enter')
@@ -520,12 +498,12 @@ try {
   await host.setViewportSize({ width: 1440, height: 900 })
 
   // ---- the host stops, the viewer must be told ----
-  await host.getByRole('button', { name: 'Stop sharing' }).click()
+  await host.click('button[aria-label="Stop sharing"]')
   const stillThere = await waitFor(
     async () =>
       host.evaluate(() => {
         const chat = document.querySelector('.chat-log')?.textContent ?? ''
-        return !document.querySelector('.share-panel:not(.hidden)') && chat.length > 0 ? chat : null
+        return !document.querySelector('button[aria-label="Stop sharing"]') && chat.length > 0 ? chat : null
       }),
     15_000,
     'the space to carry on after the share stops',
@@ -534,18 +512,16 @@ try {
 
   // The invitation goes with the stream it invited to.
   const buttonGone = await waitFor(
-    async () => viewer.evaluate(() => (document.querySelector('.chat-join') ? null : true)),
+    async () =>
+      viewer.evaluate(() => (document.querySelector('.stream-tab[data-watch="peer"]') ? null : true)),
     15_000,
-    'the join button to go with the stream',
+    'the stream card to go with the stream',
   )
   check('the way in goes when the stream ends', buttonGone === true)
   await viewer.screenshot({ path: `${SHOTS}viewer-ended.png` })
 
   check('no console errors on the host', errors.host.length === 0, errors.host.join(' | '))
   check('no console errors on the viewer', errors.viewer.length === 0, errors.viewer.join(' | '))
-  console.log(
-    `note: ${relayNoise.host + relayNoise.viewer} relay connection attempts were refused and retried elsewhere.`,
-  )
 } catch (err) {
   console.error('\nThe run stopped early:', err.message)
   exitCode = 1

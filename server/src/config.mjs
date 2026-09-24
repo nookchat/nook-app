@@ -73,4 +73,4 @@ export const MAX_ROOM_SOCKETS = Number(env.CATHODE_MAX_ROOM_SOCKETS ?? 200)
 export const RATE_PER_S = Number(env.CATHODE_RATE ?? 30)
 export const RATE_BURST = Number(env.CATHODE_RATE_BURST ?? 120)
 
-export const VERSION = '1.1.0'
+export const VERSION = '1.2.0'

@@ -127,46 +127,6 @@ export function chirpLeave(): void {
   ])
 }
 
-/**
- * A nudge. Half a second of rattle, low and square-modulated, the buzz of a
- * window being shaken. Deliberately not run through the shared throttle:
- * a nudge is asked for by name and rationed by its own rule at the caller.
- */
-export function buzzNudge(): void {
-  if (!soundsOn()) return
-  const ctx = audio()
-  if (!ctx) return
-  if (ctx.state === 'suspended') void ctx.resume().catch(() => undefined)
-  const t = ctx.currentTime
-
-  const osc = ctx.createOscillator()
-  osc.type = 'sawtooth'
-  osc.frequency.setValueAtTime(150, t)
-  osc.frequency.linearRampToValueAtTime(95, t + 0.4)
-
-  const vol = ctx.createGain()
-  vol.gain.setValueAtTime(0, t)
-  vol.gain.linearRampToValueAtTime(0.045, t + 0.02)
-  vol.gain.setValueAtTime(0.045, t + 0.34)
-  vol.gain.exponentialRampToValueAtTime(0.0001, t + 0.46)
-
-  // The rattle: a square wave opening and closing the volume 26 times a second.
-  const lfo = ctx.createOscillator()
-  lfo.type = 'square'
-  lfo.frequency.value = 26
-  const depth = ctx.createGain()
-  depth.gain.value = 0.03
-  lfo.connect(depth)
-  depth.connect(vol.gain)
-
-  osc.connect(vol)
-  vol.connect(ctx.destination)
-  osc.start(t)
-  lfo.start(t)
-  osc.stop(t + 0.5)
-  lfo.stop(t + 0.5)
-}
-
 /** True when the event is recent enough to be worth a noise. */
 export function isNews(at: number): boolean {
   return Date.now() - at < NEWS_MS
@@ -175,7 +135,7 @@ export function isNews(at: number): boolean {
 /**
  * A line read aloud in the browser's own voice. Not run through the shared
  * throttle: a spoken line is asked for by name and rationed by its own rule
- * at the caller, the same deal the nudge has.
+ * at the caller.
  */
 export function speak(text: string): void {
   if (!soundsOn()) return

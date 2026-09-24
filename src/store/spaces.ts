@@ -1,46 +1,26 @@
 /**
- * Every space you are in, wherever it is kept.
- *
- * A peer to peer space keeps its note on this device, in IndexedDB. A space on
- * a server keeps its note on that server (see server-spaces.ts). The rail and
- * the home screen want one list, so this is the one list.
- *
- * A space on a server that this device noted before notes moved to the server
- * is moved there the first time it is seen, and its events are taken off this
- * device, because a space on a server keeps nothing here.
+ * Every space you are in, from every server you use, as one list: what the
+ * rail and home draw. The notes live in your sealed record on each server
+ * (see server-spaces.ts); nothing about a space is kept on this device.
  */
 
-import { forgetRoom, listRooms, type RoomNote } from './db'
-import { addServer, bookFor, knownServers } from './server-spaces'
+import { BUILT_IN_SERVER } from '../backend'
+import type { RoomNote } from './notes'
+import { bookFor, knownServers } from './server-spaces'
 
-let moved: Promise<void> | null = null
-
-/** Move any server space still noted on this device to its server, once. */
-function moveOld(): Promise<void> {
-  moved ??= (async () => {
-    for (const note of await listRooms()) {
-      if (!note.server) continue
-      addServer(note.server)
-      const book = bookFor(note.server)
-      if (!(await book.get(note.room))) await book.put(note)
-      await forgetRoom(note.room)
-    }
-  })()
-  return moved
+function servers(): string[] {
+  const all = knownServers()
+  return BUILT_IN_SERVER && !all.includes(BUILT_IN_SERVER) ? [BUILT_IN_SERVER, ...all] : all
 }
 
 export async function listSpaces(): Promise<RoomNote[]> {
-  await moveOld()
   /*
    * A server slow to answer does not hold the list up: it is drawn without
    * that server's spaces, and drawn again when they arrive (see ServerBook).
    */
   const slow = (): Promise<RoomNote[]> => new Promise((done) => window.setTimeout(() => done([]), 1200))
-  const [local, ...remote] = await Promise.all([
-    listRooms(),
-    ...knownServers().map((server) => Promise.race([bookFor(server).list(), slow()])),
-  ])
-  return [...local.filter((n) => !n.server), ...remote.flat()].sort((a, b) => b.lastSeen - a.lastSeen)
+  const lists = await Promise.all(servers().map((server) => Promise.race([bookFor(server).list(), slow()])))
+  return lists.flat().sort((a, b) => b.lastSeen - a.lastSeen)
 }
 
 /** A space by its code, preferring the one on the named server when there is one. */
@@ -51,8 +31,7 @@ export async function findSpace(secret: string, server?: string): Promise<RoomNo
   return mine.find((r) => r.locked && r.password) ?? mine[0] ?? null
 }
 
-/** Take a space off your list: off this device, or out of your record on its server. */
+/** Take a space off your list, on every device. */
 export async function forgetSpace(note: RoomNote): Promise<void> {
   if (note.server) await bookFor(note.server).forget(note.room)
-  else await forgetRoom(note.room)
 }

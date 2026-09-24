@@ -10,6 +10,13 @@
 
 import { chromium } from 'playwright-core'
 
+/** Search is an icon until it is opened. */
+const openSearch = (page) =>
+  page.evaluate(() => {
+    if (!document.querySelector('.search-wrap.open')) document.querySelector('button[aria-label="Search"]')?.click()
+  })
+
+
 const APP_URL = process.argv[2] ?? 'http://localhost:5173/'
 const CHROME =
   process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -161,14 +168,14 @@ try {
   // called that".
   await alice.fill(BOX, '')
   await alice.click(BOX)
-  await alice.keyboard.type('/nudge Bo')
+  await alice.keyboard.type('/dm Bo')
   await alice.waitForSelector('.mention-pop', { timeout: 5000 })
   const named = await alice.$$eval('.mention-option', (els) => els.map((e) => e.textContent))
   check('a command that wants a person offers the people', named.includes('Bob'), named.join())
 
   await alice.keyboard.press('Tab')
   const filled = await alice.inputValue(BOX)
-  check('and picking one writes the whole name', filled === '/nudge Bob ', JSON.stringify(filled))
+  check('and picking one writes the whole name', filled === '/dm Bob ', JSON.stringify(filled))
 
   // The other spelling of a command offers the same people.
   await alice.fill(BOX, '')
@@ -270,7 +277,8 @@ try {
   check('everybody else sees the thread too', bobSees)
 
   // ---- search -------------------------------------------------------------
-  await alice.fill('input[aria-label="Search this space"]', 'luna')
+  await openSearch(alice)
+  await alice.fill('input[aria-label=\"Search this space\"]', 'luna')
   await alice.waitForTimeout(400)
   const hits = await alice.$$eval('.search-hit', (els) => els.map((e) => e.textContent))
   check('search finds a message inside a thread', hits.length === 1 && hits[0].includes('or Luna'), JSON.stringify(hits))
@@ -281,14 +289,17 @@ try {
   check('and clicking it takes you to where it was said', landed === 'Thread in #general', landed)
 
   await alice.click('button:has-text("Back")')
-  await alice.fill('input[aria-label="Search this space"]', 'nothing like this exists')
+  await openSearch(alice)
+  await alice.fill('input[aria-label=\"Search this space\"]', 'nothing like this exists')
   await alice.waitForTimeout(400)
   const empty = await alice.$eval('.search-results', (el) => el.textContent)
   check('and says so when there is nothing', empty.includes('Nothing matches'), empty)
 
   // The from: filter is a person too, so it offers the people.
-  await alice.fill('input[aria-label="Search this space"]', '')
-  await alice.click('input[aria-label="Search this space"]')
+  await openSearch(alice)
+  await alice.fill('input[aria-label=\"Search this space\"]', '')
+  await openSearch(alice)
+  await alice.click('input[aria-label=\"Search this space\"]')
   await alice.keyboard.type('from:Bo')
   await alice.waitForSelector('.mention-pop', { timeout: 5000 })
   const searchNames = await alice.$$eval('.mention-option', (els) => els.map((e) => e.textContent))
@@ -297,7 +308,8 @@ try {
   await alice.keyboard.press('Tab')
   const filter = await alice.inputValue('input[aria-label="Search this space"]')
   check('and picking one writes the filter', filter === 'from:Bob ', JSON.stringify(filter))
-  await alice.fill('input[aria-label="Search this space"]', '')
+  await openSearch(alice)
+  await alice.fill('input[aria-label=\"Search this space\"]', '')
 
   // ---- quick reactions ----------------------------------------------------
   await alice.evaluate(() =>

@@ -75,7 +75,7 @@ try {
   const locker = await person()
   await makeSpace(locker, 'vault', 'hunter2')
   const lockedLink = locker.url()
-  check('a locked space keeps its lock in the link', lockedLink.endsWith('.P'), lockedLink)
+  check('a locked space keeps its lock in the link', /\.P(@|$)/.test(lockedLink), lockedLink)
 
   await locker.click('button[aria-label="Your spaces"]')
   await atList(locker)
@@ -115,9 +115,9 @@ try {
   // Renaming from the settings screen, which is where the name is shown.
   await openSettings(admin)
   admin.once('dialog', (d) => d.accept('staff room'))
-  await admin.click('button:has-text("Rename it")')
+  await admin.click('.card button:text-is("Rename")')
   await admin.waitForTimeout(800)
-  const shown = await admin.textContent('.card:has(button:has-text("Rename it")) .share-code')
+  const shown = await admin.textContent('.card:has(button:has-text("Leave this space")) .small')
   check('the settings card shows the name it was just given', shown === 'staff room', shown)
   await admin.click('button:has-text("Back")')
   await admin.waitForFunction(

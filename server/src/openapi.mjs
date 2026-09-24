@@ -87,11 +87,19 @@ export const openapi = {
         responses: { 200: { description: 'Kept. `added` counts the lines that were new.' }, ...errors },
       },
     },
+    '/api/v1/socket': {
+      get: {
+        summary: 'WebSocket: history, writes, live lines, signals and presence for every space on a device',
+        description:
+          'JSON messages, each with the room it is about. In: hello {room, from}, get {room, from}, leave {room}, put {room, id, lines, w}, sig {room, d}, state {room, id, d}. Out: page {room, at, lines, more}, live {room, at}, ev {room, at, lines}, ack {room, id, at}, nack {room, id, code, message}, sig {room, d}, left {room, id}.',
+        responses: { 101: { description: 'Switching protocols' } },
+      },
+    },
     '/api/v1/spaces/{room}/socket': {
       get: {
-        summary: 'WebSocket: history, writes, live lines and signals for one space',
+        summary: 'WebSocket: the same as /api/v1/socket, for one space',
         description:
-          'JSON messages. In: hello {from}, get {from}, put {id, lines, w}, sig {d}. Out: page {at, lines, more}, live {at}, ev {at, lines}, ack {id, at}, nack {id, code, message}, sig {d}.',
+          'JSON messages without room. In: hello {from}, get {from}, put {id, lines, w}, sig {d}, state {id, d}. Out: page {at, lines, more}, live {at}, ev {at, lines}, ack {id, at}, nack {id, code, message}, sig {d}, left {id}.',
         parameters: [room],
         responses: { 101: { description: 'Switching protocols' } },
       },

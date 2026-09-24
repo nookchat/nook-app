@@ -102,14 +102,14 @@ export function aboutCard(): HTMLElement {
       h('hr'),
       h('ul', { class: 'support-list' }, [
         h('li', {
-          text: 'A space runs on a Cathode server or peer to peer. Either way, everything is encrypted with the key in your link before it leaves this browser.',
+          text: 'A space lives on a Cathode server. Everything is encrypted with the key in your link before it leaves this browser, so the server cannot read it.',
         }),
         h('li', { text: 'That key sits after the # in the link, so the webserver never receives it.' }),
         h('li', {
           text: 'Your screen goes out once per viewer, so your upload speed sets the viewer limit.',
         }),
         h('li', {
-          text: 'On a server, calls and screen shares go through the server. Peer to peer, they go straight between browsers, and on a strict network a connection can fail.',
+          text: 'Calls and screen shares go through the server, encrypted between the browsers in the call.',
         }),
       ]),
     ]),

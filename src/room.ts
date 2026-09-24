@@ -1,14 +1,14 @@
 /**
- * A room is one screen share session.
+ * A room is one space.
  *
- * The host makes a 125 bit secret and writes it into the URL fragment, so the
+ * Whoever makes it makes a secret and writes it into the URL fragment, so the
  * browser never sends it to the webserver. From the secret we derive two values:
  *
- *   roomId   the public topic name on the signal relay
- *   roomKey  an AES-GCM key that encrypts every signal message
+ *   roomId   the name the server keeps the space under
+ *   roomKey  an AES-GCM key that encrypts every event and signal
  *
- * The public relay therefore sees a random topic name and ciphertext only. It
- * cannot read the offer, the answer, or the IP candidates.
+ * The server therefore sees a random name and ciphertext only. It cannot read
+ * a message, the offer, the answer, or the IP candidates.
  *
  * The code is short enough to say out loud, three groups of four:
  *
@@ -49,14 +49,14 @@ const ROUNDS = 250_000
 export interface Room {
   /** The canonical code, upper case with no hyphens. The password of the room. */
   secret: string
-  /** The relay topic. Derived from the secret, so it leaks nothing. */
+  /** The name the server keeps the space under. Derived from the secret, so it leaks nothing. */
   id: string
-  /** AES-GCM key for the signal envelopes. */
+  /** AES-GCM key for every event and signal. */
   key: CryptoKey
   /**
-   * Proof, for an archive, that a writer holds the code. The room id is on
-   * every relay, so anybody watching one can learn it and could otherwise fill
-   * the archive with junk until its trim ate the real history. This token is
+   * Proof, for the server, that a writer holds the code. The room id is not
+   * a secret, so anybody who learns it could otherwise fill the space with
+   * junk until its trim ate the real history. This token is
    * derived from the secret like everything else, so holding the link is
    * holding the right to write.
    */

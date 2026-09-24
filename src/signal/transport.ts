@@ -1,11 +1,6 @@
 /**
- * A transport carries opaque strings between everybody who joined one topic.
- *
- * Cathode ships two of them, on different protocols and different ports, so one
- * blocked port does not kill the room:
- *
- *   mqtt.ts   MQTT 3.1.1 over WSS on port 8084 and 8884, public test brokers
- *   nostr.ts  Nostr ephemeral events over WSS on port 443
+ * A transport carries opaque strings between everybody in one space. There is
+ * one: a space's Channel on the server connection (net/connection.ts).
  *
  * A transport never sees plain text. Look at envelope.ts for the seal.
  */
@@ -26,10 +21,8 @@ export interface Transport {
   connect(topic: string, events: TransportEvents): void
   publish(wire: string): void
   /**
-   * Who this session is and what it is doing, for a transport that can hold
-   * it: a server keeps the latest, hands it to whoever arrives, and says when
-   * the session goes. A transport without this is handed an announcement
-   * like anything else, and presence works by repeating it.
+   * Who this session is and what it is doing. The server keeps the latest,
+   * hands it to whoever arrives, and says when the session goes.
    */
   publishState?(wire: string, session: string): void
   close(): void

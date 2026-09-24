@@ -1,36 +1,44 @@
 /**
- * WebSockets: a space's one connection, and the old bare relay.
+ * WebSockets: one connection per device, carrying every space it is in.
  *
- *   /api/v1/spaces/:room/socket   a space on this server (also at /room/:room)
- *   /relay/:room                  frames passed on unread, for a peer to peer
- *                                 space that uses this server as its archive
+ *   /api/v1/socket                   many spaces, each message names its room
+ *   /api/v1/spaces/:room/socket      one space, and messages leave the room out
+ *
+ * A device is in several spaces at once, and wants to hear about all of them:
+ * a direct message in one, a mention in another, somebody arriving in a
+ * third. So it opens one connection to the server and joins each space on it,
+ * rather than one connection per space.
  *
  * WebSocket by hand: the whole protocol this needs is a frame reader and a
  * frame writer, and every frame is text that fits in one frame.
  *
- * A space's socket speaks JSON, one message per frame:
+ * JSON, one message per frame. `room` is on every message on /api/v1/socket.
  *
- *   in    hello {from}         everything after line `from`, page by page, then live
- *         get {from}           the same, without the live at the end
- *         put {id, lines, w}   keep these lines; `w` is the space's write token
- *         sig {d}              a sealed signal for everybody else, not kept
- *         state {id, d}        this session's sealed presence: kept while the
- *                              socket is open, handed to whoever arrives, and
- *                              followed by left {id} when the socket goes
+ *   in    hello {room, from}        join; everything after line `from`, then live
+ *         leave {room}              stop hearing about a space
+ *         get {room, from}          history again, without the live at the end
+ *         put {room, id, lines, w}  keep these lines; `w` is the space's write token
+ *         sig {room, d}             a sealed signal for everybody else, not kept
+ *         state {room, id, d}       this session's sealed presence: kept while it
+ *                                   is joined, handed to whoever arrives, and
+ *                                   followed by left {id} when it goes
  *
- *   out   page {at, lines, more}   history
- *         live {at}                history done; from here on lines arrive as ev
- *         ev {at, lines}           lines somebody else wrote, or another server sent
- *         ack {id, at}             the put was kept
- *         nack {id, code, message} the put was refused
- *         sig {d}
- *         left {id}                a session's socket closed or stopped answering
+ *   out   page {room, at, lines, more}   history
+ *         live {room, at}                history done; lines arrive as ev from here
+ *         ev {room, at, lines}           lines somebody else wrote, or a peer sent
+ *         ack {room, id, at}             the put was kept
+ *         nack {room, id, code, message} the put was refused
+ *         sig {room, d}                  somebody's signal or presence
+ *         left {room, id}                a session went
  *
- * So presence is sent when it changes and never on a timer.
+ * Nothing is sent on a timer except the heartbeat. Presence goes out when it
+ * changes, the server holds the latest, and says left the moment a session
+ * leaves, closes, or stops answering.
  *
- * `at` is always the number of the newest line the message took the reader
- * to, and a reader keeps the highest it has seen: after a dropped connection,
- * hello from there is everything it missed.
+ * `at` is the number of the newest line a message brings the reader to. The
+ * lines of a space are sent in order, so a reader that keeps the highest `at`
+ * it has seen can say hello from there after a dropped connection and miss
+ * nothing.
  */
 
 import { createHash } from 'node:crypto'
@@ -38,16 +46,20 @@ import { MAX_ROOM_SOCKETS, originAllowed } from './config.mjs'
 import { append, kept, MAX_LINE, mayWrite, newest, ROOM, since } from './store.mjs'
 
 const WS_MAGIC = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
-/** A batch of writes is the biggest thing a device sends on a space's socket. */
+/** A batch of writes is the biggest thing a device sends. */
 const MAX_FRAME = 1024 * 1024
-/** The bare relay only ever carries handshakes, which are small. */
-const MAX_RELAY_FRAME = 128 * 1024
 const MAX_SIGNAL = 512 * 1024
+/** Spaces one connection may be in at once. */
+const MAX_JOINED = 500
 const PING_MS = 30_000
 
-/** room -> sockets, one map per kind. */
-const spaces = new Map()
-const relays = new Map()
+/*
+ * Who is in each space: room -> the memberships in it. A membership is one
+ * connection in one space, with that session's presence and its place in the
+ * history it is being sent.
+ */
+const rooms = new Map()
+const sockets = new Set()
 
 export function wsFrame(opcode, payload) {
   const len = payload.length
@@ -68,24 +80,149 @@ export function wsFrame(opcode, payload) {
   return Buffer.concat([head, payload])
 }
 
-const text = (message) => wsFrame(1, Buffer.from(JSON.stringify(message)))
-
-function leave(rooms, room, socket) {
-  const standing = rooms.get(room)
-  if (!standing) return
-  standing.delete(socket)
-  if (standing.size === 0) rooms.delete(room)
+/** A message for one membership, with its room when the connection carries many. */
+function frameFor(member, message) {
+  const body = member.single ? message : { ...message, room: member.room }
+  return wsFrame(1, Buffer.from(JSON.stringify(body)))
 }
 
-/** Take an upgrade and hand every text frame after it to `onText`. */
-function open(req, socket, rooms, room, onText, maxFrame = MAX_FRAME, onGone = () => undefined) {
-  const key = req.headers['sec-websocket-key']
+/** Send to one membership, holding live lines back while it is still reading history. */
+function deliver(member, message, live = true) {
+  const { socket } = member
+  if (socket.destroyed) return
+  const frame = frameFor(member, message)
+  if (live && member.streaming) member.held.push(frame)
+  else socket.write(frame)
+}
+
+function join(socket, room, single) {
+  let member = socket.cathodeRooms.get(room)
+  if (member) return member
   const standing = rooms.get(room) ?? new Set()
-  if (standing.size >= MAX_ROOM_SOCKETS) {
-    socket.write('HTTP/1.1 503 Service Unavailable\r\n\r\n')
-    socket.destroy()
+  if (standing.size >= MAX_ROOM_SOCKETS || socket.cathodeRooms.size >= MAX_JOINED) return null
+  member = { socket, room, single, state: null, streaming: false, held: [] }
+  standing.add(member)
+  rooms.set(room, standing)
+  socket.cathodeRooms.set(room, member)
+  return member
+}
+
+/** A membership ends: everybody still in the space hears it at once. */
+function part(member) {
+  const standing = rooms.get(member.room)
+  standing?.delete(member)
+  if (standing && standing.size === 0) rooms.delete(member.room)
+  member.socket.cathodeRooms.delete(member.room)
+  if (!member.state) return
+  for (const other of standing ?? []) deliver(other, { t: 'left', id: member.state.id })
+}
+
+/** Every page of history after a line, down one membership, then what arrived meanwhile. */
+async function stream(member, from, live) {
+  member.streaming = true
+  member.held = []
+  let cursor = from
+  try {
+    for (;;) {
+      const page = await since(member.room, cursor)
+      if (page.lines.length || !page.more) {
+        deliver(member, { t: 'page', at: page.at, lines: page.lines, more: page.more }, false)
+      }
+      cursor = page.at
+      if (!page.more) break
+    }
+    if (live) {
+      // Who else is here, as each of them last said it.
+      for (const other of rooms.get(member.room) ?? []) {
+        if (other !== member && other.state) deliver(member, { t: 'sig', d: other.state.d }, false)
+      }
+      deliver(member, { t: 'live', at: Math.max(cursor, await newest(member.room)) }, false)
+    }
+  } finally {
+    member.streaming = false
+    for (const frame of member.held) if (!member.socket.destroyed) member.socket.write(frame)
+    member.held = []
+  }
+}
+
+function others(member, message) {
+  for (const other of rooms.get(member.room) ?? []) if (other !== member) deliver(other, message)
+}
+
+async function onMessage(socket, single, payload) {
+  let message
+  try {
+    message = JSON.parse(payload.toString('utf8'))
+  } catch {
     return
   }
+  const room = single ?? message?.room
+  if (typeof room !== 'string' || !ROOM.test(room)) return
+  const isSingle = single !== null
+
+  if (message.t === 'leave') {
+    const member = socket.cathodeRooms.get(room)
+    if (member) part(member)
+    return
+  }
+
+  const member = join(socket, room, isSingle)
+  if (!member) {
+    const refusal = { t: 'nack', code: 'full', message: 'Too many connections.' }
+    socket.write(wsFrame(1, Buffer.from(JSON.stringify(isSingle ? refusal : { ...refusal, room }))))
+    return
+  }
+
+  switch (message.t) {
+    case 'hello':
+    case 'get': {
+      const from = Math.max(0, Math.floor(Number(message.from)) || 0)
+      await stream(member, from, message.t === 'hello')
+      return
+    }
+    case 'put': {
+      const id = String(message.id ?? '').slice(0, 64)
+      if (!(await mayWrite(room, message.w))) {
+        deliver(member, { t: 'nack', id, code: 'wrong_token', message: 'That is not the write token this space was claimed with.' })
+        return
+      }
+      const lines = (Array.isArray(message.lines) ? message.lines : []).filter(
+        (e) => typeof e === 'string' && e.length > 0 && e.length <= MAX_LINE,
+      )
+      const fresh = await append(room, lines, '', member)
+      const at = fresh.length ? fresh[fresh.length - 1].seq : await newest(room)
+      deliver(member, { t: 'ack', id, at })
+      return
+    }
+    case 'sig': {
+      if (typeof message.d !== 'string' || message.d.length > MAX_SIGNAL) return
+      others(member, { t: 'sig', d: message.d })
+      return
+    }
+    case 'state': {
+      if (typeof message.d !== 'string' || message.d.length > MAX_SIGNAL) return
+      if (typeof message.id !== 'string' || !/^[0-9a-f]{1,32}$/.test(message.id)) return
+      // Sealed like everything else: this keeps it, and cannot read it.
+      member.state = { id: message.id, d: message.d }
+      others(member, { t: 'sig', d: message.d })
+      return
+    }
+    default:
+      return
+  }
+}
+
+/* Every line kept, from a device or from another server, to everybody in the space but its writer. */
+kept.on('lines', (room, rows, writer) => {
+  const standing = rooms.get(room)
+  if (!standing) return
+  const message = { t: 'ev', at: rows[rows.length - 1].seq, lines: rows.map((r) => r.body) }
+  for (const member of standing) if (member !== writer) deliver(member, message)
+})
+
+/** Take an upgrade, and hand every text frame after it to onMessage. */
+function open(req, socket, single) {
+  const key = req.headers['sec-websocket-key']
   const accept = createHash('sha1').update(key + WS_MAGIC).digest('base64')
   socket.write(
     'HTTP/1.1 101 Switching Protocols\r\n' +
@@ -94,16 +231,16 @@ function open(req, socket, rooms, room, onText, maxFrame = MAX_FRAME, onGone = (
       `Sec-WebSocket-Accept: ${accept}\r\n\r\n`,
   )
   socket.setNoDelay(true)
-  standing.add(socket)
-  rooms.set(room, standing)
   socket.cathodeAlive = true
+  socket.cathodeRooms = new Map()
+  sockets.add(socket)
 
   let gone = false
   const away = () => {
-    leave(rooms, room, socket)
     if (gone) return
     gone = true
-    onGone()
+    sockets.delete(socket)
+    for (const member of [...socket.cathodeRooms.values()]) part(member)
   }
   const goodbye = (code) => {
     try {
@@ -116,6 +253,9 @@ function open(req, socket, rooms, room, onText, maxFrame = MAX_FRAME, onGone = (
     away()
     socket.destroy()
   }
+
+  // One message at a time per connection, so a page is never interleaved with an ack.
+  let queue = Promise.resolve()
 
   /*
    * A client frame is always masked, so an unmasked one is not a browser and
@@ -138,11 +278,11 @@ function open(req, socket, rooms, room, onText, maxFrame = MAX_FRAME, onGone = (
       } else if (len === 127) {
         if (held.length < at + 8) return
         const big = held.readBigUInt64BE(at)
-        if (big > BigInt(maxFrame)) return goodbye(1009)
+        if (big > BigInt(MAX_FRAME)) return goodbye(1009)
         len = Number(big)
         at += 8
       }
-      if (len > maxFrame) return goodbye(1009)
+      if (len > MAX_FRAME) return goodbye(1009)
       if (!masked) return goodbye(1002)
       if (held.length < at + 4 + len) return
       const mask = held.subarray(at, at + 4)
@@ -160,7 +300,7 @@ function open(req, socket, rooms, room, onText, maxFrame = MAX_FRAME, onGone = (
         continue
       }
       if (opcode !== 1 || !fin) return goodbye(1003)
-      onText(payload)
+      queue = queue.then(() => onMessage(socket, single, payload)).catch((err) => console.error('[cathode]', err))
     }
   })
 
@@ -171,107 +311,12 @@ function open(req, socket, rooms, room, onText, maxFrame = MAX_FRAME, onGone = (
   })
 }
 
-function send(socket, frame) {
-  if (socket.destroyed) return
-  /*
-   * A socket still reading history holds live lines back until it is done,
-   * so the lines it is told about arrive in order and the highest number it
-   * has seen always means it has seen everything below.
-   */
-  if (socket.cathodeStreaming) socket.cathodeHeld.push(frame)
-  else socket.write(frame)
-}
-
-/** Every page of history after a line, down one socket, then what arrived meanwhile. */
-async function stream(room, socket, from, live) {
-  socket.cathodeStreaming = true
-  socket.cathodeHeld = []
-  let cursor = from
-  try {
-    for (;;) {
-      const page = await since(room, cursor)
-      if (page.lines.length || !page.more) {
-        socket.write(text({ t: 'page', at: page.at, lines: page.lines, more: page.more }))
-      }
-      cursor = page.at
-      if (!page.more) break
-    }
-    if (live) {
-      // Who else is here, as each of them last said it.
-      for (const other of spaces.get(room) ?? []) {
-        if (other !== socket && other.cathodeState) socket.write(text({ t: 'sig', d: other.cathodeState.d }))
-      }
-      socket.write(text({ t: 'live', at: Math.max(cursor, await newest(room)) }))
-    }
-  } finally {
-    socket.cathodeStreaming = false
-    for (const frame of socket.cathodeHeld) if (!socket.destroyed) socket.write(frame)
-    socket.cathodeHeld = []
-  }
-}
-
-async function onSpace(room, socket, payload) {
-  let message
-  try {
-    message = JSON.parse(payload.toString('utf8'))
-  } catch {
-    return
-  }
-  switch (message?.t) {
-    case 'hello':
-    case 'get': {
-      const from = Math.max(0, Math.floor(Number(message.from)) || 0)
-      await stream(room, socket, from, message.t === 'hello')
-      return
-    }
-    case 'put': {
-      const id = String(message.id ?? '').slice(0, 64)
-      if (!(await mayWrite(room, message.w))) {
-        send(socket, text({ t: 'nack', id, code: 'wrong_token', message: 'That is not the write token this space was claimed with.' }))
-        return
-      }
-      const lines = (Array.isArray(message.lines) ? message.lines : []).filter(
-        (e) => typeof e === 'string' && e.length > 0 && e.length <= MAX_LINE,
-      )
-      const fresh = await append(room, lines, '', socket)
-      const at = fresh.length ? fresh[fresh.length - 1].seq : await newest(room)
-      send(socket, text({ t: 'ack', id, at }))
-      return
-    }
-    case 'sig': {
-      if (typeof message.d !== 'string' || message.d.length > MAX_SIGNAL) return
-      const frame = text({ t: 'sig', d: message.d })
-      for (const other of spaces.get(room) ?? []) if (other !== socket) send(other, frame)
-      return
-    }
-    case 'state': {
-      if (typeof message.d !== 'string' || message.d.length > MAX_SIGNAL) return
-      if (typeof message.id !== 'string' || !/^[0-9a-f]{1,32}$/.test(message.id)) return
-      // Sealed like everything else: this keeps it, and cannot read it.
-      socket.cathodeState = { id: message.id, d: message.d }
-      const frame = text({ t: 'sig', d: message.d })
-      for (const other of spaces.get(room) ?? []) if (other !== socket) send(other, frame)
-      return
-    }
-    default:
-      return
-  }
-}
-
-/* Every line kept, from a device or from another server, to everybody in the space but its writer. */
-kept.on('lines', (room, rows, writer) => {
-  const standing = spaces.get(room)
-  if (!standing) return
-  const frame = text({ t: 'ev', at: rows[rows.length - 1].seq, lines: rows.map((r) => r.body) })
-  for (const socket of standing) if (socket !== writer) send(socket, frame)
-})
-
 export function upgrade(req, socket) {
   const path = (req.url ?? '').split('?')[0]
-  const relay = /^\/relay\/([0-9a-f]{32})$/.exec(path)
-  const space = /^\/api\/v1\/spaces\/([0-9a-f]{32})\/socket$/.exec(path) ?? /^\/room\/([0-9a-f]{32})$/.exec(path)
+  const many = path === '/api/v1/socket'
+  const one = /^\/api\/v1\/spaces\/([0-9a-f]{32})\/socket$/.exec(path)
   const key = req.headers['sec-websocket-key']
-  if ((!relay && !space) || typeof key !== 'string' || !/websocket/i.test(String(req.headers.upgrade ?? ''))) {
+  if ((!many && !one) || typeof key !== 'string' || !/websocket/i.test(String(req.headers.upgrade ?? ''))) {
     socket.write('HTTP/1.1 400 Bad Request\r\n\r\n')
     socket.destroy()
     return
@@ -281,63 +326,26 @@ export function upgrade(req, socket) {
     socket.destroy()
     return
   }
-  if (relay) {
-    const room = relay[1]
-    open(
-      req,
-      socket,
-      relays,
-      room,
-      (payload) => {
-        const frame = wsFrame(1, payload)
-        for (const other of relays.get(room) ?? []) if (other !== socket && !other.destroyed) other.write(frame)
-      },
-      MAX_RELAY_FRAME,
-    )
-    return
-  }
-  const room = space[1]
-  if (!ROOM.test(room)) return
-  // One message at a time per socket, so a page is never interleaved with an ack.
-  let queue = Promise.resolve()
-  open(
-    req,
-    socket,
-    spaces,
-    room,
-    (payload) => {
-      queue = queue.then(() => onSpace(room, socket, payload)).catch((err) => console.error('[cathode]', err))
-    },
-    MAX_FRAME,
-    () => {
-      // Gone, so everybody still here hears it now, not when a timer runs out.
-      const state = socket.cathodeState
-      if (!state) return
-      const frame = text({ t: 'left', id: state.id })
-      for (const other of spaces.get(room) ?? []) send(other, frame)
-    },
-  )
+  open(req, socket, one ? one[1] : null)
 }
 
 export function closeAll() {
-  for (const standing of [...spaces.values(), ...relays.values()]) for (const s of standing) s.destroy()
+  for (const socket of sockets) socket.destroy()
 }
 
-/* One heartbeat for every socket. A socket that never answers a ping is a
-   phone off the hook, and holding it open keeps a seat warm in the room. */
+/* One heartbeat for every connection. One that never answers a ping is a
+   phone off the hook, and holding it open keeps its seats warm. */
 setInterval(() => {
-  for (const standing of [...spaces.values(), ...relays.values()]) {
-    for (const socket of standing) {
-      if (!socket.cathodeAlive) {
-        socket.destroy()
-        continue
-      }
-      socket.cathodeAlive = false
-      try {
-        socket.write(wsFrame(9, Buffer.alloc(0)))
-      } catch {
-        socket.destroy()
-      }
+  for (const socket of sockets) {
+    if (!socket.cathodeAlive) {
+      socket.destroy()
+      continue
+    }
+    socket.cathodeAlive = false
+    try {
+      socket.write(wsFrame(9, Buffer.alloc(0)))
+    } catch {
+      socket.destroy()
     }
   }
 }, PING_MS).unref()

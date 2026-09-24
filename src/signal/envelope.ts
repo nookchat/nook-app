@@ -1,12 +1,12 @@
 /**
  * The signal envelope.
  *
- * Every message that crosses a public relay is one sealed envelope:
+ * Every message that crosses the server is one sealed envelope:
  *
  *   base64url( 12 byte random IV || AES-GCM ciphertext of the JSON )
  *
- * A relay operator sees a random topic and opaque bytes. A relay cannot forge a
- * message either, because it does not hold the key.
+ * A server operator sees a random room name and opaque bytes. A server cannot
+ * forge a message either, because it does not hold the key.
  */
 
 const enc = new TextEncoder()

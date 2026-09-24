@@ -3,7 +3,7 @@
  *
  * The browsers here have no public relay and no WebRTC at all: the relay
  * names do not resolve, and RTCPeerConnection is taken away before the page
- * loads. Peer to peer has nothing to stand on. If two people still find each
+ * loads. If two people still find each
  * other and talk, and somebody who turns up after they have both gone still
  * reads what they said, then the server carried all of it, which is the point.
  *
@@ -60,7 +60,15 @@ async function person(name) {
   page.on('websocket', (ws) => sockets.push(ws.url()))
   page.on('request', (req) => requests.push(req.url()))
   await page.goto(APP_URL)
-  await page.evaluate((n) => localStorage.setItem('cathode.name.v1', n), name)
+  // This test's own server, as the one new spaces go to.
+  await page.evaluate(
+    ({ n, server }) => {
+      localStorage.setItem('cathode.name.v1', n)
+      localStorage.setItem('cathode.server.v1', server)
+      localStorage.setItem('cathode.servers.v1', JSON.stringify([server]))
+    },
+    { n: name, server: `http://${SERVER}` },
+  )
   await page.reload()
   await page.waitForSelector('input[aria-label="Space name"]')
   return page
@@ -76,31 +84,6 @@ const sees = (page, text, timeout = 20_000) =>
     .then(() => true)
     .catch(() => false)
 
-/** What this browser has written down about spaces: events and notes, counted. */
-const onDevice = (page) =>
-  page.evaluate(
-    () =>
-      new Promise((done) => {
-        const request = indexedDB.open('cathode')
-        request.onsuccess = () => {
-          const db = request.result
-          const names = [...db.objectStoreNames]
-          if (names.length === 0) return done({ events: 0, rooms: 0 })
-          const tx = db.transaction(names, 'readonly')
-          const counts = {}
-          let left = names.length
-          for (const name of names) {
-            const r = tx.objectStore(name).count()
-            r.onsuccess = () => {
-              counts[name] = r.result
-              if (--left === 0) done(counts)
-            }
-          }
-        }
-        request.onerror = () => done({ error: true })
-      }),
-  )
-
 async function say(page, text) {
   await page.click(BOX)
   await page.keyboard.type(text)
@@ -108,23 +91,12 @@ async function say(page, text) {
 }
 
 try {
-  const health = await (await fetch(`http://${SERVER}/health`)).json()
+  const health = await (await fetch(`http://${SERVER}/api/v1/health`)).json()
   check('the server says it has TURN', health.turn === true, JSON.stringify(health))
 
   const alice = await person('Alice')
 
-  // A server nobody runs is refused before a space is made on it.
-  await alice.click('button:has-text("Server")')
-  await alice.fill('input[aria-label="Server address"]', 'localhost:1')
   await alice.fill('input[aria-label="Space name"]', 'on the box')
-  await alice.click('button:has-text("New space")')
-  await wait(1500)
-  check(
-    'a server that does not answer is refused',
-    (await alice.$('.space-name')) === null,
-  )
-
-  await alice.fill('input[aria-label="Server address"]', SERVER)
   await alice.click('button:has-text("New space")')
   await alice.waitForSelector('.space-name')
   const link = alice.url()
@@ -157,12 +129,9 @@ try {
   await say(bob, 'and back again')
   check('and the other', await sees(alice, 'and back again'))
 
-  const stored = await onDevice(alice)
-  check(
-    'nothing about the space is written down in the browser',
-    Object.values(stored).every((n) => n === 0),
-    JSON.stringify(stored),
-  )
+  // Listed rather than opened: opening a database makes it.
+  const databases = await alice.evaluate(async () => (await indexedDB.databases()).map((d) => d.name))
+  check('nothing about the space is written down in the browser', databases.length === 0, databases.join(' '))
 
   const people = await alice
     .waitForFunction(() => document.querySelector('.status-bar')?.textContent?.includes('2 here'), null, {
@@ -243,6 +212,7 @@ try {
   await second.evaluate((k) => {
     localStorage.setItem('cathode.identity.v1', k.id)
     localStorage.setItem('cathode.servers.v1', k.servers)
+    localStorage.setItem('cathode.server.v1', JSON.parse(k.servers)[0])
   }, key)
   await second.reload()
   const listed = await second
@@ -277,20 +247,13 @@ try {
     'the ICE servers came from the server',
     requests.some((u) => u.startsWith(`http://${SERVER}/api/v1/ice`)),
   )
-  const elsewhere = sockets.filter((u) => !u.startsWith(`ws://${SERVER}/api/v1/spaces/`) && !u.includes(':5173'))
+  const elsewhere = sockets.filter((u) => u !== `ws://${SERVER}/api/v1/socket` && !u.includes(':5173'))
   check('everything went over the one socket to the server', elsewhere.length === 0, elsewhere.join(' '))
   check(
     'and nothing went over plain HTTP but the record of your spaces',
     !requests.some((u) => u.includes('/events/')),
   )
 
-  // The same page still makes a peer to peer space when asked to.
-  const dave = await person('Dave')
-  await dave.click('button:has-text("Peer to peer")')
-  await dave.fill('input[aria-label="Space name"]', 'no box')
-  await dave.click('button:has-text("New space")')
-  await dave.waitForSelector('.space-name')
-  check('peer to peer is still one click away', !dave.url().includes('@'), dave.url())
 } catch (err) {
   console.error('\nThe run stopped early:', err.message)
   process.exitCode = 1

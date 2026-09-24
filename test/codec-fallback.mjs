@@ -10,6 +10,7 @@
  */
 
 import { chromium } from 'playwright-core'
+import { hostAndShare, joinAndWatch } from './share.mjs'
 
 const APP_URL = process.argv[2] ?? 'http://localhost:5173/'
 const CHROME =
@@ -73,12 +74,10 @@ try {
   await host.addInitScript(GAME_SETTINGS)
   await host.addInitScript(STUB)
   await host.goto(APP_URL, { waitUntil: 'domcontentloaded' })
-  await host.getByRole('button', { name: 'New space' }).click()
-  await host.getByRole('button', { name: 'Share screen' }).click()
-  const link = await host.locator('.share-code').getAttribute('data-link')
+  const link = await hostAndShare(host)
 
   const viewer = await (await viewerBrowser.newContext()).newPage()
-  await viewer.goto(link, { waitUntil: 'domcontentloaded' })
+  await joinAndWatch(viewer, link)
 
   const receives = await viewer.evaluate(() =>
     (RTCRtpReceiver.getCapabilities('video')?.codecs ?? []).map((c) => c.mimeType),
@@ -97,13 +96,9 @@ try {
   })
   check('a viewer without HEVC still receives a picture', playing.live && playing.w > 0, `${playing.w} px wide`)
 
-  const row = await host.evaluate(() =>
-    Array.from(document.querySelectorAll('.viewer-row .pill'))
-      .map((p) => p.textContent ?? '')
-      .join(' '),
-  )
+  // The viewer's tile names the codec that is arriving.
+  const row = await viewer.evaluate(() => document.querySelector('.stage-tile')?.title ?? '')
   check('the stream falls back to a codec the viewer can decode', /VP9|VP8|H264|AV1/.test(row), row.trim())
-  check('Cathode does not claim the GPU when it fell back', !/on GPU/.test(row))
 } finally {
   await hostBrowser.close()
   await viewerBrowser.close()

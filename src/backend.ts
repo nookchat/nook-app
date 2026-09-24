@@ -1,33 +1,28 @@
 /**
- * Where a space runs: peer to peer, or on a server.
+ * The servers Cathode uses.
  *
- * Peer to peer is what Cathode always was. The handshakes ride public relays,
- * chat crosses a data channel between every pair, and every device keeps the
- * history. Nothing has to be running anywhere.
+ * Every space lives on a server: its history, its members, and your list of
+ * spaces are kept there, sealed so the server cannot read them.
  *
- * On a server, one machine does the carrying. Every handshake, chat line and
- * event goes over one WebSocket to it, the history is kept there as well as on
- * every device, and it hands out TURN credentials so the picture and the sound
- * get through networks that block peer to peer. What it carries is sealed with
- * the key made from the space code exactly as before, so it cannot read any of
- * it. Run one with server/docker-compose.yml.
+ * The page offers no server of its own. Each person adds theirs, on the home
+ * page or in Settings, and new spaces go there. An invite always names its
+ * space's server, so opening one works with no server added at all, and a
+ * server is seen only by the people somebody sends an invite to.
  *
- * The choice belongs to the space, not to the device, and it travels in the
- * invite: everybody in one space has to be talking in the same place. A space
- * on a server says which one after an @ in its link.
+ * VITE_CATHODE_SERVER, set at build time, gives every visitor a server. It is
+ * for running the page and a server on one machine, as the tests do. Leave it
+ * unset on a public page.
  */
 
 import { ask, learn } from './net/cluster'
 
-/** The server a deployment offers, from VITE_CATHODE_SERVER at build time. */
+/** A server every visitor gets, from VITE_CATHODE_SERVER at build time. Empty on a public page. */
 export const BUILT_IN_SERVER = serverUrl(import.meta.env.VITE_CATHODE_SERVER ?? '')
 
-const CHOICE_KEY = 'cathode.backend.v1'
+const DEFAULT_KEY = 'cathode.server.v1'
 
-export interface BackendChoice {
-  /** Empty for peer to peer. */
-  server: string
-}
+/** How to run a server of your own, step by step. */
+export const SELF_HOSTING_URL = 'https://github.com/nebbsie/stream/blob/main/docs/self-hosting.md'
 
 /**
  * Turn whatever was typed into a server address, or the empty string.
@@ -66,45 +61,32 @@ export function serverTag(url: string): string {
   return serverUrl(bare) === clean ? bare : clean
 }
 
-/** What this device picked last time it made a space, or what the page offers. */
-export function lastChoice(): BackendChoice {
+/** The server picked in Settings for new spaces. See newSpaceServer, which checks it is yours. */
+export function defaultServer(): string {
   try {
-    const raw = localStorage.getItem(CHOICE_KEY)
-    if (raw) {
-      const saved = JSON.parse(raw) as Partial<BackendChoice & { last: string }>
-      return { server: serverUrl(String(saved.server ?? '')) }
-    }
+    const picked = serverUrl(localStorage.getItem(DEFAULT_KEY) ?? '')
+    if (picked) return picked
   } catch {
-    /* nothing kept, or nothing readable */
+    /* nothing picked */
   }
-  return { server: BUILT_IN_SERVER }
+  return BUILT_IN_SERVER
 }
 
-/** The server this device used last, even when the last space was peer to peer. */
-export function lastServer(): string {
+export function setDefaultServer(url: string): void {
   try {
-    const raw = localStorage.getItem(CHOICE_KEY)
-    const saved = raw ? (JSON.parse(raw) as { last?: string }) : null
-    return serverUrl(saved?.last ?? '') || BUILT_IN_SERVER
+    const clean = serverUrl(url)
+    if (clean && clean !== BUILT_IN_SERVER) localStorage.setItem(DEFAULT_KEY, clean)
+    else localStorage.removeItem(DEFAULT_KEY)
   } catch {
-    return BUILT_IN_SERVER
-  }
-}
-
-export function rememberChoice(choice: BackendChoice): void {
-  try {
-    const last = choice.server || lastServer()
-    localStorage.setItem(CHOICE_KEY, JSON.stringify({ server: choice.server, last }))
-  } catch {
-    /* the choice lasts for this visit only */
+    /* for this visit only */
   }
 }
 
 /**
  * Is a Cathode server answering there?
  *
- * The service name is the one the server kept from when it was only an
- * archive, which is how an old server and a new one are both recognised.
+ * A server says what it is in its health answer. Servers from before 1.2
+ * said cathode-archive, and they speak the same API, so both are accepted.
  */
 export async function checkServer(url: string): Promise<boolean> {
   const clean = serverUrl(url)
@@ -113,7 +95,7 @@ export async function checkServer(url: string): Promise<boolean> {
     const res = await fetch(`${clean}/api/v1/health`, { mode: 'cors', signal: AbortSignal.timeout(6000) })
     if (!res.ok) return false
     const body = (await res.json()) as { service?: string; cluster?: unknown }
-    if (body.service !== 'cathode-archive') return false
+    if (body.service !== 'cathode-server' && body.service !== 'cathode-archive') return false
     // And the others in its cluster, for when this one is down.
     if (Array.isArray(body.cluster)) learn(clean, body.cluster.filter((u): u is string => typeof u === 'string'))
     return true

@@ -99,9 +99,14 @@ try {
   check('three people in one space', !!together)
 
   // ---- two screens at once -------------------------------------------------
-  await alice.getByRole('button', { name: 'Share screen' }).click()
+  // A screen is shared from voice, so both sharers stand in the lounge first.
+  for (const page of [alice, bob]) {
+    await page.click('.voice-channel .rail-item:has-text("lounge")')
+    await page.waitForSelector('.voice-bar:not(.hidden)', { timeout: 15_000 })
+  }
+  await alice.click('button[aria-label="Share screen"]')
   await alice.waitForTimeout(1500)
-  await bob.getByRole('button', { name: 'Share screen' }).click()
+  await bob.click('button[aria-label="Share screen"]')
   await bob.waitForTimeout(2500)
 
   const tabs = await waitFor(
@@ -189,7 +194,7 @@ try {
   // And a way back off it again.
   const stopped = await carol.evaluate(async () => {
     const off = [...document.querySelectorAll('.stream-tab')].find(
-      (b) => b.textContent.trim() === 'Stop watching',
+      (b) => b.textContent.trim() === 'Close',
     )
     if (!off) return null
     off.click()
@@ -225,7 +230,7 @@ try {
           for (const tile of document.querySelectorAll('.stage-tile')) {
             const tag = tile.querySelector('.stage-tag')?.textContent ?? ''
             const el = tile.querySelector('video')
-            if (tag.startsWith('Watching') && el && el.videoWidth > 0 && !el.paused) {
+            if (!tag.startsWith('Your screen') && el && el.videoWidth > 0 && !el.paused) {
               return `${tag}, ${el.videoWidth}px`
             }
           }
@@ -244,10 +249,7 @@ try {
   )
 
   // ---- moving somebody between voice channels ------------------------------
-  await alice.getByRole('button', { name: 'lounge' }).first().click()
-  await alice.waitForTimeout(1500)
-  await bob.getByRole('button', { name: 'lounge' }).first().click()
-  await bob.waitForTimeout(2000)
+  // Both are still in the lounge from sharing.
 
   /*
    * The actions live behind the ellipsis on somebody's row now, so the check

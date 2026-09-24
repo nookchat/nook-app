@@ -1,12 +1,10 @@
 /**
- * The signal bus fans one message out over every transport and de-duplicates
- * what comes back. One relay is enough to run the room. The rest are spare.
+ * The signal bus: everything said in a space that is not kept.
  *
- * After two peers connect, WebRTC carries the media directly and the bus goes
- * quiet. The host keeps it open only so that new viewers can arrive.
- *
- * A space on a server hands it one transport, the server's own relay, and no
- * public relays at all. Then the bus is never quiet: it carries the chat too.
+ * It seals each message with the space's key, sends it down the space's
+ * channel on the server connection, opens what comes back, and drops what
+ * it has already seen. Presence, typing, and the handshakes that start calls
+ * and screen shares all go this way.
  */
 
 import type { Room } from '../room'
@@ -18,8 +16,6 @@ import {
   type Envelope,
   type OutgoingEnvelope,
 } from './envelope'
-import { MQTT_BROKERS, MqttTransport } from './mqtt'
-import { NOSTR_RELAYS, NostrTransport } from './nostr'
 import type { Transport, TransportStatus } from './transport'
 
 export interface RelayHealth {
@@ -49,16 +45,10 @@ export class SignalBus {
   opened = 0
   unreadable = 0
 
-  /** `only`, when given, replaces the public relays rather than joining them. */
-  constructor(room: Room, selfId: string, only?: Transport[]) {
+  constructor(room: Room, selfId: string, transports: Transport[]) {
     this.room = room
     this.selfId = selfId
-    this.transports = only
-      ? [...only]
-      : [
-          ...MQTT_BROKERS.map((b) => new MqttTransport(b.url, b.name)),
-          ...NOSTR_RELAYS.map((r) => new NostrTransport(r.url, r.name)),
-        ]
+    this.transports = [...transports]
     for (const t of this.transports) this.health.set(t, { name: t.name, status: 'idle' })
   }
 
@@ -81,22 +71,6 @@ export class SignalBus {
     if (this.started) return
     this.started = true
     for (const t of this.transports) this.open(t)
-  }
-
-  /**
-   * One more relay, learned after the bus was built.
-   *
-   * The archive's address comes out of the space's own notes, which are not
-   * read until the log is open, and the bus is up before that. Anything
-   * published before this one connected went out over the public relays,
-   * which is the same story as any single relay being late.
-   */
-  addRelay(transport: Transport): void {
-    if (this.transports.some((t) => t.name === transport.name)) return
-    this.transports.push(transport)
-    this.health.set(transport, { name: transport.name, status: 'idle' })
-    if (this.started) this.open(transport)
-    this.onHealth?.(this.healthList)
   }
 
   private open(t: Transport): void {

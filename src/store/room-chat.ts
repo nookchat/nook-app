@@ -1,5 +1,5 @@
 /**
- * One room's chat: the log, the store, and the wire between peers.
+ * One room's chat: the log, and what is written to it and read from it.
  *
  * Everything a person does becomes an event, which is signed, written to this
  * device, and handed to whoever is connected. Everything that arrives is
@@ -10,8 +10,6 @@
 
 import { mentionsMe } from '../chat'
 import { loadIdentity, sharedKey } from './identity'
-import { deleteEvents, getRoom, loadRoom, noteRoom, putEvents } from './db'
-import { compact, limitsForNow } from './compact'
 import { openEvents } from './verify-pool'
 import {
   cleanChannel,
@@ -23,7 +21,6 @@ import {
   trimToBytes,
   trimToWire,
   oneEmoji,
-  packEvent,
   RoomLog,
   type ChannelInfo,
   type LogEvent,
@@ -52,25 +49,6 @@ export interface Unread {
   newest: number
 }
 
-/** How much history to hand a peer that has just connected. */
-const BACKFILL = 250
-/** Data channels choke on very large messages, so batches stay modest. */
-const BATCH = 40
-/**
- * And modest in bytes, not only in count. Forty full-size messages is nearly
- * two megabytes, which no data channel carries in one piece and which a sealed
- * envelope refuses to open (see open in signal/envelope.ts). A batch this size
- * seals to well under the frame a Cathode server relays, escaping and all.
- */
-const BATCH_BYTES = 150_000
-
-type Wire =
-  | { t: 'ev'; e: unknown[] }
-  /** How far back this log reaches, so a peer that is short can ask for more. */
-  | { t: 'have'; n: number; low: number }
-  /** A request for the slice at and below a line. */
-  | { t: 'pull'; below: number }
-
 export class RoomChat {
   readonly log: RoomLog
   readonly me: string
@@ -90,9 +68,7 @@ export class RoomChat {
    */
   onLocal: ((event: LogEvent) => void) | null = null
 
-  private readonly secret: string
   private name: string
-  private sinceCompaction = 0
   /**
    * Private messages, opened.
    *
@@ -106,19 +82,9 @@ export class RoomChat {
   /** Told when a private message is opened, so the panel can draw it. */
   onDirect: (() => void) | null = null
 
-  /**
-   * Whether this device keeps the log. True for a peer to peer space, where
-   * every device is the history. False for a space on a server, where the
-   * server is, and this device holds the log in memory while the space is open
-   * and writes none of it down.
-   */
-  readonly persist: boolean
-
-  constructor(roomId: string, secret: string, founder = '', persist = true) {
-    this.persist = persist
+  constructor(roomId: string, founder = '') {
     this.log = new RoomLog(roomId)
     this.log.founder = founder
-    this.secret = secret
     const id = loadIdentity()
     this.me = id.pubkey
     this.log.me = id.pubkey
@@ -127,40 +93,6 @@ export class RoomChat {
 
   get displayName(): string {
     return this.name
-  }
-
-  /**
-   * Read this device's copy before talking to anybody, and tidy it on the way in.
-   *
-   * Loaded first, tidied second, and in that order for a reason: tidying needs
-   * the log's own answer about which events counted, and the log has no answer
-   * until it holds them. Tidying a bare pile of events falls back to guessing,
-   * and the guess is what used to throw away real edits.
-   */
-  async load(): Promise<void> {
-    // Nothing kept here to read: the server hands the history over instead.
-    if (!this.persist) return
-    const note = await getRoom(this.log.room)
-    if (note?.floor) this.log.floor = note.floor
-    const stored = await loadRoom(this.log.room)
-    for (const event of stored) this.log.add(event)
-    this.pinFounder()
-
-    const { keep, drop } = compact(stored, await limitsForNow(), this.log.effective())
-    if (drop.length) {
-      this.raiseFloor(keep)
-      void deleteEvents(drop)
-      this.log.replace(keep)
-      this.pinFounder()
-    }
-    void noteRoom({
-      ...(note ?? { room: this.log.room, secret: this.secret, title: '' }),
-      room: this.log.room,
-      secret: this.secret,
-      lastSeen: Date.now(),
-      floor: this.log.floor || undefined,
-    })
-    this.onChange?.()
   }
 
   channels(voice = false): string[] {
@@ -310,7 +242,6 @@ export class RoomChat {
   ): Promise<LogEvent> {
     const event = await makeEvent(this.log.room, this.me, this.log.nextLamport(), kind, body)
     this.log.add(event)
-    if (this.persist) void putEvents([event])
     this.onLocal?.(event)
     this.onChange?.()
     return event
@@ -442,7 +373,7 @@ export class RoomChat {
    * Shut the space down for everybody.
    *
    * Written like anything else, so it travels like anything else: to whoever is
-   * connected now, and to whoever syncs later through a peer or the archive.
+   * connected now, and to whoever reads the space from the server later.
    * Every device that reads it forgets the space. See RoomLog.closed for what
    * that can and cannot reach.
    */
@@ -575,9 +506,8 @@ export class RoomChat {
    * Say what you are called, if the log does not already say it.
    *
    * Called on the way into every space, so writing unconditionally meant one
-   * profile event per visit, for ever. Compaction takes the superseded ones off
-   * this device, and an archive keeps every line it is ever given, so the tidy
-   * log and the untidy archive slowly disagreed about the same room.
+   * profile event per visit, for ever, and the server keeps every line it is
+   * ever given.
    */
   announceName(name: string, avatar?: string): Promise<LogEvent | null> {
     this.name = name
@@ -589,153 +519,11 @@ export class RoomChat {
   }
 
   /**
-   * Remember how far back this device is willing to go.
-   *
-   * Set to the oldest message that survived trimming, so the peer that still
-   * has the older ones does not hand them straight back to be trimmed again.
-   * Only moves forward, and only on the device that trimmed.
-   */
-  private raiseFloor(keep: LogEvent[]): void {
-    let oldest = Infinity
-    for (const e of keep) {
-      if (e.kind !== 'said' && e.kind !== 'poll') continue
-      if (e.lamport < oldest) oldest = e.lamport
-    }
-    if (!Number.isFinite(oldest) || oldest <= this.log.floor) return
-    this.log.floor = oldest
-    void this.rememberFloor()
-  }
-
-  /** Keep the floor across a reload, or the next peer undoes the trimming. */
-  private async rememberFloor(): Promise<void> {
-    if (!this.persist) return
-    const note = await getRoom(this.log.room)
-    if (!note) return
-    await noteRoom({ ...note, floor: this.log.floor })
-  }
-
-  /** Throw away what the log no longer needs, in memory and on disk. */
-  async tidy(): Promise<void> {
-    this.sinceCompaction = 0
-    /*
-     * The limits first, and the log read after, with nothing awaited between
-     * reading it and replacing it. Read before the wait, anything that arrived
-     * during it was missing from what was kept, and the replace threw it away.
-     */
-    const limits = await limitsForNow()
-    const all = this.log.all()
-    const effective = this.log.effective()
-    const { keep, drop } = compact(all, limits, effective)
-    if (drop.length === 0) return
-    /*
-     * The floor rises only when storage pressure dropped a message that still
-     * counted. It used to rise on every tidy that dropped anything, so one
-     * retraction pinned the floor at the log's own oldest message, and from
-     * then on this device refused every older event a peer offered it. That
-     * is the behaviour trimming wants and nothing else does.
-     */
-    const byId = new Map(all.map((e) => [e.id, e]))
-    const limited = drop.some((id) => {
-      if (!effective.has(id)) return false
-      const kind = byId.get(id)?.kind
-      return kind === 'said' || kind === 'poll'
-    })
-    if (limited) this.raiseFloor(keep)
-    this.log.replace(keep)
-    if (this.persist) await deleteEvents(drop)
-    this.onChange?.()
-  }
-
-  // ---- the wire ----
-
-  encode(events: LogEvent[]): string[] {
-    const out: string[] = []
-    const bytes = new TextEncoder()
-    let batch: unknown[] = []
-    let size = 0
-    const flush = (): void => {
-      if (batch.length === 0) return
-      const wire: Wire = { t: 'ev', e: batch }
-      out.push(JSON.stringify(wire))
-      batch = []
-      size = 0
-    }
-    for (const event of events) {
-      const packed = packEvent(event)
-      const weight = bytes.encode(JSON.stringify(packed)).length
-      if (batch.length >= BATCH || (batch.length > 0 && size + weight > BATCH_BYTES)) flush()
-      batch.push(packed)
-      size += weight
-    }
-    flush()
-    return out
-  }
-
-  /** What a peer gets the moment the channel opens. */
-  backfill(): string[] {
-    return this.encode(this.log.recent(BACKFILL))
-  }
-
-  /**
-   * How far back this device reaches, sent when a link opens and again after
-   * every pull, so the other side can tell whether we hold history they lack.
-   */
-  summary(): string {
-    const all = this.log.all()
-    const wire: Wire = { t: 'have', n: all.length, low: all.length ? all[0].lamport : 0 }
-    return JSON.stringify(wire)
-  }
-
-  /**
-   * The slice below a line, as much of it as one backfill carries, for a peer
-   * whose history stops short. At and below rather than strictly below,
-   * because two events can share a lamport, and the boundary one they lack
-   * would otherwise never travel. The duplicates cost a dedup and nothing
-   * else.
-   */
-  below(lamport: number): string[] {
-    if (!Number.isFinite(lamport)) return []
-    const older = this.log.all().filter((e) => e.lamport <= lamport)
-    return this.encode(older.slice(-BACKFILL))
-  }
-
-  /**
-   * Where to ask a peer to reach back to, given how far back they say they
-   * do, or null for nowhere. A device that trimmed under storage pressure
-   * asks for nothing: it would only refuse what came back, or trim it again.
-   */
-  wantPull(theirs: { n: number; low: number }): number | null {
-    if (this.log.floor > 0) return null
-    if (theirs.n <= 0) return null
-    const mine = this.log.all()
-    const oldest = mine.length ? mine[0].lamport : Number.MAX_SAFE_INTEGER
-    return theirs.low < oldest ? oldest : null
-  }
-
-  /**
-   * Take what arrived and return only what was new, so the caller knows what to
-   * pass on and whether anything changed. Everything is verified first: an event
-   * that fails its hash or its signature never reaches the log.
-   */
-  async ingest(raw: string): Promise<LogEvent[]> {
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(raw)
-    } catch {
-      return []
-    }
-    const wire = parsed as Partial<Wire>
-    if (!wire || wire.t !== 'ev' || !Array.isArray(wire.e)) return []
-    if (wire.e.length > BATCH * 4) return []
-    return this.absorb(wire.e)
-  }
-
-  /**
    * Take a pile of events from anywhere and keep the ones that hold up.
    *
-   * A peer, an archive, an imported file: all the same, and all checked the
-   * same way. The check is the whole point, and it is why an archive can be
-   * somebody else's machine without that mattering.
+   * Everything from the server is checked this way, hash and signature,
+   * which is why the server can be somebody else's machine without that
+   * mattering.
    */
   async absorb(candidates: unknown[]): Promise<LogEvent[]> {
     const fresh: LogEvent[] = []
@@ -746,11 +534,6 @@ export class RoomChat {
     }
     if (fresh.length) {
       this.pinFounder()
-      if (this.persist) void putEvents(fresh)
-      this.sinceCompaction += fresh.length
-      // Trimming is for a device short of room to keep the history. One that
-      // keeps none has nothing to trim, and would only hide what the server has.
-      if (this.persist && this.sinceCompaction > 200) void this.tidy()
       this.onChange?.()
     }
     return fresh

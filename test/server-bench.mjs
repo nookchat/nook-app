@@ -3,7 +3,7 @@
  *
  * Fills one room with LINES lines of ciphertext-sized junk, then times what a
  * client does: catching up on the last few lines, reading the whole history,
- * appending a batch, and a message crossing the relay between two sockets.
+ * appending a batch, and a signal crossing between two sockets.
  *
  *   node test/server-bench.mjs [lines]
  */
@@ -63,14 +63,21 @@ try {
     await (await post([line()])).json()
   })
 
-  // Two sockets in one relay room, a frame from one to the other.
-  const a = new WebSocket(`ws://localhost:${PORT}/relay/${ROOM}`)
-  const b = new WebSocket(`ws://localhost:${PORT}/relay/${ROOM}`)
+  // Two sockets in one space, a signal from one to the other. Each says hello
+  // from past the end, so neither is sent the history first.
+  const a = new WebSocket(`ws://localhost:${PORT}/api/v1/socket`)
+  const b = new WebSocket(`ws://localhost:${PORT}/api/v1/socket`)
   await Promise.all([a, b].map((ws) => new Promise((ok) => (ws.onopen = ok))))
+  const live = (ws) =>
+    new Promise((ok) => {
+      ws.onmessage = (ev) => JSON.parse(ev.data).t === 'live' && ok()
+      ws.send(JSON.stringify({ t: 'hello', room: ROOM, from: Number.MAX_SAFE_INTEGER }))
+    })
+  await Promise.all([live(a), live(b)])
   const frame = line()
-  await time('a frame across the relay', 200, () => new Promise((ok) => {
-    b.onmessage = () => ok()
-    a.send(frame)
+  await time('a signal between two sockets', 200, () => new Promise((ok) => {
+    b.onmessage = (ev) => JSON.parse(ev.data).t === 'sig' && ok()
+    a.send(JSON.stringify({ t: 'sig', room: ROOM, d: frame }))
   }))
   a.close()
   b.close()

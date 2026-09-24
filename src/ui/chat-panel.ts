@@ -11,7 +11,7 @@
  */
 
 import { MAX_DM_BYTES, MAX_TEXT, type Message } from '../store/log'
-import type { LinkPreview } from '../store/archive'
+import type { LinkPreview } from '../net/server-api'
 import { cleanName, EVERYONE, findMentions, mentionsMe } from '../chat'
 import { shortKey } from '../store/identity'
 import { clear, h } from './dom'
@@ -326,7 +326,7 @@ export class ChatPanel {
       on: { click: () => this.onGif?.() },
     })
     this.soundButton = h('button', {
-      class: 'ghost icon-only',
+      class: 'ghost icon-only hidden',
       title: 'Soundboard',
       ariaLabel: 'Soundboard',
       on: { click: () => this.onSound?.() },
@@ -438,6 +438,11 @@ export class ChatPanel {
   }
 
   /** What the soundboard hangs off, for the times it is opened by command. */
+  /** The soundboard is for a call, so its button is only there during one. */
+  showSoundboard(on: boolean): void {
+    this.soundButton.classList.toggle('hidden', !on)
+  }
+
   get soundAnchor(): HTMLElement {
     return this.soundButton
   }
@@ -1362,10 +1367,9 @@ export class ChatPanel {
    * A card under a message that carries a link, when anybody can say what is
    * behind it.
    *
-   * A browser cannot read another site's page, so the card only exists where
-   * the space has an archive: the one machine the space already trusts to be
-   * awake goes and looks. The hook is null without one, and messages carry
-   * plain links the way they always did. The card fills in when the answer
+   * A browser cannot read another site's page, so the space's server goes and
+   * looks. The hook is null when it does not, and messages carry plain links
+   * the way they always did. The card fills in when the answer
    * arrives; a row redrawn later asks again and is answered from the cache.
    */
   private attachPreview(line: HTMLElement, text: string): void {

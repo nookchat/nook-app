@@ -122,38 +122,6 @@ try {
   await say(alice, '//not a command')
   check('two slashes says one', (await texts(alice)).includes('/not a command'))
 
-  // ---- nudges --------------------------------------------------------------
-  // The 2004 classic. The window shakes on both ends, and nothing is written
-  // into the log: a nudge is true for half a second and then it is not.
-  await alice.fill(BOX, '/nudge')
-  await alice.press(BOX, 'Enter')
-  const bobShaken = await bob
-    .waitForFunction(() => document.body.classList.contains('nudged'), null, { timeout: 15_000 })
-    .then(() => true)
-    .catch(() => false)
-  check('a nudge shakes the other side', bobShaken)
-
-  const aliceShaken = await alice.evaluate(
-    () =>
-      document.body.classList.contains('nudged') ||
-      [...document.querySelectorAll('.toast')].some((t) => t.textContent.includes('You nudged')),
-  )
-  check('and the side that sent it', aliceShaken)
-
-  await alice.fill(BOX, '/nudge')
-  await alice.press(BOX, 'Enter')
-  await alice.waitForTimeout(400)
-  const rationed = await alice.evaluate(() =>
-    [...document.querySelectorAll('.toast')].some((t) => t.textContent.includes('Easy')),
-  )
-  check('a second nudge straight after is rationed', rationed)
-
-  const logged = await texts(alice)
-  check(
-    'and none of it was posted to the room',
-    !logged.some((t) => t.includes('/nudge')),
-  )
-
   // ---- spoken lines ---------------------------------------------------------
   // /tts posts the line like a message and reads it aloud on the other side.
   // The voice itself is stubbed: a test rig has no speakers worth trusting.
@@ -254,23 +222,29 @@ try {
   check('and it goes for the person who wrote it too', goneForBob)
 
   // ---- private messages ---------------------------------------------------
+  // A private conversation opens outside the space, on home, like every chat app.
   await say(alice, '/dm Bob a private word')
-  await alice.waitForTimeout(900)
-  const dmTitle = await alice.$eval('.chat-head .eyebrow', (el) => el.textContent)
-  check('a private conversation opens on its own', dmTitle === 'Bob', dmTitle)
+  await alice.waitForTimeout(1200)
+  const dmTitle = await alice.evaluate(() => ({
+    home: !!document.querySelector('.home-grid-shell.dm-open'),
+    who: document.querySelector('.space-head .channel-name')?.textContent ?? '',
+  }))
+  check('a private conversation opens on its own, on home', dmTitle.home && dmTitle.who === 'Bob', JSON.stringify(dmTitle))
   check('and holds what was said', (await texts(alice)).includes('a private word'))
 
   const bobGot = await bob
-    .waitForFunction(
-      () => [...document.querySelectorAll('.rail-item')].some((e) => e.textContent.includes('Alice')),
-      null,
-      { timeout: 60_000 },
-    )
+    .waitForFunction(() => document.querySelector('.rail-tile.home .rail-tile-count')?.textContent === '1', null, {
+      timeout: 30_000,
+    })
     .then(() => true)
     .catch(() => false)
-  check('it reaches the person it is for', bobGot)
+  check('it reaches the person it is for, wherever they are looking', bobGot)
 
-  await bob.click('.rail-item:has-text("Alice")')
+  await bob.click('.rail-tile.home')
+  await bob.waitForSelector('.dm-item', { timeout: 10_000 })
+  const listed = await bob.$eval('.dm-item', (el) => el.textContent)
+  check('home lists it, with the space it belongs to', listed.includes('Alice') && listed.includes('everything'), listed)
+  await bob.click('.dm-item')
   await bob.waitForTimeout(700)
   check('who can read it', (await texts(bob)).includes('a private word'))
 
@@ -285,26 +259,20 @@ try {
     .catch(() => false)
   check('and answer', backToAlice)
 
-  /*
-   * The room carries it and cannot read it. Checked against the stored event
-   * rather than against the screen: the sealed body is what everybody else
-   * holds, and the words must not be in it.
-   */
+  // The space carries it and cannot read it: the stored body is sealed.
   const sealed = await alice.evaluate(async () => {
-    const { loadRoom, listRooms } = await import('/src/store/db.ts')
-    const rooms = await listRooms()
-    const events = await loadRoom(rooms[0].room)
-    const dm = events.find((e) => e.kind === 'dm')
+    const { spaces } = await import('/src/space/registry.ts')
+    const dm = spaces.all()[0]?.chat.log.all().find((e) => e.kind === 'dm')
     return dm ? JSON.stringify(dm.body) : ''
   })
-  check(
-    'what the room stores is sealed',
-    sealed.length > 0 && !sealed.includes('private word'),
-    sealed.slice(0, 60),
-  )
+  check('what the space stores is sealed', sealed.length > 0 && !sealed.includes('private word'), sealed.slice(0, 60))
 
-  await alice.click('button:has-text("Back")')
-  await alice.waitForTimeout(400)
+  // Back into the space, and Bob too.
+  await alice.click('.rail-tile:not(.home):not(.add)')
+  await alice.waitForSelector(BOX)
+  await bob.click('.rail-tile:not(.home):not(.add)')
+  await bob.waitForSelector(BOX)
+  await alice.waitForTimeout(600)
 
   // ---- drafts, and the keys ----------------------------------------------
   await alice.click(BOX)

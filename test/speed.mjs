@@ -1,8 +1,8 @@
 /**
  * How fast it feels, in milliseconds.
  *
- * Seeds one space with a few thousand real, signed messages straight into
- * this device's store, then times what a person waits for: opening the
+ * Seeds one space on the server with a few thousand real, signed messages,
+ * then times what a person waits for: opening the
  * space, switching channel, a sent message reaching the screen, and coming
  * back to a space already opened once. Each is the median of a few runs.
  *
@@ -25,12 +25,14 @@ await page.waitForSelector('input[aria-label="Space name"]')
 
 const median = (xs) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)]
 
-// Seed: a space, two channels, COUNT messages across them.
-const secret = await page.evaluate(async (count) => {
+// Seed: a space, two channels, COUNT messages across them, written to the
+// server the way a device writes them: signed, sealed, and posted.
+const link = await page.evaluate(async (count) => {
   const room = await import('/src/room.ts')
   const log = await import('/src/store/log.ts')
-  const db = await import('/src/store/db.ts')
   const id = await import('/src/store/identity.ts')
+  const { sealEvent } = await import('/src/net/server-api.ts')
+  const { defaultServer } = await import('/src/backend.ts')
   const secret = room.newSecret()
   const r = await room.deriveRoom(secret)
   const me = id.loadIdentity().pubkey
@@ -48,10 +50,21 @@ const secret = await page.evaluate(async (count) => {
       }),
     )
   }
-  await db.putEvents(events)
-  await db.noteRoom({ room: r.id, secret, lastSeen: Date.now(), title: 'Heavy', founder: me })
-  return secret
+  const server = defaultServer()
+  const lines = await Promise.all(events.map((e) => sealEvent(r.key, e)))
+  for (let i = 0; i < lines.length; i += 300) {
+    const res = await fetch(`${server}/api/v1/spaces/${r.id}/events`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-cathode-write': r.write },
+      body: JSON.stringify(lines.slice(i, i + 300)),
+    })
+    if (!res.ok) throw new Error(`the server refused the seed: ${res.status}`)
+  }
+  return room.roomLink(secret, false, server)
 }, COUNT)
+// Opened once, so it is on this device's list of spaces.
+await page.goto(link)
+await page.waitForFunction(() => document.querySelector('.space-name')?.textContent === 'Heavy', null, { timeout: 30_000 })
 console.log(`seeded ${COUNT} messages`)
 
 const BOX = '[aria-label="Write a message"]'
@@ -60,10 +73,10 @@ const lastLine = `Message number ${COUNT - 1 - ((COUNT - 1) % 3 === 0 ? 1 : 0)}`
 const open = []
 for (let i = 0; i < 5; i++) {
   await page.goto(APP_URL)
-  await page.waitForSelector('.space-row')
+  await page.waitForSelector('.space-row .rail-item')
   const t = await page.evaluate(async (want) => {
     const start = performance.now()
-    document.querySelector('.space-row button').click()
+    document.querySelector('.space-row .rail-item').click()
     await new Promise((done) => {
       const look = () => {
         const texts = document.querySelectorAll('.chat-text')
@@ -78,6 +91,15 @@ for (let i = 0; i < 5; i++) {
 }
 console.log(`open a space with history      ${median(open).toFixed(0)} ms   (runs ${open.map((x) => x.toFixed(0)).join(', ')})`)
 
+const railLate = await page.evaluate(async () => {
+  const start = performance.now()
+  while (![...document.querySelectorAll('.rail-item')].some((b) => b.textContent.includes('other'))) {
+    if (performance.now() - start > 10_000) return -1
+    await new Promise((r) => requestAnimationFrame(r))
+  }
+  return performance.now() - start
+})
+console.log(`channel rail after the messages ${railLate.toFixed(0)} ms`)
 const switches = []
 for (let i = 0; i < 6; i++) {
   const to = i % 2 === 0 ? 'other' : 'general'
@@ -126,5 +148,5 @@ console.log(`a sent message on screen       ${median(sends).toFixed(0)} ms`)
 const heap = await page.evaluate(() => performance.memory?.usedJSHeapSize ?? 0)
 const nodes = await page.evaluate(() => document.getElementsByTagName('*').length)
 console.log(`heap ${(heap / 1e6).toFixed(1)} MB, ${nodes} DOM nodes`)
-console.log(`secret ${secret}`)
+console.log(`link ${link}`)
 await browser.close()

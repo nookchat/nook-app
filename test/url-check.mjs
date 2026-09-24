@@ -51,14 +51,19 @@ try {
   check('the address bar is clean before a space is opened', !page.url().includes('#'), page.url())
 
   await page.getByRole('button', { name: 'New space' }).click()
-  await page.getByRole('button', { name: 'Share screen' }).click()
+  await page.waitForSelector('[aria-label="Write a message"]')
+  await page.waitForTimeout(800)
+  // The invite lives in the space's menu.
+  await page.click('.space-title-button')
+  await page.click('.menu-item:has-text("Invite people")')
   await page.locator('.share-code').waitFor({ timeout: 15_000 })
 
   const code = (await page.locator('.share-code').textContent())?.trim() ?? ''
   check('the code reads as three groups of four', CODE.test(code), code)
 
   const url = page.url()
-  check('the address bar carries the space once you are in one', url.endsWith(`#${code}`), url)
+  // The code, then the space's server, which is where it lives.
+  check('the address bar carries the space once you are in one', url.includes(`#${code}@`), url)
 
   const link = await page.locator('.share-code').getAttribute('data-link')
   check('the copied link matches the address bar', link === url, link ?? 'none')
@@ -93,6 +98,7 @@ try {
    * rather than throw you out. This used to be the opposite: a room only existed
    * while somebody was streaming, so a reload had to clear the dead code away.
    */
+  await page.keyboard.press('Escape')
   const before = page.url()
   await page.reload()
   await page.waitForTimeout(2000)

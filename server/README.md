@@ -1,7 +1,7 @@
 # The Cathode server
 
-The backend for a space that runs on a server. It keeps every space in
-Postgres, carries everything a space does over one WebSocket per space, and
+The backend for Cathode. Every space lives on a server. It keeps every space
+in Postgres, carries everything a space does over one WebSocket per device, and
 can run as a **cluster**: several people each run one, and every space is kept
 on all of them, so no one operator holds the only copy and a space outlives any
 one server going down.
@@ -11,8 +11,8 @@ wrote it, with a key made from the space code, before it is sent. The code
 lives in the part of a link that a browser never sends to anybody. See
 [Encryption](#encryption).
 
-It also works as an optional archive for a peer to peer space. See
-[As an archive](#as-an-archive-for-a-peer-to-peer-space).
+A step by step guide for somebody who has not done this before is in
+[docs/self-hosting.md](../docs/self-hosting.md).
 
 ## Running it on your own machine
 
@@ -59,9 +59,9 @@ You need a Linux machine with Docker, and a DNS name that points at it.
    curl https://cathode.example.org/api/v1/health
    ```
 
-6. Build the page with `VITE_CATHODE_SERVER=https://cathode.example.org`. On
-   Vercel, set it under Project, Settings, Environment Variables, and deploy
-   again. The page then offers **Server** when somebody makes a space.
+6. Open Cathode and add `cathode.example.org` under **Add your server** on the
+   home page, or under Settings, Servers. Your new spaces go there. Other
+   people reach it only through the invites you send them.
 
 To update to the newest image:
 
@@ -119,18 +119,21 @@ Version 1, under `/api/v1`. A running server describes it at
 | `GET /api/v1/ice` | Short lived TURN credentials |
 | `GET /api/v1/spaces/:room/events?after=N&limit=L` | Sealed lines after line `N`, a page at a time. `at` is where the next page starts, and `more` says there is one |
 | `POST /api/v1/spaces/:room/events` | Keeps `{ "events": [sealed lines] }`. Needs `x-cathode-write`. The first write claims the space with its token |
-| `WS /api/v1/spaces/:room/socket` | Everything a space does, on one connection. See below |
+| `WS /api/v1/socket` | Everything every space on this device does, on one connection. See below |
+| `WS /api/v1/spaces/:room/socket` | The same for one space. Messages leave out `room` |
 | `GET /api/v1/people/:id` | One person's sealed record |
 | `PUT /api/v1/people/:id` | Replaces it. Needs `x-cathode-write`. The first write claims it |
 | `GET /api/v1/preview?url=U` | The title, description and picture behind a public link |
 | `GET /api/v1/gifs?q=term` | GIF search, when `CATHODE_TENOR_KEY` is set |
 | `GET /api/v1/cluster/lines`, `/rooms`, `/people` | Between servers in a cluster only. Needs the cluster secret |
 
-The space socket speaks JSON, one message per frame:
+The socket speaks JSON, one message per frame. Every message carries the
+`room` it is about, so one connection carries every space a device is in:
 
 | Direction | Message | Means |
 | --- | --- | --- |
-| to the server | `hello {from}` | Everything after line `from`, page by page, then live |
+| to the server | `hello {room, from}` | Join the space. Everything after line `from`, page by page, then live |
+| to the server | `leave {room}` | Leave the space. The others get `left` |
 | to the server | `put {id, lines, w}` | Keep these sealed lines. `w` is the write token |
 | to the server | `sig {d}` | A sealed signal (a handshake, typing) for everybody else. Not kept |
 | to the server | `state {id, d}` | This session's sealed presence. Kept while the socket is open, handed to whoever arrives, and followed by `left` when it closes |
@@ -150,10 +153,6 @@ only regular traffic is the WebSocket heartbeat, a ping from the server every
 `at` is always the number of the newest line a message brings the reader to.
 The server sends a space's lines in order, so a reader that keeps the highest
 `at` it has seen can reconnect with `hello` from there and miss nothing.
-
-The paths from before version 1 (`/health`, `/events/:room`, `/me/:id`,
-`/preview`, `/gif`, `/ice`, `WS /room/:room`, `WS /relay/:room`) still answer,
-for clients that have not caught up.
 
 ## A cluster
 
@@ -225,13 +224,6 @@ What a server can see, because it has to:
   to turn them off.
 - What is searched for, if GIF search is on.
 
-## As an archive, for a peer to peer space
-
-Open Settings in any peer to peer space, put the server's address under
-**Archive**, and press Use it. The space stays peer to peer; the server keeps
-a sealed copy, so somebody who comes back after everybody was offline still
-catches up, and carries its handshakes beside the public relays.
-
 ## Put it behind TLS
 
 The server speaks plain HTTP. Caddy in the compose file puts HTTPS in front of
@@ -247,8 +239,9 @@ cathode.example.org {
 
 ## TURN
 
-About one connection in eight fails peer to peer, because of symmetric NAT or
-a strict firewall. TURN relays the media instead. The server gives every space
+Calls and screen shares go between browsers over WebRTC. About one connection
+in eight cannot go direct, because of symmetric NAT or a strict firewall, so
+TURN relays the media instead. The server gives every space
 on it credentials that expire after a day, made from `CATHODE_TURN_SECRET` in
 the way coturn's `use-auth-secret` expects.
 
@@ -256,7 +249,7 @@ By default every call and screen share in a space on this server goes through
 TURN, so media never goes straight between people and nobody learns anybody
 else's address. It stays encrypted end to end all the same. Set
 `CATHODE_TURN_ONLY=0` to let a call try a direct path first. Without TURN,
-calls go straight between browsers.
+calls try to go straight between browsers.
 
 ## Settings
 

@@ -9,20 +9,22 @@
  * same identity (see link-device.ts) reads the same record, which is how a
  * second device finds your spaces without being told.
  *
- * The record is the same shape as the note a peer to peer space keeps in
- * IndexedDB, a RoomNote, so the space screen treats the two the same way.
+ * The record holds one RoomNote per space (store/notes.ts): its code, its
+ * name, its server, and how far you have read.
  *
  * Two devices can write at once. A save reads the record first and merges,
  * newest note per space winning, and a space you leave is kept as a
  * tombstone so the merge does not bring it back.
  */
 
-import { BUILT_IN_SERVER, serverUrl } from '../backend'
-import { ROOMS_CHANGED, type RoomNote } from './db'
+import { BUILT_IN_SERVER, defaultServer, serverUrl, setDefaultServer } from '../backend'
+import { roomsChanged, type RoomNote } from './notes'
 import { personalBytes } from './identity'
 import { ask } from '../net/cluster'
 
 const SERVERS_KEY = 'cathode.servers.v1'
+/** The servers this person added themselves, as against ones an invite led to. */
+const OWN_KEY = 'cathode.own.v1'
 /** How long after the last change a save waits, so a burst is one write. */
 const SAVE_MS = 2000
 /** The same, for a change worth having everywhere quickly, such as a name. */
@@ -113,14 +115,6 @@ async function unseal(key: CryptoKey, blob: string): Promise<unknown> {
   }
 }
 
-function announce(): void {
-  try {
-    window.dispatchEvent(new Event(ROOMS_CHANGED))
-  } catch {
-    /* nobody to tell */
-  }
-}
-
 /** One server's record of your spaces on it. */
 export class ServerBook {
   readonly server: string
@@ -140,7 +134,7 @@ export class ServerBook {
       if (notes === null) this.loading = null
       for (const note of notes ?? []) this.take(note)
       // Whoever drew a list without these, draw it again.
-      if (notes?.length) announce()
+      if (notes?.length) roomsChanged()
     })
     return this.loading
   }
@@ -162,7 +156,7 @@ export class ServerBook {
     return mine.find((r) => r.locked && r.password) ?? mine[0] ?? null
   }
 
-  /** Write a note, as noteRoom does for a peer to peer space. */
+  /** Write a note for a space, and save the record soon. */
   async put(note: RoomNote): Promise<void> {
     await this.load()
     const was = this.notes.get(note.room)
@@ -212,7 +206,7 @@ export class ServerBook {
   private due = 0
 
   private later(delay = SAVE_MS): void {
-    announce()
+    roomsChanged()
     const at = Date.now() + delay
     if (this.timer && this.due <= at) return
     window.clearTimeout(this.timer)
@@ -303,24 +297,71 @@ export function bookFor(server: string): ServerBook {
  * the server that holds the rest.
  */
 export function knownServers(): string[] {
-  let saved: string[] = []
-  try {
-    const raw = JSON.parse(localStorage.getItem(SERVERS_KEY) ?? '[]') as unknown
-    if (Array.isArray(raw)) saved = raw.filter((x): x is string => typeof x === 'string')
-  } catch {
-    /* none kept */
-  }
-  const all = [...(BUILT_IN_SERVER ? [BUILT_IN_SERVER] : []), ...saved].map(serverUrl).filter(Boolean)
-  return [...new Set(all)]
+  const all = [...(BUILT_IN_SERVER ? [BUILT_IN_SERVER] : []), ...readList(SERVERS_KEY), ...ownServers()]
+  return [...new Set(all.map(serverUrl).filter(Boolean))]
 }
 
-export function addServer(server: string): void {
+/**
+ * The servers this person added themselves. New spaces go only to these.
+ *
+ * An invite brings its server with it, and a space you joined lives there,
+ * but a friend's server is not yours to fill: joining somebody's space does
+ * not make their server the place your own spaces go. You add a server by
+ * hand for that, in Settings or on the home page.
+ */
+export function ownServers(): string[] {
+  let own = readList(OWN_KEY, null)
+  // Before the two lists were apart, the one picked for new spaces was yours.
+  if (own === null) {
+    try {
+      const picked = serverUrl(localStorage.getItem('cathode.server.v1') ?? '')
+      own = picked ? [picked] : []
+    } catch {
+      own = []
+    }
+  }
+  const all = [...(BUILT_IN_SERVER ? [BUILT_IN_SERVER] : []), ...own]
+  return [...new Set(all.map(serverUrl).filter(Boolean))]
+}
+
+/** Where a new space goes: the one picked, if it is yours, or your first. Empty when you have none. */
+export function newSpaceServer(): string {
+  const own = ownServers()
+  const picked = defaultServer()
+  return own.includes(picked) ? picked : (own[0] ?? '')
+}
+
+/**
+ * Remember a server. `mine` for one this person added themselves, which is
+ * then also where new spaces go if there was nowhere before.
+ */
+export function addServer(server: string, mine = false): void {
   const url = serverUrl(server)
-  if (!url || knownServers().includes(url)) return
+  if (!url) return
+  if (!knownServers().includes(url)) writeList(SERVERS_KEY, [...readList(SERVERS_KEY), url])
+  if (mine && !ownServers().includes(url)) {
+    const first = newSpaceServer() === ''
+    writeList(OWN_KEY, [...(readList(OWN_KEY, null) ?? ownServers()), url])
+    if (first) setDefaultServer(url)
+  }
+}
+
+function readList(key: string): string[]
+function readList(key: string, missing: null): string[] | null
+function readList(key: string, missing: string[] | null = []): string[] | null {
   try {
-    const raw = JSON.parse(localStorage.getItem(SERVERS_KEY) ?? '[]') as unknown
-    const saved = Array.isArray(raw) ? raw : []
-    localStorage.setItem(SERVERS_KEY, JSON.stringify([...saved, url]))
+    const held = localStorage.getItem(key)
+    if (held === null) return missing
+    const raw = JSON.parse(held) as unknown
+    return Array.isArray(raw) ? raw.filter((x): x is string => typeof x === 'string') : missing
+  } catch {
+    return missing
+  }
+}
+
+function writeList(key: string, list: string[]): void {
+  try {
+    localStorage.setItem(key, JSON.stringify([...new Set(list)]))
   } catch {
     /* known for this visit only */
   }

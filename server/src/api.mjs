@@ -12,9 +12,7 @@
  *   GET  /api/v1/gifs?q=                  GIF search
  *   GET  /api/v1/openapi.json             all of the above, described
  *   GET  /api/v1/cluster/{lines,rooms,people}   between servers only
- *
- * The paths from before version 1 (/health, /events, /me, /preview, /gif,
- * /ice) still answer, the same way, for clients that have not caught up.
+ *   WS   /api/v1/socket                 every space a device is in, on one connection
  */
 
 import { HAS_TURN, PREVIEWS, TURN_ONLY, VERSION, originAllowed } from './config.mjs'
@@ -58,8 +56,8 @@ function limited(req) {
 function health() {
   return {
     ok: true,
-    // Kept from when this was only an archive: every client checks for it.
-    service: 'cathode-archive',
+    // What a page checks for to know it has found a Cathode server.
+    service: 'cathode-server',
     name: 'cathode',
     version: VERSION,
     api: 1,
@@ -142,7 +140,7 @@ export async function handle(req, res) {
 
     // Only the health check answers a page this server does not serve.
     const cross = req.headers.origin !== undefined && !originAllowed(req.headers.origin)
-    const isHealth = url.pathname === '/health' || url.pathname === '/api/v1/health'
+    const isHealth = url.pathname === '/api/v1/health'
     if (cross && !isHealth) throw new ApiError(403, 'origin', 'This server does not answer that page.')
 
     if (parts[0] === 'api' && parts[1] === 'v1') {
@@ -180,30 +178,6 @@ export async function handle(req, res) {
       throw new ApiError(404, 'not_found', 'There is nothing at that address.')
     }
 
-    // ---- the paths from before version 1 ----
-    if (parts[0] === 'health') return reply(res, 200, health())
-    if (parts[0] === 'ice' && method === 'GET') return reply(res, 200, iceServers())
-    if (parts[0] === 'preview' && method === 'GET') {
-      limited(req)
-      return reply(res, 200, await linkCard(url))
-    }
-    if (parts[0] === 'gif' && method === 'GET') {
-      limited(req)
-      return reply(res, 200, await gifSearch(url))
-    }
-    if (parts[0] === 'me' && parts[1]) {
-      const id = personOf(parts[1])
-      if (method === 'GET') {
-        const held = await person(id)
-        return reply(res, 200, { blob: held.blob, at: held.updated })
-      }
-      if (method === 'POST') return reply(res, 200, await writePerson(req, id))
-    }
-    if (parts[0] === 'events' && parts[1]) {
-      const room = roomOf(parts[1])
-      if (method === 'GET') return reply(res, 200, await readEvents(url, room))
-      if (method === 'POST') return reply(res, 200, await writeEvents(req, room))
-    }
     throw new ApiError(404, 'not_found', 'There is nothing at that address.')
   } catch (err) {
     return fail(res, err)

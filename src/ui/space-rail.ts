@@ -11,9 +11,9 @@
  * cannot learn. A new space goes on the end.
  */
 
-import { ROOMS_CHANGED, type RoomNote } from '../store/db'
+import { ROOMS_CHANGED, type RoomNote } from '../store/notes'
 import { listSpaces } from '../store/spaces'
-import { serverTag } from '../backend'
+import { spaces } from '../space/registry'
 import { h } from './dom'
 import { icon, logo } from './icons'
 
@@ -95,8 +95,13 @@ export function mountSpaceRail(slot: HTMLElement, active: string | null, actions
 
   const paint = async (): Promise<void> => {
     const rooms = await railRooms()
+    // What is waiting in each, for the dot and the count on its tile.
+    const waiting = new Map(rooms.map((r) => [r.room, spaces.get(r.room)?.unread() ?? { count: 0, mentions: 0, direct: 0 }]))
+    const direct = [...waiting.values()].reduce((sum, u) => sum + u.direct, 0)
     // Nothing that shows has changed: leave the buttons alone, hover and all.
-    const sig = `${active}|${rooms.map((r) => `${r.room}:${r.title}:${r.server ?? ''}`).join('|')}`
+    const sig = `${active}|${direct}|${rooms
+      .map((r) => `${r.room}:${r.title}:${waiting.get(r.room)?.count ? 1 : 0}:${waiting.get(r.room)?.mentions ?? 0}`)
+      .join('|')}`
     if (sig === drawn) return
     drawn = sig
 
@@ -107,6 +112,7 @@ export function mountSpaceRail(slot: HTMLElement, active: string | null, actions
       on: { click: () => actions.home() },
     })
     home.append(logo(26))
+    if (direct) home.append(h('span', { class: 'rail-tile-count', text: direct > 99 ? '99+' : String(direct) }))
 
     const tiles = rooms.map((room) => {
       const title = room.title || 'Unnamed space'
@@ -115,15 +121,15 @@ export function mountSpaceRail(slot: HTMLElement, active: string | null, actions
         {
           class: `rail-tile${room.secret === active ? ' on' : ''}`,
           ariaLabel: title,
-          data: { tip: room.server ? `${title} · ${serverTag(room.server)}` : title },
+          data: { tip: title },
           on: { click: () => actions.open(room) },
         },
         [h('span', { class: 'rail-tile-face', text: initials(title) })],
       )
       tile.style.setProperty('--hue', String(spaceHue(room.room)))
-      if (room.server) {
-        tile.append(h('span', { class: 'rail-tile-badge' }, [icon('server', 9)]))
-      }
+      const news = waiting.get(room.room)
+      if (news?.count && room.secret !== active) tile.classList.add('unread')
+      if (news?.mentions) tile.append(h('span', { class: 'rail-tile-count', text: news.mentions > 99 ? '99+' : String(news.mentions) }))
       return tile
     })
 

@@ -761,6 +761,10 @@ hr {
   background: var(--warn);
 }
 
+.dot.bad {
+  background: var(--bad);
+}
+
 .dot.idle {
   background: transparent;
   box-shadow: inset 0 0 0 1.5px var(--fg-faint);
@@ -1650,7 +1654,8 @@ details.adv[open] > summary {
   box-shadow: 0 1px 0 rgb(0 0 0 / 20%);
 }
 
-.space-name {
+.space-name,
+.pane-name {
   flex: 1 1 auto;
   font-size: 15.5px;
   font-weight: 700;
@@ -1975,6 +1980,248 @@ details.adv[open] > summary {
   color: var(--fg);
 }
 
+/* The space's name, as the button that opens its menu. */
+.space-title-button {
+  flex: 1 1 auto;
+  min-width: 0;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 36px;
+  margin: 0 -8px;
+  padding: 0 8px;
+  background: transparent;
+  border-radius: 8px;
+  color: var(--fg);
+}
+
+.space-title-button:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.space-title-button > .icon {
+  color: var(--fg-faint);
+}
+
+.space-title-button .space-name {
+  text-align: left;
+}
+
+/* On home the conversation has its own header; the panel's is not needed. */
+.home-grid-shell .chat-head {
+  display: none;
+}
+
+/* Sharing in voice: the red badge beside whoever is live. */
+.live-badge {
+  flex: 0 0 auto;
+  min-height: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: var(--live);
+  color: var(--on-live);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.live-badge:hover:not(:disabled) {
+  background: var(--live);
+  filter: brightness(1.15);
+}
+
+.live-badge.on {
+  box-shadow: 0 0 0 2px var(--pane), 0 0 0 3px var(--live);
+}
+
+.voice-bar .share-button.on {
+  color: var(--bad);
+  background: color-mix(in srgb, var(--live) 16%, transparent);
+}
+
+/* Search: an icon until it is wanted. */
+.search-wrap {
+  display: flex;
+  align-items: center;
+}
+
+.search-wrap .search-box {
+  display: none;
+}
+
+.search-wrap.open .search-toggle {
+  display: none;
+}
+
+.search-wrap.open .search-box {
+  display: flex;
+}
+
+/* The one control on your own preview: what kind of thing you are sharing. */
+.share-quality {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 3;
+  width: auto;
+  min-height: 28px;
+  padding: 2px 24px 2px 10px;
+  font-size: 12px;
+  background-color: color-mix(in srgb, var(--bg) 70%, transparent);
+  border-color: transparent;
+  backdrop-filter: blur(8px);
+}
+
+/* Home: direct messages, each with the space it belongs to. */
+.dm-item {
+  min-height: 44px;
+  gap: 10px;
+}
+
+.dm-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.dm-space {
+  font-size: 11.5px;
+  color: var(--fg-faint);
+  font-weight: 500;
+}
+
+.rail-empty {
+  padding: 4px 8px;
+  font-size: 13px;
+  color: var(--fg-faint);
+}
+
+.dm-back {
+  display: none;
+}
+
+@media (max-width: 780px) {
+  /* A phone shows the list or the conversation, never both. */
+  .home-grid-shell .rail-left {
+    position: static;
+    transform: none;
+    width: auto;
+    box-shadow: none;
+    border-radius: 0;
+  }
+
+  /* No conversation open: the messages, short, above your spaces. */
+  .home-grid-shell:not(.dm-open) {
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .home-grid-shell:not(.dm-open) .rail-left {
+    display: flex;
+    flex: 0 0 auto;
+    max-height: 40vh;
+  }
+
+  .home-grid-shell:not(.dm-open) .rail-left .me-panel {
+    display: none;
+  }
+
+  .home-grid-shell:not(.dm-open) .space-main {
+    flex: 1 0 auto;
+    overflow: visible;
+  }
+
+  .home-grid-shell.dm-open .rail-left {
+    display: none;
+  }
+
+  .dm-back {
+    display: inline-flex;
+  }
+}
+
+/* The count on a rail tile: mentions in a space, messages waiting at home. */
+.rail-tile-count {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--live);
+  color: var(--on-live);
+  font-size: 11px;
+  font-weight: 800;
+  box-shadow: 0 0 0 3px var(--bg);
+}
+
+/* Something new in a space you are not looking at: a dot on the rail's edge. */
+.rail-tile.unread::before {
+  transform: translateY(-50%) scale(1);
+}
+
+/* Settings: servers, and the three commands to run one. */
+.server-row {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.server-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.server-peers {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 0 0 14px;
+}
+
+.code-block {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bg);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--fg-dim);
+}
+
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  color: var(--accent-text);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.button-link:hover {
+  background: var(--hover);
+}
+
+.invite-modal {
+  max-width: 360px;
+}
+
+.invite-modal .qr-frame {
+  align-self: center;
+}
+
 /* ---------- the conversation pane ---------- */
 
 .space-main {
@@ -2079,7 +2326,8 @@ input[type="text"].space-search {
   flex: 0 0 auto;
   height: 48%;
   min-height: 200px;
-  margin: 10px 12px 0;
+  /* A gap below, so the conversation reads as scrolling under a line, not under the picture. */
+  margin: 10px 12px 8px;
   /* One stream is the whole stage; two split it evenly, side by side. */
   display: grid;
   grid-auto-flow: column;
@@ -2260,7 +2508,7 @@ input[type="text"].space-search {
   }
 
   .stage {
-    margin: 8px 8px 0;
+    margin: 8px 8px 6px;
     height: 36%;
   }
 
@@ -3622,49 +3870,6 @@ input[type="text"].gif-search {
   }
   50% {
     opacity: 0.35;
-  }
-}
-
-/*
- * A nudge. The whole window jumps, briefly and bluntly, because that is the
- * point of it. Anybody who asked their system to calm animations down gets
- * the sound and the toast without the seizure.
- */
-@keyframes nudge-shake {
-  0%,
-  100% {
-    transform: translate(0, 0);
-  }
-  12% {
-    transform: translate(-8px, -5px);
-  }
-  25% {
-    transform: translate(7px, 4px);
-  }
-  38% {
-    transform: translate(-6px, 3px);
-  }
-  50% {
-    transform: translate(6px, -4px);
-  }
-  62% {
-    transform: translate(-5px, -2px);
-  }
-  75% {
-    transform: translate(4px, 3px);
-  }
-  88% {
-    transform: translate(-2px, -1px);
-  }
-}
-
-body.nudged {
-  animation: nudge-shake 0.6s linear;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  body.nudged {
-    animation: none;
   }
 }
 

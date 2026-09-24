@@ -19,12 +19,12 @@
  */
 
 import { checkSupport, hostBlocker } from '../diagnostics'
-import { captureMicrophone, captureScreen, CaptureError, type ScreenCapture } from '../media/capture'
+import { captureScreen, CaptureError, type ScreenCapture } from '../media/capture'
 import { AudioMixer } from '../media/mixer'
-import { Mesh } from '../net/mesh'
+import type { Mesh } from '../net/mesh'
 import { Voice } from '../net/voice'
 import { UplinkMeter } from '../net/uplink'
-import { deriveRoom, formatSecret, newPeerId, roomLink, setLinkSecret, type Room } from '../room'
+import { formatSecret, roomLink, setLinkSecret, type Room } from '../room'
 import { HostPeer } from '../rtc/host-peer'
 import { ViewerPeer } from '../rtc/viewer-peer'
 import { NO_HARDWARE, probeHardwareEncoders, type HardwareProbe } from '../rtc/hardware'
@@ -32,26 +32,23 @@ import { useServedIce } from '../rtc/config'
 import { fetchIce, serverTag } from '../backend'
 import {
   availableCodecs,
-  FPS_CHOICES,
   planFor,
   PRESETS,
   presetById,
-  RESOLUTION_CHOICES,
   type CodecChoice,
   type PresetId,
   type QualityPlan,
 } from '../rtc/quality'
-import { WsRelayTransport } from '../signal/ws-relay'
-import { SignalBus } from '../signal/bus'
+import type { SignalBus } from '../signal/bus'
 import type { Envelope } from '../signal/envelope'
 import { loadSettings, saveSettings, type HostSettings } from '../settings'
 import { cleanName, mentionsMe } from '../chat'
-import { forgetRoom, getRoom, noteRoom, tombstoneRoom, type RoomNote } from '../store/db'
-import { addServer, bookFor, stable, type ServerBook } from '../store/server-spaces'
-import { ServerLink } from '../net/server-link'
+import { addServer, bookFor } from '../store/server-spaces'
+import type { SpaceRuntime } from '../space/runtime'
+import { spaces } from '../space/registry'
+import { gifs as serverGifs, preview, serverHasGifs } from '../net/server-api'
 import { loadIdentity, saveDisplayName, shortKey, signClaim, verifyClaim } from '../store/identity'
-import { Archive, defaultArchive } from '../store/archive'
-import { buzzNudge, chirpJoin, chirpLeave, chirpMessage, isNews, speak } from './sounds'
+import { chirpJoin, chirpLeave, chirpMessage, isNews, speak } from './sounds'
 import { openSoundboard, playSound, soundById, soundByName, SOUNDS } from './soundboard'
 import { gifCredential, isClip, searchGifs, serviceLabel, type Gif } from '../store/gifs'
 import {
@@ -62,9 +59,9 @@ import {
   type LogEvent,
   type Message,
 } from '../store/log'
-import { RoomChat } from '../store/room-chat'
+import type { RoomChat } from '../store/room-chat'
 import { ChatPanel, imageLinks } from './chat-panel'
-import { clear, copyText, fmtKbps, h, labelled } from './dom'
+import { clear, copyText, fmtKbps, h } from './dom'
 import { icon } from './icons'
 import { openMenu, type MenuItem } from './menu'
 import { placeNear } from './emoji'
@@ -100,10 +97,6 @@ interface PersonRow {
 }
 
 /** How often to tell the room somebody is writing, at the very most. */
-/** One nudge per person, or per room, this often. The 2004 ration. */
-const NUDGE_EVERY_MS = 20_000
-/** A pile of arriving nudges is one shake, not a seizure. */
-const NUDGE_COOL_MS = 5000
 
 /** One sound this often, from here and from each other person. */
 const SOUND_EVERY_MS = 1500
@@ -133,7 +126,6 @@ const COMMANDS = [
   { name: 'rename', note: 'Rename this channel' },
   { name: 'gif', note: 'Look for a GIF to send' },
   { name: 'sound', note: 'Play a noise for everybody' },
-  { name: 'nudge', note: 'Shake somebody\u2019s window', takesName: true },
   { name: 'tts', note: 'Say it out loud' },
   { name: 'shrug', note: '\u00af\\_(\u30c4)_/\u00af' },
   { name: 'invite', note: 'Copy the invite link' },
@@ -141,60 +133,17 @@ const COMMANDS = [
   { name: 'help', note: 'List these' },
 ]
 
-/**
- * Where a space's own note is kept: this device for peer to peer, the server
- * for a space on one. The same four things either way.
- */
-interface NoteStore {
-  get(room: string): Promise<RoomNote | null>
-  put(note: RoomNote): Promise<void>
-  forget(room: string): Promise<void>
-  /** Gone for everybody: keep only the proof, where that is this device's job. */
-  close(note: RoomNote, keep: LogEvent[]): Promise<void>
-}
-
-const onDevice: NoteStore = {
-  get: getRoom,
-  put: noteRoom,
-  forget: forgetRoom,
-  close: tombstoneRoom,
-}
-
-function onServer(book: ServerBook): NoteStore {
-  return {
-    get: (room) => book.get(room),
-    put: (note) => book.put(note),
-    forget: (room) => book.forget(room),
-    // The close is an event the server already keeps; the note says so.
-    close: (note) => book.put({ ...note, closed: true }),
-  }
-}
-
-/*
- * Spaces on a server opened in this tab, held in memory, so going back to one
- * is instant: the log is already here, and the server is asked only for what
- * was said since. Memory only, and gone with the tab. A handful at most.
- */
-const HELD_MAX = 8
-
-/** How stale "when you were last here" may get before it is written again. */
-const LAST_SEEN_MS = 60 * 60 * 1000
-
-/** Two notes that say the same, apart from when they were last written. */
-function same(a: RoomNote, b: RoomNote): boolean {
-  const plain = (n: RoomNote): string => {
-    const { lastSeen: _lastSeen, ...rest } = n
-    return stable(rest)
-  }
-  return plain(a) === plain(b)
-}
-const held = new Map<string, { chat: RoomChat; read: Map<string, number> }>()
-
 export class SpaceView {
   private readonly root: HTMLElement
   private readonly chrome: WindowChrome | null
   readonly secret: string
-  private readonly selfId = newPeerId()
+  /** The space, running: its log, its channel, and who is in it. */
+  readonly space: SpaceRuntime
+  private readonly selfId: string
+  /** What this screen stops listening to when it closes. */
+  private unlisten: (() => void)[] = []
+  /** Where a direct message opens: outside the space, on the home screen. */
+  private readonly onDirectOut: (space: SpaceRuntime, key: string) => void
   private settings: HostSettings = loadSettings()
 
   private room: Room | null = null
@@ -207,22 +156,11 @@ export class SpaceView {
   private drawQueued = false
   /** Whether a password went into deriving this room. Part of which room it is. */
   readonly locked: boolean
-  private readonly password: string
   /**
-   * The server this space runs on, or empty for peer to peer. See backend.ts.
-   * Fixed for the life of the space, because everybody in it has to agree.
+   * The server this space lives on. See backend.ts. Fixed for the life of
+   * the space, because everybody in it has to agree.
    */
   readonly server: string
-  /** The catch up under way, so two are never run at once. */
-  private catching: Promise<void> | null = null
-  /** Where this space's note lives. */
-  private readonly notes: NoteStore
-  private readonly book: ServerBook | null
-  /** The one socket to the server, for a space on one. */
-  private link: ServerLink | null = null
-  /** True when this person just made the space, so they claim it. */
-  private readonly fresh: boolean
-  private readonly wantedName: string
   private spaceTitle!: HTMLSpanElement
   private voice: Voice | null = null
   private stopped = false
@@ -266,18 +204,11 @@ export class SpaceView {
   /** Who is sharing, and in which channel. */
   private readonly sharers = new Map<string, string>()
   private streamBar!: HTMLDivElement
-  private archive: Archive | null = null
 
   /** The newest signed move heard per admin key, so a recorded one replays as nothing. */
   private readonly vmoveSeen = new Map<string, number>()
-  /** The last line asked of each peer, so an answer that did not help is not asked for again. */
-  private readonly pulled = new Map<string, number>()
   /** Which streams each session says it is watching, from their announcements. */
   private readonly watchingBy = new Map<string, string[]>()
-  /** When each person, or the room, was last nudged from here. */
-  private readonly nudgeSent = new Map<string, number>()
-  /** The last shake taken, so a pile of nudges is one shake. */
-  private lastShakeAt = 0
   /** When the last sound was played from here. */
   private soundSentAt = 0
   /** When each person was last allowed to make a noise here. */
@@ -287,24 +218,23 @@ export class SpaceView {
   /** When each sender was last given the floor, so a flood is not a filibuster. */
   private readonly ttsHeard = new Map<string, number>()
   /** Whether the no-relay warning has been said for this outage. */
-  private relayWarned = false
-  private relayTimer: number | null = null
+  private serverWarned = false
+  private serverTimer: number | null = null
 
   // Elements redrawn in place.
   private channelList!: HTMLDivElement
   private voiceList!: HTMLDivElement
   private newTextButton!: HTMLButtonElement
   private newVoiceButton!: HTMLButtonElement
-  private directList!: HTMLDivElement
   private threadList!: HTMLDivElement
   private peopleList!: HTMLDivElement
   private voiceBar!: HTMLDivElement
   private shell!: HTMLElement
   private stage!: HTMLDivElement
   private shareButton!: HTMLButtonElement
-  private sharePanel!: HTMLDivElement
   private channelTitle!: HTMLDivElement
   private searchInput!: HTMLInputElement
+  private searchWrap!: HTMLDivElement
   private searchResults!: HTMLDivElement
   /** The name list under the search box, while from: is being written. */
   private searchNames: HTMLDivElement | null = null
@@ -345,24 +275,19 @@ export class SpaceView {
 
   constructor(
     root: HTMLElement,
-    secret: string,
+    space: SpaceRuntime,
     chrome: WindowChrome | null,
     onLeave: () => void,
-    lock: { locked: boolean; password: string; fresh?: boolean; name?: string; server?: string } = {
-      locked: false,
-      password: '',
-    },
+    onDirect: (space: SpaceRuntime, key: string) => void = () => undefined,
   ) {
     this.root = root
-    this.secret = secret
+    this.space = space
+    this.secret = space.secret
+    this.selfId = space.selfId
     this.chrome = chrome
-    this.locked = lock.locked
-    this.password = lock.password
-    this.fresh = lock.fresh === true
-    this.wantedName = lock.name ?? ''
-    this.server = lock.server ?? ''
-    this.book = this.server ? bookFor(this.server) : null
-    this.notes = this.book ? onServer(this.book) : onDevice
+    this.locked = space.locked
+    this.server = space.server
+    this.onDirectOut = onDirect
     this.onLeave = onLeave
     chrome?.setActions({
       minimise: () => this.root.classList.toggle('rail-hidden'),
@@ -386,191 +311,72 @@ export class SpaceView {
 
   async start(): Promise<void> {
     this.renderShell()
-
+    const space = this.space
     try {
-      this.room = await deriveRoom(this.secret, this.password)
+      await space.ready
     } catch {
+      this.stage.classList.remove('hidden')
       this.stage.append(h('div', { class: 'empty', text: 'That room code is not valid.' }))
       return
     }
-
-    const identity = loadIdentity()
-    /*
-     * Write the space down before anything else touches the store.
-     *
-     * The lock and the password are known here and nowhere else, and the room
-     * id is derived from both, so a note without them sends the next visit to a
-     * different, empty room under the same code. It used to be written on the
-     * first redraw, which is late enough that closing the tab straight away
-     * left the space unopenable from the list.
-     */
-    if (this.server) addServer(this.server)
-    await this.remember({})
-    const note = await this.notes.get(this.room.id)
-    /*
-     * A space on a server keeps nothing on this device: its log lives in
-     * memory, filled from the server, and is held for the tab's life so that
-     * coming back to it is instant.
-     */
-    const kept = this.server ? held.get(this.room.id) : undefined
-    const chat = kept?.chat ?? new RoomChat(this.room.id, this.secret, note?.founder ?? '', !this.server)
-    chat.onChange = () => this.draw()
-    chat.onDirect = () => this.draw()
-    chat.onFounder = (pubkey) => void this.remember({ founder: pubkey })
-    await chat.load()
+    if (this.stopped) return
+    addServer(this.server)
+    this.room = space.room
+    const chat = space.chat
     this.chat = chat
+    this.bus = space.bus
+    this.mesh = space.mesh
     this.chatPanel?.setMe(chat.me)
     this.chatPanel?.setName(chat.displayName)
+    // The channel it opens on, so what is half written there is kept on leaving it.
+    this.chatPanel?.useDraft(this.channel)
     // Where this device had got to, per channel, and where the line goes today.
-    this.read = { ...(note?.read ?? {}) }
-    this.readDm = { ...(note?.readDm ?? {}) }
-    chat.setDirectRead(this.readDm)
+    this.read = { ...(space.note?.read ?? {}) }
+    this.readDm = { ...(space.note?.readDm ?? {}) }
     this.openedAt = this.read[this.channel] ?? 0
-    void chat.readDirect()
 
     /*
-     * On a server, its relay is the only relay, and it carries the chat as
-     * well as the handshakes. Its TURN credentials are fetched beside that and
-     * not waited for: nothing needs them until somebody shares or talks.
+     * Calls and screen shares belong to this screen. The space's TURN
+     * credentials are fetched now and not waited for: nothing needs them
+     * until somebody shares or talks.
      */
-    if (this.server) {
-      void fetchIce(this.server).then((ice) => {
-        if (!this.stopped) useServedIce(ice.iceServers, ice.relayOnly)
-      })
-    }
-    if (this.server) {
-      const link = new ServerLink(this.server, this.room, serverTag(this.server), kept?.read)
-      link.onEvents = (events) => void this.takeFromServer(events)
-      link.onRefused = (why) => toast(`The server would not keep that. ${why}`, 'bad', 8000)
-      // Gone, on the server's word: the same as their own goodbye.
-      link.onLeft = (session) =>
-        this.bus?.deliver({ v: 1, id: `left:${session}:${Date.now()}`, from: session, t: Date.now(), type: 'bye' })
-      this.link = link
-    }
-    const bus = new SignalBus(this.room, this.selfId, this.link ? [this.link] : undefined)
-    const voice = new Voice(bus, this.selfId)
+    void fetchIce(this.server).then((ice) => {
+      if (!this.stopped) useServedIce(ice.iceServers, ice.relayOnly)
+    })
+    const voice = new Voice(space.bus, this.selfId)
     voice.onChange = () => this.draw()
     voice.onArrival = (arrived) => (arrived ? chirpJoin() : chirpLeave())
     this.voice = voice
-    const mesh = new Mesh(bus, this.selfId, identity.name, this.server !== '')
-    mesh.extra = () => ({
-      // Who this is, so the roster is a list of people rather than of tabs.
-      key: identity.pubkey,
-      sharing: this.capture ? this.channel : undefined,
+
+    // What this screen adds to who you are: what you share, watch and stand in.
+    space.extras = () => ({
+      sharing: this.capture ? this.voice?.state.channel ?? undefined : undefined,
       // Whose streams are on this screen, so everybody can say who is watching.
       watching: this.watchingAnyone()
         ? [...this.watched.keys()].filter((id) => id !== this.selfId)
         : undefined,
       voice: this.voice?.state.channel ?? undefined,
-      /*
-       * Whether this tab is on screen.
-       *
-       * Presence is not one bit. Somebody with the space open in a tab they
-       * are not looking at is here in the sense that their device answers and
-       * not in the sense that matters, which is whether they will read what you
-       * write. Green and orange say the difference; being connected at all is
-       * what the dot being there says.
-       */
-      away: document.hidden ? true : undefined,
     })
-    mesh.onData = (from, raw) => void this.onMeshData(from, raw)
-    mesh.onPeers = () => {
-      this.prunePeers()
-      this.draw()
-    }
-    /*
-     * A new link gets our history at once, and sends us theirs for the same
-     * reason. Both sides do it, so whoever has been away catches up without
-     * anybody deciding who is in charge of remembering.
-     */
-    mesh.onReady = (peerId) => {
-      // On a server nobody hands anybody history: the server has all of it.
-      if (this.server) return
-      for (const raw of chat.backfill()) mesh.sendTo(peerId, raw)
-      // And how far back we reach, so a peer that is short can ask for more.
-      mesh.sendTo(peerId, chat.summary())
-    }
-    bus.onMessage = (env) => void this.onSignal(env)
-    bus.onHealth = () => {
-      this.status()
-      this.watchRelays()
-    }
-    bus.start()
-    mesh.start()
-    this.bus = bus
-    this.mesh = mesh
 
-    chat.onLocal = (event) => {
-      // On a server, to the server, which keeps it and hands it to everybody.
-      if (this.link) {
-        void this.link.put([event])
-        return
-      }
-      for (const raw of chat.encode([event])) mesh.broadcast(raw)
-      // And to the archive, if this space has one. Never waited on.
-      this.archive?.push([event])
-    }
+    this.unlisten.push(
+      space.on('changed', () => this.draw()),
+      space.on('signal', (env) => void this.onSignal(env)),
+      space.on('data', (from, raw) => void this.onMeshData(from, raw)),
+      space.on('peers', () => {
+        this.prunePeers()
+        this.draw()
+      }),
+      space.on('status', () => {
+        this.status()
+        this.watchServer()
+      }),
+      space.on('fresh', (events) => this.noticeFresh(events)),
+    )
+    // Who is here, and what they are doing, as they last said it.
+    for (const env of space.presence.values()) void this.onSignal(env)
 
-    /*
-     * The archive, if this space was given one. It is asked once on the way in
-     * and told everything we hold, which is how a space that was empty for a
-     * week catches up, and how an archive that has been away catches up itself.
-     */
-    if (this.room) {
-      const archive = new Archive(this.room.id, this.room.key, this.room.write)
-      /*
-       * What this space was told, or the default, or nothing. A space that was
-       * told the empty string was turned off here on purpose and stays off.
-       * A space on a server has no say: the server is its archive.
-       */
-      const wanted = this.server
-        ? this.server
-        : note?.archive !== undefined
-          ? note.archive
-          : defaultArchive()
-      this.archive = archive
-      /*
-       * On a server the link does all of the keeping. The archive is kept
-       * only for what else the server answers: link cards and GIF search.
-       */
-      if (this.server) {
-        archive.use(this.server)
-      } else if (wanted) {
-        // A cursor counts lines in one archive, so the server's is kept apart.
-        archive.use(wanted, this.server ? note?.serverAt ?? 0 : note?.archiveAt ?? 0)
-        void this.catchUp()
-        /*
-         * The same machine carries handshakes too. The public relays stay on
-         * the roster as spares, so a space with its own archive rides its own
-         * infrastructure and survives everybody else's bad night. A space on
-         * a server already rides nothing else.
-         */
-        if (!this.server) this.bus?.addRelay(new WsRelayTransport(wanted))
-      }
-    }
-
-    /*
-     * On a server, the history first. Everything below reads the log (who
-     * runs the place, whether your name is already said) and would write
-     * things twice if it ran against an empty one. Not for ever, though: a
-     * server that is slow to answer still gets a space you can type in.
-     */
-    if (this.link) {
-      await Promise.race([this.link.loaded, new Promise((r) => window.setTimeout(r, 6000))])
-      if (this.stopped) return
-      // By now the rest of the cluster is known, so the link in the address
-      // bar names it too, and a link copied from there survives the first
-      // server being down.
-      setLinkSecret(this.secret, this.locked, this.server)
-    }
-
-    // Whoever made the space claims it, once, and becomes its first admin.
-    if (this.fresh && !chat.founder) {
-      await chat.claimFounder()
-      await this.remember({ founder: chat.me })
-      if (this.wantedName) await chat.setSpaceName(this.wantedName)
-    }
-    await chat.announceName(chat.displayName, loadAvatar())
+    // The rest of the cluster is known by now, so the address bar names it too.
+    setLinkSecret(this.secret, this.locked, this.server)
     void probeHardwareEncoders(availableCodecs()).then((probe) => (this.gpu = probe))
 
     this.timers.push(window.setInterval(() => void this.tick(), STATS_MS))
@@ -643,8 +449,7 @@ export class SpaceView {
     if (!(ev.metaKey || ev.ctrlKey)) return
     if (ev.key.toLowerCase() === 'k') {
       ev.preventDefault()
-      this.searchInput?.focus()
-      this.searchInput?.select()
+      this.openSearchBox()
       return
     }
     // The channels in the rail, in the order they are drawn.
@@ -668,19 +473,15 @@ export class SpaceView {
     this.stopSharing()
     this.voice?.dispose()
     this.stopWatching()
-    this.mesh?.stop()
-    const bus = this.bus
+    // The space keeps running; this screen just stops listening to it, and
+    // stops saying you are sharing or standing in voice.
+    for (const off of this.unlisten) off()
+    this.unlisten = []
+    this.space.extras = () => ({})
+    this.space.announce()
     this.bus = null
-    if (bus) window.setTimeout(() => bus.stop(), 200)
-    this.archive?.dispose()
-    // The next space starts from the ICE servers the page ships with.
-    if (this.server) useServedIce()
-    if (this.link && this.chat && this.room && !this.forgotten) {
-      held.delete(this.room.id)
-      held.set(this.room.id, { chat: this.chat, read: this.link.read })
-      while (held.size > HELD_MAX) held.delete(held.keys().next().value as string)
-    }
-    void this.book?.flush()
+    useServedIce()
+    void bookFor(this.server).flush()
     document.title = 'Cathode'
   }
 
@@ -827,16 +628,8 @@ export class SpaceView {
     }
   }
 
-  /** What the server says was written, by anybody, opened and ready to check. */
-  private async takeFromServer(events: unknown[]): Promise<void> {
-    const fresh = (await this.chat?.absorb(events)) ?? []
-    if (fresh.length) this.noticeFresh(fresh)
-  }
-
   /** Something arrived that was not here before: say so, the way a chat app does. */
   private noticeFresh(fresh: LogEvent[]): void {
-    // Anything private that just arrived, opened before it is drawn.
-    if (fresh.some((e) => e.kind === 'dm')) void this.chat?.readDirect()
     // Somebody else said something, and said it just now rather than last week.
     if (fresh.some((e) => e.kind === 'said' && e.author !== this.chat?.me && isNews(e.at))) {
       chirpMessage()
@@ -848,27 +641,8 @@ export class SpaceView {
     // Somebody is writing. Not an event: it is true for four seconds and then
     // it is not, and a log is for things that stay true.
     if (this.takeTyping(from, raw)) return
-    if (this.takeNudge(from, raw)) return
     if (this.takeSound(from, raw)) return
     if (this.takeSpoken(from, raw)) return
-    if (this.takeSync(from, raw)) return
-
-    // On a server, events come from the server and nowhere else.
-    if (this.server) return
-    const fresh = (await this.chat?.ingest(raw)) ?? []
-    if (fresh.length === 0) return
-    this.noticeFresh(fresh)
-    // Pass on what was new, so a line reaches people we are not linked to.
-    for (const wire of this.chat?.encode(fresh) ?? []) this.mesh?.forward(from, wire)
-    /*
-     * And to the archive, which only ever heard what this device said itself.
-     *
-     * Somebody else's message reached it only through the sweep below, on the
-     * next time somebody opened the space. Everything written between one visit
-     * and the next was held by the people who were there and by nobody who was
-     * not, which is the one thing an archive is for.
-     */
-    this.archive?.push(fresh)
   }
 
   // ---- typing ----
@@ -911,57 +685,15 @@ export class SpaceView {
       at: Date.now(),
     })
     this.showTyping()
+    /*
+     * And again once it has run out. Nothing else redraws on a timer, so a
+     * line saying somebody is typing would otherwise stay up until the next
+     * thing happened in the room.
+     */
+    window.setTimeout(() => {
+      if (!this.stopped) this.showTyping()
+    }, TYPING_FOR_MS + 100)
     return true
-  }
-
-  /**
-   * A nudge, the way the messengers of 2004 did it: the window shakes, the
-   * speaker rattles, and nothing is written down. It rides the mesh like a
-   * typing notice, because it is true for half a second and then it is not.
-   *
-   * Named, it goes to one person's devices. Bare, it goes to the room. Both
-   * ends shake, because feeling it land is what made it a nudge, and both
-   * directions are rationed, because the same year taught everybody why.
-   */
-  private sendNudge(arg: string): void {
-    const chat = this.chat
-    if (!chat || !this.mesh) return
-
-    // Whoever was named, or whoever this conversation is with, or the room.
-    let key = ''
-    const wanted = arg.trim().toLowerCase()
-    if (wanted) {
-      const found = [...this.everybody()].find(([, who]) => who.toLowerCase() === wanted)
-      if (!found) {
-        toast(`Nobody here is called ${arg.trim()}.`, 'warn')
-        return
-      }
-      key = found[0]
-    } else if (this.direct) {
-      key = this.direct
-    }
-
-    const last = this.nudgeSent.get(key || '*') ?? 0
-    if (Date.now() - last < NUDGE_EVERY_MS) {
-      toast('Easy. One nudge every twenty seconds.', 'warn')
-      return
-    }
-
-    if (key) {
-      const sessions = this.mesh.peers().filter((p) => p.key === key)
-      if (sessions.length === 0) {
-        toast('They are not here right now.', 'warn')
-        return
-      }
-      for (const p of sessions) this.mesh.sendTo(p.id, JSON.stringify({ t: 'nudge', d: 1 }))
-      toast(`You nudged ${chat.nameOf(key) || shortKey(key)}.`, 'info')
-    } else {
-      this.mesh.broadcast(JSON.stringify({ t: 'nudge', c: this.channel }))
-      toast(`You nudged #${this.channel}.`, 'info')
-    }
-    this.nudgeSent.set(key || '*', Date.now())
-    this.shake()
-    buzzNudge()
   }
 
   /**
@@ -1049,7 +781,7 @@ export class SpaceView {
    * this one included, because hearing it land is the point. In a private
    * conversation the note goes only to that person's devices.
    *
-   * Rationed like the nudge, at both ends, because a voice that cannot be
+   * Rationed at both ends, because a voice that cannot be
    * interrupted is a worse nuisance than a shaking window.
    */
   private sendSpoken(arg: string): void {
@@ -1098,77 +830,6 @@ export class SpaceView {
     this.ttsHeard.set(key, now)
 
     speak(note.x.slice(0, TTS_MAX_CHARS))
-    return true
-  }
-
-  /** Returns true when this was a nudge rather than a pile of events. */
-  private takeNudge(from: string, raw: string): boolean {
-    if (!raw.startsWith('{"t":"nudge"')) return false
-    let note: { t?: string; c?: unknown; d?: unknown }
-    try {
-      note = JSON.parse(raw) as { t?: string; c?: unknown; d?: unknown }
-    } catch {
-      return false
-    }
-    if (note.t !== 'nudge') return false
-    const now = Date.now()
-    if (now - this.lastShakeAt < NUDGE_COOL_MS) return true
-    this.lastShakeAt = now
-
-    const key = this.mesh?.peers().find((p) => p.id === from)?.key || ''
-    const who = (key && this.chat?.nameOf(key)) || 'Somebody'
-    const where =
-      note.d === 1 ? 'you' : `#${typeof note.c === 'string' ? cleanChannel(note.c) : this.channel}`
-    this.shake()
-    buzzNudge()
-    toast(`${who} nudged ${where}`, 'info', 4000)
-    return true
-  }
-
-  /** The whole window jumps, briefly. MSN said it best. */
-  private shake(): void {
-    const el = document.body
-    el.classList.remove('nudged')
-    // Reading the width forces a layout, which is what lets the same
-    // animation run again on the next nudge.
-    void el.offsetWidth
-    el.classList.add('nudged')
-    window.setTimeout(() => el.classList.remove('nudged'), 700)
-  }
-
-  /**
-   * Deep history, healed by asking. Returns true when this was sync talk
-   * rather than a pile of events.
-   *
-   * The backfill on a fresh link is the newest 250 events, and that used to
-   * be the end of it: a device away longer than that stayed short for ever,
-   * because nothing ever went back for the rest. So each side says how far
-   * back it reaches, whoever is short asks for the slice below where they
-   * stop, and the answer ends with a fresh summary, so the asking repeats
-   * until the two summaries agree. Asking the same line twice means the
-   * answer did not help, and the asking stops there rather than looping.
-   */
-  private takeSync(from: string, raw: string): boolean {
-    const isHave = raw.startsWith('{"t":"have"')
-    const isPull = raw.startsWith('{"t":"pull"')
-    if (!isHave && !isPull) return false
-    const chat = this.chat
-    if (!chat) return true
-    let wire: { n?: unknown; low?: unknown; below?: unknown }
-    try {
-      wire = JSON.parse(raw) as { n?: unknown; low?: unknown; below?: unknown }
-    } catch {
-      return true
-    }
-    if (isPull && typeof wire.below === 'number') {
-      for (const out of chat.below(wire.below)) this.mesh?.sendTo(from, out)
-      this.mesh?.sendTo(from, chat.summary())
-    } else if (isHave && typeof wire.n === 'number' && typeof wire.low === 'number') {
-      const below = chat.wantPull({ n: wire.n, low: wire.low })
-      if (below === null || this.pulled.get(from) === below) return true
-      this.pulled.set(from, below)
-      this.mesh?.sendTo(from, JSON.stringify({ t: 'pull', below }))
-    }
     return true
   }
 
@@ -1226,19 +887,8 @@ export class SpaceView {
       if (e.author === chat.me || !isNews(e.at)) continue
       const who = chat.nameOf(e.author) || shortKey(e.author)
 
-      if (e.kind === 'dm') {
-        if (String(e.body.to ?? '') !== chat.me) continue
-        if (this.direct === e.author) continue
-        toast(`${who} sent you a message`, 'info', 8000, {
-          label: 'Read',
-          run: () => this.openDirect(e.author),
-        })
-        // The text is sealed until readDirect has opened it, so the
-        // notification says who rather than what, which is right for a private
-        // message sitting on a lock screen anyway.
-        notify(who, 'Sent you a private message', () => this.openDirect(e.author))
-        continue
-      }
+      // Direct messages are said on the home screen's behalf, for every space.
+      if (e.kind === 'dm') continue
 
       if (e.kind !== 'said') continue
       const text = String(e.body.text ?? '')
@@ -1333,10 +983,6 @@ export class SpaceView {
       }
       case 'poll': {
         void this.newPoll(arg)
-        return true
-      }
-      case 'nudge': {
-        this.sendNudge(arg)
         return true
       }
       case 'tts': {
@@ -1455,7 +1101,16 @@ export class SpaceView {
    * thing from the panel's side: a different slice of the same log, with a
    * different place for what you write to go.
    */
+  /**
+   * A private conversation opens outside the space, on the home screen, where
+   * every conversation from every space is listed. It still belongs to this
+   * space: that is where it is kept, and who it is with is somebody from here.
+   */
   private openDirect(key: string | null): void {
+    if (key) {
+      this.onDirectOut(this.space, key)
+      return
+    }
     this.showRail(null)
     this.chatPanel?.keepDraft()
     this.direct = key
@@ -1610,6 +1265,7 @@ export class SpaceView {
     this.searchResults.classList.add('hidden')
     clear(this.searchResults)
     this.closeSearchNames()
+    this.searchWrap?.classList.remove('open')
   }
 
   /**
@@ -1707,74 +1363,6 @@ export class SpaceView {
   private closeSearchNames(): void {
     this.searchNames?.remove()
     this.searchNames = null
-  }
-
-  /**
-   * Trade histories with the archive, once, on the way in.
-   *
-   * Everything it has that we do not, and then, the first time this device ever
-   * reads this archive, everything we have that it did not just hand us.
-   *
-   * That last part used to be the whole log, every single visit. The archive
-   * cannot read what it holds, so it cannot recognise a line it already has,
-   * and it kept every copy: a space opened a hundred times held a hundred
-   * copies of its own history. The server drops the oldest half when a space
-   * grows too large, so what those copies pushed out was the real history they
-   * were copies of.
-   */
-  private catchUp(): Promise<void> {
-    /*
-     * One at a time. Two at once both start from the same cursor, and on a
-     * first visit both hand the archive the whole log, which it keeps twice.
-     */
-    this.catching ??= this.tradeHistory().finally(() => (this.catching = null))
-    return this.catching
-  }
-
-  private async tradeHistory(): Promise<void> {
-    if (!this.archive?.on || !this.chat) return
-    // Nothing read from this archive yet, so what it holds is unknown and this
-    // device's history may be the only copy of some of it.
-    const first = this.archive.cursor === 0
-    const found = await this.archive.fetch()
-    if (found.length) {
-      const fresh = await this.chat.absorb(found)
-      if (fresh.length) this.draw()
-    }
-    if (first) {
-      // Everything it did not just give us. Reading from the top is what makes
-      // this exact rather than a guess.
-      const held = new Set(found.map((e) => e.id))
-      this.archive.push(this.chat.log.all().filter((e) => !held.has(e.id)))
-    }
-    await this.remember({})
-  }
-
-  /** Point this space at an archive, or at nothing. */
-  async setArchive(url: string): Promise<boolean> {
-    // A space on a server keeps its history there, and nowhere else is asked.
-    if (!this.room || this.server) return false
-    const archive = this.archive ?? new Archive(this.room.id, this.room.key, this.room.write)
-    this.archive = archive
-    const accepted = archive.use(url)
-    if (!accepted) {
-      // Turned off here, said out loud, so a default set later does not turn it
-      // back on behind your back.
-      await this.remember({ archive: '' })
-      return true
-    }
-    const alive = await archive.check()
-    if (!alive) {
-      archive.use('')
-      return false
-    }
-    await this.remember({ archive: accepted })
-    void this.catchUp()
-    return true
-  }
-
-  get archiveAddress(): string {
-    return this.archive?.address ?? ''
   }
 
   // ---- chat ----
@@ -1894,7 +1482,6 @@ export class SpaceView {
     if (this.chat?.isClosed && !this.closing) void this.acceptClose()
     this.renderChannels()
     this.renderThreads()
-    this.renderDirects()
     this.renderVoice()
     this.renderPeople()
     this.renderMe()
@@ -1932,84 +1519,10 @@ export class SpaceView {
     return names
   }
 
-  /** Keep what this device knows about the space up to date. */
-  private remember(
-    patch: Partial<{
-      founder: string
-      name: string
-      archive: string
-      read: Record<string, number>
-      readDm: Record<string, number>
-    }>,
-  ): Promise<void> {
-    /*
-     * One at a time, each built when its turn comes. Run side by side, each
-     * read the note before the others had written it, and the last to land
-     * won: the one saying who founded the space could put back the empty
-     * name the one before it had just replaced. Copies of the read marks,
-     * because the live ones are changed in place and would compare equal.
-     */
-    const own = {
-      ...patch,
-      read: patch.read ? { ...patch.read } : undefined,
-      readDm: patch.readDm ? { ...patch.readDm } : undefined,
-    }
-    this.remembering = this.remembering.then(() => this.rememberNow(own)).catch(() => undefined)
-    return this.remembering
-  }
-
-  private remembering: Promise<void> = Promise.resolve()
-
-  private async rememberNow(
-    patch: Partial<{
-      founder: string
-      name: string
-      archive: string
-      read: Record<string, number>
-      readDm: Record<string, number>
-    }>,
-  ): Promise<void> {
-    if (!this.room || this.forgotten) return
-    const existing = await this.notes.get(this.room.id)
-    const next: RoomNote = {
-      room: this.room.id,
-      secret: this.secret,
-      lastSeen: Date.now(),
-      // Falsy rather than missing all the way down: an empty name is "we have
-      // not heard one yet", which must not overwrite one we heard last week.
-      title: patch.name || this.chat?.spaceName() || existing?.title || '',
-      locked: this.locked,
-      // Kept so a locked space asks for its password once, not every visit.
-      password: this.password || existing?.password || undefined,
-      /*
-       * An address, or the empty string, or nothing at all, and the three mean
-       * different things. Empty is "turned off here on purpose" and has to
-       * outlast a default being set later; nothing at all is "whatever the
-       * default is". Only somebody saying so writes the empty string, which is
-       * why it arrives as a patch rather than being read off an archive that is
-       * merely not running.
-       */
-      archive: this.server
-        ? existing?.archive
-        : patch.archive ?? (this.archive?.address || existing?.archive),
-      // A space that was closed stays closed, however it is opened again.
-      closed: existing?.closed || undefined,
-      read: patch.read ?? existing?.read,
-      readDm: patch.readDm ?? existing?.readDm,
-      archiveAt: this.server ? existing?.archiveAt : this.archive?.cursor ?? existing?.archiveAt,
-      server: this.server || undefined,
-      serverAt: this.server ? this.archive?.cursor ?? existing?.serverAt : existing?.serverAt,
-      founder: patch.founder ?? existing?.founder ?? this.chat?.founder ?? '',
-    }
-    /*
-     * Only when something changed. This runs on every redraw that marks a
-     * channel read, and it used to write the note every time, which for a
-     * space on a server meant a round trip to the server every two seconds
-     * of doing nothing. When you were last here only has to be right to the
-     * hour.
-     */
-    if (existing && Date.now() - existing.lastSeen < LAST_SEEN_MS && same(existing, next)) return
-    await this.notes.put(next)
+  /** Keep this space's note up to date. The space does the keeping. */
+  private remember(patch: Parameters<SpaceRuntime['remember']>[0]): Promise<void> {
+    if (this.forgotten) return Promise.resolve()
+    return this.space.remember(patch)
   }
 
   private status(): void {
@@ -2019,7 +1532,7 @@ export class SpaceView {
       this.chrome.setStatus(['Opening...'])
       return
     }
-    const relays = this.bus?.healthList.filter((r) => r.status === 'open').length ?? 0
+    const up = (this.bus?.healthList.filter((r) => r.status === 'open').length ?? 0) > 0
     // The same count the list on the right draws, worked out the same way. See
     // roster(): one row per person, whatever they have open.
     const people = this.hereNow()
@@ -2035,42 +1548,35 @@ export class SpaceView {
     this.chrome.setStatus([
       what,
       `${people} here`,
-      this.server
-        ? `${relays > 0 ? 'on' : 'cannot reach'} ${serverTag(this.link?.serving ?? this.server)}`
-        : relays === 0
-          ? 'no relays'
-          : `${relays} relay${relays === 1 ? '' : 's'}`,
+      `${up ? 'on' : 'cannot reach'} ${serverTag(this.space.channel?.serving ?? this.server)}`,
     ])
   }
 
   /**
-   * Say it loudly when no relay answers.
+   * Say it loudly when no server answers.
    *
-   * Blocked relays look like a broken app: the space opens from disk, the
-   * history draws, and then nobody arrives and nothing syncs, with no error
-   * anywhere. A VPN did exactly this to a real person, who spent the evening
-   * blaming the app. Ten seconds of silence from every relay is worth one
-   * loud sentence, once per outage.
+   * A blocked server looks like a broken app: nobody arrives and nothing
+   * syncs, with no error anywhere. A VPN did exactly this to a real person,
+   * who spent the evening blaming the app. Ten seconds of silence from every
+   * server in the cluster is worth one loud sentence, once per outage.
    */
-  private watchRelays(): void {
+  private watchServer(): void {
     const open = () => this.bus?.healthList.filter((r) => r.status === 'open').length ?? 0
     if (open() > 0) {
-      this.relayWarned = false
-      if (this.relayTimer !== null) {
-        window.clearTimeout(this.relayTimer)
-        this.relayTimer = null
+      this.serverWarned = false
+      if (this.serverTimer !== null) {
+        window.clearTimeout(this.serverTimer)
+        this.serverTimer = null
       }
       return
     }
-    if (this.relayWarned || this.relayTimer !== null) return
-    this.relayTimer = window.setTimeout(() => {
-      this.relayTimer = null
-      if (this.stopped || this.relayWarned || open() > 0) return
-      this.relayWarned = true
+    if (this.serverWarned || this.serverTimer !== null) return
+    this.serverTimer = window.setTimeout(() => {
+      this.serverTimer = null
+      if (this.stopped || this.serverWarned || open() > 0) return
+      this.serverWarned = true
       toast(
-        this.server
-          ? `Cathode cannot reach ${serverTag(this.server)} or any server in its cluster, so nothing will sync until one answers. They may be down, or this network may block them.`
-          : 'Cathode cannot reach a signal relay, so nobody new can be found and nothing will sync. A VPN or a firewall on this network is the usual cause.',
+        `Cathode cannot reach ${serverTag(this.server)} or any server in its cluster, so nothing will sync until one answers. They may be down, or this network may block them.`,
         'bad',
         12_000,
       )
@@ -2084,7 +1590,6 @@ export class SpaceView {
 
     this.channelList = h('div', { class: 'rail-list' })
     this.voiceList = h('div', { class: 'rail-list' })
-    this.directList = h('div', { class: 'rail-list' })
     this.threadList = h('div', { class: 'rail-list' })
     this.peopleList = h('div', { class: 'rail-list' })
     this.voiceBar = h('div', { class: 'voice-bar hidden' })
@@ -2102,10 +1607,10 @@ export class SpaceView {
       h('span', { class: 'channel-name' }, [icon('hash', 18), h('span', { class: 'truncate', text: this.channel })]),
     ])
 
-    this.shareButton = h('button', { class: 'primary share-button' }, [icon('monitor', 15), 'Share screen'])
+    // Sharing lives in the voice panel: a screen is shared with a call.
+    this.shareButton = h('button', { class: 'ghost icon-only share-button' }, [icon('monitor', 17)])
     this.shareButton.addEventListener('click', () => void this.toggleShare())
 
-    this.sharePanel = h('div', { class: 'share-panel hidden' })
 
     this.chatPanel = new ChatPanel(loadIdentity().name, 'Chat')
     this.chatPanel.showNameField(false)
@@ -2130,21 +1635,32 @@ export class SpaceView {
       vote: (id, choice) => void this.publish((c) => c.vote(id, choice)),
       rename: (name) => this.rename(name),
     }
-    // Cards under links, where the space has an archive to go and look.
-    this.chatPanel.previewFor = (url) =>
-      this.archive?.on ? this.archive.preview(url) : Promise.resolve(null)
+    // Cards under links: the server goes and looks.
+    this.chatPanel.previewFor = (url) => preview(this.server, url)
     this.chatPanel.setEnabled(true)
 
     // Empty rather than a guess. The name arrives with the log.
     this.spaceTitle = h('span', { class: 'space-name truncate', text: '' })
-
     /*
-     * Where this space runs, said beside its name: a rack for a server, and
-     * nothing for peer to peer, which is the ordinary case and needs no badge.
+     * The space's name is its menu, the way every chat app does it: inviting
+     * people, settings and leaving are all rare, and all live here.
      */
-    const where = this.server
-      ? h('span', { class: 'space-where', title: `Runs on ${serverTag(this.server)}` }, [icon('server', 13)])
-      : null
+    const spaceMenu = h(
+      'button',
+      {
+        class: 'space-title-button',
+        title: 'Invite people, settings, leave',
+        on: {
+          click: () =>
+            openMenu(spaceMenu, [
+              { label: 'Invite people', run: () => void this.showInvite() },
+              { label: 'Settings', run: () => void this.openSettings() },
+              { label: 'Leave space', danger: true, run: () => void this.leaveSpace() },
+            ]),
+        },
+      },
+      [this.spaceTitle, icon('chevron-down', 16)],
+    )
 
     this.meFace = h('span', { class: 'me-face' })
     this.meName = h('span', { class: 'me-name truncate' })
@@ -2171,7 +1687,7 @@ export class SpaceView {
       h(
         'button',
         {
-          title: 'Back to your spaces. This one stays on this device.',
+          title: 'Home',
           ariaLabel: 'Your spaces',
           class: 'ghost icon-only me-home',
           on: { click: () => this.goHome() },
@@ -2183,7 +1699,7 @@ export class SpaceView {
     const left = h('div', { class: 'rail rail-left', role: 'navigation', ariaLabel: 'Channels, threads and conversations' }, [
       // Just the name. Renaming and clearing live in settings, where a thing
       // you do rarely and cannot undo belongs.
-      h('div', { class: 'space-title' }, [this.spaceTitle, where]),
+      h('div', { class: 'space-title' }, [spaceMenu]),
       h('div', { class: 'rail-scroll' }, [
       h('div', { class: 'rail-head' }, [
         h('span', { class: 'eyebrow', text: 'Text channels' }),
@@ -2223,18 +1739,7 @@ export class SpaceView {
         )),
       ]),
       this.voiceList,
-      h('div', { class: 'rail-head' }, [
-        h('span', { class: 'eyebrow', text: 'Threads', title: 'Conversations hanging off a message' }),
-      ]),
       this.threadList,
-      h('div', { class: 'rail-head' }, [
-        h('span', {
-          class: 'eyebrow',
-          text: 'Direct',
-          title: 'Sealed so the room carries them and cannot read them',
-        }),
-      ]),
-      this.directList,
       ]),
       this.voiceBar,
       me,
@@ -2242,7 +1747,6 @@ export class SpaceView {
 
     const right = h('div', { class: 'rail rail-right', role: 'complementary', ariaLabel: 'Who is here' }, [
       h('div', { class: 'rail-scroll' }, [this.peopleList]),
-      this.inviteBox(),
     ])
 
     /*
@@ -2287,7 +1791,28 @@ export class SpaceView {
       },
     })
     this.searchResults = h('div', { class: 'search-results hidden' })
+    /*
+     * Search is an icon until it is wanted, then a field, and an icon again
+     * when it is left empty. Ctrl or Cmd with K opens it too.
+     */
     const searchBox = h('label', { class: 'search-box' }, [icon('search', 14), this.searchInput])
+    const searchToggle = h(
+      'button',
+      {
+        class: 'ghost icon-only search-toggle',
+        ariaLabel: 'Search',
+        title: 'Search this space (Ctrl K)',
+        on: { click: () => this.openSearchBox() },
+      },
+      [icon('search', 17)],
+    )
+    this.searchWrap = h('div', { class: 'search-wrap' }, [searchToggle, searchBox])
+    this.searchInput.addEventListener('focus', () => this.searchWrap.classList.add('open'))
+    this.searchInput.addEventListener('blur', () => {
+      window.setTimeout(() => {
+        if (!this.searchInput.value && document.activeElement !== this.searchInput) this.searchWrap.classList.remove('open')
+      }, 150)
+    })
 
     /*
      * The two rails are drawers on a phone.
@@ -2340,15 +1865,13 @@ export class SpaceView {
         h('div', { class: 'space-head row' }, [
           this.channelsButton,
           this.channelTitle,
-          this.shareButton,
           this.pinsButton,
-          searchBox,
+          this.searchWrap,
           this.peopleButton,
         ]),
         this.searchResults,
         this.streamBar,
         this.stage,
-        this.sharePanel,
         this.chatPanel.root,
       ]),
       right,
@@ -2366,10 +1889,6 @@ export class SpaceView {
     this.root.append(
       settingsView({
         rename: (name, avatar) => this.rename(name, avatar),
-        archive: this.archiveAddress,
-        // A space on a server has its history there, and no archive to pick.
-        setArchive: this.server ? undefined : (url) => this.setArchive(url),
-        server: this.server,
         space: {
           name: this.chat?.spaceName() || 'Unnamed space',
           admin: this.chat?.isAdmin === true,
@@ -2423,6 +1942,12 @@ export class SpaceView {
   }
 
   /** Back to the list of spaces, keeping this one. */
+  private openSearchBox(): void {
+    this.searchWrap.classList.add('open')
+    this.searchInput.focus()
+    this.searchInput.select()
+  }
+
   private goHome(): void {
     this.destroy()
     this.onLeave()
@@ -2482,27 +2007,24 @@ export class SpaceView {
   }
 
   /**
-   * Put this device's copy down and go back to the list.
+   * Take the space off your list, and go back to the list.
    *
-   * A space that was closed leaves a tombstone rather than nothing at all. See
-   * tombstoneRoom: forgetting it outright means the link opens a fresh empty
-   * room a minute later, which looks exactly like a space that lost everything.
+   * A space that was closed keeps its note, marked closed, rather than going
+   * altogether: forgetting it outright means the link opens a fresh empty room
+   * a minute later, which looks exactly like a space that lost everything.
    */
   private async forget(closed: boolean): Promise<void> {
     if (this.forgotten) return
-    this.forgotten = true
     const room = this.room
-    const note = room ? await this.notes.get(room.id) : null
-    // The close, and the roles that decide whether it counts. Nothing else.
-    const keep = (this.chat?.log.all() ?? []).filter(
-      (e) => e.kind === 'close' || e.kind === 'role',
-    )
-    if (room) held.delete(room.id)
+    // A closed space keeps its note, marked closed, so its link says why it is gone.
+    if (closed) await this.space.remember({ closed: true })
+    this.forgotten = true
     this.destroy()
     if (room) {
-      if (closed && note) await this.notes.close(note, keep)
-      else await this.notes.forget(room.id)
-      await this.book?.flush()
+      spaces.drop(room.id)
+      const book = bookFor(this.server)
+      if (!closed) await book.forget(room.id)
+      await book.flush()
     }
     this.onLeave()
   }
@@ -2521,48 +2043,13 @@ export class SpaceView {
     void this.publish((c) => c.announceName(name, avatar))
   }
 
-  private inviteBox(): HTMLElement {
-    const code = h('div', {
-      class: 'share-code',
-      text: formatSecret(this.secret),
-      title: 'The code for this space',
-      data: { link: roomLink(this.secret, this.locked, this.server) },
-    })
-    const copy = h('button', { class: 'primary grow' }, [icon('link', 15), 'Copy invite'])
-    copy.addEventListener('click', async () => {
-      const ok = await copyText(roomLink(this.secret, this.locked, this.server))
-      toast(ok ? 'Invite link copied.' : 'Could not copy. The code is above.', ok ? 'info' : 'warn')
-    })
-    const qr = h('button', { class: 'icon-only', title: 'Show a QR code', ariaLabel: 'Show a QR code' })
-    qr.append(icon('qr', 14))
-    qr.addEventListener('click', () => void this.showQr())
-    /*
-     * The code, and two ways to hand it over. Nothing else.
-     *
-     * It used to explain itself underneath: the link in full, and a line about
-     * sending the password separately. Both were true and neither was needed
-     * every time you looked at the corner of the window. The code is the
-     * thing; a lock on it says the rest.
-     */
-    return h('div', { class: 'invite-card stack tight' }, [
-      h('div', { class: 'row spread' }, [
-        h('span', { class: 'eyebrow', text: 'Invite people' }),
-        this.locked
-          ? h('span', {
-              class: 'tiny faint',
-              title: 'This space has a password. Send it separately from the link.',
-              text: 'locked',
-            })
-          : null,
-      ]),
-      code,
-      h('div', { class: 'row' }, [copy, qr]),
-    ])
-  }
-
-  private async showQr(): Promise<void> {
-    // The encoder is loaded the first time somebody asks for a code.
+  /**
+   * Inviting people: the link, a way to copy it, and a code a phone can scan.
+   * Rare, so it opens from the space's menu rather than living on screen.
+   */
+  private async showInvite(): Promise<void> {
     const { qrSvg } = await import('./qr')
+    const link = roomLink(this.secret, this.locked, this.server)
     const close = (): void => {
       scrim.remove()
       window.removeEventListener('keydown', onKey)
@@ -2574,21 +2061,26 @@ export class SpaceView {
     window.addEventListener('keydown', onKey)
     const frame = h('div', { class: 'qr-frame' })
     try {
-      frame.append(qrSvg(roomLink(this.secret, this.locked, this.server), { pixels: 240 }))
+      frame.append(qrSvg(link, { pixels: 200 }))
     } catch {
       frame.append(h('div', { class: 'small', text: 'This link is too long for a QR code.' }))
     }
-    const scrim = h('div', {
-      class: 'scrim',
-      on: { click: (ev) => ev.target === scrim && close() },
+    const copy = h('button', { class: 'primary grow' }, [icon('link', 15), 'Copy invite link'])
+    copy.addEventListener('click', async () => {
+      const ok = await copyText(link)
+      toast(ok ? 'Invite link copied.' : 'Could not copy it.', ok ? 'info' : 'warn')
     })
+    const scrim = h('div', { class: 'scrim', on: { click: (ev) => ev.target === scrim && close() } })
     scrim.append(
-      h('div', { class: 'modal' }, [
+      h('div', { class: 'modal invite-modal' }, [
         h('div', { class: 'row spread' }, [
-          h('span', { class: 'eyebrow', text: 'Scan to join' }),
+          h('span', { class: 'eyebrow', text: 'Invite people' }),
           h('button', { ariaLabel: 'Close', on: { click: close } }, [icon('close', 14)]),
         ]),
+        h('div', { class: 'share-code', text: formatSecret(this.secret), title: 'The code for this space', data: { link } }),
+        h('div', { class: 'row' }, [copy]),
         frame,
+        this.locked ? h('div', { class: 'tiny faint', text: 'This space has a password. Send it separately.' }) : null,
       ]),
     )
     document.body.append(scrim)
@@ -2660,16 +2152,9 @@ export class SpaceView {
   private renderThreads(): void {
     clear(this.threadList)
     const threads = this.chat?.threads() ?? []
-    if (threads.length === 0) {
-      this.threadList.append(
-        h('div', {
-          class: 'tiny faint',
-          style: { padding: '2px 7px' },
-          text: 'None yet. Answer a message in a thread to start one.',
-        }),
-      )
-      return
-    }
+    // Nothing to say about threads until there is one.
+    if (threads.length === 0) return
+    this.threadList.append(h('div', { class: 'rail-head' }, [h('span', { class: 'eyebrow', text: 'Threads' })]))
     for (const thread of threads.slice(0, 6)) {
       const mark = this.read[thread.root.channel] ?? 0
       const fresh = thread.newest > mark && thread.root.author !== this.chat?.me
@@ -2684,39 +2169,6 @@ export class SpaceView {
           [
             h('span', { class: 'truncate grow', text: thread.root.text || 'a message' }),
             h('span', { class: 'pill', text: `${thread.replies}` }),
-          ],
-        ),
-      )
-    }
-  }
-
-  /** The people you have written to privately, most recent first. */
-  private renderDirects(): void {
-    clear(this.directList)
-    const chats = this.chat?.directs() ?? []
-    if (chats.length === 0) {
-      this.directList.append(
-        h('div', {
-          class: 'tiny faint',
-          style: { padding: '2px 7px' },
-          text: 'Nobody yet. Use somebody\u2019s menu, or /dm.',
-        }),
-      )
-      return
-    }
-    for (const talk of chats) {
-      const label = talk.name || shortKey(talk.key)
-      this.directList.append(
-        h(
-          'button',
-          {
-            class: `rail-item${this.direct === talk.key ? ' on' : ''}${talk.unread ? ' unread' : ''}`,
-            on: { click: () => this.openDirect(talk.key) },
-          },
-          [
-            avatarOf(talk.key, talk.name, this.chat?.avatarOf(talk.key) ?? '', 16),
-            h('span', { class: 'truncate grow', text: label }),
-            talk.unread ? h('span', { class: 'pill bad', text: `${talk.unread}` }) : null,
           ],
         ),
       )
@@ -2753,11 +2205,23 @@ export class SpaceView {
         const key = id === this.selfId ? this.chat?.me ?? id : peer?.key || id
         const name = id === this.selfId ? this.chat?.displayName ?? 'You' : peer?.name || shortKey(id)
         const label = id === this.selfId ? `${name} (you)` : name
+        // Sharing: a red LIVE that puts their screen on yours.
+        const live = id === this.selfId ? this.capture !== null : this.sharers.has(id)
+        const watching = this.watched.has(id)
         row.append(
           h('div', { class: `voice-member${talking ? ' talking' : ''}` }, [
             h('i', { class: `dot ${talking ? 'talking' : 'good'}` }),
             avatarOf(key, name, this.chat?.avatarOf(key) ?? '', 20),
-            h('span', { class: 'truncate', text: label }),
+            h('span', { class: 'truncate grow', text: label }),
+            live
+              ? h('button', {
+                  class: `live-badge${watching ? ' on' : ''}`,
+                  text: 'LIVE',
+                  title: watching ? 'Stop watching' : `Watch ${label}`,
+                  ariaLabel: watching ? `Stop watching ${label}` : `Watch ${label}`,
+                  on: { click: () => this.watch(id) },
+                })
+              : null,
           ]),
         )
       }
@@ -2791,6 +2255,7 @@ export class SpaceView {
           },
           [icon(state.muted ? 'mic-off' : 'mic', 17)],
         ),
+        this.shareButton,
         h(
           'button',
           {
@@ -2803,6 +2268,8 @@ export class SpaceView {
         ),
       )
     }
+    // The soundboard plays into the call, so it is there while you are in one.
+    this.chatPanel?.showSoundboard(Boolean(state?.channel))
   }
 
   private async joinVoice(name: string): Promise<void> {
@@ -2821,7 +2288,7 @@ export class SpaceView {
   /**
    * Somebody with the authority to has asked us to stand somewhere else.
    *
-   * The ask came off a public relay, so it carries its own proof: the admin
+   * The ask came through the server, so it carries its own proof: the admin
    * signed the room, our key, the channel and the time with the same identity
    * key that signs their events, and the signature is checked against the
    * log's own idea of who is an admin. It used to lean on presence
@@ -2872,7 +2339,9 @@ export class SpaceView {
   }
 
   private leaveVoice(): void {
-    this.voice?.dispose()
+    // A screen is shared with the call, so it goes when you do.
+    if (this.capture) this.stopSharing()
+    this.voice?.leave()
     this.announceMe()
     this.draw()
   }
@@ -2936,13 +2405,6 @@ export class SpaceView {
       })
     }
 
-    if (here) {
-      items.push({
-        label: `Nudge ${name}`,
-        note: 'Shakes their window, the old way',
-        run: () => this.sendNudge(name),
-      })
-    }
 
     items.push({
       label: 'Copy their ID',
@@ -3230,10 +2692,9 @@ export class SpaceView {
    * Where a search goes.
    *
    * Your own key first, because it is the one most people have: it is kept in
-   * this browser, it works with no server at all, and a space that never runs
-   * an archive can still find a GIF. The archive second, because when a space
-   * does have one it is the better shape, holding the key on one machine
-   * rather than on everybody's.
+   * this browser, and it works whatever the server offers. The server second,
+   * when it holds a key, because that keeps the key on one machine rather than
+   * on everybody's.
    *
    * Nothing third. A picker that opens and says what is missing beats a toast
    * that flashes past somebody who was looking at the grid.
@@ -3243,12 +2704,10 @@ export class SpaceView {
     if (held) {
       return { gifs: await searchGifs(term, held), from: serviceLabel(held.service) }
     }
-    // The archive answers a term. It has nothing to say about an empty one,
-    // so an empty box waits rather than asking a question with no question.
-    if (this.archive?.on) {
-      return { gifs: term.trim() ? await this.archive.gifs(term) : [], from: 'the archive' }
-    }
-    return { gifs: [], from: '' }
+    // The server answers a term, when it holds a key. It has nothing to say
+    // about an empty one, so an empty box waits rather than asking nothing.
+    if (!(await serverHasGifs(this.server))) return { gifs: [], from: '' }
+    return { gifs: term.trim() ? await serverGifs(this.server, term) : [], from: 'the server' }
   }
 
   /**
@@ -3381,18 +2840,16 @@ export class SpaceView {
   private gifTrouble(wanted: string, from: string): (string | Node)[] {
     if (from === '') {
       return [
-        'GIF search needs a key, and there is nowhere here to keep one for you. ',
-        'Paste your own under Settings, GIFs: it stays in this browser and is never said in a space. ',
-        'A space with an archive can hold one instead, for everybody at once.',
+        'GIF search needs a key. Paste one under Settings, GIFs, or ask whoever runs the server to set one.',
       ]
     }
     if (!wanted) {
-      return from === 'the archive'
+      return from === 'the server'
         ? ['Type what to look for.']
         : ['Nothing came back. Type what to look for.']
     }
-    return from === 'the archive'
-      ? [`Nothing for "${wanted}". An archive with no Tenor key finds nothing; see server/README.md.`]
+    return from === 'the server'
+      ? [`Nothing for "${wanted}". A server with no Tenor key finds nothing; see server/README.md.`]
       : [`Nothing for "${wanted}". Check the key under Settings, GIFs, if this keeps happening.`]
   }
 
@@ -3515,23 +2972,28 @@ export class SpaceView {
     const sharing = this.capture !== null
     clear(this.shareButton)
     const label = sharing ? 'Stop sharing' : 'Share screen'
-    // The label goes on a narrow screen and the name has to stay, so it is
-    // said twice: once to read, once to the accessibility tree.
     this.shareButton.setAttribute('aria-label', label)
-    this.shareButton.title = sharing ? 'Stop sharing your screen' : 'Share your screen in this channel'
-    this.shareButton.append(icon(sharing ? 'stop' : 'monitor', 15), h('span', { class: 'share-label', text: label }))
+    this.shareButton.title = sharing ? 'Stop sharing your screen' : 'Share your screen with this voice channel'
+    this.shareButton.append(icon(sharing ? 'stop' : 'monitor', 17))
     this.shareButton.classList.toggle('danger', sharing)
-    this.shareButton.classList.toggle('primary', !sharing)
-    this.sharePanel.classList.toggle('hidden', !sharing)
+    this.shareButton.classList.toggle('on', sharing)
     // The stage is only up for something you chose to put on it.
     this.stage.classList.toggle('hidden', this.watched.size === 0)
     this.renderStreams()
   }
 
+  /**
+   * Share, or stop. A screen is shared with a voice channel, the way it is in
+   * every voice app: you are in the call, and your screen is part of it.
+   */
   private async toggleShare(): Promise<void> {
     if (this.capture) {
       this.stopSharing()
       this.draw()
+      return
+    }
+    if (!this.voice?.state.channel) {
+      toast('Join a voice channel to share your screen.', 'info')
       return
     }
     const blocker = hostBlocker(checkSupport())
@@ -3566,9 +3028,7 @@ export class SpaceView {
     })
 
     this.showOwnPreview()
-    this.buildSharePanel()
     this.announceMe()
-    void this.publish((c) => c.sayLive(this.channel))
     this.draw()
   }
 
@@ -3608,24 +3068,24 @@ export class SpaceView {
     void peer.setPlan(this.plan(this.watchers.size))
   }
 
-  /** Everybody sharing in the channel we are looking at, ourselves included. */
+  /** Everybody sharing in this space, ourselves included. */
   private liveHere(): { id: string; name: string; you: boolean; key: string }[] {
     const out: { id: string; name: string; you: boolean; key: string }[] = []
-    if (this.capture && this.channel) {
+    if (this.capture) {
       out.push({ id: this.selfId, name: 'Your screen', you: true, key: this.chat?.me ?? '' })
     }
-    for (const [id, channel] of this.sharers) {
-      if (channel !== this.channel || id === this.selfId) continue
+    for (const [id] of this.sharers) {
+      if (id === this.selfId) continue
       const peer = this.mesh?.peers().find((p) => p.id === id)
       out.push({ id, name: peer?.name || shortKey(id), you: false, key: peer?.key ?? '' })
     }
     return out
   }
 
-  /** The session of this person's stream in this channel, if it is still up. */
-  private sharerByKey(key: string, channel: string): string | null {
-    for (const [id, ch] of this.sharers) {
-      if (ch !== channel || id === this.selfId) continue
+  /** The session of this person's stream, if it is still up. */
+  private sharerByKey(key: string, _channel = ''): string | null {
+    for (const [id] of this.sharers) {
+      if (id === this.selfId) continue
       const peer = this.mesh?.peers().find((p) => p.id === id)
       if (peer?.key === key) return id
     }
@@ -3639,13 +3099,12 @@ export class SpaceView {
    * so this goes where the stream is first, then puts it on. The channel move
    * takes everything else off the stage, the way walking in always does.
    */
-  private joinStream(key: string, channel: string): void {
-    const id = this.sharerByKey(key, channel)
+  private joinStream(key: string, _channel = ''): void {
+    const id = this.sharerByKey(key)
     if (!id) {
       toast('That stream has ended.', 'warn')
       return
     }
-    if (this.channel !== channel || this.thread || this.direct) this.openChannel(channel)
     if (!this.watched.has(id)) this.watch(id)
   }
 
@@ -3669,6 +3128,7 @@ export class SpaceView {
       if (!this.outStream) return
       const entry = this.addTile(peerId)
       entry.surface.setStream(this.outStream)
+      entry.tile.append(this.qualityMenu())
       this.draw()
       return
     }
@@ -3740,12 +3200,6 @@ export class SpaceView {
     return [...names]
   }
 
-  /** A few names in full, and a count for the rest. */
-  private fewNames(names: string[]): string {
-    if (names.length <= 3) return names.join(', ')
-    return `${names.slice(0, 3).join(', ')} +${names.length - 3}`
-  }
-
   /**
    * Who is live here, as an offer rather than an instruction.
    *
@@ -3762,26 +3216,18 @@ export class SpaceView {
     for (const [id, entry] of this.watched) {
       if (id === this.selfId) {
         const eyes = this.watcherNames(this.selfId)
-        entry.tag.textContent = eyes.length
-          ? `Your screen · watched by ${this.fewNames(eyes)}`
-          : 'Your screen, as the others see it'
+        entry.tag.textContent = eyes.length ? `Your screen · ${eyes.length} watching` : 'Your screen'
+        entry.tag.title = eyes.length ? `Watching: ${eyes.join(', ')}` : 'Nobody is watching yet'
       } else {
         const whose = live.find((l) => l.id === id)?.name ?? 'a shared screen'
-        const others = this.watcherNames(id)
-        entry.tag.textContent = others.length
-          ? `Watching ${whose}, with ${this.fewNames(others)}`
-          : `Watching ${whose}`
+        entry.tag.dataset.who = whose
+        if (!entry.tag.textContent?.startsWith(whose)) entry.tag.textContent = whose
       }
     }
     if (live.length === 0) return
 
     const watching = this.watched.size > 0
-    this.streamBar.append(
-      h('span', {
-        class: 'eyebrow',
-        text: live.length === 1 ? 'Live here' : `Live here (${live.length})`,
-      }),
-    )
+    this.streamBar.append(h('span', { class: 'eyebrow', text: 'Live' }))
 
     for (const one of live) {
       const on = this.watched.has(one.id)
@@ -3795,13 +3241,11 @@ export class SpaceView {
         'button',
         {
           class: `stream-tab${on ? ' on' : ''}`,
-          title:
-            (one.you ? 'Show your own screen here' : `Put ${one.name} on your screen`) +
-            (eyes.length ? `. Watching: ${eyes.join(', ')}` : ''),
+          title: (one.you ? 'Show your own screen' : `Watch ${one.name}`) + (eyes.length ? `. Watching: ${eyes.join(', ')}` : ''),
           on: { click: () => this.watch(one.id) },
         },
         [
-          avatarOf(one.key || one.id, one.name, this.chat?.avatarOf(one.key) ?? '', 18),
+          avatarOf(one.key || one.id, one.you ? (this.chat?.displayName ?? '') : one.name, this.chat?.avatarOf(one.key) ?? '', 18),
           h('span', { class: 'truncate', text: label }),
           h('span', { class: 'live-dot', title: 'Live' }),
         ],
@@ -3816,8 +3260,8 @@ export class SpaceView {
       this.streamBar.append(
         h('button', {
           class: 'stream-tab quiet',
-          text: 'Stop watching',
-          title: 'Take every stream off your screen. Escape does the same.',
+          text: 'Close',
+          title: 'Stop watching. Escape does the same.',
           on: {
             click: () => {
               this.stopWatching()
@@ -3871,125 +3315,36 @@ export class SpaceView {
       }
       const plan = this.plan(peers.length)
       for (const peer of peers) await peer.setPlan(plan)
-      this.renderSharePanel(plan, peers.length)
     }
+    /*
+     * How the picture is arriving, said once, beside whose it is, rather than
+     * in four badges piled on top of the name. The numbers are for a person
+     * who wants them, in the title.
+     */
     for (const [id, entry] of this.watched) {
       if (id === this.selfId || !entry.peer) continue
       const s = await entry.peer.sample()
-      entry.surface.setBadges([
-        { text: fmtKbps(s.kbps) },
-        { text: `${s.width}x${s.height}` },
-        { text: `${s.fps} fps` },
-        ...(s.codec ? [{ text: s.codec }] : []),
-      ])
+      const size = s.height ? ` · ${s.height}p` : ''
+      entry.tag.textContent = `${entry.tag.dataset.who ?? ''}${size}`
+      entry.tile.title = `${s.width}x${s.height}, ${s.fps} fps, ${fmtKbps(s.kbps)}${s.codec ? `, ${s.codec}` : ''}`
     }
-    void this.remember({})
   }
 
   // ---- the share controls ----
 
-  private buildSharePanel(): void {
-    clear(this.sharePanel)
-    const presets = h('div', { class: 'chips' })
+  /**
+   * The one control a sharer needs: what kind of thing is being shown, which
+   * decides whether sharpness or smoothness wins. It sits on your own preview.
+   */
+  private qualityMenu(): HTMLElement {
+    const pick = h('select', { class: 'share-quality', ariaLabel: 'Stream quality', title: 'What you are sharing' })
     for (const preset of PRESETS) {
-      presets.append(
-        h('button', {
-          class: `chip${this.settings.presetId === preset.id ? ' on' : ''}`,
-          text: preset.name,
-          title: preset.useWhen,
-          on: { click: () => void this.applyPreset(preset.id) },
-        }),
-      )
+      const option = h('option', { value: preset.id, text: preset.name })
+      if (this.settings.presetId === preset.id) option.selected = true
+      pick.append(option)
     }
-
-    const resolution = h('div', { class: 'chips' })
-    for (const choice of RESOLUTION_CHOICES) {
-      resolution.append(
-        h('button', {
-          class: `chip${this.settings.maxHeight === choice.height ? ' on' : ''}`,
-          text: choice.label,
-          title: choice.note,
-          on: {
-            click: () => {
-              this.settings.maxHeight = choice.height
-              this.settings.presetId = 'custom'
-              saveSettings(this.settings)
-              void this.applyConstraints()
-            },
-          },
-        }),
-      )
-    }
-
-    const fps = h('div', { class: 'chips' })
-    for (const choice of FPS_CHOICES) {
-      fps.append(
-        h('button', {
-          class: `chip${this.settings.fps === choice.fps ? ' on' : ''}`,
-          text: choice.label,
-          title: choice.note,
-          on: {
-            click: () => {
-              this.settings.fps = choice.fps
-              this.settings.presetId = 'custom'
-              saveSettings(this.settings)
-              void this.applyConstraints()
-            },
-          },
-        }),
-      )
-    }
-
-    const mic = h('button', { text: 'Turn on the microphone' })
-    mic.addEventListener('click', async () => {
-      if (this.mixer?.hasMic) {
-        this.mixer.stopMic()
-        mic.textContent = 'Turn on the microphone'
-        mic.classList.remove('on')
-        return
-      }
-      try {
-        this.mixer?.attachMic(await captureMicrophone())
-        mic.textContent = 'Microphone is on'
-        mic.classList.add('on')
-      } catch (err) {
-        toast(err instanceof CaptureError ? err.message : String(err), 'bad')
-      }
-    })
-
-    this.planLine = h('div', { class: 'plan-box tiny' })
-
-    this.sharePanel.append(
-      h('div', { class: 'card stack tight' }, [
-        h('div', { class: 'row spread' }, [
-          h('span', { class: 'eyebrow', text: `Sharing in #${this.channel}` }),
-          h('span', { class: 'pill good' }, [h('i', { class: 'dot live' }), 'live']),
-        ]),
-        presets,
-        this.planLine,
-        h('details', { class: 'adv' }, [
-          h('summary', { text: 'Fine tuning' }),
-          h('div', { class: 'stack tight' }, [
-            labelled('Resolution', resolution),
-            labelled('Frame rate', fps),
-            mic,
-          ]),
-        ]),
-      ]),
-    )
-    this.renderSharePanel(this.plan(1), 0)
-  }
-
-  private planLine: HTMLDivElement | null = null
-
-  private renderSharePanel(plan: QualityPlan, watchers: number): void {
-    if (!this.planLine) return
-    const s = this.capture?.video.getSettings()
-    const w = Math.round((s?.width ?? 1920) / plan.scaleDown)
-    const hgt = Math.round((s?.height ?? 1080) / plan.scaleDown)
-    this.planLine.textContent =
-      `Each watcher gets ${w}x${hgt} at ${plan.maxFramerate} fps, about ${fmtKbps(plan.maxBitrateKbps)}. ` +
-      `${watchers} watching.`
+    pick.addEventListener('change', () => void this.applyPreset(pick.value as PresetId))
+    return pick
   }
 
   private async applyPreset(id: PresetId): Promise<void> {
@@ -4008,7 +3363,6 @@ export class SpaceView {
       peer.setMode(preset.mode, this.settings.codec as CodecChoice, this.gpu.hardware)
     }
     await this.applyConstraints()
-    this.buildSharePanel()
   }
 
   private async applyConstraints(): Promise<void> {
@@ -4022,6 +3376,5 @@ export class SpaceView {
       constraints.width = { max: Math.round((this.settings.maxHeight * 16) / 9) }
     }
     await track.applyConstraints(constraints).catch(() => undefined)
-    this.buildSharePanel()
   }
 }

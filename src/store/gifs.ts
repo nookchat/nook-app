@@ -3,15 +3,14 @@
  *
  * There are two ways in, and a space can use either.
  *
- * The archive is the older one: the one machine a space already trusts holds
- * the key, out of the page and off everybody's device, and the browser asks
- * it. That is the better shape when a space has an archive, and it is the
- * only shape that keeps the key off the devices of everybody in the room.
+ * The server is one: the one machine a space already trusts holds the key,
+ * out of the page and off everybody's device, and the browser asks it. It is
+ * the only shape that keeps the key off the devices of everybody in the room.
  *
- * The trouble is that most spaces have no archive, so /gif found nothing and
- * said so, which reads as broken however honest the words are. So there is
- * now a second way: a key of your own, kept in this browser and used from
- * this browser. It never leaves the device and it is never said in a space.
+ * The trouble is that most servers hold no key, so /gif found nothing and
+ * said so, which reads as broken however honest the words are. So there is a
+ * second way: a key of your own, kept in this browser and used from this
+ * browser. It never leaves the device and it is never said in a space.
  *
  * Three services can hold up that end, because getting a key is the part
  * people give up on rather than the part that is hard:

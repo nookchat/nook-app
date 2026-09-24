@@ -408,7 +408,6 @@ try {
    */
   const reset = await page.evaluate(async () => {
     const { RoomLog } = await import('/src/store/log.ts')
-    const { compact } = await import('/src/store/compact.ts')
     const key = (n) => String(n).repeat(64).slice(0, 64)
     const A = key(1)
     const B = key(2)
@@ -449,8 +448,6 @@ try {
     // A member's line is not a line.
     const ignored = build([old1, byMember]).messages('general').map((m) => m.text)
 
-    const { keep } = compact(all, { perChannel: 1500, total: 8000 }, build(all).effective())
-    const kinds = keep.map((e) => e.kind).sort()
 
     return {
       texts,
@@ -459,7 +456,6 @@ try {
       stillAdmin: after.roleOf(B) === 'admin',
       names: [...after.names().values()],
       ignored,
-      compacted: kinds,
     }
   })
   check('a reset clears what was said before it', reset.texts.join() === 'after', reset.texts.join(' | ') || '(nothing)')
@@ -468,11 +464,6 @@ try {
   check('and who runs it', reset.stillAdmin)
   check('and what people are called', reset.names.includes('Bob'), reset.names.join())
   check('a member cannot clear the room', reset.ignored.join() === 'before', reset.ignored.join(' | '))
-  check(
-    'and what was cleared leaves the disk on the next tidy',
-    reset.compacted.filter((k) => k === 'said').length === 1,
-    reset.compacted.join(),
-  )
 
   // --- pictures and GIFs ----------------------------------------------------
   const pics = await page.evaluate(async () => {

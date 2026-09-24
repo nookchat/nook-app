@@ -36,7 +36,14 @@ const BOX = '[aria-label="Write a message"]'
 async function person(name) {
   const page = await (await browser.newContext({ viewport: { width: 1280, height: 820 } })).newPage()
   await page.goto(APP_URL)
-  await page.evaluate((n) => localStorage.setItem('cathode.name.v1', n), name)
+  await page.evaluate(
+    ({ n, server }) => {
+      localStorage.setItem('cathode.name.v1', n)
+      localStorage.setItem('cathode.server.v1', server)
+      localStorage.setItem('cathode.servers.v1', JSON.stringify([server]))
+    },
+    { n: name, server: A },
+  )
   await page.reload()
   await page.waitForSelector('input[aria-label="Space name"]')
   return page
@@ -62,8 +69,6 @@ const status = (page) => page.evaluate(() => document.querySelector('.status-bar
 
 try {
   const alice = await person('Alice')
-  await alice.click('button:has-text("Server")')
-  await alice.fill('input[aria-label="Server address"]', 'localhost:8811')
   await alice.fill('input[aria-label="Space name"]', 'two homes')
   await alice.click('button:has-text("New space")')
   await alice.waitForSelector(BOX)

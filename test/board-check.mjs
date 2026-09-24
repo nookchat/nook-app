@@ -380,6 +380,13 @@ try {
   await alice.fill(BOX, '')
 
   // ---- the soundboard ------------------------------------------------------
+  // It plays into a call, so it is there only in one.
+  const hiddenOutside = await alice.evaluate(() =>
+    document.querySelector('button[aria-label="Soundboard"]')?.classList.contains('hidden'),
+  )
+  check('the soundboard is not offered outside a voice channel', hiddenOutside === true)
+  await alice.click('.rail-left .rail-item:has-text("lounge")')
+  await alice.waitForSelector('button[aria-label="Soundboard"]:not(.hidden)', { timeout: 10_000 })
   await alice.click('button[aria-label="Soundboard"]')
   await alice.waitForSelector('.sound-pop')
   const cells = await alice.$$eval('.sound-cell', (els) => els.length)
@@ -433,6 +440,10 @@ try {
   // somebody who was looking at the box.
   await alice.click('button[aria-label="Find a GIF"]')
   await alice.waitForSelector('.gif-pop')
+  // The server is asked whether it can search, so the answer takes a moment.
+  await alice
+    .waitForFunction(() => !document.querySelector('.gif-pop')?.textContent?.includes('Looking'), null, { timeout: 8000 })
+    .catch(() => undefined)
   const missing = await alice.$eval('.gif-pop', (el) => el.textContent)
   check('the picker opens from a button', missing.includes('GIFs'))
   check('a search box comes with it', await alice.$('.gif-search').then((el) => !!el))

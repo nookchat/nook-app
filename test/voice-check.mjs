@@ -44,8 +44,10 @@ try {
   await one.goto(APP_URL, { waitUntil: 'domcontentloaded' })
   await one.getByRole('button', { name: 'New space' }).waitFor({ timeout: 10_000 })
   await one.getByRole('button', { name: 'New space' }).click()
-  await one.locator('.share-code').waitFor({ timeout: 15_000 })
-  const link = await one.locator('.share-code').getAttribute('data-link')
+  await one.waitForSelector('[aria-label="Write a message"]', { timeout: 15_000 })
+  await one.waitForTimeout(800)
+  // The address bar is the invite.
+  const link = one.url()
 
   const two = await (await browser.newContext()).newPage()
   await two.goto(link, { waitUntil: 'domcontentloaded' })
