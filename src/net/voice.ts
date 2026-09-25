@@ -1,69 +1,43 @@
-/**
- * Voice channels.
- *
- * A voice channel is somewhere you stand rather than something you send. Join
- * one and you are connected to everybody else standing in it; leave and those
- * connections go.
- *
- * Audio is cheap enough for a full mesh: a dozen people at forty kilobits each
- * is less than one screen share to one watcher. So there is no mixer and no
- * host, just a connection to each person, which also means nobody is a single
- * point of failure and nobody hears a mix they did not choose.
- *
- * Who offers follows the same rule as the chat mesh: the smaller id calls. That
- * is the only coordination needed, and it is why two people joining at the same
- * moment do not knock each other's call down.
- */
-
-import { rtcConfig } from '../rtc/config'
-import { DEVICES_CHANGED, explainMicRefusal, micSettings, openMic, playOn } from './mic'
-import { VOLUMES_CHANGED } from './volume'
-import { denoise, type Denoiser } from './denoise'
-import { Talking } from './talking'
 import type { SignalBus } from '../signal/bus'
 import type { Envelope } from '../signal/envelope'
+import { denoise, type Denoiser } from './denoise'
+import { DEVICES_CHANGED, explainMicRefusal, micSettings, openMic, playOn } from './mic'
+import { Talking } from './talking'
+import { VOLUMES_CHANGED } from './volume'
+
+const RETRY_MS = 5000
+const STALE_CALL_MS = 8000
 
 export interface VoiceState {
-  /** The channel this person is standing in, or null. */
   channel: string | null
-  /** True while the microphone is muted but the connection stays up. */
   muted: boolean
 }
 
 export class Voice {
   onChange: (() => void) | null = null
-  /** Somebody walked into, or out of, the channel we are standing in. */
   onArrival: ((arrived: boolean, peerId: string) => void) | null = null
-  /** A connection to somebody could not be made, even with the relay. Said once per person per channel. */
+  /** Said once per person per channel. */
   onFailed: ((peerId: string) => void) | null = null
-  /**
-   * Who may connect to us in a channel. Null lets anybody standing there in,
-   * which is what a space's voice channel is. A call between two people says
-   * no to everybody else, so knowing its name is not a way into it.
-   */
+  /** Null admits anybody standing in the channel. */
   admit: ((peerId: string, channel: string) => boolean) | null = null
-  /** How loud somebody plays here, from 0 to 1. See net/volume.ts. */
+  /** From 0 to 1. */
   volumeOf: ((peerId: string) => number) | null = null
-  private readonly failed = new Set<string>()
 
+  private readonly failed = new Set<string>()
   private readonly bus: SignalBus
   private readonly selfId: string
   private readonly calls = new Map<string, Call>()
   private readonly talking = new Talking()
   private mic: MediaStream | null = null
-  /** The raw microphone, kept so it can be stopped when the cleaned one is. */
   private rawMic: MediaStream | null = null
   private cleaner: Denoiser | null = null
   private channel: string | null = null
   private muted = false
-  /** Where everybody else is standing, from their announcements. */
   private readonly standing = new Map<string, string>()
-
   private timer: number | null = null
-
   private readonly config: () => RTCConfiguration
+  private switching = false
 
-  /** A new microphone or speaker chosen, or one plugged in or out: the call moves to it. */
   private readonly onVolumes = (): void => {
     for (const [peer, call] of this.calls) call.setVolume(this.volumeOf?.(peer) ?? 1)
   }
@@ -72,9 +46,8 @@ export class Voice {
     for (const call of this.calls.values()) call.speakers()
     void this.switchMic()
   }
-  private switching = false
 
-  constructor(bus: SignalBus, selfId: string, config: () => RTCConfiguration = () => rtcConfig()) {
+  constructor(bus: SignalBus, selfId: string, config: () => RTCConfiguration) {
     this.bus = bus
     this.selfId = selfId
     this.config = config
@@ -82,7 +55,7 @@ export class Voice {
     window.addEventListener(VOLUMES_CHANGED, this.onVolumes)
     navigator.mediaDevices?.addEventListener?.('devicechange', this.onDevices)
     this.talking.onChange = () => this.onChange?.()
-    this.timer = window.setInterval(() => this.retry(), 5000)
+    this.timer = window.setInterval(() => this.retry(), RETRY_MS)
   }
 
   dispose(): void {
@@ -95,9 +68,7 @@ export class Voice {
     this.talking.dispose()
   }
 
-  /** True while this person is making a noise we would call speech. */
   isTalking(peerId: string): boolean {
-    // Muted is muted, whatever the meter thinks of the room.
     if (peerId === this.selfId && this.muted) return false
     return this.talking.is(peerId)
   }
@@ -106,9 +77,10 @@ export class Voice {
     return { channel: this.channel, muted: this.muted }
   }
 
-  /** Who is standing in a given voice channel, ourselves included. */
+  /** Includes this session when it stands there. */
   membersOf(channel: string): string[] {
-    const out = [...this.standing.entries()].filter(([, c]) => c === channel).map(([id]) => id)
+    const out: string[] = []
+    for (const [id, c] of this.standing) if (c === channel) out.push(id)
     if (this.channel === channel) out.push(this.selfId)
     return out
   }
@@ -117,26 +89,15 @@ export class Voice {
     return this.standing.get(peerId) ?? null
   }
 
-  /**
-   * Join a voice channel. This must run from a click, because it opens the
-   * microphone and because the browser will not play the others without one.
-   */
+  /** Must run from a click: the browser will not open the microphone or play audio without one. */
   async join(channel: string): Promise<void> {
     if (this.channel === channel) return
     this.leave()
     try {
       this.rawMic = await openMic()
     } catch (err) {
-      // The browser asks on its own whenever asking is still possible. This
-      // is for when it will not: say which switch is set to no, and where.
       throw new Error(await explainMicRefusal(err))
     }
-
-    /*
-     * Put it through the network if that is wanted and possible. When it is
-     * not, the microphone goes out as it came: the driver has already done the
-     * easy half, and a call with some noise in it beats no call.
-     */
     this.mic = this.rawMic
     if (micSettings().smart) {
       this.cleaner = await denoise(this.rawMic)
@@ -145,17 +106,11 @@ export class Voice {
     this.channel = channel
     this.muted = false
     this.failed.clear()
-    // Our own level comes off the cleaned microphone, which is what the others
-    // hear, so the light matches what they get rather than what the room does.
     this.talking.add(this.selfId, this.mic)
     this.onChange?.()
     for (const peer of this.membersOf(channel)) this.considerCall(peer)
   }
 
-  /**
-   * Open the microphone again, as Settings now says, and send that instead,
-   * without dropping anybody: every connection swaps the track it sends.
-   */
   private async switchMic(): Promise<void> {
     if (!this.channel || this.switching) return
     this.switching = true
@@ -185,7 +140,7 @@ export class Voice {
       this.talking.add(this.selfId, mic)
       this.onChange?.()
     } catch {
-      // The one it has keeps going: a call on the old microphone beats none.
+      /* the old microphone keeps going */
     } finally {
       this.switching = false
     }
@@ -209,35 +164,27 @@ export class Voice {
 
   setMuted(muted: boolean): void {
     this.muted = muted
-    // Mute at the source, so nothing reaches the network either.
     for (const track of this.rawMic?.getAudioTracks() ?? []) track.enabled = !muted
     for (const track of this.mic?.getAudioTracks() ?? []) track.enabled = !muted
     this.onChange?.()
   }
 
-  /** The live microphone, so the settings screen can say what it really got. */
-  get stream(): MediaStream | null {
-    return this.mic
-  }
-
-  /** The microphone itself, before any cleaning: whose name it has is which device it is. */
+  /** The microphone before any cleaning, which names the device. */
   get source(): MediaStream | null {
     return this.rawMic
   }
 
-  /** Everyone we can actually hear right now. */
   get connected(): number {
-    return [...this.calls.values()].filter((c) => c.live).length
+    let live = 0
+    for (const call of this.calls.values()) if (call.live) live++
+    return live
   }
 
-  /** Presence rides on the same announcement the chat mesh sends. */
   noteAnnounce(from: string, voice: string | null): void {
     const was = this.standing.get(from) ?? null
     if (voice) this.standing.set(from, voice)
     else this.standing.delete(from)
     if (was === voice) return
-
-    // Somebody arrived in our channel, or left it.
     if (this.channel && voice === this.channel) {
       this.considerCall(from)
       this.onArrival?.(true, from)
@@ -258,18 +205,10 @@ export class Voice {
     this.talking.remove(peerId)
   }
 
-  /**
-   * Drop standings for sessions the mesh no longer knows.
-   *
-   * Standing rides announcements, and a tab that dies without a goodbye never
-   * takes its announcement back, so its owner stood in the channel for ever,
-   * including your own last session after a reload. A live call is proof
-   * enough to stay: a relay outage empties the roster while the audio keeps
-   * flowing, and this must not hang up on it.
-   */
+  /** A session with a call stays: a relay outage empties the roster while the audio keeps flowing. */
   prune(alive: Set<string>): void {
     let changed = false
-    for (const id of [...this.standing.keys()]) {
+    for (const id of this.standing.keys()) {
       if (alive.has(id) || this.calls.has(id)) continue
       this.standing.delete(id)
       changed = true
@@ -283,13 +222,7 @@ export class Voice {
       case 'voffer': {
         if (!this.channel || !this.mic) return
         if (this.admit && !this.admit(env.from, this.channel)) return
-        /*
-         * Answer anybody who calls while we are standing somewhere. Requiring
-         * their announcement first looked tidier and dropped the call whenever
-         * the offer overtook the presence, which announcements every few seconds
-         * made easy. They only call people they believe are in their channel, so
-         * an offer is itself the evidence.
-         */
+        // The offer can overtake their announcement, and is itself proof they stand here.
         this.standing.set(env.from, this.channel)
         const call = this.call(env.from, false)
         await call.onOffer(data as unknown as RTCSessionDescriptionInit)
@@ -312,16 +245,14 @@ export class Voice {
   private considerCall(peerId: string): void {
     if (peerId === this.selfId || !this.channel || !this.mic) return
     if (this.admit && !this.admit(peerId, this.channel)) return
-    if (this.selfId >= peerId) return // they call us
+    if (this.selfId >= peerId) return // the smaller id calls
     const existing = this.calls.get(peerId)
     if (existing && !existing.stale()) return
-    // A call that never came up gets another go, in case an offer went missing.
     existing?.close()
     this.calls.delete(peerId)
     void this.call(peerId, true).dial()
   }
 
-  /** Retry anything that has not come up. Cheap, and it recovers a lost offer. */
   private retry(): void {
     if (!this.channel) return
     for (const peer of this.membersOf(this.channel)) this.considerCall(peer)
@@ -335,7 +266,6 @@ export class Voice {
       onChange: () => this.onChange?.(),
       onAudio: (stream) => this.talking.add(peerId, stream),
       onFailed: () => {
-        // Still standing here: the server says when somebody has really gone, and a retry may yet connect.
         if (this.failed.has(peerId)) return
         this.failed.add(peerId)
         this.onFailed?.(peerId)
@@ -350,28 +280,19 @@ export class Voice {
 interface CallHooks {
   send: (type: 'voffer' | 'vanswer' | 'vice', data: unknown) => void
   onChange: () => void
-  /** Their voice, once it starts arriving, so its level can be watched. */
   onAudio: (stream: MediaStream) => void
-  /** It could not be made at all. */
   onFailed: () => void
 }
 
-/** One voice connection to one person: our microphone out, theirs in. */
 class Call {
   live = false
 
   private readonly startedAt = Date.now()
-
-  /** True once it has had long enough and still is not carrying anything. */
-  stale(): boolean {
-    return !this.live && Date.now() - this.startedAt > 8000
-  }
-
   private readonly pc: RTCPeerConnection
   private mic: MediaStream
   private readonly hooks: CallHooks
   private readonly sink: HTMLAudioElement
-  private pending: RTCIceCandidateInit[] = []
+  private readonly pending: RTCIceCandidateInit[] = []
   private hasRemote = false
   private closed = false
 
@@ -380,28 +301,14 @@ class Call {
     this.mic = mic
     this.pc = new RTCPeerConnection(config)
 
-    /*
-     * Only the caller adds a transceiver up front.
-     *
-     * The side that answers must not, and this cost an evening. Adding one
-     * before the offer is applied creates a second, separate m-line, and an
-     * answer cannot introduce m-lines the offer did not have. The negotiation
-     * still succeeded and the connection still reached "connected", so it looked
-     * fine: audio simply travelled one way, from the caller to the answerer and
-     * never back. The answering side attaches its microphone to the transceiver
-     * the offer brought with it, in onOffer below.
-     */
+    // Only the caller: an answerer's own transceiver adds an m-line the answer cannot carry.
     if (weOffer) {
       for (const track of mic.getAudioTracks()) {
         this.pc.addTransceiver(track, { direction: 'sendrecv', streams: [mic] })
       }
     }
 
-    /*
-     * An element per person, so each voice is a separate stream the browser can
-     * mix. It goes into the page, hidden: a detached element is not reliably
-     * played, and this way the browser owns the audio the way it owns any other.
-     */
+    // In the page, hidden: a detached audio element is not reliably played.
     this.sink = document.createElement('audio')
     this.sink.autoplay = true
     this.sink.className = 'voice-sink'
@@ -427,7 +334,10 @@ class Call {
     }
   }
 
-  /** Send another microphone, on the same connection. */
+  stale(): boolean {
+    return !this.live && Date.now() - this.startedAt > STALE_CALL_MS
+  }
+
   async useMic(mic: MediaStream): Promise<void> {
     this.mic = mic
     const track = mic.getAudioTracks()[0]
@@ -435,12 +345,10 @@ class Call {
     if (track && audio && !this.closed) await audio.sender.replaceTrack(track).catch(() => undefined)
   }
 
-  /** Play through whichever speaker Settings says now. */
   speakers(): void {
     playOn(this.sink)
   }
 
-  /** How loud they play here, from 0 to 1. */
   setVolume(level: number): void {
     this.sink.volume = Math.min(1, Math.max(0, level))
   }
@@ -462,8 +370,6 @@ class Call {
       this.hasRemote = true
       await this.drain()
 
-      // Put our microphone on the transceiver the offer created, rather than
-      // making one of our own that the answer could never carry.
       const track = this.mic.getAudioTracks()[0]
       const audio = this.pc.getTransceivers().find((t) => t.receiver.track?.kind === 'audio')
       if (track && audio) {

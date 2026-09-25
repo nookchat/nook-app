@@ -3,13 +3,10 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/nebbsie/stream/main/server/install.sh | sh
 #
-# It asks for one thing, the domain the server answers on, and does the rest:
-# makes the secrets, fetches the compose file, starts the server, its
-# database, HTTPS and TURN, and waits until it answers. Run it again to update:
-# it keeps what it wrote the first time.
+# It asks for the domain, makes the secrets, starts the server, Postgres, HTTPS
+# and TURN, and waits until it answers. Run it again to update; .env is kept.
 #
-# Anything can be set instead of asked, and anything in the .env it writes
-# can be changed afterwards:
+# Optional settings:
 #
 #   CATHODE_DOMAIN=cathode.example.org   the domain, without asking
 #   CATHODE_DIR=./cathode                where it goes
@@ -18,7 +15,7 @@
 #   CATHODE_KLIPY_KEY=...                GIF search for everybody here (or
 #                                        CATHODE_TENOR_KEY, CATHODE_GIPHY_KEY)
 #
-# Needs Docker, with its compose plugin, and a domain whose DNS points here.
+# Needs Docker with its compose plugin, and a domain whose DNS points here.
 
 set -eu
 
@@ -35,7 +32,6 @@ command -v curl >/dev/null 2>&1 || fail "curl is not installed."
 mkdir -p "$DIR"
 cd "$DIR"
 
-# A secret, from whatever this machine has.
 secret() {
   if command -v openssl >/dev/null 2>&1; then openssl rand -hex "$1"
   else head -c "$1" /dev/urandom | od -An -tx1 | tr -d ' \n'
@@ -69,7 +65,6 @@ POSTGRES_PASSWORD=$(secret 24)
 CATHODE_TURN_SECRET=$(secret 32)
 COMPOSE_PROFILES=$profiles
 EOF
-  # A GIF key given now goes in with the rest. Only the server holds it.
   for name in CATHODE_KLIPY_KEY CATHODE_TENOR_KEY CATHODE_GIPHY_KEY; do
     value=$(printenv "$name" || true)
     [ -z "$value" ] || printf '%s=%s\n' "$name" "$value" >> .env
@@ -84,8 +79,8 @@ docker compose pull --quiet
 docker compose up -d --remove-orphans
 
 domain=$(sed -n 's/^CATHODE_DOMAIN=//p' .env | head -n 1)
-# Through Caddy when it runs, and straight to the server when your own proxy is in front.
-if grep -q '^COMPOSE_PROFILES=.*tls' .env; then
+if grep -q '^COMPOSE_PROFILES=.*tls' .env; then tls=1; else tls=0; fi
+if [ "$tls" = 1 ]; then
   url="https://$domain"
   say "Waiting for it to answer at $url (its first HTTPS certificate can take a minute)..."
 else
@@ -108,7 +103,7 @@ done
 
 say ""
 say "Nook is running at https://$domain"
-grep -q '^COMPOSE_PROFILES=.*tls' .env || say "  (behind your own proxy: send https://$domain to port 8787 here, with CATHODE_BIND=0.0.0.0 if it runs elsewhere)"
+[ "$tls" = 1 ] || say "  (behind your own proxy: send https://$domain to port 8787 here, with CATHODE_BIND=0.0.0.0 if it runs elsewhere)"
 say ""
 say "  Use it:     open Nook, choose Add server, and type $domain"
 say "  Update:     run this command again"

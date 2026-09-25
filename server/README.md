@@ -186,7 +186,7 @@ How it works:
   goes quiet, it moves to the next without anybody doing anything, and
   somebody opening an invite while the first server is down still gets in.
 
-`test/cluster-check.mjs` and `test/failover-check.mjs` run two servers with two
+`test/cluster.test.mjs` and `test/failover.test.mjs` run two servers with two
 databases, stop one, and check that nothing is lost and nobody notices.
 
 What the operators trust each other with is ciphertext. A server in the

@@ -1,34 +1,13 @@
-/**
- * The HTTP API, version 1, and the older paths it replaced.
- *
- *   GET  /api/v1/health                   what this is, and its cluster
- *   GET  /api/v1/ice                      TURN credentials
- *   GET  /api/v1/spaces/:room/events      sealed lines after a point
- *   POST /api/v1/spaces/:room/events      keep sealed lines
- *   POST /api/v1/spaces/:room/files       keep a sealed file, named by its hash
- *   GET  /api/v1/spaces/:room/files/:id   send one back
- *   WS   /api/v1/spaces/:room/socket      see sockets.mjs
- *   PUT  /api/v1/links/:id                leave a sealed device link, for ten minutes
- *   GET  /api/v1/links/:id                take it, once
- *   GET  /api/v1/people/:id               a sealed record of somebody's spaces
- *   PUT  /api/v1/people/:id               replace it
- *   GET  /api/v1/preview?url=             a link card
- *   GET  /api/v1/gifs?q=                  GIF search with the server's key, or what is popular
- *   GET  /api/v1/openapi.json             all of the above, described
- *   GET  /api/v1/cluster/{lines,rooms,people,files,live}   between servers only
- *   WS   /api/v1/socket                 every space a device is in, on one connection
- */
-
+import { clusterUrls, fromPeer, linesFor, peerHealth, peopleFor, roomsFor } from './cluster.mjs'
 import { HAS_TURN, MAX_FILE_BYTES, PREVIEWS, TURN_ONLY, VERSION, originAllowed } from './config.mjs'
-import { clusterHealth, clusterUrls, fromPeer, linesFor, peopleFor, roomsFor } from './cluster.mjs'
-import { liveFor } from './live.mjs'
-import { localStates } from './sockets.mjs'
 import { FILE_ID, filesFor, keep, send } from './files.mjs'
+import { gifService, gifs, hasGifs } from './gifs.mjs'
 import { ApiError, allow, fail, readJson, reply } from './http.mjs'
 import { LINK_ID, MAX_LINK, putLink, takeLink } from './links.mjs'
+import { liveFor } from './live.mjs'
 import { openapi } from './openapi.mjs'
-import { gifService, gifs, hasGifs } from './gifs.mjs'
 import { preview } from './preview.mjs'
+import { localStates } from './sockets.mjs'
 import {
   append,
   MAX_LINE,
@@ -43,9 +22,9 @@ import {
 } from './store.mjs'
 import { iceServers } from './turn.mjs'
 
-const int = (value, fallback = 0) => {
+const int = (value) => {
   const n = Math.floor(Number(value))
-  return Number.isFinite(n) && n >= 0 ? n : fallback
+  return Number.isFinite(n) && n >= 0 ? n : 0
 }
 
 function roomOf(value) {
@@ -65,7 +44,7 @@ function limited(req) {
 function health() {
   return {
     ok: true,
-    // What a page checks for to know it has found a Nook server.
+    // Pages check this to know they found a Nook server.
     service: 'cathode-server',
     name: 'cathode',
     version: VERSION,
@@ -78,7 +57,7 @@ function health() {
     gifService: gifService(),
     files: { max: MAX_FILE_BYTES },
     cluster: clusterUrls(),
-    peers: clusterHealth().peers,
+    peers: peerHealth(),
   }
 }
 
@@ -88,29 +67,25 @@ async function readEvents(url, room) {
   return { at: page.at, events: page.lines, more: page.more }
 }
 
-async function writeEvents(req, room) {
+async function mustWrite(req, room) {
   limited(req)
   if (!(await mayWrite(room, req.headers['x-cathode-write']))) {
     throw new ApiError(403, 'wrong_token', 'That is not the write token this space was claimed with.')
   }
+}
+
+async function writeEvents(req, room) {
+  await mustWrite(req, room)
   const body = await readJson(req)
   const list = Array.isArray(body) ? body : body?.events
   if (!Array.isArray(list)) throw new ApiError(400, 'bad_body', 'Expected a list of sealed lines.')
-  /*
-   * Every line has to be a string of a sane size and nothing else is checked,
-   * because nothing else can be: this cannot read them. The devices check
-   * every signature on the way back in, which is the check that matters.
-   */
   const clean = list.filter((e) => typeof e === 'string' && e.length > 0 && e.length <= MAX_LINE)
   const fresh = await append(room, clean)
   return { added: clean.length, fresh: fresh.length, at: fresh.length ? fresh[fresh.length - 1].seq : undefined }
 }
 
 async function writeFile(req, room) {
-  limited(req)
-  if (!(await mayWrite(room, req.headers['x-cathode-write']))) {
-    throw new ApiError(403, 'wrong_token', 'That is not the write token this space was claimed with.')
-  }
+  await mustWrite(req, room)
   return keep(room, req)
 }
 
@@ -138,9 +113,7 @@ async function linkCard(url) {
 
 async function gifSearch(url) {
   if (!hasGifs()) throw new ApiError(404, 'off', 'This server has no GIF key.')
-  // An empty term asks for what is popular now.
-  const q = (url.searchParams.get('q') ?? '').trim().slice(0, 80)
-  const found = await gifs(q)
+  const found = await gifs(url.searchParams.get('q') ?? '')
   if (!found) throw new ApiError(502, 'upstream', `${gifService()} did not answer.`)
   return found
 }
@@ -157,7 +130,6 @@ export async function handle(req, res) {
     const parts = url.pathname.split('/').filter(Boolean)
     const method = req.method ?? 'GET'
 
-    // Only the health check answers a page this server does not serve.
     const cross = req.headers.origin !== undefined && !originAllowed(req.headers.origin)
     const isHealth = url.pathname === '/api/v1/health'
     if (cross && !isHealth) throw new ApiError(403, 'origin', 'This server does not answer that page.')
@@ -214,9 +186,7 @@ export async function handle(req, res) {
           return reply(res, 200, await liveFor(after, String(url.searchParams.get('boot') ?? ''), wait, localStates))
         }
       }
-      throw new ApiError(404, 'not_found', 'There is nothing at that address.')
     }
-
     throw new ApiError(404, 'not_found', 'There is nothing at that address.')
   } catch (err) {
     return fail(res, err)

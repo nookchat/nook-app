@@ -1,37 +1,14 @@
-/**
- * Emoji, and the thing you pick them with.
- *
- * The list is written down here rather than fetched, because there is nothing
- * to fetch it from: this app talks to a signal relay and to other people, and
- * an emoji picker that needs a CDN is an emoji picker that stops working on a
- * train. A few hundred of them, with the words people actually search by, costs
- * about ten kilobytes and nothing else.
- *
- * It is not every emoji. There are several thousand, most of which nobody has
- * ever sent, and a picker is judged by how fast the one you want appears rather
- * than by how many you scrolled past on the way. Anything missing can still be
- * typed or pasted: this is a shortcut, not a gate.
- *
- * One picker exists at a time. It is a popover on the body rather than a child
- * of whatever opened it, so it is never clipped by a panel with its own scroll.
- */
-
 import { h, clear } from './dom'
 
-export interface EmojiGroup {
+interface EmojiGroup {
   id: string
   label: string
-  /** What the tab shows. One emoji from the group. */
   tab: string
-  /** "<emoji> <keywords>", so the data is readable in the file it lives in. */
+  /** "<emoji> <keywords>" */
   items: string[]
 }
 
-/*
- * The set. Keywords are what somebody would type, not the Unicode name: people
- * search for "laugh" and "cry", never for "face with tears of joy".
- */
-export const GROUPS: EmojiGroup[] = [
+const GROUPS: EmojiGroup[] = [
   {
     id: 'faces',
     label: 'Smileys',
@@ -292,12 +269,11 @@ export const GROUPS: EmojiGroup[] = [
   },
 ]
 
-export interface Emoji {
+interface Emoji {
   ch: string
   words: string
 }
 
-/** The set, flattened and parsed once. */
 const ALL: { group: EmojiGroup; list: Emoji[] }[] = GROUPS.map((group) => ({
   group,
   list: group.items.map((raw) => {
@@ -308,12 +284,10 @@ const ALL: { group: EmojiGroup; list: Emoji[] }[] = GROUPS.map((group) => ({
   }),
 }))
 
-/*
- * Typed as :name:, the way every chat app since Campfire has done it. Each
- * emoji answers to its own words, the first one to claim a word keeping it,
- * and to the names people already know from Slack and Discord, which win.
- */
-const ALIASES: Record<string, string> = {
+const WORDS_OF = new Map<string, string>()
+for (const { list } of ALL) for (const e of list) if (!WORDS_OF.has(e.ch)) WORDS_OF.set(e.ch, e.words)
+
+const SLACK_ALIASES: Record<string, string> = {
   joy: '😂', laughing: '😆', laugh: '😆', rofl: '🤣', smile: '😄', grin: '😁', grinning: '😀',
   sweat_smile: '😅', wink: '😉', blush: '😊', heart_eyes: '😍', kissing_heart: '😘', thinking: '🤔',
   sob: '😭', cry: '😢', angry: '😠', rage: '😡', scream: '😱', sunglasses: '😎', nerd: '🤓',
@@ -332,16 +306,14 @@ const SHORTCODES: Map<string, string> = (() => {
       for (const word of e.words.split(/\s+/)) if (word && !out.has(word)) out.set(word, e.ch)
     }
   }
-  for (const [code, ch] of Object.entries(ALIASES)) out.set(code, ch)
+  for (const [code, ch] of Object.entries(SLACK_ALIASES)) out.set(code, ch)
   return out
 })()
 
-/** The emoji a :name: stands for, or null. */
 export function emojiFor(code: string): string | null {
   return SHORTCODES.get(code.toLowerCase()) ?? null
 }
 
-/** Names starting with what has been typed, the exact one first, one per emoji. */
 export function emojiStartingWith(typed: string, most = 8): { code: string; ch: string }[] {
   const wanted = typed.toLowerCase()
   const seen = new Set<string>()
@@ -360,7 +332,6 @@ export function emojiStartingWith(typed: string, most = 8): { code: string; ch: 
   return out
 }
 
-/** Every :name: in some words made into its emoji, leaving `code` and names it does not know alone. */
 export function withEmoji(text: string): string {
   return text
     .split(/(`[^`]*`)/)
@@ -371,7 +342,6 @@ export function withEmoji(text: string): string {
 const RECENT_KEY = 'cathode.emoji.v1'
 const RECENT_MAX = 24
 
-/** What this person reached for last, most recent first. */
 export function recentEmoji(): string[] {
   try {
     const raw = JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]') as unknown
@@ -382,24 +352,16 @@ export function recentEmoji(): string[] {
   }
 }
 
-export function noteEmoji(ch: string): void {
+function noteEmoji(ch: string): void {
   try {
     const next = [ch, ...recentEmoji().filter((e) => e !== ch)].slice(0, RECENT_MAX)
     localStorage.setItem(RECENT_KEY, JSON.stringify(next))
-  } catch {
-    /* the picker still works, it just forgets */
-  }
+  } catch {}
 }
 
 const QUICK_KEY = 'cathode.quick.v1'
 
-/**
- * The five this person wants one click away, in the order they put them.
- *
- * Empty by default, which is not the same as none: an empty list means "use
- * whatever I have been reaching for lately", and that is the right behaviour
- * for somebody who has never opened the setting.
- */
+/** Empty means: fall back to the recent emoji. */
 export function quickReactions(): string[] {
   try {
     const raw = JSON.parse(localStorage.getItem(QUICK_KEY) ?? '[]') as unknown
@@ -413,50 +375,27 @@ export function quickReactions(): string[] {
 export function setQuickReactions(list: string[]): void {
   try {
     localStorage.setItem(QUICK_KEY, JSON.stringify(list.filter(Boolean).slice(0, 5)))
-  } catch {
-    /* the choice lasts for this session only */
-  }
+  } catch {}
 }
 
-/** Look one up, for the name under the grid. */
 function describe(ch: string): string {
-  for (const { list } of ALL) {
-    for (const e of list) if (e.ch === ch) return e.words
-  }
-  return ''
+  return WORDS_OF.get(ch) ?? ''
 }
 
-/**
- * Only one at a time.
- *
- * Two open pickers is two things listening for the same click, and the second
- * one to open would close the first from underneath the pointer.
- */
-let open: { close: () => void; anchor?: HTMLElement } | null = null
+let open: { close: () => void; anchor: HTMLElement } | null = null
 
 export function closeEmojiPicker(): void {
   open?.close()
 }
 
-export interface PickerOptions {
-  /** Where to hang it. The popover is placed against this element. */
+interface PickerOptions {
   anchor: HTMLElement
   onPick(ch: string): void
-  /** Shown above the grid, for "react to this message". */
   title?: string
-  /** Keep it open after a pick, for reacting several times. */
   sticky?: boolean
 }
 
-/**
- * Open the picker against an element.
- *
- * Fixed position on the body, so a panel with its own scrollbar cannot clip it,
- * and flipped above the anchor when there is no room below. Escape closes it and
- * hands focus back, because a picker that traps the keyboard is worse than none.
- */
 export function openEmojiPicker(options: PickerOptions): void {
-  // Its own button again: closed, the way a toggle is. Anything else opens it afresh.
   if (open && open.anchor === options.anchor) {
     open.close()
     return
@@ -484,7 +423,7 @@ export function openEmojiPicker(options: PickerOptions): void {
   const setPreview = (ch: string): void => {
     clear(preview)
     preview.append(
-      h('span', { class: 'emoji-preview', text: ch || '' }),
+      h('span', { class: 'emoji-preview', text: ch }),
       h('span', { class: 'truncate tiny faint', text: ch ? describe(ch) : 'Pick one' }),
     )
   }
@@ -496,18 +435,20 @@ export function openEmojiPicker(options: PickerOptions): void {
     else close()
   }
 
-  const cell = (ch: string): HTMLElement =>
-    h('button', {
+  const cell = (ch: string): HTMLElement => {
+    const label = describe(ch) || ch
+    return h('button', {
       class: 'emoji-cell',
       text: ch,
-      title: describe(ch) || ch,
-      ariaLabel: describe(ch) || ch,
+      title: label,
+      ariaLabel: label,
       on: {
         click: () => pick(ch),
         mouseenter: () => setPreview(ch),
         focus: () => setPreview(ch),
       },
     })
+  }
 
   const section = (label: string, list: string[]): void => {
     if (list.length === 0) return
@@ -517,7 +458,6 @@ export function openEmojiPicker(options: PickerOptions): void {
     grid.append(row)
   }
 
-  /** Draw the whole set, or the matches for what has been typed. */
   function paint(query: string): void {
     clear(grid)
     const q = query.trim().toLowerCase()
@@ -528,13 +468,12 @@ export function openEmojiPicker(options: PickerOptions): void {
           if (e.ch === q || e.words.includes(q)) hits.push(e.ch)
           if (hits.length >= 120) break
         }
+        if (hits.length >= 120) break
       }
-      // A word that starts a keyword is a better match than one buried in it.
       section(hits.length ? 'Matches' : 'Nothing matches that', hits)
       return
     }
-    const recent = recentEmoji()
-    section('Recent', recent)
+    section('Recent', recentEmoji())
     for (const { group, list } of ALL) section(group.label, list.map((e) => e.ch))
   }
 
@@ -560,7 +499,7 @@ export function openEmojiPicker(options: PickerOptions): void {
 
   search.addEventListener('input', () => paint(search.value))
   search.addEventListener('keydown', (ev) => {
-    const key = (ev as KeyboardEvent).key
+    const key = ev.key
     if (key === 'Enter') {
       const first = grid.querySelector('.emoji-cell')
       if (first instanceof HTMLElement) first.click()
@@ -574,13 +513,8 @@ export function openEmojiPicker(options: PickerOptions): void {
     }
   })
 
-  /*
-   * Arrow keys walk the grid. The number of cells in a row depends on the width
-   * of the popover, so it is measured rather than assumed: a hard coded eight
-   * is wrong the moment the box is narrower on a phone.
-   */
   grid.addEventListener('keydown', (ev) => {
-    const key = (ev as KeyboardEvent).key
+    const key = ev.key
     if (!key.startsWith('Arrow')) return
     const cells = [...grid.querySelectorAll('.emoji-cell')].filter(
       (el): el is HTMLElement => el instanceof HTMLElement,
@@ -627,7 +561,6 @@ export function openEmojiPicker(options: PickerOptions): void {
   search.focus()
 }
 
-/** Below the anchor, or above it when the bottom of the window is closer. */
 export function placeNear(pop: HTMLElement, anchor: HTMLElement): void {
   const at = anchor.getBoundingClientRect()
   const box = pop.getBoundingClientRect()

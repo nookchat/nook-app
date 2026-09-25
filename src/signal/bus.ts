@@ -1,21 +1,5 @@
-/**
- * The signal bus: everything said in a space that is not kept.
- *
- * It seals each message with the space's key, sends it down the space's
- * channel on the server connection, opens what comes back, and drops what
- * it has already seen. Presence, typing, and the handshakes that start calls
- * and screen shares all go this way.
- */
-
 import type { Room } from '../room'
-import {
-  buildEnvelope,
-  open,
-  ReplayGuard,
-  seal,
-  type Envelope,
-  type OutgoingEnvelope,
-} from './envelope'
+import { buildEnvelope, open, ReplayGuard, seal, type Envelope, type OutgoingEnvelope } from './envelope'
 import type { Transport, TransportStatus } from './transport'
 
 export interface RelayHealth {
@@ -25,25 +9,15 @@ export interface RelayHealth {
 }
 
 export class SignalBus {
-  readonly transports: Transport[]
   onMessage: ((env: Envelope) => void) | null = null
   onHealth: ((health: RelayHealth[]) => void) | null = null
 
+  private readonly transports: Transport[]
   private readonly room: Room
   private readonly selfId: string
   private readonly guard = new ReplayGuard()
   private started = false
-  private health = new Map<Transport, RelayHealth>()
-
-  /**
-   * Traffic counters, for the diagnostics on a stuck screen.
-   *
-   * `unreadable` above zero with `opened` at zero means somebody is talking on
-   * this room but our key does not fit. A link cut short by a chat app looks
-   * exactly like that.
-   */
-  opened = 0
-  unreadable = 0
+  private readonly health = new Map<Transport, RelayHealth>()
 
   constructor(room: Room, selfId: string, transports: Transport[]) {
     this.room = room
@@ -52,12 +26,7 @@ export class SignalBus {
     for (const t of this.transports) this.health.set(t, { name: t.name, status: 'idle' })
   }
 
-  /** True when at least one relay can carry a message right now. */
-  get connected(): boolean {
-    return this.transports.some((t) => t.ready)
-  }
-
-  /** A message made here rather than received, such as a server saying somebody left. */
+  /** For a message made here rather than received, such as a server saying somebody left. */
   deliver(env: Envelope): void {
     if (env.from === this.selfId) return
     this.onMessage?.(env)
@@ -74,7 +43,7 @@ export class SignalBus {
   }
 
   private open(t: Transport): void {
-    t.connect(this.room.id, {
+    t.connect({
       onWire: (wire) => void this.receive(wire),
       onStatus: (transport, status, detail) => {
         this.health.set(transport, { name: transport.name, status, detail })
@@ -100,14 +69,10 @@ export class SignalBus {
 
   private async receive(wire: string): Promise<void> {
     const env = await open(this.room.key, wire)
-    if (!env) {
-      this.unreadable += 1
-      return // The key does not fit, or the bytes are damaged.
-    }
-    this.opened += 1
-    if (env.from === this.selfId) return // Our own message, echoed by the relay.
-    if (env.to && env.to !== this.selfId) return // Addressed to a different peer.
-    if (!this.guard.accept(env.id)) return // The other relay already delivered it.
+    if (!env) return
+    if (env.from === this.selfId) return
+    if (env.to && env.to !== this.selfId) return
+    if (!this.guard.accept(env.id)) return
     this.onMessage?.(env)
   }
 }

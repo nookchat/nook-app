@@ -1,12 +1,3 @@
-/**
- * The icon set.
- *
- * Stroked outlines on a 24 unit grid, drawn in the current text colour, so one
- * icon works on a button and on a dark video overlay. Nook used emoji here
- * before, which changed shape on every platform and never matched the weight of
- * the text beside it.
- */
-
 export type IconName =
   | 'copy'
   | 'check'
@@ -65,11 +56,9 @@ export type IconName =
 
 const PATHS: Record<IconName, string> = {
   copy: 'M9 9.5A1.5 1.5 0 0 1 10.5 8h8A1.5 1.5 0 0 1 20 9.5v8a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 9 17.5zM5.5 16A1.5 1.5 0 0 1 4 14.5v-8A1.5 1.5 0 0 1 5.5 5h8A1.5 1.5 0 0 1 15 6.5',
-  // A pushpin: the head, the shoulder it hangs from, and the point.
   pin: 'M9 4h6M10 4.5 9 11l-2.5 2.5h11L15 11l-1-6.5M12 13.5V20',
   check: 'M20 6.5 9.5 17 4.5 12',
-  // Three eyes drawn as rings, plus a few loose modules. The even odd fill rule
-  // is what turns the inner square of each eye into a hole.
+  // The even-odd fill rule turns each eye's inner square into a hole.
   qr: 'M3.5 3.5h7v7h-7zM5.5 5.5h3v3h-3zM13.5 3.5h7v7h-7zM15.5 5.5h3v3h-3zM3.5 13.5h7v7h-7zM5.5 15.5h3v3h-3zM13.5 13.5h3v3h-3zM17.5 17.5h3v3h-3zM13.5 18.5h2v2h-2zM18.5 13.5h2v2h-2z',
   expand: 'M9 4H5.5A1.5 1.5 0 0 0 4 5.5V9M15 4h3.5A1.5 1.5 0 0 1 20 5.5V9M9 20H5.5A1.5 1.5 0 0 1 4 18.5V15M15 20h3.5a1.5 1.5 0 0 0 1.5-1.5V15',
   collapse: 'M4 9h3.5A1.5 1.5 0 0 0 9 7.5V4M20 9h-3.5A1.5 1.5 0 0 1 15 7.5V4M4 15h3.5A1.5 1.5 0 0 1 9 16.5V20M20 15h-3.5a1.5 1.5 0 0 0-1.5 1.5V20',
@@ -92,13 +81,10 @@ const PATHS: Record<IconName, string> = {
   plus: 'M12 5.5v13M5.5 12h13',
   minus: 'M5.5 12h13',
   home: 'M3.5 11.5 12 4.5l8.5 7M6 10v9.5h12V10',
-  // Five points and a band. Filled, because at thirteen pixels an outlined
-  // crown is a smudge with a hole in it.
   crown: 'M4 8.5l3.6 3L12 5l4.4 6.5 3.6-3-1.6 8.5H5.6zM5.6 19.5h12.8v1.6H5.6z',
   more: 'M6 12h.01M12 12h.01M18 12h.01',
   menu: 'M4 7h16M4 12h16M4 17h16',
   hash: 'M5 9h14M5 15h14M10.5 4 8.5 20M15.5 4l-2 16',
-  // A cog, which is what everybody looks for.
   settings:
     'M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z',
   send: 'M20.5 3.5 10 14M20.5 3.5 14 20.5l-4-6.5-6.5-4z',
@@ -113,33 +99,35 @@ const PATHS: Record<IconName, string> = {
   'phone-off': 'M3.5 14.5c4.8-4.4 12.2-4.4 17 0l-1.8 2.3a1 1 0 0 1-1.3.2l-2.2-1.3a1 1 0 0 1-.5-.9V13a10 10 0 0 0-5.4 0v1.8a1 1 0 0 1-.5.9L6.6 17a1 1 0 0 1-1.3-.2z',
   link: 'M10 14a4 4 0 0 0 5.7.3l3-3a4 4 0 0 0-5.7-5.7l-1.2 1.2M14 10a4 4 0 0 0-5.7-.3l-3 3a4 4 0 0 0 5.7 5.7l1.2-1.2',
   enter: 'M10 7.5 14.5 12 10 16.5M14.5 12H4M13 4.5h5.5a1.5 1.5 0 0 1 1.5 1.5v12a1.5 1.5 0 0 1-1.5 1.5H13',
-  // Two units in a rack, each with its light on.
   server: 'M5.5 4.5h13a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1zM5.5 13.5h13a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1zM8 7.5h.01M8 16.5h.01',
   people: 'M9 11.5a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4zM3 19.5c0-3 2.7-4.8 6-4.8s6 1.8 6 4.8M16 5.4a3.2 3.2 0 0 1 0 6.2M17.5 14.9c2.1.5 3.5 1.9 3.5 4.6',
-  // One person, and a plus beside them.
   'user-plus': 'M10 11.5a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4zM4 19.5c0-3 2.7-4.8 6-4.8s6 1.8 6 4.8M18.5 8v6M15.5 11h6',
-  // Out through a door: the frame, and an arrow leaving it.
   leave: 'M14 4.5H6.5A1.5 1.5 0 0 0 5 6v12a1.5 1.5 0 0 0 1.5 1.5H14M10 12h10M16.5 8.5 20 12l-3.5 3.5',
-  // A clip bent back on itself, holding a page.
   paperclip: 'M20 11.5 12.2 19.3a4.8 4.8 0 0 1-6.8-6.8l8.3-8.3a3.2 3.2 0 0 1 4.5 4.5l-8.3 8.3a1.6 1.6 0 0 1-2.3-2.3l7.6-7.6',
-  // Into the tray: an arrow down onto a line.
   download: 'M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14',
   play: 'M8 5.2v13.6a.8.8 0 0 0 1.2.7l10.6-6.8a.8.8 0 0 0 0-1.4L9.2 4.5A.8.8 0 0 0 8 5.2z',
-  // A page with its corner turned down.
   file: 'M13.5 3.5H7A1.5 1.5 0 0 0 5.5 5v14A1.5 1.5 0 0 0 7 20.5h10a1.5 1.5 0 0 0 1.5-1.5V8.5zM13.5 3.5v5h5',
-  // Two notes on a beam.
   music: 'M9 18V6l10-2v12M9 18a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0zM19 16a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z',
   'chevron-right': 'M9.5 6 15.5 12l-6 6',
-  // A handset.
   phone: 'M6.8 3.8h2.4l1.5 4-2 1.3a11 11 0 0 0 6.2 6.2l1.3-2 4 1.5v2.4a2 2 0 0 1-2.1 2A16 16 0 0 1 4.8 5.9a2 2 0 0 1 2-2.1z',
-  // A phone, the thing in your hand, not the call.
   device: 'M8.5 3h7A1.5 1.5 0 0 1 17 4.5v15a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 7 19.5v-15A1.5 1.5 0 0 1 8.5 3zM11 18h2',
 }
 
-/** Icons drawn as solid shapes rather than strokes. */
 const FILLED = new Set<IconName>(['qr', 'stop', 'crown', 'play'])
 
+const drawn = new Map<string, SVGSVGElement>()
+
 export function icon(name: IconName, size = 18): SVGSVGElement {
+  const key = `${name}:${size}`
+  let template = drawn.get(key)
+  if (!template) {
+    template = draw(name, size)
+    drawn.set(key, template)
+  }
+  return template.cloneNode(true) as SVGSVGElement
+}
+
+function draw(name: IconName, size: number): SVGSVGElement {
   const ns = 'http://www.w3.org/2000/svg'
   const svg = document.createElementNS(ns, 'svg')
   svg.setAttribute('viewBox', '0 0 24 24')

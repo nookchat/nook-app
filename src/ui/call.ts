@@ -1,18 +1,3 @@
-/**
- * Calls between two people, as the screen shows them.
- *
- *   the ring     a card that comes up over whatever is on screen, with the
- *                caller's face and two buttons, and a ring while it is up
- *   the strip    over a direct conversation, while you are calling or in a
- *                call with that person: how long, mute, and hang up
- *   the dock     at the foot of the channels, while you are in voice
- *                somewhere this screen is not showing, so a call is never
- *                running out of sight with no way to end it
- *
- * The calling itself is the space's: see space/runtime.ts. This only listens
- * to what it says and draws it.
- */
-
 import { spaces } from '../space/registry'
 import { isCallChannel, type CallNews, type SpaceRuntime } from '../space/runtime'
 import { avatarOf } from './chat-panel'
@@ -37,7 +22,6 @@ function clock(since: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
 }
 
-/** Listen for calls in every space, for the life of the page. */
 export function installCalls(openDirect: (space: SpaceRuntime, key: string) => void): void {
   let card: HTMLElement | null = null
   let stopRing: () => void = () => undefined
@@ -105,7 +89,6 @@ export function installCalls(openDirect: (space: SpaceRuntime, key: string) => v
   })
 }
 
-/** A call button and, while calling or in a call with this person, the strip that goes with it. */
 export function callControls(space: SpaceRuntime, key: string): { button: HTMLButtonElement; strip: HTMLElement; stop(): void } {
   const name = (): string => nameOf(space, key)
   const button = h('button', { class: 'ghost icon-only', ariaLabel: 'Call', title: 'Voice call' }, [icon('phone', 17)])
@@ -128,6 +111,7 @@ export function callControls(space: SpaceRuntime, key: string): { button: HTMLBu
   })
   hangUp.addEventListener('click', () => space.endCall())
 
+  let drawnMuted: boolean | null = null
   const paint = (): void => {
     const call = space.call?.with === key ? space.call : null
     strip.classList.toggle('hidden', !call)
@@ -136,6 +120,8 @@ export function callControls(space: SpaceRuntime, key: string): { button: HTMLBu
     if (!call) return
     words.textContent = call.live ? `In a call with ${name()} · ${clock(call.since)}` : `Calling ${name()}…`
     const muted = space.voice.state.muted
+    if (muted === drawnMuted) return
+    drawnMuted = muted
     mute.replaceChildren(icon(muted ? 'mic-off' : 'mic', 16))
     mute.title = muted ? 'Unmute' : 'Mute'
     mute.classList.toggle('on', muted)
@@ -153,10 +139,6 @@ export function callControls(space: SpaceRuntime, key: string): { button: HTMLBu
   }
 }
 
-/**
- * At the foot of the channels: voice that is running somewhere this screen is
- * not showing. `here` is the space on screen, whose own voice bar says the rest.
- */
 export function voiceDock(here: SpaceRuntime | null): { root: HTMLElement; stop(): void } {
   const words = h('span', { class: 'tiny faint truncate' })
   const mute = h('button', { class: 'ghost icon-only', ariaLabel: 'Mute' })

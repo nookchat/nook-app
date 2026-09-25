@@ -1,64 +1,35 @@
-/**
- * A menu, hanging off whatever was pressed.
- *
- * The members list used to carry a row of small icon buttons per person: an
- * arrow to promote, an arrow to move them into a voice channel, a cross to
- * remove. Three unlabelled targets a few pixels apart, one of which cannot be
- * undone, sitting in a column narrow enough that they collided with the name.
- * A menu says what each one does in words, and asks for two deliberate presses
- * instead of one hopeful one.
- *
- * It lives on the body rather than inside the row that opened it, for the same
- * reason the emoji picker does: the rail scrolls and would clip it.
- */
-
-import { clear, h } from './dom'
+import { h } from './dom'
 import { placeNear } from './emoji'
 
 export interface MenuItem {
   label: string
-  /** Shown under the label when the label alone would be a guess. */
   note?: string
-  /** Red, for the ones that take something away. */
   danger?: boolean
-  /** A face or an icon before the label. */
   lead?: HTMLElement
-  /** A count or a mark after it. */
   trail?: HTMLElement | null
-  /** The one you are already on. */
   current?: boolean
   run(): void
 }
 
-/** A label over a group of items, a line between two groups, or something of its own, such as a slider. */
 export type MenuEntry = MenuItem | { heading: string } | { custom: HTMLElement } | 'line'
 
-export interface MenuOptions {
-  /** An extra class, for a menu that is laid out differently. */
+interface MenuOptions {
   className?: string
 }
 
-/** Only one is ever open, for the same reason only one picker is. */
 let open: (() => void) | null = null
-/** What the open one hangs off, so pressing that again closes it rather than opening it afresh. */
 let openFor: HTMLElement | null = null
 
-export function closeMenu(): void {
-  open?.()
-}
-
-/** The same button, or the one drawn in its place since: they say which menu they open. */
 function sameButton(a: HTMLElement | null, b: HTMLElement): boolean {
   return !!a && (a === b || (!!a.dataset.menu && a.dataset.menu === b.dataset.menu))
 }
 
 export function openMenu(anchor: HTMLElement, items: MenuEntry[], options: MenuOptions = {}): void {
-  // The same button again: a toggle, the way every menu button works.
   if (open && sameButton(openFor, anchor)) {
-    closeMenu()
+    open()
     return
   }
-  closeMenu()
+  open?.()
   if (items.length === 0) return
 
   const menu = h('div', { class: `menu${options.className ? ` ${options.className}` : ''}`, role: 'menu' })
@@ -113,21 +84,16 @@ export function openMenu(anchor: HTMLElement, items: MenuEntry[], options: MenuO
       anchor.focus()
       return
     }
-    if (!ev.key.startsWith('Arrow')) return
-    const options = [...menu.querySelectorAll('.menu-item')].filter(
-      (el): el is HTMLElement => el instanceof HTMLElement,
-    )
-    const at = options.indexOf(document.activeElement as HTMLElement)
     const step = ev.key === 'ArrowDown' ? 1 : ev.key === 'ArrowUp' ? -1 : 0
     if (!step) return
-    const next = options[(at + step + options.length) % options.length]
-    next?.focus()
+    const buttons = [...menu.querySelectorAll<HTMLElement>('.menu-item')]
+    const at = buttons.indexOf(document.activeElement as HTMLElement)
+    buttons[(at + step + buttons.length) % buttons.length]?.focus()
     ev.preventDefault()
   }
   const onDown = (ev: Event): void => {
     const target = ev.target as Node
     if (menu.contains(target) || anchor.contains(target)) return
-    // Its button, drawn again since it opened, is still its button: that press is left to the button.
     const button = (target as Element).closest?.('[data-menu]')
     if (button instanceof HTMLElement && sameButton(anchor, button)) return
     close()
@@ -141,5 +107,3 @@ export function openMenu(anchor: HTMLElement, items: MenuEntry[], options: MenuO
   window.addEventListener('pointerdown', onDown, true)
   window.addEventListener('resize', close)
 }
-
-export { clear }

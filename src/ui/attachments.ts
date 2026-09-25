@@ -1,19 +1,3 @@
-/**
- * Files in the conversation: drawn in a message, opened full screen, and
- * waiting in the tray under the box while they upload.
- *
- * A picture is given its shape and a blurred likeness at once, from what the
- * message says about it, and is fetched and opened when it scrolls near the
- * screen, so a channel full of pictures costs what is looked at. A video
- * shows its first frame and is fetched when it is played. Anything else is a
- * card with its name, its size and a way to save it.
- *
- * Every byte arrives sealed and is opened here, on this device: see
- * net/files.ts. A picture is shown through an img with an address made on
- * this page, never as markup, so what somebody uploads can only ever be a
- * picture.
- */
-
 import { saveFile, sizeLabel, UploadRefused, type SpaceFiles } from '../net/files'
 import { MAX_FILES, type Attachment } from '../store/log'
 import { h } from './dom'
@@ -25,7 +9,7 @@ type Kind = 'image' | 'video' | 'audio' | 'file'
 const IMAGE = /^image\/(jpeg|png|gif|webp|avif|bmp|svg\+xml)$/
 const VIDEO = /^video\/(mp4|webm|ogg|quicktime)$/
 
-export function kindOf(file: { type: string }): Kind {
+function kindOf(file: { type: string }): Kind {
   if (IMAGE.test(file.type)) return 'image'
   if (VIDEO.test(file.type)) return 'video'
   if (file.type.startsWith('audio/')) return 'audio'
@@ -36,7 +20,6 @@ function iconFor(kind: Kind): IconName {
   return kind === 'audio' ? 'music' : kind === 'video' ? 'play' : 'file'
 }
 
-/** A picture's size in a message: the shape kept, inside a box of at most `most`. */
 function fit(file: Attachment, most: { w: number; h: number }): { w: number; h: number } {
   if (!file.w || !file.h) return { w: Math.min(most.w, 320), h: Math.min(most.h, 240) }
   const scale = Math.min(1, most.w / file.w, most.h / file.h)
@@ -49,7 +32,6 @@ function duration(seconds: number): string {
   return `${m}:${String(s % 60).padStart(2, '0')}`
 }
 
-/** Fetched when close to the screen, and not before. */
 const waiting = new WeakMap<Element, () => void>()
 const nearby =
   typeof IntersectionObserver === 'undefined'
@@ -72,20 +54,23 @@ function whenNear(el: Element, work: () => void): void {
   nearby.observe(el)
 }
 
-/** A blurred likeness, for the moment before the real thing. */
-function blur(file: Attachment): HTMLElement | null {
+function blurredThumb(file: Attachment): HTMLElement | null {
   if (!file.thumb) return null
   const el = h('span', { class: 'att-blur' })
   el.style.backgroundImage = `url("${file.thumb}")`
   return el
 }
 
-/** Everything a message carries, drawn. */
 export function attachmentBlock(files: Attachment[], source: SpaceFiles | null): HTMLElement {
-  const media = files.filter((f) => kindOf(f) === 'image' || kindOf(f) === 'video')
-  const pictures = files.filter((f) => kindOf(f) === 'image')
-  const rest = files.filter((f) => !media.includes(f))
-  // One picture gets room to be seen. Several share it.
+  const pictures: Attachment[] = []
+  const media: Attachment[] = []
+  const rest: Attachment[] = []
+  for (const f of files) {
+    const kind = kindOf(f)
+    if (kind === 'image') pictures.push(f)
+    if (kind === 'image' || kind === 'video') media.push(f)
+    else rest.push(f)
+  }
   const most = media.length === 1 ? { w: 440, h: 340 } : { w: 260, h: 220 }
   const block = h('div', { class: 'att-block' })
   if (media.length) {
@@ -113,12 +98,12 @@ function imageTile(file: Attachment, source: SpaceFiles | null, most: { w: numbe
   const tile = h(
     'button',
     { class: 'att-tile att-image', title: `${file.name}, ${sizeLabel(file.size)}`, ariaLabel: `Open ${file.name}`, on: { click: onOpen } },
-    [blur(file), img],
+    [blurredThumb(file), img],
   )
   tile.style.width = `${size.w}px`
   tile.style.aspectRatio = `${size.w} / ${size.h}`
   img.addEventListener('load', () => tile.classList.add('ready'))
-  // A picture this browser cannot draw (HEIC, say) is still a file.
+  // A picture this browser cannot decode (HEIC) falls back to a file card.
   img.addEventListener('error', () => tile.replaceWith(fileCard(file, source)))
   if (source) {
     whenNear(tile, () => {
@@ -138,7 +123,7 @@ function videoTile(file: Attachment, source: SpaceFiles | null, most: { w: numbe
   const progress = h('span', { class: 'att-progress hidden' })
   const play = h('span', { class: 'att-play' }, [icon('play', 22), progress])
   const tile = h('div', { class: 'att-tile att-video', title: `${file.name}, ${sizeLabel(file.size)}` }, [
-    blur(file),
+    blurredThumb(file),
     poster,
     play,
     h('span', { class: 'att-meta' }, [
@@ -179,7 +164,7 @@ function videoTile(file: Attachment, source: SpaceFiles | null, most: { w: numbe
       tile.replaceChildren(video)
       tile.removeAttribute('role')
       tile.removeAttribute('tabindex')
-      watchPicture(video, tile, file, source)
+      warnIfNoPicture(video, tile, file, source)
       await video.play().catch(() => undefined)
     } catch {
       started = false
@@ -198,12 +183,8 @@ function videoTile(file: Attachment, source: SpaceFiles | null, most: { w: numbe
   return tile
 }
 
-/**
- * A video whose sound plays and whose picture does not: this browser cannot
- * decode the picture (HEVC, most often, on anything but Safari or a Mac). Said
- * over the black, with a way to save it, rather than left as a black box.
- */
-function watchPicture(video: HTMLVideoElement, tile: HTMLElement, file: Attachment, source: SpaceFiles): void {
+// Most browsers outside Safari play the sound of an HEVC video but show no picture.
+function warnIfNoPicture(video: HTMLVideoElement, tile: HTMLElement, file: Attachment, source: SpaceFiles): void {
   const check = (): void => {
     if (video.currentTime < 0.8) return
     video.removeEventListener('timeupdate', check)
@@ -222,26 +203,21 @@ function watchPicture(video: HTMLVideoElement, tile: HTMLElement, file: Attachme
   video.addEventListener('timeupdate', check)
 }
 
-/*
- * One at a time. Starting a video or a sound here stops whichever other one
- * was playing, the way two people talking at once is nobody talking.
- */
-document.addEventListener(
-  'play',
-  (ev) => {
-    const started = ev.target
-    if (!(started instanceof HTMLMediaElement) || !started.matches('.att-player, .att-audio')) return
-    for (const other of document.querySelectorAll<HTMLMediaElement>('.att-player, .att-audio')) {
-      if (other !== started && !other.paused) other.pause()
-    }
-  },
-  true,
-)
+function pauseOtherPlayers(ev: Event): void {
+  const started = ev.target
+  if (!(started instanceof HTMLMediaElement) || !started.matches('.att-player, .att-audio')) return
+  for (const other of document.querySelectorAll<HTMLMediaElement>('.att-player, .att-audio')) {
+    if (other !== started && !other.paused) other.pause()
+  }
+}
+
+document.addEventListener('play', pauseOtherPlayers, true)
 
 function fileCard(file: Attachment, source: SpaceFiles | null): HTMLElement {
   const kind = kindOf(file)
   const extension = /\.([a-z0-9]{1,6})$/i.exec(file.name)?.[1]?.toUpperCase() ?? ''
-  const detail = h('span', { class: 'tiny faint', text: [sizeLabel(file.size), extension].filter(Boolean).join(' · ') })
+  const label = [sizeLabel(file.size), extension].filter(Boolean).join(' · ')
+  const detail = h('span', { class: 'tiny faint', text: label })
   const save = h('button', { class: 'ghost icon-only', title: 'Save', ariaLabel: `Save ${file.name}` }, [icon('download', 17)])
   const card = h('div', { class: 'att-file' }, [
     h('span', { class: `att-file-icon ${kind}` }, [icon(iconFor(kind), 20)]),
@@ -258,14 +234,13 @@ function fileCard(file: Attachment, source: SpaceFiles | null): HTMLElement {
       toast(`Could not open ${file.name}.`, 'warn')
       return null
     } finally {
-      detail.textContent = [sizeLabel(file.size), extension].filter(Boolean).join(' · ')
+      detail.textContent = label
     }
   }
   save.addEventListener('click', async () => {
     const blob = await fetching()
     if (blob) saveFile(blob, file.name)
   })
-  // A sound plays where it is.
   if (kind === 'audio') {
     const play = h('button', { class: 'ghost icon-only', title: 'Play', ariaLabel: `Play ${file.name}` }, [icon('play', 15)])
     save.before(play)
@@ -287,12 +262,7 @@ function fileCard(file: Attachment, source: SpaceFiles | null): HTMLElement {
   return card
 }
 
-// ---------------------------------------------------------------------------
-// The viewer
-// ---------------------------------------------------------------------------
-
-/** The pictures of a message, full screen, one at a time. */
-export function openViewer(list: Attachment[], start: number, source: SpaceFiles): void {
+function openViewer(list: Attachment[], start: number, source: SpaceFiles): void {
   if (list.length === 0) return
   let at = Math.max(0, start)
   const img = h('img', { class: 'viewer-img' })
@@ -346,7 +316,6 @@ export function openViewer(list: Attachment[], start: number, source: SpaceFiles
     const file = list[at]
     saveFile(await source.open(file), file.name)
   })
-  // A click on the picture looks closer, and again goes back. Anywhere else closes.
   img.addEventListener('click', (ev) => {
     ev.stopPropagation()
     root.classList.toggle('zoomed')
@@ -360,12 +329,7 @@ export function openViewer(list: Attachment[], start: number, source: SpaceFiles
   close.focus()
 }
 
-// ---------------------------------------------------------------------------
-// The tray: what is attached, while it uploads
-// ---------------------------------------------------------------------------
-
 interface Pending {
-  file: File
   chip: HTMLElement
   state: 'sending' | 'done' | 'failed'
   attachment?: Attachment
@@ -377,7 +341,6 @@ interface Pending {
 export class AttachTray {
   readonly root = h('div', { class: 'attach-tray hidden' })
   private items: Pending[] = []
-  /** Told when anything changes, so the box can say whether it can send. */
   onChange: (() => void) | null = null
 
   constructor(private readonly source: () => SpaceFiles | null) {}
@@ -394,7 +357,6 @@ export class AttachTray {
     return this.items.some((i) => i.state === 'failed')
   }
 
-  /** What is ready to go with the message, in the order it was attached. */
   get ready(): Attachment[] {
     return this.items.flatMap((i) => (i.attachment ? [i.attachment] : []))
   }
@@ -432,7 +394,6 @@ export class AttachTray {
     const detail = h('span', { class: 'tiny faint truncate', text: 'Encrypting' })
     const kind = kindOf(file)
     const item: Pending = {
-      file,
       chip: h('div', { class: 'attach-chip' }),
       state: 'sending',
       stop: new AbortController(),
@@ -487,7 +448,6 @@ export class AttachTray {
     this.paint()
   }
 
-  /** Empty it: after sending, or on moving somewhere else. Anything still going is stopped. */
   clear(): void {
     for (const item of [...this.items]) this.remove(item)
   }

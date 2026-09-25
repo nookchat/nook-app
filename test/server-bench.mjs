@@ -1,15 +1,5 @@
-/**
- * How fast the server answers, with a big room in it.
- *
- * Fills one room with LINES lines of ciphertext-sized junk, then times what a
- * client does: catching up on the last few lines, reading the whole history,
- * appending a batch, and a signal crossing between two sockets.
- *
- *   node test/server-bench.mjs [lines]
- */
-
-import { startServer } from './pg.mjs'
 import { randomBytes } from 'node:crypto'
+import { startServer } from './pg.mjs'
 
 const LINES = Number(process.argv[2] ?? 50_000)
 const PORT = 8795
@@ -46,25 +36,22 @@ try {
     const res = await fetch(`${BASE}/api/v1/spaces/${ROOM}/events?after=${LINES - 10}`)
     await res.json()
   })
-  for (const [label, limit, enc] of [['read everything, page by page', 5000, 'identity']]) {
-    await time(label, 3, async () => {
-      let from = 0
-      for (;;) {
-        const res = await fetch(`${BASE}/api/v1/spaces/${ROOM}/events?after=${from}&limit=${limit}`, {
-          headers: { 'accept-encoding': enc },
-        })
-        const page = await res.json()
-        from = page.at
-        if (!page.more) break
-      }
-    })
-  }
+  await time('read everything, page by page', 3, async () => {
+    let from = 0
+    for (;;) {
+      const res = await fetch(`${BASE}/api/v1/spaces/${ROOM}/events?after=${from}&limit=5000`, {
+        headers: { 'accept-encoding': 'identity' },
+      })
+      const page = await res.json()
+      from = page.at
+      if (!page.more) break
+    }
+  })
   await time('append one message', 20, async () => {
     await (await post([line()])).json()
   })
 
-  // Two sockets in one space, a signal from one to the other. Each says hello
-  // from past the end, so neither is sent the history first.
+  // Each socket says hello from past the end, so neither is sent the history first.
   const a = new WebSocket(`ws://localhost:${PORT}/api/v1/socket`)
   const b = new WebSocket(`ws://localhost:${PORT}/api/v1/socket`)
   await Promise.all([a, b].map((ws) => new Promise((ok) => (ws.onopen = ok))))

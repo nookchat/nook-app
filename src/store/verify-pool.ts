@@ -1,14 +1,6 @@
-/**
- * Check a pile of events, spread over a few workers.
- *
- * The answer is in the order the events were given, with null for any that
- * failed, exactly what calling openEvent on each would have said. Small piles
- * are checked here: starting a worker costs more than checking a handful.
- */
-
 import { openEvent, type LogEvent } from './log'
 
-const SMALL = 48
+const MIN_EVENTS_FOR_WORKERS = 48
 
 let workers: Worker[] | null = null
 let job = 0
@@ -28,7 +20,7 @@ function pool(): Worker[] {
       workers.push(worker)
     }
   } catch {
-    // No workers here, as in some locked down pages: check on this thread.
+    // Some locked down pages forbid workers.
     workers = []
   }
   return workers
@@ -41,7 +33,7 @@ async function here(events: unknown[], room: string): Promise<(LogEvent | null)[
 }
 
 export async function openEvents(events: unknown[], room: string): Promise<(LogEvent | null)[]> {
-  if (events.length <= SMALL) return here(events, room)
+  if (events.length <= MIN_EVENTS_FOR_WORKERS) return here(events, room)
   const all = pool()
   if (all.length === 0) return here(events, room)
   const size = Math.ceil(events.length / all.length)

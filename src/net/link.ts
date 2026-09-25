@@ -1,34 +1,18 @@
-/**
- * Linking a device, so the same person has the same spaces on both.
- *
- * You are a key, kept on each device, and your spaces are listed on your
- * servers in a record only that key opens. So a second device needs two
- * things to be you: the key, and which servers to ask. This carries both,
- * with your name and picture, from the device you use to the new one.
- *
- * The device you use makes a code, three groups of four like a space's, and
- * seals the lot with a key stretched out of it. What it leaves on your server
- * is that sealed blob, under an id also made from the code, for ten minutes,
- * and the server hands it out once. The new device is given the code (by a
- * link, a QR code, or typing it) and fetches and opens it.
- *
- * Sixty bits of code, stretched two hundred thousand times, readable once, for
- * ten minutes, from a server that answers thirty requests a second at most:
- * guessing it is not a plan. The server holds only ciphertext throughout.
- */
-
 import { serverTag, serverUrl } from '../backend'
+import { fromBase64, toBase64 } from '../bytes'
 import { formatSecret, newSecret, parseSecret } from '../room'
 import { loadIdentity, saveDisplayName, secretForLinking, takeIdentity } from '../store/identity'
 import { adoptServers, knownServers, newSpaceServer, ownServers } from '../store/server-spaces'
 import { saveAvatar } from '../ui/avatar'
 import { knownClusters, learn } from './cluster'
 
-const ROUNDS = 200_000
+// A 60 bit code, stretched, readable once for ten minutes from a rate limited server.
+const LINK_ROUNDS = 200_000
+const BACKUP_ROUNDS = 600_000
+const LINK_TTL_MS = 10 * 60 * 1000
 const SALT = 'cathode device link v1'
 const enc = new TextEncoder()
 
-/** What travels. */
 interface Bundle {
   k: string
   n: string
@@ -43,7 +27,7 @@ async function derive(code: string): Promise<{ id: string; key: CryptoKey }> {
   const base = await crypto.subtle.importKey('raw', enc.encode(code) as BufferSource, 'PBKDF2', false, ['deriveBits'])
   const bits = new Uint8Array(
     await crypto.subtle.deriveBits(
-      { name: 'PBKDF2', hash: 'SHA-256', salt: enc.encode(SALT) as BufferSource, iterations: ROUNDS },
+      { name: 'PBKDF2', hash: 'SHA-256', salt: enc.encode(SALT) as BufferSource, iterations: LINK_ROUNDS },
       base,
       384,
     ),
@@ -53,26 +37,19 @@ async function derive(code: string): Promise<{ id: string; key: CryptoKey }> {
   return { id, key }
 }
 
-const b64 = (bytes: Uint8Array): string => btoa(String.fromCharCode(...bytes))
-const unb64 = (text: string): Uint8Array => Uint8Array.from(atob(text), (c) => c.charCodeAt(0))
-
 export interface Offer {
-  /** For a person to type: three groups of four. */
   code: string
   server: string
-  /** For a camera or a click: opens the page and links in one go. */
   link: string
   until: number
 }
 
-/** Everything another device needs to be you: what a link carries, and a backup. */
 function bundleOfThisDevice(): Bundle {
   const secret = secretForLinking()
   if (!secret) throw new Error('This browser will not let your key be read back, so it cannot be copied from here.')
   return {
     k: secret,
     n: loadIdentity().name,
-    // No picture: it is on your servers, and arrives with your record.
     servers: knownServers(),
     own: ownServers(),
     pick: newSpaceServer(),
@@ -80,11 +57,10 @@ function bundleOfThisDevice(): Bundle {
   }
 }
 
-/** Become whoever a bundle is. Returns their name. */
 function adopt(bundle: Bundle): string {
   if (!takeIdentity(bundle.k)) throw new Error('This browser will not keep a key.')
   if (bundle.n) saveDisplayName(bundle.n)
-  // A link made before the picture lived on the server may still carry one.
+  // An old link or backup may still carry the picture.
   if (typeof bundle.a === 'string' && bundle.a) saveAvatar(bundle.a)
   adoptServers(
     Array.isArray(bundle.servers) ? bundle.servers : [],
@@ -97,7 +73,6 @@ function adopt(bundle: Bundle): string {
   return bundle.n || ''
 }
 
-/** Leave this device's identity on its server, sealed, for another device to take. */
 export async function offerLink(): Promise<Offer> {
   const server = newSpaceServer() || knownServers()[0] || ''
   if (!server) throw new Error('Add a server first: the link waits there for the other device.')
@@ -112,7 +87,7 @@ export async function offerLink(): Promise<Offer> {
     method: 'PUT',
     mode: 'cors',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ blob: `${b64(iv)}.${b64(box)}` }),
+    body: JSON.stringify({ blob: `${toBase64(iv)}.${toBase64(box)}` }),
   })
   if (!res.ok) throw new Error('Your server would not keep the link. Try again in a moment.')
   const { until } = (await res.json()) as { until?: number }
@@ -121,11 +96,11 @@ export async function offerLink(): Promise<Offer> {
     code: formatSecret(code),
     server,
     link: `${origin}${pathname}#link=${code}@${serverTag(server)}`,
-    until: until ?? Date.now() + 10 * 60 * 1000,
+    until: until ?? Date.now() + LINK_TTL_MS,
   }
 }
 
-/** A code and the server it waits on, from a link, a pasted link, or `code@server`. Null when it is neither. */
+/** Reads a link, a pasted link, or `code@server`. */
 export function readOffer(raw: string, server = ''): { code: string; server: string } | null {
   const text = raw.trim()
   const tail = text.includes('link=') ? text.slice(text.indexOf('link=') + 5) : text
@@ -135,17 +110,11 @@ export function readOffer(raw: string, server = ''): { code: string; server: str
   return code && where ? { code, server: where } : null
 }
 
-/** The link this page was opened with, if it was opened with one. */
 export function linkInAddress(): { code: string; server: string } | null {
   const hash = window.location.hash.slice(1)
   return hash.startsWith('link=') ? readOffer(hash) : null
 }
 
-/**
- * Become the person on the other device: their key, name and picture, and
- * their servers beside any this device already knows. The page reloads after,
- * so everything starts again as them.
- */
 export async function takeOffer(offer: { code: string; server: string }): Promise<string> {
   const { id, key } = await derive(offer.code)
   const res = await fetch(`${offer.server}/api/v1/links/${id}`, { mode: 'cors' }).catch(() => null)
@@ -156,29 +125,13 @@ export async function takeOffer(offer: { code: string; server: string }): Promis
   const [iv, box] = (blob ?? '').split('.')
   let bundle: Bundle
   try {
-    const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(iv) as BufferSource }, key, unb64(box) as BufferSource)
+    const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: fromBase64(iv) }, key, fromBase64(box))
     bundle = JSON.parse(new TextDecoder().decode(plain)) as Bundle
   } catch {
     throw new Error('That link would not open. Make a new one on the other device.')
   }
   return adopt(bundle)
 }
-
-// ---------------------------------------------------------------------------
-// A backup: the same, in a file you keep
-// ---------------------------------------------------------------------------
-
-/*
- * For the day a browser forgets everything: its storage cleared, a new
- * computer, a phone reset. The file is the account, as a link carries it, and
- * restoring it on the first screen is being you again, with every space and
- * message, because those were on your servers all along.
- *
- * It can have a password. Without one the file is the account in the open,
- * which is simple and is how most people will keep it (in a password manager,
- * or somewhere private); with one it is sealed the way a link is, and useless
- * to anybody who finds it, and to you if the password is forgotten.
- */
 
 interface BackupFile {
   cathode: 'backup'
@@ -197,7 +150,7 @@ const KEEP =
 async function passwordKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
   const base = await crypto.subtle.importKey('raw', enc.encode(password) as BufferSource, 'PBKDF2', false, ['deriveKey'])
   return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', hash: 'SHA-256', salt: salt as BufferSource, iterations: 600_000 },
+    { name: 'PBKDF2', hash: 'SHA-256', salt: salt as BufferSource, iterations: BACKUP_ROUNDS },
     base,
     { name: 'AES-GCM', length: 256 },
     false,
@@ -205,7 +158,6 @@ async function passwordKey(password: string, salt: Uint8Array): Promise<CryptoKe
   )
 }
 
-/** This device's account as a file to keep, sealed with a password when one is given. */
 export async function backupFile(password = ''): Promise<{ name: string; blob: Blob }> {
   const account = bundleOfThisDevice()
   const file: BackupFile = { cathode: 'backup', version: 1, keep: KEEP, saved: new Date().toISOString(), name: account.n }
@@ -216,7 +168,7 @@ export async function backupFile(password = ''): Promise<{ name: string; blob: B
     const box = new Uint8Array(
       await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv as BufferSource }, key, enc.encode(JSON.stringify(account)) as BufferSource),
     )
-    file.sealed = { salt: b64(salt), iv: b64(iv), box: b64(box) }
+    file.sealed = { salt: toBase64(salt), iv: toBase64(iv), box: toBase64(box) }
   } else {
     file.account = account
   }
@@ -224,7 +176,6 @@ export async function backupFile(password = ''): Promise<{ name: string; blob: B
   return { name: `nook-${safe}.json`, blob: new Blob([JSON.stringify(file, null, 2)], { type: 'application/json' }) }
 }
 
-/** Whether a backup needs its password, or null when the text is not a backup at all. */
 export function readBackup(text: string): { locked: boolean; name: string } | null {
   try {
     const file = JSON.parse(text) as Partial<BackupFile>
@@ -235,16 +186,15 @@ export function readBackup(text: string): { locked: boolean; name: string } | nu
   }
 }
 
-/** Become the person in a backup. The page starts again after, as them. */
 export async function restoreBackup(text: string, password = ''): Promise<string> {
   const file = JSON.parse(text) as BackupFile
   let account = file.account
   if (file.sealed) {
     try {
       const plain = await crypto.subtle.decrypt(
-        { name: 'AES-GCM', iv: unb64(file.sealed.iv) as BufferSource },
-        await passwordKey(password, unb64(file.sealed.salt)),
-        unb64(file.sealed.box) as BufferSource,
+        { name: 'AES-GCM', iv: fromBase64(file.sealed.iv) },
+        await passwordKey(password, fromBase64(file.sealed.salt)),
+        fromBase64(file.sealed.box),
       )
       account = JSON.parse(new TextDecoder().decode(plain)) as Bundle
     } catch {

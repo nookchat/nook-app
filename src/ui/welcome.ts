@@ -1,19 +1,3 @@
-/**
- * The first thing an empty browser shows: somebody new says what to call
- * them, and somebody coming back brings their account from another device or
- * a backup file.
- *
- * It comes before anything else starts, so no space ever hears a name this
- * device made up and then another a moment later, and it is the same screen
- * whether they arrived on the home page or on an invite. Once, per device: a
- * name chosen here, in Settings, or brought from another device by linking
- * it, is a name chosen.
- *
- * The picture is not needed. The name is, because a person in a room is who
- * the room says they are, and that should be their word, not a joke picked for
- * them.
- */
-
 import { cleanName, sillyName } from '../chat'
 import { loadIdentity, saveDisplayName } from '../store/identity'
 import { loadAvatar, saveAvatar, squareThumb } from './avatar'
@@ -72,11 +56,6 @@ export function welcome(mount: HTMLElement, invited: boolean): Promise<void> {
   })
   name.addEventListener('input', paint)
 
-  /*
-   * First, which of the two you are. Somebody who already uses Nook is
-   * never asked for a name: they are somebody already, and linking this
-   * device or restoring a backup brings that name with them.
-   */
   const fresh = h('button', { class: 'primary big welcome-go', text: 'I’m new' })
   const known = h('button', { class: 'big welcome-go', text: 'I have an account' })
   const choose = h('div', { class: 'welcome-step' }, [
@@ -97,7 +76,6 @@ export function welcome(mount: HTMLElement, invited: boolean): Promise<void> {
     go,
   ])
 
-  // Somebody who has an account: from the device they already use, or from the file they saved.
   const option = (glyph: IconName, title: string, about: string): HTMLButtonElement =>
     h('button', { class: 'welcome-option' }, [
       h('span', { class: 'welcome-option-icon' }, [icon(glyph, 20)]),
@@ -133,10 +111,6 @@ export function welcome(mount: HTMLElement, invited: boolean): Promise<void> {
     backup.el,
   ])
 
-  /*
-   * One step on the card at a time. Back goes to the step before, and a step
-   * put away lets go of the camera.
-   */
   const steps = [choose, naming, account, device, file]
   const before = new Map<HTMLElement, HTMLElement>([
     [naming, choose],
@@ -163,7 +137,6 @@ export function welcome(mount: HTMLElement, invited: boolean): Promise<void> {
 
   const page = h('main', { class: 'welcome' }, [h('div', { class: 'welcome-card' }, steps)])
 
-  // A backup dropped anywhere on the first screen is somebody coming back.
   page.addEventListener('dragover', (ev) => ev.preventDefault())
   page.addEventListener('drop', (ev) => {
     ev.preventDefault()

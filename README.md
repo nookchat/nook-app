@@ -16,7 +16,7 @@ with voice does it.
 
 ```
 ┌─────────────────┬──────────────────────────────┬──────────┐
-│ NS Space name ▾ │ # general          ⌕   ☺☺    │ Here — 3 │
+│ NS Space name ▾ │ # general          ⌕   ☺☺    │ Here · 3 │
 │ # general       │ ┌──────────────────────────┐ │ ● Ada    │
 │ # dev           │ │ a shared screen, if any  │ │ ● Grace  │
 │ 🔈 lounge       │ └──────────────────────────┘ │ ● Linus  │
@@ -153,7 +153,7 @@ any case, with or without hyphens. The code is the key, and it sits after the
 
 **Invite people**, in the space menu, shows the link, a Copy button, and a QR
 code. The QR encoder is in `src/ui/qr.ts`: byte mode, error correction level
-M, versions 1 to 10. `npm run test:qr` renders every version and reads it back
+M, versions 1 to 10. `npm test qr` renders every version and reads it back
 with the QR decoder built into Chrome.
 
 ## Look
@@ -172,7 +172,7 @@ the right. No column is spent on a list of spaces.
 
 **Every value the look is made of lives in one block at the top of
 `src/styles.css`,** and nothing below that block names a colour.
-`test/polish-check.mjs` checks that every text colour clears 4.5 to 1 on every
+`test/polish.test.mjs` checks that every text colour clears 4.5 to 1 on every
 surface.
 
 `node test/tour.mjs` puts three people in a space, fills it, shares a screen,
@@ -208,7 +208,11 @@ somebody arrives or goes, and the only timer is the server's 10 second ping.
 ```
 npm install
 npm run stack        # Postgres in Docker, a server on 8787, and the page on 5173
-node test/e2e.mjs    # any check, against the stack
+npm test             # every check, against the stack
+npm test chat files  # only these checks
+npm run speed        # how long opening, switching and sending take
+npm run bench        # how fast the server reads, writes and passes on
+npm run tour         # screenshots of every screen, in test-output/tour/
 ```
 
 ## Layout
@@ -262,42 +266,14 @@ server/               the server and its Docker image; see server/README.md
 docs/
   self-hosting.md     run your own server, or a cluster with friends
 test/
-  stack.mjs           Postgres, a server and the page, for every check below
-  e2e.mjs             two people, a share, chat, and the stage at every size
-  tour.mjs            screenshots of every screen, filled with a conversation
-  server-check.mjs    a space on a server, and nothing kept in the browser
-  tamper-check.mjs    what the server cannot read, and forged lines refused
-  own-server-check.mjs  a page with no server: adding yours, joining from an invite
-  files-check.mjs     pictures, a video and a file: sent, sealed, copied, opened
-  call-check.mjs      voice off screen, a call rung and answered, kept private, hung up
-  link-check.mjs      a second and a third device, by code and by link, as the same person
-  backup-check.mjs    a backup restored on an empty browser, and preferences that follow you
-  live-cluster-check.mjs  two people on two servers seeing, typing to and hearing each other
-  cluster-check.mjs   two servers, two databases, one cluster
-  failover-check.mjs  people carrying on when their server dies
-  chat-check.mjs      typing, unread, mentions, search, threads
-  extras-check.mjs    markdown, slash commands, direct messages, avatars
-  polish-check.mjs    redraw cost, thread list, search filters, contrast
-  emoji-check.mjs     the picker, and what one emoji is made of
-  board-check.mjs     the soundboard, GIF search, and pictures
-  leave-check.mjs     leaving, deleting, and one code meaning one room
-  roles-check.mjs     who may do what, levels included, and what a member may not
-  levels-check.mjs    a level made and given, names in its colour, emoji drawn large
-  gifs-check.mjs      GIF search with the server's key, and nowhere to put your own
-  agree-check.mjs     three browsers typing at once, ending up identical
-  converge-check.mjs  the same events shuffled two hundred ways
-  rejoin-check.mjs    one row per person, however many devices they use
-  live-check.mjs      two people sharing at once, and picking between them
-  voice-check.mjs     voice channels, who is talking, and being moved
-  url-check.mjs       the code format, and a reload staying in the space
+  harness.mjs         the browser, check() and finish(), shared by every check
+  run.mjs             npm test: runs every *.test.mjs, or the ones named
+  stack.mjs           Postgres, a server and the page, for every check
+  pg.mjs              a fresh database and a server, for the checks that start their own
+  *.test.mjs          one check each: e2e, chat, files, voice, cluster, failover, ...
   speed.mjs           how long opening, switching and sending take
   server-bench.mjs    how fast the server reads, writes and passes on
-  encoder-check.mjs   codec by codec: resolution held, and encode cost
-  cpu-check.mjs       processor cost per codec
-  codec-fallback.mjs  a viewer without the hardware codec still sees it
-  qr-check.mjs        every QR version, decoded back by Chrome
-  denoise-check.mjs   the neural noise removal, on real noise
-  uplink.mjs          the upload estimator, against made up statistics
+  tour.mjs            screenshots of every screen, filled with a conversation
 ```
 
 ## Keyboard, on a shared screen

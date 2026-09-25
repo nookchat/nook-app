@@ -1,43 +1,26 @@
-/**
- * The chat panel.
- *
- * It draws whatever the log currently adds up to, and calls back when somebody
- * does something. It holds no state of its own beyond what is half typed and
- * what is being replied to, so a redraw after a merge is always correct.
- *
- * Message text is turned into DOM nodes, never into HTML. Nothing a person
- * types is ever parsed as markup, which is the only way to be sure that a
- * message from a stranger cannot become a script.
- */
-
 import { MAX_DM_BYTES, MAX_TEXT, type Attachment, type Message } from '../store/log'
 import type { SpaceFiles } from '../net/files'
-import { AttachTray, attachmentBlock } from './attachments'
-import { toast } from './toast'
 import type { LinkPreview } from '../net/server-api'
 import { cleanName, EVERYONE, findMentions, mentionsMe } from '../chat'
 import { shortKey } from '../store/identity'
+import { AttachTray, attachmentBlock } from './attachments'
 import { clear, h } from './dom'
+import {
+  closeEmojiPicker,
+  emojiFor,
+  emojiStartingWith,
+  openEmojiPicker,
+  placeNear,
+  quickReactions,
+  recentEmoji,
+  withEmoji,
+} from './emoji'
 import { icon } from './icons'
-import { closeEmojiPicker, openEmojiPicker, placeNear, quickReactions, recentEmoji, emojiFor, emojiStartingWith, withEmoji } from './emoji'
+import { toast } from './toast'
 
-/**
- * The row offered straight away when reacting, before the picker is opened.
- *
- * Whatever this person reached for last, falling back to the usual five. One
- * click for the common case and the whole set one click further on, which is
- * the shape every chat app settled on because it is the right one.
- */
-const QUICK = ['👍', '😂', '🔥', '❤️', '👀']
+const FALLBACK_REACTIONS = ['👍', '😂', '🔥', '❤️', '👀']
+const QUICK_ROW_LENGTH = 5
 
-/**
- * A colour for a name, from the key that signs what they write.
- *
- * Eight hues, picked so that none of them is the accent and all of them hold up
- * on a dark background. It is worked out from the key rather than from the
- * name, so somebody who renames themselves keeps their colour, and two people
- * who pick the same name do not share one.
- */
 const NAME_HUES = [205, 340, 145, 32, 265, 190, 95, 15]
 
 function authorColour(key: string): string {
@@ -46,30 +29,23 @@ function authorColour(key: string): string {
   return `hsl(${NAME_HUES[sum % NAME_HUES.length]} 62% 70%)`
 }
 
-/**
- * A message that is only emoji, and not too many of them, is drawn large.
- *
- * A reply of one thumbs up reads as a reaction said out loud, and small it
- * looks like a typo. Anything else in the message, a word or a digit, and it
- * is text again. Past a couple of dozen it is a wall, and walls stay small.
- */
 const EMOJI_ONLY =
-  /^(?:\p{Extended_Pictographic}|\p{Regional_Indicator}|\p{Emoji_Modifier}|[\u200d\ufe0f\u{e0020}-\u{e007f}]|[#*0-9]\ufe0f?\u20e3|\s)+$/u
+  /^(?:\p{Extended_Pictographic}|\p{Regional_Indicator}|\p{Emoji_Modifier}|[‍️\u{e0020}-\u{e007f}]|[#*0-9]️?⃣|\s)+$/u
 const JUMBO_MOST = 27
+const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 
-export function onlyEmoji(text: string): boolean {
+function onlyEmoji(text: string): boolean {
   const trimmed = text.trim()
   if (!trimmed || !EMOJI_ONLY.test(trimmed)) return false
-  const faces = [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(trimmed)].filter((s) => s.segment.trim())
-  return faces.length > 0 && faces.length <= JUMBO_MOST
+  let faces = 0
+  for (const { segment } of GRAPHEMES.segment(trimmed)) {
+    if (segment.trim() && ++faces > JUMBO_MOST) return false
+  }
+  return faces > 0
 }
 
-/**
- * Hidden until somebody asks for it.
- *
- * The text is in the DOM either way, which is the honest thing to say about a
- * spoiler anywhere: it hides it from a glance, not from anybody determined.
- */
+const UTF8 = new TextEncoder()
+
 function spoiler(text: string): HTMLElement {
   const box = h('span', {
     class: 'spoiler',
@@ -88,13 +64,6 @@ function spoiler(text: string): HTMLElement {
   return box
 }
 
-/**
- * Somebody's face, or the next best thing.
- *
- * A picture when they have set one, and their initials on their own colour when
- * they have not, which is everybody on the first day. It is never nothing: a
- * row of identical grey circles would be worse than none at all.
- */
 export function avatarOf(key: string, name: string, picture: string, size = 20): HTMLElement {
   const box = h('span', { class: 'avatar', title: name || shortKey(key) })
   box.style.width = `${size}px`
@@ -118,78 +87,63 @@ export function avatarOf(key: string, name: string, picture: string, size = 20):
   return box
 }
 
-/** Held up at the top of the channel, said on the message itself. */
 function pinMark(): HTMLElement {
   return h('span', { class: 'chat-pinned-mark', title: 'Pinned in this channel', text: 'pinned' })
 }
 
 function quickRow(): string[] {
-  // Whatever this person pinned in settings comes first and stays put: a row
-  // that reorders itself under the pointer is a row you cannot aim at.
   const out = [...quickReactions()]
-  for (const ch of recentEmoji()) {
-    if (out.length >= 5) break
+  for (const ch of [...recentEmoji(), ...FALLBACK_REACTIONS]) {
+    if (out.length >= QUICK_ROW_LENGTH) break
     if (!out.includes(ch)) out.push(ch)
   }
-  for (const ch of QUICK) {
-    if (out.length >= 5) break
-    if (!out.includes(ch)) out.push(ch)
-  }
-  return out.slice(0, 5)
+  return out.slice(0, QUICK_ROW_LENGTH)
 }
 
-export interface ChatActions {
+/** Picks on mousedown, because the blur that a click causes closes the list first. */
+function pickOnPress(pick: () => void): { mousedown: (ev: Event) => void } {
+  return {
+    mousedown: (ev) => {
+      ev.preventDefault()
+      pick()
+    },
+  }
+}
+
+interface ChatActions {
   say(text: string, replyTo: string | null, inThread?: boolean, files?: Attachment[]): void
-  /** Say it to one person, sealed so the room carries it and cannot read it. */
   sayDirect?(to: string, text: string, files?: Attachment[]): void
   edit(id: string, text: string): void
   react(id: string, emoji: string, on: boolean): void
   retract(id: string): void
   rename(name: string): void
-  /** Hold a message up at the top of the channel, or stop holding it. */
   pin(id: string, on: boolean): void
-  /** Pick an answer to a poll. */
   vote(id: string, choice: number): void
 }
 
+type Join = { at: number; text: string }
+type Row = { key: string; sig: string; make: () => HTMLElement }
+type SuggestKind = 'mention' | 'command' | 'name' | 'emoji'
 
-/** How many messages a conversation opens with, and how many more a scroll up adds. */
-const WINDOW = 120
-/** The most a conversation opens with, when reaching back for what is unread. */
+const WINDOW_STEP = 120
 const WINDOW_MAX = 600
 
 export class ChatPanel {
   readonly root: HTMLElement
   actions: ChatActions | null = null
-  /** Only a level that may pin is offered the button. */
   canPin = false
-  /** And only a level that may delete anybody's message is offered that. */
   canDelete = false
-  /**
-   * The colour a name is drawn in: its level's, in a space. Empty is the
-   * ordinary colour of text, which is what a member and a private
-   * conversation on Home get.
-   */
   colourOf: (key: string) => string = () => ''
-  /** Asking a question is a different shape from saying something. See /poll. */
-  onPoll: (() => void) | null = null
-  /** Somebody is writing. Throttled by the caller, which owns the wire. */
   onTyping: (() => void) | null = null
-  /** Open the thread hanging off a message, or close the one that is open. */
   onThread: ((rootId: string | null) => void) | null = null
-  /** Open or close a private conversation. */
   onDirect: ((key: string | null) => void) | null = null
-  /** Look for a GIF. The space owns the search, because it owns the key. */
   onGif: (() => void) | null = null
-  /** Open the soundboard. The space owns it, because it owns the wire. */
   onSound: (() => void) | null = null
-  /** Whether this person's stream is still up in this channel. The space
-      knows; the panel only asks so a dead invitation is not offered. */
   streamLive: ((key: string, channel: string) => boolean) | null = null
-  /** Put their stream on the screen, from the message that announced it. */
   onWatch: ((key: string, channel: string) => void) | null = null
-  /** Asks the space what is behind a link. Null when nobody can answer. */
   previewFor: ((url: string) => Promise<LinkPreview | null>) | null = null
+  onCommand: ((line: string) => boolean) | null = null
+  commands: { name: string; note: string; takesName?: boolean; also?: string[] }[] = []
 
   private readonly log: HTMLDivElement
   private readonly nameInput: HTMLInputElement
@@ -202,76 +156,46 @@ export class ChatPanel {
   private readonly nameRow: HTMLDivElement
   private readonly typingLine: HTMLDivElement
   private readonly roomLeft: HTMLSpanElement
-  /** Whether the space is in a state where anything may be said at all. */
-  private enabled = false
-  /** Where this conversation's files go and come from. Null where the server takes none. */
-  private files: SpaceFiles | null = null
   private readonly tray: AttachTray
   private readonly attachButton: HTMLButtonElement
   private readonly fileInput: HTMLInputElement
   private readonly dropCover: HTMLDivElement
-  /** Send was pressed while files were still going up; it sends when they are done. */
-  private sendWaiting = false
   private readonly title: HTMLSpanElement
   private readonly backButton: HTMLButtonElement
   private readonly head: HTMLDivElement
+  private readonly toBottom: HTMLButtonElement
+  private enabled = false
+  private files: SpaceFiles | null = null
+  private sendWaiting = false
   private name: string
   private me = ''
   private replyTo: Message | null = null
   private editing: Message | null = null
-  /** Who is in the room, so a mention can be spelled and lit up. */
   private names = new Map<string, string>()
-  /** And what they look like, when they have said. */
   private avatars = new Map<string, string>()
-  /** The thread being read, if one is. Its root is drawn above the replies. */
   private threadRoot: string | null = null
-  /** The person this panel is writing to privately, if any. */
   private directWith: string | null = null
   private directName = ''
-  /**
-   * Everything above this clock value has been read here.
-   *
-   * Held for the drawing of one line across the log rather than for the badge,
-   * which the rail works out for itself. It survives a redraw, so the line does
-   * not jump away the moment the next message lands.
-   */
   private readMark = 0
-  /**
-   * Whether the conversation was at the bottom the last time anybody looked.
-   *
-   * Kept rather than measured, because the question is always asked after
-   * something grew, and by then the answer has already changed.
-   */
   private pinned = true
   private suggestions: HTMLDivElement | null = null
   private suggestAt = -1
-  /** Which kind of list is up, because Enter means different things to them. */
-  private suggestKind: 'mention' | 'command' | 'name' | 'emoji' | null = null
-  /**
-   * What was half typed in each channel.
-   *
-   * Switching channel used to throw it away, which is a small thing that
-   * happens every day: you start an answer, check something in another channel,
-   * and come back to an empty box.
-   */
+  private suggestKind: SuggestKind | null = null
   private readonly drafts = new Map<string, string>()
   private draftKey = ''
-  private readonly toBottom: HTMLButtonElement
-  /** Told when a slash command is typed. Returns true when it handled it. */
-  onCommand: ((line: string) => boolean) | null = null
-  /** The commands offered while typing a slash. */
-  commands: { name: string; note: string; takesName?: boolean; also?: string[] }[] = []
+  private olderQueued = false
+  private windowSize = WINDOW_STEP
+  private windowKey: string | null = null
+  private lastFeed: { messages: Message[]; joins: Join[] } | null = null
+  private hiddenAbove = 0
+  private intro: { title: string; text: string } | null = null
+  private readonly rows = new Map<string, { el: HTMLElement; sig: string }>()
+  private quickFor: HTMLElement | null = null
+  private found: { id: string; at: number } | null = null
 
   constructor(initialName: string, title = 'Chat') {
     this.name = initialName
 
-    /*
-     * A log, announced politely.
-     *
-     * Reconciliation is what makes this safe: only what is new is added to the
-     * DOM, so a screen reader is told about the message that arrived rather
-     * than read the whole conversation again every time anybody speaks.
-     */
     this.log = h('div', {
       class: 'chat-log',
       role: 'log',
@@ -299,14 +223,6 @@ export class ChatPanel {
       },
     })
 
-    /*
-     * A textarea, not a single line.
-     *
-     * Enter sends and shift with it makes a new line, which is what every chat
-     * app does and what everybody's hands already expect. The box grows with
-     * what is in it up to a few lines and then scrolls, so a pasted stack trace
-     * does not take the whole panel.
-     */
     this.textInput = h('textarea', {
       ariaLabel: 'Write a message',
       placeholder: 'Say something',
@@ -328,11 +244,6 @@ export class ChatPanel {
       [icon('send', 18)],
     )
 
-    /*
-     * Files: the clip, a file dropped anywhere on the conversation, or one
-     * pasted into the box. Each starts going up the moment it is attached, so
-     * by the time the words are written it is usually there.
-     */
     this.tray = new AttachTray(() => this.files)
     this.tray.onChange = () => {
       this.sendButton.classList.toggle('waiting', this.sendWaiting && this.tray.busy)
@@ -363,28 +274,23 @@ export class ChatPanel {
     this.dropCover = h('div', { class: 'drop-cover hidden' }, [
       h('div', { class: 'drop-card' }, [icon('paperclip', 26), h('span', { class: 'drop-words', text: 'Drop to attach' })]),
     ])
-    this.emojiButton = h('button', {
-      class: 'ghost icon-only',
-      title: 'Emoji',
-      ariaLabel: 'Emoji',
-      on: {
-        click: () =>
-          openEmojiPicker({
-            anchor: this.emojiButton,
-            sticky: true,
-            onPick: (ch) => this.insert(ch),
-          }),
+    this.emojiButton = h(
+      'button',
+      {
+        class: 'ghost icon-only',
+        title: 'Emoji',
+        ariaLabel: 'Emoji',
+        on: {
+          click: () =>
+            openEmojiPicker({
+              anchor: this.emojiButton,
+              sticky: true,
+              onPick: (ch) => this.insert(ch),
+            }),
+        },
       },
-    })
-    this.emojiButton.append(icon('smile', 19))
-
-    /*
-     * The two things beside the emoji button.
-     *
-     * Both were only reachable by typing a slash command, which is a way of
-     * saying they were reachable by the people who already knew about them.
-     * A button is how anybody else finds out they exist.
-     */
+      [icon('smile', 19)],
+    )
     this.gifButton = h('button', {
       class: 'ghost gif-button',
       text: 'GIF',
@@ -392,13 +298,16 @@ export class ChatPanel {
       ariaLabel: 'Find a GIF',
       on: { click: () => this.onGif?.() },
     })
-    this.soundButton = h('button', {
-      class: 'ghost icon-only hidden',
-      title: 'Soundboard',
-      ariaLabel: 'Soundboard',
-      on: { click: () => this.onSound?.() },
-    })
-    this.soundButton.append(icon('volume', 19))
+    this.soundButton = h(
+      'button',
+      {
+        class: 'ghost icon-only hidden',
+        title: 'Soundboard',
+        ariaLabel: 'Soundboard',
+        on: { click: () => this.onSound?.() },
+      },
+      [icon('volume', 19)],
+    )
 
     this.nameRow = h('div', { class: 'row' }, [
       h('span', { class: 'tiny faint', text: 'You', style: { width: '26px' } }),
@@ -407,67 +316,35 @@ export class ChatPanel {
 
     this.typingLine = h('div', { class: 'chat-typing hidden' })
     this.roomLeft = h('span', { class: 'chat-room-left tiny hidden', ariaLabel: 'Room left in this message' })
-    /*
-     * The way back down.
-     *
-     * Only there when it is needed, which is when you have scrolled up far
-     * enough that new messages are arriving out of sight.
-     */
     this.toBottom = h('button', {
       class: 'to-bottom hidden',
       text: 'Jump to the newest',
       title: 'Go to the end of the conversation',
     })
-    // On the press, not the release, so nothing that moves in between can take the click.
-    let pressed = 0
+    let pressedAt = 0
     this.toBottom.addEventListener('pointerdown', (ev) => {
       if (ev.button !== 0) return
       ev.preventDefault()
-      pressed = Date.now()
+      pressedAt = Date.now()
       this.jumpToNewest()
     })
     // The keyboard, and anything that clicks without pressing first.
     this.toBottom.addEventListener('click', () => {
-      if (Date.now() - pressed > 600) this.jumpToNewest()
+      if (Date.now() - pressedAt > 600) this.jumpToNewest()
     })
     this.toBottom.addEventListener('pointerleave', () => this.showJump())
     this.log.addEventListener('scroll', () => {
       this.pinned = this.isAtBottom()
       this.showJump()
-      // Near the top of what is drawn, and there is more: draw more.
       if (this.log.scrollTop < 400 && this.hiddenAbove > 0) this.drawOlder()
     })
-
-    /*
-     * Follow a picture down as it arrives.
-     *
-     * A picture has no height until it has loaded, so the scroll to the end
-     * that happens when the message is drawn lands at the end of a row that is
-     * about to get two hundred pixels taller. The GIF then pushed itself half
-     * off the bottom of the screen, which is a poor look for the thing the
-     * message was.
-     *
-     * So the end is found again once the thing knows how big it is. Only when
-     * the conversation was already sitting at the bottom: a picture loading in
-     * something you scrolled up to read must not drag you away from it.
-     *
-     * Load does not bubble, hence the capture, and a video says loadedmetadata
-     * rather than load.
-     */
+    // Media events do not bubble, hence the capture.
     this.log.addEventListener('load', () => this.followMedia(), true)
-    /*
-     * Stay at the bottom when the log changes size under you.
-     *
-     * A screen share opening above the conversation took half its height, and
-     * the scroll position stayed where it was, so the newest messages slid
-     * out of sight under the composer and the way back down appeared for no
-     * reason anybody could see. A log that was at the bottom stays there.
-     */
+    this.log.addEventListener('loadedmetadata', () => this.followMedia(), true)
     new ResizeObserver(() => {
       if (this.pinned) this.log.scrollTop = this.log.scrollHeight
       this.showJump()
     }).observe(this.log)
-    this.log.addEventListener('loadedmetadata', () => this.followMedia(), true)
     this.title = h('span', { class: 'eyebrow', text: title })
     this.backButton = h('button', {
       class: 'ghost tiny-btn hidden',
@@ -476,13 +353,6 @@ export class ChatPanel {
       on: { click: () => (this.directWith ? this.onDirect?.(null) : this.onThread?.(null)) },
     })
 
-    /*
-     * The header only exists inside a thread.
-     *
-     * Outside one it said "Chat" above a channel already named at the top of
-     * the column, beside a count of who is here that the members list and the
-     * status bar both carry. Three labels for two facts.
-     */
     this.head = h('div', { class: 'row spread chat-head hidden' }, [
       h('div', { class: 'row' }, [this.backButton, this.title]),
     ])
@@ -511,17 +381,11 @@ export class ChatPanel {
     this.watchDrops()
   }
 
-  /** Where files go, for a conversation whose server takes them. Null hides the clip. */
   setFiles(files: SpaceFiles | null): void {
     this.files = files
     this.attachButton.classList.toggle('hidden', !files)
   }
 
-  /**
-   * A file dragged over the conversation: the whole of it is the target, and
-   * says so, and a drop attaches. Only files: a dragged link or picture from
-   * the page is left to do what it does.
-   */
   private watchDrops(): void {
     const carriesFiles = (ev: DragEvent): boolean => !!ev.dataTransfer && [...ev.dataTransfer.types].includes('Files')
     let depth = 0
@@ -550,12 +414,6 @@ export class ChatPanel {
     })
   }
 
-  get currentName(): string {
-    return this.name
-  }
-
-  /** What the soundboard hangs off, for the times it is opened by command. */
-  /** The soundboard is for a call, so its button is only there during one. */
   showSoundboard(on: boolean): void {
     this.soundButton.classList.toggle('hidden', !on)
   }
@@ -564,7 +422,6 @@ export class ChatPanel {
     return this.soundButton
   }
 
-  /** What the GIF picker opens above. */
   get gifAnchor(): HTMLElement {
     return this.gifButton
   }
@@ -573,40 +430,26 @@ export class ChatPanel {
     this.me = pubkey
   }
 
-  /** The name moved to settings, so the compose box does not need to carry it. */
   showNameField(show: boolean): void {
     this.nameRow.classList.toggle('hidden', !show)
   }
 
-  /** The panel is built before the identity is loaded, so it is told later. */
   setName(name: string): void {
     this.name = name
     if (document.activeElement !== this.nameInput) this.nameInput.value = name
   }
 
-  /** Who is in the room, by key, so a mention can be spelled and recognised. */
   setNames(names: Map<string, string>, avatars?: Map<string, string>): void {
     this.names = names
     if (avatars) this.avatars = avatars
   }
 
-  /** What this panel is showing: a channel, or a thread inside one. */
   setTitle(text: string): void {
     this.title.textContent = text
   }
 
-  /**
-   * Draw the line between what has been read and what has not.
-   *
-   * Taken once, when a channel is opened, and kept while it stays open. Moving
-   * it as each message arrives would rub out the line you came back to read.
-   */
   setReadMark(lamport: number): void {
     this.readMark = lamport
-  }
-
-  get thread(): string | null {
-    return this.threadRoot
   }
 
   setThread(rootId: string | null): void {
@@ -615,14 +458,11 @@ export class ChatPanel {
     this.cancelPending()
   }
 
-  /** Whose private conversation this is, or none. */
   setDirect(key: string | null, name = ''): void {
     this.directWith = key
     this.directName = name
     this.showHead()
     this.cancelPending()
-    // A private message is measured in bytes and a channel one in letters, so
-    // the count means something different the moment this changes.
     this.sayRoom()
   }
 
@@ -630,14 +470,14 @@ export class ChatPanel {
     const away = this.threadRoot !== null || this.directWith !== null
     this.backButton.classList.toggle('hidden', !away)
     this.head.classList.toggle('hidden', !away)
-    this.textInput.placeholder = this.directWith
-      ? `Message ${this.directName || 'them'}`
-      : this.threadRoot
-        ? 'Reply in this thread'
-        : 'Say something'
+    this.textInput.placeholder = this.modePlaceholder()
   }
 
-  /** "Alice is typing", or nothing at all, which is most of the time. */
+  private modePlaceholder(): string {
+    if (this.directWith) return `Message ${this.directName || 'them'}`
+    return this.threadRoot ? 'Reply in this thread' : 'Say something'
+  }
+
   setTyping(who: string[]): void {
     const names = who.filter(Boolean)
     this.typingLine.classList.toggle('hidden', names.length === 0)
@@ -653,9 +493,7 @@ export class ChatPanel {
   setEnabled(enabled: boolean, why = ''): void {
     this.enabled = enabled
     this.textInput.disabled = !enabled
-    this.textInput.placeholder = enabled ? 'Say something' : why || 'Connecting...'
-    // Two things can stop Send: the space is not ready, or the message is too
-    // long. One place decides, so neither of them undoes the other.
+    this.textInput.placeholder = enabled ? this.modePlaceholder() : why || 'Connecting...'
     this.sayRoom()
   }
 
@@ -663,14 +501,6 @@ export class ChatPanel {
     this.textInput.focus()
   }
 
-  /**
-   * Drop an emoji into the message being written, where the caret is.
-   *
-   * At the caret rather than at the end, because a picker that only ever
-   * appends cannot be used to fix the middle of a sentence. The caret is put
-   * back after what was inserted, so picking three in a row reads left to
-   * right.
-   */
   insert(text: string): void {
     const input = this.textInput
     const start = input.selectionStart ?? input.value.length
@@ -682,14 +512,6 @@ export class ChatPanel {
     this.grow()
   }
 
-  // ---- the compose box ----
-
-  /**
-   * Enter sends. Shift and Enter make a line. Escape puts down whatever was
-   * being replied to or edited. While the mention list is up it takes the
-   * arrows and Enter first, because that is what the keys are for at that
-   * moment.
-   */
   private onComposeKey(ev: KeyboardEvent): void {
     if (this.suggestions && this.onSuggestKey(ev)) return
     if (ev.key === 'Enter' && !ev.shiftKey) {
@@ -697,13 +519,9 @@ export class ChatPanel {
       this.submit()
       return
     }
-    /*
-     * Up on an empty box edits the last thing you said, the way it does in
-     * every terminal and every chat app. Only when the box is empty, or it
-     * would eat the cursor of somebody writing a paragraph.
-     */
     if (ev.key === 'ArrowUp' && !this.textInput.value && !this.editing) {
-      const mine = [...this.shown].reverse().find((m) => m.author === this.me && !m.poll)
+      const shown = this.lastFeed?.messages ?? []
+      const mine = [...shown].reverse().find((m) => m.author === this.me && !m.poll)
       if (mine) {
         this.startEdit(mine)
         ev.preventDefault()
@@ -717,8 +535,6 @@ export class ChatPanel {
     }
   }
 
-  /** Draw another few screens above, and keep the reader where they were. */
-  private olderQueued = false
   private drawOlder(): void {
     if (this.olderQueued || !this.lastFeed) return
     this.olderQueued = true
@@ -726,19 +542,12 @@ export class ChatPanel {
       this.olderQueued = false
       if (!this.lastFeed || this.hiddenAbove === 0) return
       const fromBottom = this.log.scrollHeight - this.log.scrollTop
-      this.windowSize += WINDOW
+      this.windowSize += WINDOW_STEP
       this.render(this.lastFeed.messages, this.lastFeed.joins)
       this.log.scrollTop = this.log.scrollHeight - fromBottom
     })
   }
 
-  /** Whether the way back down is needed. */
-  /*
-   * Shown once well up, and gone only once nearly at the end, or while the
-   * pointer is on it. One line for both used to hide it under a finger: a
-   * trackpad still gliding, or a picture loading, crossed the line between the
-   * press and the release, and the click fell on the message under it.
-   */
   private showJump(): void {
     const gap = this.log.scrollHeight - this.log.scrollTop - this.log.clientHeight
     const shown = !this.toBottom.classList.contains('hidden')
@@ -752,12 +561,6 @@ export class ChatPanel {
     this.toBottom.classList.add('hidden')
   }
 
-  /**
-   * Keep what is half written, per channel or per thread.
-   *
-   * Called by whoever is about to change what the panel is showing, before it
-   * changes, so the box that is about to be emptied is remembered first.
-   */
   keepDraft(): void {
     if (!this.draftKey) return
     const half = this.textInput.value
@@ -765,11 +568,9 @@ export class ChatPanel {
     else this.drafts.delete(this.draftKey)
   }
 
-  /** Put back whatever was half written here last time. */
   useDraft(key: string): void {
     if (key === this.draftKey) return
     this.keepDraft()
-    // Files attached here were meant for here, so moving on takes them off.
     this.tray.clear()
     this.sendWaiting = false
     this.draftKey = key
@@ -777,7 +578,6 @@ export class ChatPanel {
     this.grow()
   }
 
-  /** As tall as what is in it, up to a point. */
   private grow(): void {
     const input = this.textInput
     input.style.height = 'auto'
@@ -785,91 +585,32 @@ export class ChatPanel {
     this.sayRoom()
   }
 
-  /**
-   * How much room is left, once there is a reason to care.
-   *
-   * A message past the limit is refused by everybody who receives it, so it
-   * would look sent here and arrive nowhere. Rather than let that happen the
-   * count appears in the last stretch, turns red when the box is over, and
-   * Send stops working until it is not.
-   *
-   * A private message is sealed before it is written, and sealing counts bytes
-   * rather than letters, so the number shown for one is the byte budget. One
-   * emoji spends four of them and one letter spends one.
-   */
-  /** How much of the limit is left, in whatever the limit is counted in. */
-  private roomFor(): number {
-    const limit = this.directWith ? MAX_DM_BYTES : MAX_TEXT
-    // A channel message is measured the way it travels: the bytes of its
-    // JSON form, where a quote or a newline costs two.
-    const used = this.directWith
-      ? new TextEncoder().encode(this.textInput.value).length
-      : new TextEncoder().encode(JSON.stringify(this.textInput.value)).length
-    return limit - used
+  private limit(): number {
+    return this.directWith ? MAX_DM_BYTES : MAX_TEXT
   }
 
-  private tooLong(): boolean {
-    return this.roomFor() < 0
+  private room(): number {
+    const value = this.textInput.value
+    // A sealed message counts plain bytes; a channel message counts the bytes of its JSON form.
+    return this.limit() - UTF8.encode(this.directWith ? value : JSON.stringify(value)).length
   }
 
   private sayRoom(): void {
-    const left = this.roomFor()
-    const limit = this.directWith ? MAX_DM_BYTES : MAX_TEXT
-    const near = left <= Math.max(200, Math.round(limit / 12))
+    const left = this.room()
+    const near = left <= Math.max(200, Math.round(this.limit() / 12))
     this.roomLeft.classList.toggle('hidden', !near)
     this.roomLeft.classList.toggle('over', left < 0)
     this.roomLeft.textContent = left < 0 ? `${-left} too many` : `${left} left`
     this.sendButton.disabled = !this.enabled || left < 0
   }
 
-  // ---- mentions ----
-
-  /**
-   * Offer the names that fit what has been typed after an @.
-   *
-   * Nothing is inserted until it is chosen: a mention that completes itself
-   * while you are still typing is a mention of the wrong person half the time.
-   */
-  private suggest(): void {
-    if (this.suggestCommands()) return
-    if (this.suggestEmoji()) return
-    const input = this.textInput
-    const caret = input.selectionStart ?? 0
-    const before = input.value.slice(0, caret)
-    const at = before.lastIndexOf('@')
-    // An @ in the middle of a word is an email address.
-    const startsWord = at === 0 || (at > 0 && /[\s(]/.test(before[at - 1]))
-    const fragment = at === -1 ? '' : before.slice(at + 1)
-    if (at === -1 || !startsWord || fragment.length > 24 || /\n/.test(fragment)) {
-      this.closeSuggestions()
-      return
-    }
-
-    const wanted = fragment.toLowerCase()
-    const hits = [...this.names]
-      .filter(([key, name]) => name && key !== this.me && name.toLowerCase().startsWith(wanted))
-      .slice(0, 6)
-    if (fragment === '' || 'everyone'.startsWith(wanted)) hits.unshift([EVERYONE, 'everyone'])
-    if (hits.length === 0) {
-      this.closeSuggestions()
-      return
-    }
-
+  private showSuggestions(kind: SuggestKind, at: number, options: HTMLElement[]): void {
     this.suggestAt = at
-    this.suggestKind = 'mention'
+    this.suggestKind = kind
+    options[0]?.classList.add('on')
     const list = this.suggestions ?? h('div', { class: 'mention-pop' })
     clear(list)
-    hits.forEach(([, name], i) => {
-      list.append(
-        h('button', {
-          class: `mention-option${i === 0 ? ' on' : ''}`,
-          text: name,
-          // The blur that a click would cause closes the list first, so the
-          // pick has to happen before the browser gets that far.
-          on: { mousedown: (ev) => { ev.preventDefault(); this.takeSuggestion(name) } },
-        }),
-      )
-    })
+    list.append(...options)
     if (!this.suggestions) {
       this.suggestions = list
       document.body.append(list)
@@ -877,11 +618,44 @@ export class ChatPanel {
     placeNear(list, this.textInput)
   }
 
-  /**
-   * Emoji by name, the way people type them everywhere else: :laugh: turns
-   * into 😆 the moment its second colon goes in, and while the name is being
-   * typed the ones it could be are offered, Tab or Enter to take one.
-   */
+  private nameHits(fragment: string): string[] {
+    const wanted = fragment.toLowerCase()
+    const hits: string[] = []
+    for (const [key, name] of this.names) {
+      if (hits.length === 6) break
+      if (name && key !== this.me && name.toLowerCase().startsWith(wanted)) hits.push(name)
+    }
+    return hits
+  }
+
+  private suggest(): void {
+    if (this.suggestCommands()) return
+    if (this.suggestEmoji()) return
+    const input = this.textInput
+    const before = input.value.slice(0, input.selectionStart ?? 0)
+    const at = before.lastIndexOf('@')
+    const startsWord = at === 0 || (at > 0 && /[\s(]/.test(before[at - 1]))
+    const fragment = at === -1 ? '' : before.slice(at + 1)
+    if (at === -1 || !startsWord || fragment.length > 24 || fragment.includes('\n')) {
+      this.closeSuggestions()
+      return
+    }
+
+    const hits = this.nameHits(fragment)
+    if (fragment === '' || 'everyone'.startsWith(fragment.toLowerCase())) hits.unshift('everyone')
+    if (hits.length === 0) {
+      this.closeSuggestions()
+      return
+    }
+    this.showSuggestions(
+      'mention',
+      at,
+      hits.map((name) =>
+        h('button', { class: 'mention-option', text: name, on: pickOnPress(() => this.takeSuggestion(name)) }),
+      ),
+    )
+  }
+
   private suggestEmoji(): boolean {
     const input = this.textInput
     const caret = input.selectionStart ?? 0
@@ -905,52 +679,23 @@ export class ChatPanel {
       this.closeSuggestions()
       return true
     }
-    this.suggestAt = caret - typing[2].length - 1
-    this.suggestKind = 'emoji'
-    const list = this.suggestions ?? h('div', { class: 'mention-pop' })
-    clear(list)
-    hits.forEach(({ code, ch }, i) => {
-      const option = h(
-        'button',
-        {
-          class: `mention-option emoji-option${i === 0 ? ' on' : ''}`,
-          on: {
-            mousedown: (ev) => {
-              ev.preventDefault()
-              this.takeEmoji(ch)
-            },
-          },
-        },
-        [h('span', { class: 'emoji-option-face', text: ch }), h('span', { class: 'tiny faint', text: `:${code}:` })],
-      )
-      option.dataset.emoji = ch
-      list.append(option)
-    })
-    if (!this.suggestions) {
-      this.suggestions = list
-      document.body.append(list)
-    }
-    placeNear(list, this.textInput)
+    this.showSuggestions(
+      'emoji',
+      caret - typing[2].length - 1,
+      hits.map(({ code, ch }) =>
+        h(
+          'button',
+          { class: 'mention-option emoji-option', data: { emoji: ch }, on: pickOnPress(() => this.takeEmoji(ch)) },
+          [h('span', { class: 'emoji-option-face', text: ch }), h('span', { class: 'tiny faint', text: `:${code}:` })],
+        ),
+      ),
+    )
     return true
   }
 
-  private takeEmoji(ch: string): void {
-    const input = this.textInput
-    const caret = input.selectionStart ?? 0
-    const head = input.value.slice(0, this.suggestAt)
-    const tail = input.value.slice(caret)
-    input.value = head + ch + tail
-    const at = head.length + ch.length
-    input.setSelectionRange(at, at)
-    this.closeSuggestions()
-    input.focus()
-    this.grow()
-  }
-
-  /** The commands, while the line being written is one. */
   private suggestCommands(): boolean {
     const value = this.textInput.value
-    if (!value.startsWith('/') || value.startsWith('//') || /\n/.test(value)) return false
+    if (!value.startsWith('/') || value.startsWith('//') || value.includes('\n')) return false
     const space = value.indexOf(' ')
     if (space !== -1) return this.suggestPerson(value, space)
     const wanted = value.slice(1).toLowerCase()
@@ -959,91 +704,46 @@ export class ChatPanel {
       this.closeSuggestions()
       return true
     }
-    this.suggestAt = 0
-    this.suggestKind = 'command'
-    const list = this.suggestions ?? h('div', { class: 'mention-pop' })
-    clear(list)
-    hits.forEach((command, i) => {
-      list.append(
+    this.showSuggestions(
+      'command',
+      0,
+      hits.map((command) =>
         h(
           'button',
           {
-            class: `mention-option${i === 0 ? ' on' : ''}`,
-            on: {
-              mousedown: (ev) => {
-                ev.preventDefault()
-                this.textInput.value = `/${command.name} `
-                this.closeSuggestions()
-                this.textInput.focus()
-              },
-            },
+            class: 'mention-option',
+            on: pickOnPress(() => {
+              this.textInput.value = `/${command.name} `
+              this.closeSuggestions()
+              this.textInput.focus()
+            }),
           },
-          [
-            h('span', { text: `/${command.name}` }),
-            h('span', { class: 'tiny faint', text: command.note }),
-          ],
+          [h('span', { text: `/${command.name}` }), h('span', { class: 'tiny faint', text: command.note })],
         ),
-      )
-    })
-    if (!this.suggestions) {
-      this.suggestions = list
-      document.body.append(list)
-    }
-    placeNear(list, this.textInput)
+      ),
+    )
     return true
   }
 
-  /**
-   * The people, while the word being written is the name a command wants.
-   *
-   * A command like /nudge or /dm is answered by a name spelled exactly, and
-   * the room is the only place that spelling lives, so the box offers it the
-   * same way it offers a mention. No at sign goes in: the command wants the
-   * name itself.
-   *
-   * Returns false when this is not that, so an @ later in the same line is
-   * still a mention.
-   */
   private suggestPerson(value: string, space: number): boolean {
-    // The other spelling of a command is the same command, so /msg offers what
-    // /dm offers rather than nothing at all.
     const typed = value.slice(1, space).toLowerCase()
     const command = this.commands.find((c) => c.name === typed || c.also?.includes(typed))
     if (!command?.takesName) return false
     const caret = this.textInput.selectionStart ?? 0
     const start = space + 1
     if (caret < start) return false
-    // What has been typed of the name, which may be nothing yet. Taking it up
-    // to the caret rather than to the next space is what lets a name with a
-    // space in it finish itself.
     const fragment = value.slice(start, caret)
     if (fragment.length > 32) return false
 
-    const wanted = fragment.toLowerCase()
-    const hits = [...this.names]
-      .filter(([key, name]) => name && key !== this.me && name.toLowerCase().startsWith(wanted))
-      .map(([, name]) => name)
-      .slice(0, 6)
+    const hits = this.nameHits(fragment)
     if (hits.length === 0) return false
-
-    this.suggestAt = start
-    this.suggestKind = 'name'
-    const list = this.suggestions ?? h('div', { class: 'mention-pop' })
-    clear(list)
-    hits.forEach((name, i) => {
-      list.append(
-        h('button', {
-          class: `mention-option${i === 0 ? ' on' : ''}`,
-          text: name,
-          on: { mousedown: (ev) => { ev.preventDefault(); this.takeName(name) } },
-        }),
-      )
-    })
-    if (!this.suggestions) {
-      this.suggestions = list
-      document.body.append(list)
-    }
-    placeNear(list, this.textInput)
+    this.showSuggestions(
+      'name',
+      start,
+      hits.map((name) =>
+        h('button', { class: 'mention-option', text: name, on: pickOnPress(() => this.takeName(name)) }),
+      ),
+    )
     return true
   }
 
@@ -1059,12 +759,6 @@ export class ChatPanel {
       ev.preventDefault()
       return true
     }
-    /*
-     * Enter finishes a mention, because you are in the middle of a word and
-     * the list is helping you spell it. Enter runs a command, because the line
-     * is the command and finishing it is not what pressing return means. Tab
-     * completes either.
-     */
     if (ev.key === 'Enter' && this.suggestKind === 'command') {
       this.closeSuggestions()
       return false
@@ -1098,12 +792,10 @@ export class ChatPanel {
     return false
   }
 
-  private takeSuggestion(name: string): void {
+  private replaceSuggested(insert: string): void {
     const input = this.textInput
-    const caret = input.selectionStart ?? 0
     const head = input.value.slice(0, this.suggestAt)
-    const tail = input.value.slice(caret)
-    const insert = `@${name} `
+    const tail = input.value.slice(input.selectionStart ?? 0)
     input.value = head + insert + tail
     const at = head.length + insert.length
     input.setSelectionRange(at, at)
@@ -1112,21 +804,17 @@ export class ChatPanel {
     this.grow()
   }
 
-  /** Put a name where a command wants one, with the space that follows it. */
+  private takeEmoji(ch: string): void {
+    this.replaceSuggested(ch)
+  }
+
+  private takeSuggestion(name: string): void {
+    this.replaceSuggested(`@${name} `)
+  }
+
   private takeName(name: string): void {
-    const input = this.textInput
-    const caret = input.selectionStart ?? 0
-    const head = input.value.slice(0, this.suggestAt)
-    const tail = input.value.slice(caret)
-    // The space after the name is what a command reads as the end of it,
-    // unless there is already one there.
-    const insert = tail.startsWith(' ') ? name : `${name} `
-    input.value = head + insert + tail
-    const at = head.length + insert.length
-    input.setSelectionRange(at, at)
-    this.closeSuggestions()
-    input.focus()
-    this.grow()
+    const tail = this.textInput.value.slice(this.textInput.selectionStart ?? 0)
+    this.replaceSuggested(tail.startsWith(' ') ? name : `${name} `)
   }
 
   private closeSuggestions(): void {
@@ -1136,82 +824,37 @@ export class ChatPanel {
     this.suggestKind = null
   }
 
-  /** What is on screen, so up-arrow knows what your last message was. */
-  private shown: Message[] = []
-  /**
-   * How many of the newest messages are drawn.
-   *
-   * Every message in a channel used to be drawn, so a busy channel was tens
-   * of thousands of nodes and every arrival signed all of them again. Now the
-   * newest few screens are drawn, and scrolling up to the top of what is
-   * drawn draws more. Nothing is fetched: it is all in memory already.
-   */
-  private windowSize = WINDOW
-  /** Which conversation the window was sized for. A new one starts small. */
-  private windowKey: string | null = null
-  /** The last thing drawn, so drawing more of it needs nobody to ask. */
-  private lastFeed: { messages: Message[]; joins: { at: number; text: string }[] } | null = null
-  /** How many older messages are not drawn yet. */
-  private hiddenAbove = 0
-  /** What the top of the conversation says, once it has been scrolled to. */
-  private intro: { title: string; text: string } | null = null
-
-  /** Say what the very top of this conversation is, or nothing. */
   setIntro(intro: { title: string; text: string } | null): void {
     this.intro = intro
   }
-  /** What is drawn, by key, so a redraw can leave most of it alone. */
-  private readonly rows = new Map<string, { el: HTMLElement; sig: string }>()
 
-  /**
-   * Draw the conversation, touching only what changed.
-   *
-   * It used to clear the log and build every message again on every change, so
-   * one arriving line re-created the whole channel: a few hundred milliseconds
-   * at a few thousand messages, and worse than the cost, it wiped whatever you
-   * were in the middle of. Selecting text to copy it, with anybody else typing,
-   * lost the selection the moment they sent.
-   *
-   * So every row carries a key and a signature of everything drawn in it. A row
-   * whose signature has not changed is left exactly where it is, untouched, and
-   * a new message is one insert. That is also what makes the log safe to
-   * announce to a screen reader: only what is new is new.
-   */
-  render(messages: Message[], joins: { at: number; text: string }[] = []): void {
-    this.shown = messages
+  render(messages: Message[], joins: Join[] = []): void {
     this.lastFeed = { messages, joins }
     const stuck = this.isAtBottom()
 
-    const byId = new Map(messages.map((m) => [m.id, m]))
+    const all = messages
+    let byId: Map<string, Message> | null = null
+    const parentOf = (m: Message): Message | undefined =>
+      m.replyTo ? (byId ??= new Map(all.map((x) => [x.id, x]))).get(m.replyTo) : undefined
 
-    /*
-     * A new conversation starts with the newest few screens, reaching back
-     * far enough to include the first thing you have not read, so the line
-     * that says "new" is always drawn with something above it.
-     */
     if (this.windowKey !== this.draftKey) {
       this.windowKey = this.draftKey
-      this.windowSize = WINDOW
+      this.windowSize = WINDOW_STEP
       if (this.readMark > 0) {
         const first = messages.findIndex((m) => m.lamport > this.readMark && m.author !== this.me)
         if (first >= 0) {
-          this.windowSize = Math.min(WINDOW_MAX, Math.max(WINDOW, messages.length - first + 20))
+          this.windowSize = Math.min(WINDOW_MAX, Math.max(WINDOW_STEP, messages.length - first + 20))
         }
       }
     }
     const start = Math.max(0, messages.length - this.windowSize)
     this.hiddenAbove = start
-    const since = start > 0 ? messages[start].at : -Infinity
-    messages = start > 0 ? messages.slice(start) : messages
-    joins = start > 0 ? joins.filter((j) => j.at >= since) : joins
-    /*
-     * The messages arrive already ordered by the log, whose order every peer
-     * agrees on, and that order is not touched here. Notes about arrivals are
-     * merged in beside them by wall clock, which is all a note has. Sorting
-     * the whole feed by wall clock, which this used to do, quietly reordered
-     * messages whenever somebody's clock ran ahead, so two people could read
-     * the same argument in two different orders.
-     */
+    if (start > 0) {
+      const since = messages[start].at
+      messages = messages.slice(start)
+      joins = joins.filter((j) => j.at >= since)
+    }
+    // Messages keep the log order every peer agrees on; notes merge in by wall clock.
     const feed: ({ kind: 'msg'; m: Message } | { kind: 'note'; at: number; text: string })[] = []
     const notes = [...joins].sort((a, b) => a.at - b.at)
     let n = 0
@@ -1227,11 +870,7 @@ export class ChatPanel {
       n += 1
     }
 
-    const items: { key: string; sig: string; make: () => HTMLElement }[] = []
-    /*
-     * The beginning, said as a beginning. Only when it really is: with older
-     * messages still undrawn above, the top of the screen is not the top.
-     */
+    const items: Row[] = []
     const intro = this.intro
     if (intro && this.hiddenAbove === 0 && !this.threadRoot) {
       items.push({
@@ -1271,13 +910,6 @@ export class ChatPanel {
         })
       }
 
-      /*
-       * The line you came back to read.
-       *
-       * Drawn once, above the first thing that arrived after this device last
-       * looked, and never above your own message: coming back to "new" and
-       * finding it is something you wrote is a small daily insult.
-       */
       if (!drawnUnread && this.readMark > 0 && m.lamport > this.readMark && m.author !== this.me) {
         drawnUnread = true
         lastAuthor = ''
@@ -1290,14 +922,15 @@ export class ChatPanel {
 
       const first = m.author !== lastAuthor
       lastAuthor = m.replyTo ? '' : m.author
+      const parent = parentOf(m)
+      const callsMe = m.text.includes('@') && mentionsMe(m.text, this.names, this.me)
+      const live = !!m.live && m.author !== this.me && !!this.streamLive?.(m.author, m.channel)
       items.push({
         key: `m:${m.id}`,
-        sig: this.signature(m, first, byId),
-        make: () => this.messageRow(m, first, byId),
+        sig: this.signature(m, first, parent, callsMe, live),
+        make: () => this.messageRow(m, first, parent, callsMe, live),
       })
 
-      // In a thread, a rule under the question it hangs off. What follows is
-      // the answers, and they read as answers rather than as more questions.
       if (this.threadRoot && m.id === this.threadRoot) {
         const count = messages.length - 1
         const text = count === 0 ? 'No replies yet' : `${count} ${count === 1 ? 'reply' : 'replies'}`
@@ -1318,13 +951,8 @@ export class ChatPanel {
     this.showJump()
   }
 
-  /**
-   * Everything about a message that ends up on the screen, as one string.
-   *
-   * If this misses something, that something stops updating, so it is written
-   * beside the thing that draws it and holds every value that drawing reads.
-   */
-  private signature(m: Message, first: boolean, byId: Map<string, Message>): string {
+  /** Must hold every value messageRow reads, or that value stops updating. */
+  private signature(m: Message, first: boolean, parent: Message | undefined, callsMe: boolean, live: boolean): string {
     const reactions = [...m.reactions]
       .map(([emoji, who]) => `${emoji}${who.size}${who.has(this.me) ? '*' : ''}`)
       .sort()
@@ -1335,10 +963,8 @@ export class ChatPanel {
           .sort()
           .join(',')}`
       : ''
-    const parent = m.replyTo ? byId.get(m.replyTo) : null
     return [
       m.text,
-      // Files, and whether there is anywhere to fetch them from yet.
       `${m.files?.map((f) => f.id.slice(0, 8)).join(',') ?? ''}${this.files ? '+' : ''}`,
       m.name ?? '',
       this.avatars.get(m.author) ?? '',
@@ -1346,16 +972,14 @@ export class ChatPanel {
       m.edited ? 'e' : '',
       m.pinned ? 'p' : '',
       m.emote ? 'm' : '',
-      // The way in to a stream comes and goes with the stream itself, not
-      // with anything on the message, so the row must redraw when it turns.
-      m.live && m.author !== this.me && this.streamLive?.(m.author, m.channel) ? 'live' : '',
+      live ? 'live' : '',
       m.replies ?? 0,
       first ? 'f' : '',
       this.canPin ? 'a' : '',
       this.canDelete ? 'd' : '',
       this.colourOf(m.author),
       parent ? this.colourOf(parent.author) : '',
-      mentionsMe(m.text, this.names, this.me) ? 'c' : '',
+      callsMe ? 'c' : '',
       this.threadRoot === m.id ? 'root' : '',
       parent ? `${parent.name ?? ''}:${parent.text.slice(0, 60)}` : m.replyTo ? 'gone' : '',
       reactions,
@@ -1363,14 +987,7 @@ export class ChatPanel {
     ].join('\u0001')
   }
 
-  /**
-   * Line the log up with what it should be showing.
-   *
-   * Anything whose signature still matches is left alone, which means its
-   * selection, its scroll, its open menu and its half finished animation all
-   * survive. The rest is inserted, moved or removed.
-   */
-  private reconcile(items: { key: string; sig: string; make: () => HTMLElement }[]): void {
+  private reconcile(items: Row[]): void {
     const wanted = new Set(items.map((i) => i.key))
     for (const [key, held] of this.rows) {
       if (wanted.has(key)) continue
@@ -1395,14 +1012,18 @@ export class ChatPanel {
     while (this.log.childNodes.length > items.length) this.log.lastChild?.remove()
   }
 
-  /** One message, drawn. */
-  private messageRow(m: Message, first: boolean, byId: Map<string, Message>): HTMLElement {
+  private messageRow(
+    m: Message,
+    first: boolean,
+    parent: Message | undefined,
+    callsMe: boolean,
+    live: boolean,
+  ): HTMLElement {
     const mine = m.author === this.me
-    const at = h('span', { class: 'chat-at', text: clockLabel(m.at) })
+    const who = m.name || shortKey(m.author)
+    const at = h('span', { class: 'chat-at', text: CLOCK.format(m.at) })
     const line = h('div', {
-      class:
-        `chat-line${mine ? ' mine' : ''}${m.pinned ? ' pinned' : ''}` +
-        `${mentionsMe(m.text, this.names, this.me) ? ' calls-me' : ''}`,
+      class: `chat-line${mine ? ' mine' : ''}${m.pinned ? ' pinned' : ''}${callsMe ? ' calls-me' : ''}`,
     })
     line.dataset.id = m.id
     // Drawn again while lit: the light carries on from where it had got to.
@@ -1411,14 +1032,7 @@ export class ChatPanel {
       line.classList.add('found')
       line.style.animationDelay = `-${since}ms`
     }
-    // The line sits in a row, and the row is what the actions hang off, so
-    // they are beside the message rather than on top of the end of it.
     const row = h('div', { class: `chat-row${mine ? ' mine' : ''}` }, [line])
-    /*
-     * On a touch screen there is no hovering, so the actions are asked for by
-     * tapping the message. One at a time: opening a second closes the first,
-     * which is what a pointer does for free.
-     */
     line.addEventListener('click', (ev) => {
       if (window.matchMedia('(hover: hover)').matches) return
       const target = ev.target as HTMLElement
@@ -1430,23 +1044,20 @@ export class ChatPanel {
       row.classList.toggle('acting', !open)
     })
 
-    /*
-     * What this answers, unless the answer is standing inside the thread it
-     * belongs to. Quoting the message at the top of the pane above every
-     * reply to it says nothing anybody cannot see.
-     */
     if (m.replyTo && m.replyTo !== this.threadRoot) {
-      const parent = byId.get(m.replyTo)
-      const quoted = parent ? h('span', { class: 'chat-reply-name', text: parent.name || shortKey(parent.author) }) : null
-      const colour = parent ? this.colourOf(parent.author) : ''
-      if (quoted && colour) quoted.style.color = colour
+      let quoted: HTMLElement | null = null
+      if (parent) {
+        quoted = h('span', { class: 'chat-reply-name', text: parent.name || shortKey(parent.author) })
+        const colour = this.colourOf(parent.author)
+        if (colour) quoted.style.color = colour
+      }
       line.append(
         h(
           'button',
           {
             class: 'chat-reply truncate',
             title: parent ? 'Go to what this answers' : 'That message is no longer here',
-            on: { click: () => parent && this.jumpTo(parent.id) },
+            on: { click: () => parent && this.jump(parent.id) },
           },
           parent
             ? [quoted, `: ${parent.text.slice(0, 60) || (parent.files?.length ? 'a file' : '')}`]
@@ -1456,23 +1067,11 @@ export class ChatPanel {
     }
     if (this.threadRoot && m.id === this.threadRoot) line.classList.add('thread-root')
 
-    /*
-     * A run from one person shows the name once, at the top of the run.
-     *
-     * The name carries the colour of the level its writer is on, so the
-     * people who run the place stand out, the same on every device. A member
-     * wears the ordinary colour of text, and the face beside the name is what
-     * tells two members apart.
-     */
     if (first) {
-      const name = h('span', { class: 'chat-name', text: m.name || shortKey(m.author) })
+      const name = h('span', { class: 'chat-name', text: who })
       const colour = this.colourOf(m.author)
       if (colour) name.style.color = colour
       row.classList.add('first')
-      /*
-       * The face in the gutter, and the time on the line with the name, so a
-       * run reads as one block with its author and its time at the top.
-       */
       line.append(
         h('div', { class: 'chat-who' }, [
           avatarOf(m.author, m.name ?? '', this.avatars.get(m.author) ?? '', 40),
@@ -1488,47 +1087,30 @@ export class ChatPanel {
     }
 
     const text = h('span', { class: `chat-text${m.emote ? ' emote' : ''}` })
-    if (m.emote) text.append(document.createTextNode(`${m.name || shortKey(m.author)} `))
+    if (m.emote) text.append(document.createTextNode(`${who} `))
     if (m.poll) {
       text.append(h('strong', { text: m.poll.question }))
-      line.append(text)
-      line.append(this.pollBox(m))
+      line.append(text, this.pollBox(m))
     } else {
-      // A message that IS a picture, written rather than linked. Drawn the
-      // way every picture here is drawn, through an img, never parsed into
-      // the page: see svgSource for what that buys.
       const svg = m.emote ? null : svgSource(m.text)
       if (svg) {
         line.classList.add('has-picture')
         line.append(
           svgEmbed(svg, () => {
-            // It would not draw, so it goes back to being what it was: text.
             line.classList.remove('has-picture')
             for (const node of formatText(m.text, this.names, this.me)) text.append(node)
             line.prepend(text)
           }),
         )
       }
-      const pictures = svg ? [] : imageLinks(m.text)
-      // A message that is nothing but a picture link is the picture. The
-      // address under it said the same thing worse.
+      const links = imageLinks(m.text)
+      const pictures = svg ? [] : links
       const bare = !m.emote && pictures.length === 1 && m.text.trim() === pictures[0]
-      /*
-       * A picture stands apart from the words.
-       *
-       * Any words in the same message sit on their own line above it, so the
-       * picture is not jammed into the middle of a sentence.
-       */
       if (pictures.length > 0) line.classList.add('has-picture')
       const onlyFiles = !m.text && (m.files?.length ?? 0) > 0
-      /*
-       * A picture or a GIF with only emoji beside it: the emoji, large, over
-       * the picture. The address is left out, because the picture under it
-       * already says it.
-       */
-      const beside = pictures.reduce((rest, src) => rest.split(src).join(' '), m.text).trim()
-      const emojiWithPicture = !m.emote && pictures.length > 0 && onlyEmoji(beside)
-      if (emojiWithPicture) {
+      const beside =
+        !m.emote && pictures.length > 0 ? pictures.reduce((rest, src) => rest.split(src).join(' '), m.text).trim() : ''
+      if (onlyEmoji(beside)) {
         text.classList.add('jumbo')
         text.append(beside)
         line.append(text)
@@ -1540,31 +1122,23 @@ export class ChatPanel {
       }
       for (const src of pictures) line.append(embed(src))
       if (m.files?.length) line.append(attachmentBlock(m.files, this.files))
-      this.attachPreview(line, m.text)
+      this.attachPreview(line, m.text, links)
     }
 
-    /*
-     * The way in to a stream, on the line that announced it.
-     *
-     * Only while the screen is still up, and never on your own: a button that
-     * joins a stream that ended is a lie, and the sharer already has theirs.
-     */
-    if (m.live && m.author !== this.me && this.streamLive?.(m.author, m.channel)) {
+    if (live) {
       line.append(
         h('button', {
           class: 'chat-join primary',
           text: 'Join stream',
-          title: `Put ${m.name || shortKey(m.author)}’s screen on yours`,
+          title: `Put ${who}’s screen on yours`,
           on: { click: () => this.onWatch?.(m.author, m.channel) },
         }),
       )
     }
 
     if (m.edited) line.append(h('span', { class: 'chat-edited', text: '(edited)' }))
-    // In a run the time waits in the gutter, for the pointer to ask for it.
     if (!first) line.append(at)
 
-    // The way into a thread, and the count of what is waiting in it.
     if (!this.threadRoot && m.replies) {
       line.append(
         h('button', {
@@ -1578,18 +1152,17 @@ export class ChatPanel {
 
     if (m.reactions.size) {
       const reacts = h('div', { class: 'chat-reacts' })
-      for (const [emoji, who] of m.reactions) {
+      for (const [emoji, people] of m.reactions) {
+        const on = people.has(this.me)
         reacts.append(
           h('button', {
-            class: `chat-react${who.has(this.me) ? ' on' : ''}`,
-            text: `${emoji} ${who.size}`,
-            title: who.has(this.me) ? 'Take yours back' : 'React with this too',
-            on: { click: () => this.actions?.react(m.id, emoji, !who.has(this.me)) },
+            class: `chat-react${on ? ' on' : ''}`,
+            text: `${emoji} ${people.size}`,
+            title: on ? 'Take yours back' : 'React with this too',
+            on: { click: () => this.actions?.react(m.id, emoji, !people.has(this.me)) },
           }),
         )
       }
-      // One more, on the end of the ones already there, which is where
-      // somebody about to add a different one is already looking.
       const more = h('button', {
         class: 'chat-react add',
         text: '+',
@@ -1601,28 +1174,14 @@ export class ChatPanel {
       line.append(reacts)
     }
 
-    // Hung off the line rather than off the row, so they sit against the
-    // message they act on however wide it is.
-    line.append(this.rowActions(m, mine))
+    line.append(this.rowActions(m, mine, who))
     return row
-
   }
 
-  // ---- internals ----
-
-  /**
-   * A card under a message that carries a link, when anybody can say what is
-   * behind it.
-   *
-   * A browser cannot read another site's page, so the space's server goes and
-   * looks. The hook is null when it does not, and messages carry plain links
-   * the way they always did. The card fills in when the answer
-   * arrives; a row redrawn later asks again and is answered from the cache.
-   */
-  private attachPreview(line: HTMLElement, text: string): void {
+  private attachPreview(line: HTMLElement, text: string, pictures: string[]): void {
     if (!this.previewFor) return
     const link = text.match(/https?:\/\/[^\s<>"')\]]+/)?.[0]
-    if (!link || imageLinks(text).includes(link)) return
+    if (!link || pictures.includes(link)) return
     const box = h('a', { class: 'link-card hidden' })
     box.href = link
     box.target = '_blank'
@@ -1645,14 +1204,12 @@ export class ChatPanel {
         try {
           host = new URL(link).hostname
         } catch {
-          /* the link drew a card, so it parsed once already */
+          /* leave the host empty */
         }
         box.append(
           h('div', { class: 'link-card-body stack tight' }, [
             h('div', { class: 'link-card-title truncate', text: p.title || link }),
-            p.description
-              ? h('div', { class: 'link-card-desc tiny', text: p.description })
-              : null,
+            p.description ? h('div', { class: 'link-card-desc tiny', text: p.description }) : null,
             h('div', { class: 'tiny faint truncate', text: p.site || host }),
           ]),
         )
@@ -1661,14 +1218,6 @@ export class ChatPanel {
       .catch(() => undefined)
   }
 
-  /**
-   * A poll, drawn as a bar per answer.
-   *
-   * The counts are always shown, because hiding them until you vote makes
-   * people vote to see them, which is a way of getting a worse answer. The bar
-   * is the share of the votes cast; a poll nobody has answered draws no bars
-   * rather than four empty ones.
-   */
   private pollBox(m: Message): HTMLElement {
     const poll = m.poll!
     const box = h('div', { class: 'poll' })
@@ -1679,7 +1228,7 @@ export class ChatPanel {
       const mine = poll.mine === i
 
       const fill = h('div', { class: 'poll-fill' })
-      fill.style.width = `${poll.total > 0 ? share : 0}%`
+      fill.style.width = `${share}%`
 
       box.append(
         h(
@@ -1712,13 +1261,7 @@ export class ChatPanel {
     return box
   }
 
-  /** Take somebody to a message and light it up, from anywhere. */
   jump(id: string): void {
-    this.jumpTo(id)
-  }
-
-  private jumpTo(id: string): void {
-    // Further back than is drawn: draw down to it first.
     if (!this.log.querySelector(`[data-id="${id}"]`) && this.lastFeed) {
       const { messages, joins } = this.lastFeed
       const at = messages.findIndex((m) => m.id === id)
@@ -1737,13 +1280,7 @@ export class ChatPanel {
     row.classList.add('found')
   }
 
-  /** The button the quick reactions hang off, so pressing it again closes them. */
-  private quickFor: HTMLElement | null = null
-
-  /** The message a jump landed on, and when, so a redraw carries the light on rather than dropping it. */
-  private found: { id: string; at: number } | null = null
-
-  private rowActions(m: Message, mine: boolean): HTMLElement {
+  private rowActions(m: Message, mine: boolean, who: string): HTMLElement {
     const bar = h('div', { class: 'chat-actions' })
     if (this.canPin) {
       bar.append(
@@ -1780,13 +1317,6 @@ export class ChatPanel {
         [icon('reply', 17)],
       ),
     )
-    /*
-     * Replying in a thread rather than in the channel.
-     *
-     * The same event either way, carrying the same id: what changes is where it
-     * is drawn. Twenty answers to one question belong under the question rather
-     * than through the middle of everybody else's conversation.
-     */
     if (!this.threadRoot) {
       bar.append(
         h(
@@ -1815,21 +1345,15 @@ export class ChatPanel {
         ),
       )
     } else if (this.canDelete) {
-      /*
-       * Somebody has to be able to take down what was posted in a room they
-       * are responsible for. Behind a question, because it is somebody else's
-       * words and it cannot be undone.
-       */
       bar.append(
         h(
           'button',
           {
             class: 'danger',
-            title: `Delete this message from ${m.name || shortKey(m.author)}`,
+            title: `Delete this message from ${who}`,
             ariaLabel: 'Delete this message',
             on: {
               click: () => {
-                const who = m.name || shortKey(m.author)
                 if (!window.confirm(`Delete this message from ${who}?`)) return
                 this.actions?.retract(m.id)
               },
@@ -1842,21 +1366,7 @@ export class ChatPanel {
     return bar
   }
 
-  /**
-   * React to a message.
-   *
-   * A short row of the ones this person actually uses, and the whole set behind
-   * one more click. This used to hang a row of five off `.chat-line:hover`,
-   * which meant it appeared on whatever the pointer happened to be over rather
-   * than on the message whose button was pressed, and a redraw took it away
-   * mid-reach. It hangs off the button now, and the button belongs to one
-   * message.
-   *
-   * Reacting a second time with the same emoji takes it back, so the row is a
-   * toggle rather than a one way door.
-   */
   private reactWith(m: Message, anchor: HTMLElement): void {
-    // Its own button again closes it.
     const already = document.querySelector('.emoji-pop.quick')
     if (already && this.quickFor === anchor) {
       already.remove()
@@ -1864,16 +1374,16 @@ export class ChatPanel {
       return
     }
     this.quickFor = anchor
+    const reacted = (emoji: string): boolean => m.reactions.get(emoji)?.has(this.me) === true
     const toggle = (emoji: string): void => {
-      const mine = m.reactions.get(emoji)?.has(this.me) === true
-      this.actions?.react(m.id, emoji, !mine)
+      this.actions?.react(m.id, emoji, !reacted(emoji))
     }
 
     const row = h('div', { class: 'emoji-quick' })
     for (const emoji of quickRow()) {
       row.append(
         h('button', {
-          class: `chat-react${m.reactions.get(emoji)?.has(this.me) ? ' on' : ''}`,
+          class: `chat-react${reacted(emoji) ? ' on' : ''}`,
           text: emoji,
           title: `React with ${emoji}`,
           on: {
@@ -1919,7 +1429,6 @@ export class ChatPanel {
     }
     window.addEventListener('pointerdown', away, true)
     window.addEventListener('keydown', key, true)
-    // The row is short lived: whichever way it goes, the listeners go with it.
     new MutationObserver((_records, self) => {
       if (pop.isConnected) return
       window.removeEventListener('pointerdown', away, true)
@@ -1959,13 +1468,7 @@ export class ChatPanel {
     clear(this.replyBar)
   }
 
-  /**
-   * The end again, one frame after something in the log changed size.
-   *
-   * A frame later rather than now, because the picture knows its size before
-   * the row around it has been laid out with it, and scrolling to a height
-   * that is about to change is what this exists to stop.
-   */
+  /** Waits a frame, because a loaded picture resizes its row only after the next layout. */
   private followMedia(): void {
     if (!this.pinned) return
     requestAnimationFrame(() => {
@@ -1992,19 +1495,16 @@ export class ChatPanel {
 
   private submit(): void {
     const typed = this.textInput.value.trim()
-    // A :name: left as it was typed goes as its emoji; a command goes as written.
-    const text = /^\/[^/\s]/.test(typed) ? typed : withEmoji(typed)
+    const isCommand = /^\/[^/\s]/.test(typed)
+    const text = isCommand ? typed : withEmoji(typed)
     const attaching = this.tray.count > 0 && !this.editing
     if (!text && !attaching) return
-    // Past the limit nobody would receive it, so it does not leave the box.
-    // The count beside Send has been saying so since the last stretch.
-    if (!this.enabled || this.tooLong()) return
+    if (!this.enabled || this.room() < 0) return
     if (attaching) {
       if (this.tray.failed) {
         toast('A file did not upload. Take it off, or attach it again.', 'warn')
         return
       }
-      // Still going up: it goes the moment they are all there.
       if (this.tray.busy) {
         this.sendWaiting = true
         this.sendButton.classList.add('waiting')
@@ -2018,31 +1518,13 @@ export class ChatPanel {
       }
     }
     const files = attaching ? this.tray.ready : []
-    /*
-     * A line starting with a slash is an instruction rather than something to
-     * say. The panel does not know what any of them mean: it hands the line to
-     * whoever owns the space, and only clears the box if they took it.
-     *
-     * A slash followed by nothing, or by a space, is not an attempt at a
-     * command; it is a message that happens to start with one. It used to be
-     * scolded with "There is no /", which helped nobody say "/ 10" about a
-     * film.
-     */
-    if (/^\/[^/\s]/.test(text) && !this.editing && !attaching) {
-      /*
-       * Emptied before the command runs, not after.
-       *
-       * A command can change what the panel is showing, and changing that keeps
-       * whatever is half written as a draft. With the box still full, the draft
-       * kept was the command that had just been run, and it came back the next
-       * time you opened the channel.
-       */
+    if (isCommand && !this.editing && !attaching) {
+      // Emptied before the command runs, so a command that switches view does not keep itself as a draft.
       this.textInput.value = ''
       this.grow()
       this.closeSuggestions()
       this.drafts.delete(this.draftKey)
       if (this.onCommand?.(text) !== true) {
-        // Nobody took it, so it goes back rather than into the bin.
         this.textInput.value = text
         this.grow()
       }
@@ -2059,8 +1541,6 @@ export class ChatPanel {
     } else if (text.startsWith('//')) {
       this.actions?.say(text.slice(1), this.replyTo?.id ?? null, false, files)
     } else if (this.threadRoot) {
-      // Everything written in a thread answers its root, whichever message in
-      // it was being looked at. Flat, like every thread anybody reads.
       this.actions?.say(text, this.threadRoot, true, files)
     } else {
       this.actions?.say(text, this.replyTo?.id ?? null, false, files)
@@ -2069,29 +1549,16 @@ export class ChatPanel {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Text
-// ---------------------------------------------------------------------------
-
 const URL_RE = /\bhttps?:\/\/[^\s<>"']+/g
+const ESCAPABLE = '*_~`|\\'
+const INLINE_OPENERS = '`|~*_'
 
-/**
- * Turn message text into nodes.
- *
- * Bold, italic, inline code, links, mentions and line breaks, built as elements
- * rather than parsed as markup, so nothing a person types can become a tag.
- * Links open in a new tab with no referrer, because a room code lives in this
- * page's fragment and has no business travelling to somebody else's site.
- *
- * Line by line, because a message can hold several now and a newline in a text
- * node is whitespace to a browser rather than a break.
- */
-export function formatText(text: string, names?: Map<string, string>, me = ''): Node[] {
+/** Builds DOM nodes, never HTML, so nothing a person types can become markup. */
+function formatText(text: string, names: Map<string, string>, me: string): Node[] {
   const out: Node[] = []
   const lines = text.split('\n')
   let i = 0
 
-  /** Everything up to the closing fence, kept exactly as it was typed. */
   const fence = (): void => {
     const language = lines[i].slice(3).trim().slice(0, 20)
     const body: string[] = []
@@ -2100,38 +1567,30 @@ export function formatText(text: string, names?: Map<string, string>, me = ''): 
       body.push(lines[i])
       i += 1
     }
-    i += 1 // the closing fence, or the end of the message
+    i += 1
     const block = h('pre', { class: 'chat-code' }, [h('code', { text: body.join('\n') })])
     if (language) block.dataset.language = language
     out.push(block)
   }
 
   const quote = (): void => {
-    const body: string[] = []
+    const block = h('blockquote', { class: 'chat-quote' })
+    let n = 0
     while (i < lines.length && /^>\s?/.test(lines[i])) {
-      body.push(lines[i].replace(/^>\s?/, ''))
+      if (n > 0) block.append(h('br'))
+      for (const node of formatLine(lines[i].replace(/^>\s?/, ''), names, me)) block.append(node)
+      n += 1
       i += 1
     }
-    const block = h('blockquote', { class: 'chat-quote' })
-    body.forEach((line, n) => {
-      if (n > 0) block.append(h('br'))
-      for (const node of formatLine(line, names, me)) block.append(node)
-    })
     out.push(block)
   }
 
   const list = (ordered: boolean): void => {
-    const items: string[] = []
     const pattern = ordered ? /^\s*\d+[.)]\s+/ : /^\s*[-*+]\s+/
-    while (i < lines.length && pattern.test(lines[i])) {
-      items.push(lines[i].replace(pattern, ''))
-      i += 1
-    }
     const block = h(ordered ? 'ol' : 'ul', { class: 'chat-list' })
-    for (const item of items) {
-      const li = h('li')
-      for (const node of formatLine(item, names, me)) li.append(node)
-      block.append(li)
+    while (i < lines.length && pattern.test(lines[i])) {
+      block.append(h('li', {}, formatLine(lines[i].replace(pattern, ''), names, me)))
+      i += 1
     }
     out.push(block)
   }
@@ -2167,13 +1626,11 @@ export function formatText(text: string, names?: Map<string, string>, me = ''): 
   return out
 }
 
-function formatLine(text: string, names?: Map<string, string>, me = ''): Node[] {
+function formatLine(line: string, names: Map<string, string>, me: string): Node[] {
   const out: Node[] = []
-  const rest = text
 
-  /** The @somebody parts, drawn as themselves and lit up when they are you. */
   const pushMentions = (chunk: string, plain: (s: string) => void): void => {
-    const hits = names?.size ? findMentions(chunk, names) : []
+    const hits = names.size && chunk.includes('@') ? findMentions(chunk, names) : []
     if (hits.length === 0) {
       plain(chunk)
       return
@@ -2190,17 +1647,6 @@ function formatLine(text: string, names?: Map<string, string>, me = ''): Node[] 
 
   const pushInline = (raw: string): void => {
     pushMentions(raw, (chunk) => {
-      /*
-       * One pass, character by character, because the alternative is a stack of
-       * regular expressions that cannot see each other.
-       *
-       * A backslash makes the next marker literal, which is how anybody writes
-       * a file path or the shrug without it turning into italics. An underscore
-       * only opens italics at the edge of a word, so snake_case survives, which
-       * is the thing that would otherwise be wrong in every message a
-       * programmer sends.
-       */
-      const MARKERS = '*_~`|\\'
       let text = ''
       const flush = (): void => {
         if (text) out.push(document.createTextNode(text))
@@ -2209,30 +1655,29 @@ function formatLine(text: string, names?: Map<string, string>, me = ''): Node[] 
       let i = 0
       while (i < chunk.length) {
         const ch = chunk[i]
-        if (ch === '\\' && MARKERS.includes(chunk[i + 1] ?? '')) {
+        if (ch === '\\' && ESCAPABLE.includes(chunk[i + 1] ?? '')) {
           text += chunk[i + 1]
           i += 2
           continue
         }
-        const rest = chunk.slice(i)
-        const wordBefore = /\w/.test(chunk[i - 1] ?? '')
-        let match: RegExpExecArray | null = null
-        let node: Node | null = null
-
-        if ((match = /^`([^`]+)`/.exec(rest))) node = h('code', { text: match[1] })
-        else if ((match = /^\|\|([\s\S]+?)\|\|/.exec(rest))) node = spoiler(match[1])
-        else if ((match = /^~~([\s\S]+?)~~/.exec(rest))) node = h('s', { text: match[1] })
-        else if ((match = /^\*\*([\s\S]+?)\*\*/.exec(rest))) node = h('strong', { text: match[1] })
-        else if ((match = /^\*([^*\s][\s\S]*?)\*/.exec(rest))) node = h('em', { text: match[1] })
-        else if (!wordBefore && (match = /^_([^_\s][\s\S]*?)_(?!\w)/.exec(rest))) {
-          node = h('em', { text: match[1] })
-        }
-
-        if (node && match) {
-          flush()
-          out.push(node)
-          i += match[0].length
-          continue
+        if (INLINE_OPENERS.includes(ch)) {
+          const rest = chunk.slice(i)
+          let match: RegExpExecArray | null = null
+          let node: Node | null = null
+          if ((match = /^`([^`]+)`/.exec(rest))) node = h('code', { text: match[1] })
+          else if ((match = /^\|\|([\s\S]+?)\|\|/.exec(rest))) node = spoiler(match[1])
+          else if ((match = /^~~([\s\S]+?)~~/.exec(rest))) node = h('s', { text: match[1] })
+          else if ((match = /^\*\*([\s\S]+?)\*\*/.exec(rest))) node = h('strong', { text: match[1] })
+          else if ((match = /^\*([^*\s][\s\S]*?)\*/.exec(rest))) node = h('em', { text: match[1] })
+          else if (!/\w/.test(chunk[i - 1] ?? '') && (match = /^_([^_\s][\s\S]*?)_(?!\w)/.exec(rest))) {
+            node = h('em', { text: match[1] })
+          }
+          if (node && match) {
+            flush()
+            out.push(node)
+            i += match[0].length
+            continue
+          }
         }
         text += ch
         i += 1
@@ -2241,11 +1686,10 @@ function formatLine(text: string, names?: Map<string, string>, me = ''): Node[] 
     })
   }
 
-  URL_RE.lastIndex = 0
   let last = 0
-  for (const match of rest.matchAll(URL_RE)) {
+  for (const match of line.matchAll(URL_RE)) {
     const at = match.index ?? 0
-    if (at > last) pushInline(rest.slice(last, at))
+    if (at > last) pushInline(line.slice(last, at))
     const anchor = h('a', { text: match[0] })
     anchor.href = match[0]
     anchor.target = '_blank'
@@ -2253,63 +1697,16 @@ function formatLine(text: string, names?: Map<string, string>, me = ''): Node[] 
     out.push(anchor)
     last = at + match[0].length
   }
-  if (last < rest.length) pushInline(rest.slice(last))
+  if (last < line.length) pushInline(line.slice(last))
   return out
 }
 
-/**
- * Pictures and GIFs, from links.
- *
- * There is no upload, because there is nowhere to upload to: the whole point
- * of this thing is that it runs without a server holding anybody's files. What
- * there is instead is the same thing every chat did before uploads existed.
- * Paste a link to a picture and the picture is what you see.
- *
- * That is enough for GIFs, which is what people actually want. Any GIF site
- * gives you a direct link, and it plays because the browser plays it: an
- * animated GIF needs no player and no permission.
- *
- * Only https, and only links that are obviously a picture. A link is still a
- * request to somebody else's server, which tells them you are here, so this
- * never follows one that could be a page.
- *
- * "Obviously a picture" used to mean the address ended in .png or .gif, and
- * that turned out to be too strict: a PNG from Twitter ends in ?format=png,
- * one from an image host often ends in nothing at all, and every one of them
- * drew as a bare link beside a GIF that drew as a picture. So there are now
- * three ways to be a picture, in order of how sure each one is.
- *
- * A wrong guess costs nothing visible. A picture that fails to load takes its
- * own frame out of the message, which leaves the link that was there anyway.
- */
-
-/** Ends in a picture: the plain case, with or without a query after it. */
 const IMAGE_RE = /\.(gif|png|jpe?g|webp|avif|apng|bmp|svg)(\?[^\s]*)?$/i
-/** The extension is in the path but the address carries on past it. */
 const IMAGE_PATH_RE = /\.(gif|png|jpe?g|webp|avif|apng)(\/|$)/i
-/** The picture is named in the query: ?format=png, ?fm=jpg, ?ext=gif. */
 const IMAGE_QUERY_RE = /(?:^|&)(?:format|fm|ext|type)=(gif|png|jpe?g|webp|avif)(?:&|$)/i
-
-/**
- * A short clip, drawn as a picture that moves.
- *
- * Every GIF service hands out a webm or an mp4 of the same animation, a
- * fraction of the weight of the gif, and every browser plays one. So a link to
- * one is embedded like a picture: no controls, no sound, no gesture needed to
- * start it, and it goes round for ever, which is what a GIF is.
- *
- * Muted is not politeness, it is the rule: a browser refuses to start a clip
- * with sound in it until somebody clicks the page, and a clip that will not
- * start is a grey rectangle.
- */
 const CLIP_RE = /\.(webm|mp4|m4v)(\?[^\s]*)?$/i
 
-/**
- * Hosts that serve pictures and nothing else, for the links that carry no
- * extension at all. Each one is matched on the whole host or on a dot before
- * it, so example.com.evil.test is not i.imgur.com.
- */
-const IMAGE_HOSTS = [
+const IMAGE_HOSTS = new Set([
   'i.imgur.com',
   'pbs.twimg.com',
   'i.redd.it',
@@ -2324,24 +1721,23 @@ const IMAGE_HOSTS = [
   'files.catbox.moe',
   'images.unsplash.com',
   'user-images.githubusercontent.com',
-]
+])
 
-function isClipLink(url: URL): boolean {
-  return CLIP_RE.test(url.pathname + url.search)
-}
+const MAX_PICTURES = 4
 
 function looksLikePicture(url: URL): boolean {
-  const query = url.search.replace(/^\?/, '')
-  if (isClipLink(url)) return true
-  if (IMAGE_RE.test(url.pathname + url.search)) return true
-  if (IMAGE_PATH_RE.test(url.pathname)) return true
-  if (IMAGE_QUERY_RE.test(query)) return true
-  return IMAGE_HOSTS.includes(url.hostname.toLowerCase())
+  const pathAndQuery = url.pathname + url.search
+  return (
+    CLIP_RE.test(pathAndQuery) ||
+    IMAGE_RE.test(pathAndQuery) ||
+    IMAGE_PATH_RE.test(url.pathname) ||
+    IMAGE_QUERY_RE.test(url.search.replace(/^\?/, '')) ||
+    IMAGE_HOSTS.has(url.hostname.toLowerCase())
+  )
 }
 
 export function imageLinks(text: string): string[] {
   const out: string[] = []
-  URL_RE.lastIndex = 0
   for (const match of text.matchAll(URL_RE)) {
     const raw = match[0]
     let url: URL
@@ -2350,28 +1746,21 @@ export function imageLinks(text: string): string[] {
     } catch {
       continue
     }
-    if (url.protocol !== 'https:') continue
-    if (!looksLikePicture(url)) continue
+    if (url.protocol !== 'https:' || !looksLikePicture(url)) continue
     if (!out.includes(raw)) out.push(raw)
-    if (out.length === 4) break // a wall of pictures is somebody else's problem
+    if (out.length === MAX_PICTURES) break
   }
   return out
 }
 
 function embed(src: string): HTMLElement {
   const media = CLIP_RE.test(src) ? clip(src) : picture(src)
-  // A link that turns out to be neither leaves nothing behind.
   media.addEventListener('error', () => wrap.remove(), true)
   const wrap = h('a', { class: 'chat-image-wrap' }, [media])
   wrap.href = src
   wrap.target = '_blank'
   wrap.rel = 'noopener noreferrer'
   wrap.title = 'Look closer'
-  /*
-   * A plain click looks closer, right here, instead of leaving for the
-   * address the picture came from. The address keeps working the way any
-   * link does for a modified click, a middle click, or a copy.
-   */
   wrap.addEventListener('click', (ev) => {
     if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return
     ev.preventDefault()
@@ -2380,14 +1769,6 @@ function embed(src: string): HTMLElement {
   return wrap
 }
 
-/**
- * The picture, as big as the window can show it.
- *
- * Over the conversation rather than instead of it: escape, or a click
- * anywhere, puts it away and hands focus back to where it was. A clip keeps
- * being a GIF that weighs less, only bigger, so it arrives already moving
- * and still has no controls to trip on.
- */
 function openLightbox(media: HTMLElement): void {
   const was = document.activeElement instanceof HTMLElement ? document.activeElement : null
   const shown = media.cloneNode(true) as HTMLElement
@@ -2398,11 +1779,6 @@ function openLightbox(media: HTMLElement): void {
     shown.loop = true
     void shown.play().catch(() => undefined)
   }
-  /*
-   * A drawing sized from its viewBox wears that size as attributes, and it
-   * scales losslessly, so up close it gets the whole window: the same shape,
-   * grown to fit. A raster picture keeps its own size and the style caps it.
-   */
   const w = Number(shown.getAttribute('width'))
   const tall = Number(shown.getAttribute('height'))
   if (w > 0 && tall > 0) {
@@ -2434,19 +1810,7 @@ function openLightbox(media: HTMLElement): void {
   box.focus()
 }
 
-/**
- * The message, when the whole thing is one written-out svg element.
- *
- * Drawn through an img and a data: address, which is the deal every picture
- * here gets. In image context the browser runs no script the file carries,
- * fires no event handler on it, and lets nothing inside it reach the network.
- * Parsing it into the page instead is what would make those live, and it is
- * exactly what the rule at the top of this file forbids.
- *
- * Only the whole message counts. An svg element in the middle of a sentence
- * stays text, because a reader quoting markup is not posting a drawing.
- */
-export function svgSource(text: string): string | null {
+function svgSource(text: string): string | null {
   const t = text.trim()
   if (t.length > MAX_TEXT) return null
   if (!/^<svg[\s>]/i.test(t)) return null
@@ -2454,16 +1818,12 @@ export function svgSource(text: string): string | null {
   return t
 }
 
+/** Only ever drawn through an img: in image context an SVG runs no script and loads nothing. */
 function svgEmbed(source: string, fallback: () => void): HTMLElement {
   const img = h('img', { class: 'chat-image' })
   img.alt = 'Shared drawing'
   img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(source)}`
-  /*
-   * An svg that names no width gets the browser's 300 by 150 default, which
-   * draws a tall logo as a postage stamp. Its viewBox says the true shape, so
-   * the size comes from there: shrunk to fit the cap every picture has, and
-   * never blown up past the size it asked for.
-   */
+  // Without a width the browser draws 300 by 150, so size it from the viewBox.
   const head = source.slice(0, source.indexOf('>') + 1)
   const shape = /viewBox\s*=\s*["']\s*[\d.+-]+[\s,]+[\d.+-]+[\s,]+([\d.]+)[\s,]+([\d.]+)/i.exec(source)
   if (!/\swidth\s*=/i.test(head) && shape) {
@@ -2475,8 +1835,6 @@ function svgEmbed(source: string, fallback: () => void): HTMLElement {
       img.height = Math.round(tall * scale)
     }
   }
-  // A file that does not draw leaves nothing behind; the caller says what
-  // stands in for it.
   img.addEventListener(
     'error',
     () => {
@@ -2485,22 +1843,26 @@ function svgEmbed(source: string, fallback: () => void): HTMLElement {
     },
     true,
   )
-  const wrap = h('span', {
-    class: 'chat-image-wrap',
-    role: 'button',
-    tabIndex: 0,
-    title: 'Look closer',
-    on: {
-      click: () => openLightbox(img),
-      keydown: (ev) => {
-        const key = (ev as KeyboardEvent).key
-        if (key === 'Enter' || key === ' ') {
-          ev.preventDefault()
-          openLightbox(img)
-        }
+  const wrap = h(
+    'span',
+    {
+      class: 'chat-image-wrap',
+      role: 'button',
+      tabIndex: 0,
+      title: 'Look closer',
+      on: {
+        click: () => openLightbox(img),
+        keydown: (ev) => {
+          const key = (ev as KeyboardEvent).key
+          if (key === 'Enter' || key === ' ') {
+            ev.preventDefault()
+            openLightbox(img)
+          }
+        },
       },
     },
-  }, [img])
+    [img],
+  )
   return wrap
 }
 
@@ -2522,13 +1884,9 @@ function clip(src: string): HTMLElement {
   video.playsInline = true
   video.controls = false
   video.preload = 'auto'
-  // No referrer on the request, the same as every picture here. A video
-  // element has no property for it, so it is set as the attribute it is.
+  // A video element has no referrerPolicy property, so it is set as an attribute.
   video.setAttribute('referrerpolicy', 'no-referrer')
-  // Safari wants the attribute as well as the property before it will start
-  // one without a click, and a paused clip is a still frame pretending to be
-  // a GIF. The play itself can be refused, and there is nothing to do about
-  // that but let the poster frame sit there.
+  // Safari needs the attributes as well as the properties before it will autoplay.
   video.setAttribute('muted', '')
   video.setAttribute('playsinline', '')
   void video.play().catch(() => undefined)
@@ -2536,22 +1894,12 @@ function clip(src: string): HTMLElement {
 }
 
 const DAY = new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
-
-function dayLabel(at: number): string {
-  const day = new Date(at)
-  const today = new Date()
-  const yesterday = new Date(today.getTime() - 86_400_000)
-  if (day.toDateString() === today.toDateString()) return 'Today'
-  if (day.toDateString() === yesterday.toDateString()) return 'Yesterday'
-  return DAY.format(day)
-}
-
-/**
- * Made once. toLocaleTimeString builds a formatter on every call, which cost
- * a sixth of the time it took to draw a channel.
- */
 const CLOCK = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' })
 
-function clockLabel(at: number): string {
-  return CLOCK.format(at)
+function dayLabel(at: number): string {
+  const day = new Date(at).toDateString()
+  const today = new Date()
+  if (day === today.toDateString()) return 'Today'
+  if (day === new Date(today.getTime() - 86_400_000).toDateString()) return 'Yesterday'
+  return DAY.format(at)
 }

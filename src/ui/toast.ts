@@ -4,8 +4,6 @@ let host: HTMLDivElement | null = null
 
 function container(): HTMLDivElement {
   if (!host) {
-    // Said out loud as well as shown. A toast that only exists visually is a
-    // message somebody using a screen reader never receives.
     host = h('div', { class: 'toasts', role: 'status' })
     host.setAttribute('aria-live', 'polite')
     document.body.append(host)
@@ -13,10 +11,9 @@ function container(): HTMLDivElement {
   return host
 }
 
-export type ToastTone = 'info' | 'warn' | 'good' | 'bad'
+type ToastTone = 'info' | 'warn' | 'good' | 'bad'
 
-/** Something for the reader to do about it, when there is something. */
-export interface ToastAction {
+interface ToastAction {
   label: string
   run: () => void
 }

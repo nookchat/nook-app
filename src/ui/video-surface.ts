@@ -1,43 +1,19 @@
-/**
- * The video surface.
- *
- * A shared screen can be 1280x800 or 5120x2880, and it can change size in the
- * middle of a session. The viewer window can be a 4K monitor or a phone in
- * portrait. Three modes cover every pair:
- *
- *   fit     the whole picture, letterboxed. The default. Never stretched.
- *   fill    crops the edges to remove the letterbox.
- *   actual  one stream pixel per screen pixel, with zoom and pan.
- *
- * The picture is never distorted in any mode.
- */
-
-import { clear, h } from './dom'
+import { h } from './dom'
 import { icon, type IconName } from './icons'
 
-export type FitMode = 'fit' | 'fill' | 'actual'
+type FitMode = 'fit' | 'fill' | 'actual'
 
-export interface SurfaceOptions {
-  /** A host previews its own screen, so that video stays muted. */
+interface SurfaceOptions {
   muted: boolean
   showVolume: boolean
-  fullBleed?: boolean
 }
 
 function iconButton(name: IconName, title: string, onClick: () => void): HTMLButtonElement {
-  const button = h('button', {
-    class: 'icon-only',
-    title,
-    ariaLabel: title,
-    on: { click: onClick },
-  })
-  button.append(icon(name))
-  return button
+  return h('button', { class: 'icon-only', title, ariaLabel: title, on: { click: onClick } }, [icon(name)])
 }
 
 function setIcon(button: HTMLButtonElement, name: IconName): void {
-  clear(button)
-  button.append(icon(name))
+  button.replaceChildren(icon(name))
 }
 
 const MIN_SCALE = 0.05
@@ -48,11 +24,7 @@ export class VideoSurface {
   readonly root: HTMLDivElement
   readonly video: HTMLVideoElement
 
-  onVolumeChange: ((volume: number, muted: boolean) => void) | null = null
-
-  private readonly badges: HTMLDivElement
   private readonly bar: HTMLDivElement
-  private readonly overlayHost: HTMLDivElement
   private readonly zoomLabel: HTMLSpanElement
   private readonly modeButton: HTMLButtonElement
   private readonly fullscreenButton: HTMLButtonElement
@@ -68,6 +40,9 @@ export class VideoSurface {
   private dragId = -1
   private lastX = 0
   private lastY = 0
+  private frame = 0
+  private drawnSize = ''
+  private drawnVolumeIcon: IconName | null = null
   private hideTimer: number | null = null
   private resizeObserver: ResizeObserver | null = null
   private soundPrompt: HTMLButtonElement | null = null
@@ -75,18 +50,12 @@ export class VideoSurface {
   private destroyed = false
 
   constructor(options: SurfaceOptions) {
-    this.video = h('video', {
-      // playsInline keeps iOS from taking the video fullscreen on its own.
-    })
+    this.video = h('video')
     this.video.autoplay = true
+    // Without playsInline, iOS takes the video fullscreen on its own.
     this.video.playsInline = true
     this.video.muted = options.muted
-    this.video.controls = false
-    this.video.disablePictureInPicture = false
     if (options.muted) this.video.setAttribute('muted', '')
-
-    this.badges = h('div', { class: 'surface-badges' })
-    this.overlayHost = h('div', { class: 'hidden' })
 
     this.modeButton = iconButton('fit', 'Change how the picture fits (Z)', () => this.cycleMode())
 
@@ -120,14 +89,12 @@ export class VideoSurface {
             this.video.volume = v
             if (v > 0 && this.video.muted) this.video.muted = false
             this.syncVolumeUi()
-            this.onVolumeChange?.(v, this.video.muted)
           },
         },
       })
-      controls.push(h('div', { class: 'vol' }, [this.muteButton, this.volumeInput]))
+      controls.push(h('div', { class: 'vol' }, [this.muteButton, this.volumeInput]), h('div', { class: 'divider' }))
     }
 
-    if (options.showVolume) controls.push(h('div', { class: 'divider' }))
     controls.push(this.zoomGroup)
     controls.push(this.modeButton)
 
@@ -140,15 +107,7 @@ export class VideoSurface {
 
     this.bar = h('div', { class: 'surface-bar' }, controls)
 
-    this.root = h(
-      'div',
-      {
-        class: `surface${options.fullBleed ? ' fullbleed' : ''} grow`,
-        tabIndex: 0,
-        data: { mode: 'fit' },
-      },
-      [this.video, this.badges, this.overlayHost, this.bar],
-    )
+    this.root = h('div', { class: 'surface grow', tabIndex: 0, data: { mode: 'fit' } }, [this.video, this.bar])
 
     this.bindPointer()
     this.bindKeys()
@@ -156,38 +115,14 @@ export class VideoSurface {
     this.armAutoHide()
   }
 
-  // ---- public API ----
-
   setStream(stream: MediaStream | null): void {
     this.video.srcObject = stream
     if (stream) void this.video.play().catch(() => undefined)
   }
 
-  /**
-   * Unmute needs a user gesture. Call this from a click handler.
-   *
-   * Never call play() while the element has no source. Chrome keeps that promise
-   * pending for ever, and anything that awaits it stops.
-   */
-  async playWithSound(): Promise<void> {
-    this.video.muted = false
-    this.syncVolumeUi()
-    if (!this.video.srcObject) return
-    await this.video.play().catch(() => undefined)
-  }
-
-  /**
-   * Try to play with sound. Returns false when the browser refuses, which it
-   * does until the page has been clicked at least once.
-   */
   async tryUnmute(): Promise<boolean> {
     if (!this.video.srcObject) return false
-    /*
-     * Single flight. ontrack fires once per track, so two attempts used to
-     * overlap: one succeeded and cleared the prompt, the other had its play()
-     * interrupted and put the mute back, leaving the picture silent with no way
-     * to turn the sound on.
-     */
+    // Single flight: ontrack fires once per track, and an interrupted play() would put the mute back.
     if (this.unmuting) return this.unmuting
     this.unmuting = (async () => {
       this.video.muted = false
@@ -197,7 +132,7 @@ export class VideoSurface {
         this.syncVolumeUi()
         return true
       } catch {
-        // Autoplay policy said no. Go back to muted so the picture keeps running.
+        // Autoplay policy refused sound; muted playback is still allowed.
         this.video.muted = true
         void this.video.play().catch(() => undefined)
         this.syncVolumeUi()
@@ -214,7 +149,6 @@ export class VideoSurface {
     this.soundPrompt = null
   }
 
-  /** A small nudge, shown only when the browser insists on a click for sound. */
   setSoundPrompt(onClick: () => void): void {
     if (this.soundPrompt) return
     const button = h('button', {
@@ -230,22 +164,17 @@ export class VideoSurface {
     this.soundPrompt = button
     this.root.append(button)
 
-    // Any click anywhere counts as the gesture, so take it silently too.
-    const once = (): void => {
-      document.removeEventListener('pointerdown', once)
-      if (this.soundPrompt) onClick()
-    }
-    document.addEventListener('pointerdown', once, { once: true })
+    document.addEventListener(
+      'pointerdown',
+      () => {
+        if (this.soundPrompt) onClick()
+      },
+      { once: true },
+    )
   }
 
-  /** The window's maximise button asks for this. */
   requestFullscreen(): void {
     void this.toggleFullscreen()
-  }
-
-  /** Hide the floating bar and the badges while there is nothing to control. */
-  setControlsVisible(visible: boolean): void {
-    this.root.classList.toggle('no-controls', !visible)
   }
 
   setMode(mode: FitMode): void {
@@ -254,13 +183,14 @@ export class VideoSurface {
     this.zoomGroup.classList.toggle('hidden', mode !== 'actual')
     this.modeButton.title =
       mode === 'fit'
-        ? 'Fit. Click for Fill (F)'
+        ? 'Fit. Click for Fill (Z)'
         : mode === 'fill'
-          ? 'Fill. Click for actual size (F)'
-          : 'Actual size. Click for Fit (F)'
+          ? 'Fill. Click for actual size (Z)'
+          : 'Actual size. Click for Fit (Z)'
     if (mode === 'actual') {
       this.resetView()
     } else {
+      this.drawnSize = ''
       this.video.style.transform = ''
       this.video.style.width = ''
       this.video.style.height = ''
@@ -272,40 +202,16 @@ export class VideoSurface {
     this.setMode(this.mode === 'fit' ? 'fill' : this.mode === 'fill' ? 'actual' : 'fit')
   }
 
-  setBadges(items: { text: string; tone?: 'good' | 'warn' | 'bad' }[]): void {
-    clear(this.badges)
-    for (const item of items) {
-      this.badges.append(h('span', { class: `pill ${item.tone ?? ''}`.trim(), text: item.text }))
-    }
-  }
-
-  /** Cover the picture with a message. Pass null to clear it. */
-  setOverlay(node: HTMLElement | null): void {
-    clear(this.overlayHost)
-    if (!node) {
-      this.overlayHost.className = 'hidden'
-      return
-    }
-    this.overlayHost.className = 'surface-overlay'
-    this.overlayHost.append(node)
-  }
-
-  get volume(): number {
-    return this.video.volume
-  }
-
   destroy(): void {
     this.destroyed = true
+    cancelAnimationFrame(this.frame)
     if (this.hideTimer !== null) window.clearTimeout(this.hideTimer)
     this.resizeObserver?.disconnect()
     this.video.srcObject = null
     this.root.remove()
   }
 
-  // ---- internals ----
-
   private bindVideo(): void {
-    // The host can change resolution mid session. Recentre when that happens.
     this.video.addEventListener('resize', () => {
       if (this.mode === 'actual') this.resetView()
     })
@@ -320,7 +226,6 @@ export class VideoSurface {
   private bindPointer(): void {
     this.root.addEventListener('pointermove', () => this.showBar())
     this.root.addEventListener('pointerleave', () => this.armAutoHide(600))
-    // A touch has no hover, so a tap is the only way back to the controls.
     this.root.addEventListener('pointerdown', () => this.showBar())
 
     this.root.addEventListener('dblclick', () => {
@@ -330,13 +235,11 @@ export class VideoSurface {
     this.root.addEventListener(
       'wheel',
       (ev) => {
-        // Ctrl plus wheel is the standard zoom gesture, and a trackpad pinch
-        // arrives the same way. Plain wheel zooms only in actual mode.
+        // A trackpad pinch arrives as a wheel event with ctrlKey set.
         if (!ev.ctrlKey && this.mode !== 'actual') return
         ev.preventDefault()
         if (this.mode !== 'actual') this.setMode('actual')
-        const factor = Math.exp(-ev.deltaY * 0.0018)
-        this.zoomAt(factor, ev.clientX, ev.clientY)
+        this.zoomAt(Math.exp(-ev.deltaY * 0.0018), ev.clientX, ev.clientY)
       },
       { passive: false },
     )
@@ -410,13 +313,16 @@ export class VideoSurface {
     this.video.muted = !this.video.muted
     if (!this.video.muted && this.video.volume === 0) this.video.volume = 1
     this.syncVolumeUi()
-    this.onVolumeChange?.(this.video.volume, this.video.muted)
   }
 
   private syncVolumeUi(): void {
     if (!this.muteButton || !this.volumeInput) return
     const muted = this.video.muted || this.video.volume === 0
-    setIcon(this.muteButton, muted ? 'mute' : this.video.volume < 0.5 ? 'volume-low' : 'volume')
+    const name: IconName = muted ? 'mute' : this.video.volume < 0.5 ? 'volume-low' : 'volume'
+    if (name !== this.drawnVolumeIcon) {
+      this.drawnVolumeIcon = name
+      setIcon(this.muteButton, name)
+    }
     this.muteButton.title = muted ? 'Unmute (M)' : 'Mute (M)'
     if (document.activeElement !== this.volumeInput) {
       this.volumeInput.value = String(Math.round((muted ? 0 : this.video.volume) * 100))
@@ -428,7 +334,7 @@ export class VideoSurface {
       if (document.fullscreenElement) await document.exitFullscreen()
       else await this.root.requestFullscreen({ navigationUI: 'hide' })
     } catch {
-      /* the browser refused, nothing else to do */
+      /* refused */
     }
     const full = document.fullscreenElement === this.root
     setIcon(this.fullscreenButton, full ? 'collapse' : 'expand')
@@ -444,8 +350,6 @@ export class VideoSurface {
     }
   }
 
-  // ---- zoom and pan ----
-
   private naturalSize(): { w: number; h: number } {
     return { w: this.video.videoWidth || 1280, h: this.video.videoHeight || 720 }
   }
@@ -453,55 +357,58 @@ export class VideoSurface {
   private resetView(): void {
     const box = this.root.getBoundingClientRect()
     const { w, h: vh } = this.naturalSize()
-    // Start at one to one, unless the picture does not fit. Then start at fit.
     const fitScale = Math.min(box.width / w, box.height / vh)
     this.scale = Math.min(1, fitScale > 0 ? fitScale : 1)
     this.tx = (box.width - w * this.scale) / 2
     this.ty = (box.height - vh * this.scale) / 2
-    this.applyTransform()
+    this.scheduleTransform()
   }
 
   private zoomBy(factor: number): void {
     const box = this.root.getBoundingClientRect()
-    this.zoomAt(factor, box.left + box.width / 2, box.top + box.height / 2)
+    this.zoomAt(factor, box.left + box.width / 2, box.top + box.height / 2, box)
   }
 
-  private zoomAt(factor: number, clientX: number, clientY: number): void {
+  private zoomAt(factor: number, clientX: number, clientY: number, box = this.root.getBoundingClientRect()): void {
     if (this.mode !== 'actual') return
-    const box = this.root.getBoundingClientRect()
     const cx = clientX - box.left
     const cy = clientY - box.top
     const next = Math.max(MIN_SCALE, Math.min(MAX_SCALE, this.scale * factor))
     if (next === this.scale) return
-    // Keep the point under the cursor fixed.
     this.tx = cx - (cx - this.tx) * (next / this.scale)
     this.ty = cy - (cy - this.ty) * (next / this.scale)
     this.scale = next
-    this.clampPan()
+    this.clampPan(box)
   }
 
-  private clampPan(): void {
-    const box = this.root.getBoundingClientRect()
+  private clampPan(box = this.root.getBoundingClientRect()): void {
     const { w, h: vh } = this.naturalSize()
     const sw = w * this.scale
     const sh = vh * this.scale
     this.tx = sw <= box.width ? (box.width - sw) / 2 : Math.min(0, Math.max(box.width - sw, this.tx))
     this.ty = sh <= box.height ? (box.height - sh) / 2 : Math.min(0, Math.max(box.height - sh, this.ty))
-    this.applyTransform()
+    this.scheduleTransform()
   }
 
-  private applyTransform(): void {
-    const { w, h: vh } = this.naturalSize()
-    this.video.style.width = `${w}px`
-    this.video.style.height = `${vh}px`
-    this.video.style.transform = `translate(${Math.round(this.tx)}px, ${Math.round(this.ty)}px) scale(${this.scale})`
-    this.zoomLabel.textContent = `${Math.round(this.scale * 100)}%`
+  private scheduleTransform(): void {
+    if (this.frame) return
+    this.frame = requestAnimationFrame(() => {
+      this.frame = 0
+      if (this.destroyed || this.mode !== 'actual') return
+      const { w, h: vh } = this.naturalSize()
+      const size = `${w}x${vh}`
+      if (size !== this.drawnSize) {
+        this.drawnSize = size
+        this.video.style.width = `${w}px`
+        this.video.style.height = `${vh}px`
+      }
+      this.video.style.transform = `translate(${Math.round(this.tx)}px, ${Math.round(this.ty)}px) scale(${this.scale})`
+      this.zoomLabel.textContent = `${Math.round(this.scale * 100)}%`
+    })
   }
-
-  // ---- control bar auto hide ----
 
   private showBar(): void {
-    this.root.classList.remove('hide-bar')
+    if (this.root.classList.contains('hide-bar')) this.root.classList.remove('hide-bar')
     this.armAutoHide()
   }
 

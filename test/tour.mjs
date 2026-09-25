@@ -1,27 +1,8 @@
-/**
- * A tour of the app with something in it, for looking at.
- *
- * Starts a server, puts three people in a space on it, gives them a few
- * channels and a conversation worth reading, shares a screen, and takes a
- * picture of each screen at desktop and phone width. Also times how long the
- * first paint and opening a space take, so a change that makes it slower is
- * seen rather than felt.
- *
- *   node test/tour.mjs [app url]      pictures land in test-output/tour/
- */
-
-import { chromium } from 'playwright-core'
-import { nameEveryone } from './named.mjs'
 import { mkdirSync } from 'node:fs'
+import { APP_URL, FAKE_MEDIA, launch, wait } from './harness.mjs'
 
-const APP_URL = process.argv[2] ?? 'http://localhost:5173/'
 const OUT = new URL('../test-output/tour/', import.meta.url).pathname
 mkdirSync(OUT, { recursive: true })
-const CHROME =
-  process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-
-// The page's own server, from test/stack.mjs.
-const server = { kill: () => undefined }
 
 const STUB = `(() => {
   const c = document.createElement('canvas'); c.width = 1600; c.height = 900
@@ -34,14 +15,8 @@ const STUB = `(() => {
   navigator.mediaDevices.getDisplayMedia = async () => new MediaStream(s.getVideoTracks())
 })()`
 
-const browser = await chromium.launch({
-  executablePath: CHROME,
-  headless: process.env.HEADED !== '1',
-  args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
-})
-nameEveryone(browser)
+const browser = await launch({ args: FAKE_MEDIA })
 const BOX = '[aria-label="Write a message"]'
-const wait = (ms) => new Promise((ok) => setTimeout(ok, ms))
 const shot = (page, name, full = false) => page.screenshot({ path: `${OUT}${name}.png`, fullPage: full })
 
 async function person(name, width = 1440, height = 900) {
@@ -77,7 +52,6 @@ try {
   console.log(`space opened in ${Date.now() - t1} ms`)
   const link = ada.url()
 
-  // A couple of channels to stand in.
   for (const [voice, name] of [[false, 'design'], [false, 'releases'], [true, 'Lounge']]) {
     ada.once('dialog', (d) => void d.accept(name))
     await ada.click(voice ? 'button[title="Make a voice channel"]' : 'button[title="Make a text channel"]')
@@ -113,11 +87,9 @@ try {
 
   await shot(ada, 'space-desktop')
 
-  // A message under the pointer, with its actions.
   await ada.hover('.chat-row.first >> nth=2')
   await wait(200)
   await shot(ada, 'hover-desktop')
-  // Somebody's menu in the members list.
   await ada.hover('.rail-person >> nth=1')
   await ada.click('.rail-person >> nth=1 >> .person-more').catch(() => undefined)
   await wait(300)
@@ -131,7 +103,6 @@ try {
   await shot(ada, 'invite-desktop')
   await ada.keyboard.press('Escape')
 
-  // Voice, then a screen shared into it, then somebody watching it.
   await ada.click('.rail-item:has-text("Lounge")')
   await wait(1500)
   await ada.click('button[aria-label="Share screen"]')
@@ -144,7 +115,6 @@ try {
   await shot(grace, 'watching-desktop')
   await shot(linus, 'voice-desktop')
 
-  // A direct message, and home with it on.
   await linus.click(BOX)
   await linus.keyboard.type('/dm Ada are you free later?')
   await linus.keyboard.press('Enter')
@@ -157,12 +127,10 @@ try {
   await wait(1200)
   await shot(ada, 'home-desktop')
 
-  // Settings.
   await grace.click('button[aria-label="Settings"]').catch(() => undefined)
   await wait(800)
   await shot(grace, 'settings-desktop', true)
 
-  // A phone.
   const phone = await person('Mae', 390, 844)
   await shot(phone, 'list-phone', true)
   await phone.goto(link)
@@ -178,5 +146,4 @@ try {
   process.exitCode = 1
 } finally {
   await browser.close()
-  server.kill()
 }

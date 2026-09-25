@@ -1,7 +1,6 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
-  /** The Nook server this deployment offers, such as https://cathode.example.org. */
   readonly VITE_CATHODE_SERVER?: string
 }
 

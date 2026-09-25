@@ -1,24 +1,10 @@
-/**
- * The levels of a space, as Settings shows them.
- *
- * A level is a name, a colour and a list of what its people may do. The
- * colour is the colour of their names everywhere in the space, so who runs
- * the place can be read off the conversation. Levels are ordered, highest
- * first, and a person changes only the ones below their own: see Authority
- * in store/log.ts, which every device holds each change to.
- *
- * Putting somebody on a level is done from their menu in the list of people,
- * where the person is. This is where the levels themselves are made.
- */
-
 import { MEMBER, OWNER, PERMISSIONS, type Level, type Permission } from '../store/log'
 import type { RoomChat } from '../store/room-chat'
 import { h } from './dom'
 import { icon } from './icons'
 import { toast } from './toast'
 
-/** Colours that hold up on the dark background, none of them the accent. */
-export const LEVEL_COLOURS = [
+const LEVEL_COLOURS = [
   '#f25f5c',
   '#ff8c42',
   '#f0b232',
@@ -31,15 +17,13 @@ export const LEVEL_COLOURS = [
   '#a0a6b5',
 ]
 
-export interface LevelsOptions {
+interface LevelsOptions {
   chat: RoomChat
   publish(write: (chat: RoomChat) => Promise<unknown>): Promise<void>
-  /** Everybody the space knows, for how many stand on each level. */
   people(): { key: string; name: string }[]
 }
 
-/** A short id for a new level: eight letters and digits, as the log accepts. */
-function newId(): string {
+function newLevelId(): string {
   return [...crypto.getRandomValues(new Uint8Array(4))].map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
@@ -65,11 +49,6 @@ export function levelsEditor(options: LevelsOptions): HTMLElement {
       counts.set(id, (counts.get(id) ?? 0) + 1)
     }
 
-    /*
-     * Up and down, by a rank halfway to the next one along. One event moves
-     * one level, and nothing ever ties. A level cannot climb to your own
-     * rank, and nothing goes under Member, where everybody starts.
-     */
     const moved = (level: Level, up: boolean): Level | null => {
       const at = levels.indexOf(level)
       if (up) {
@@ -151,7 +130,6 @@ export function levelsEditor(options: LevelsOptions): HTMLElement {
       }
       paintSwatches()
 
-      // What it may do. Nobody gives away a power they do not have, so those are shown and cannot be ticked.
       const mine = chat.levelOf(chat.me)
       const boxes = new Map<Permission, HTMLInputElement>()
       const powers = h(
@@ -226,13 +204,12 @@ export function levelsEditor(options: LevelsOptions): HTMLElement {
       ])
     }
 
-    // A new level goes just above Member, and opens to be named.
     const add = h('button', { class: 'ghost small start' }, [icon('plus', 14), 'New level'])
     add.addEventListener('click', () => {
       const lowest = levels.filter((l) => l.id !== MEMBER && l.rank < mine.rank).at(-1)
       const used = new Set(levels.map((l) => l.colour))
       const level: Level = {
-        id: newId(),
+        id: newLevelId(),
         name: 'New level',
         colour: LEVEL_COLOURS.find((c) => !used.has(c)) ?? LEVEL_COLOURS[0],
         rank: (lowest?.rank ?? mine.rank) / 2,

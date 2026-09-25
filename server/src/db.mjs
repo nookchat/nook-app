@@ -1,24 +1,9 @@
-/**
- * The database: Postgres, and the schema it holds.
- *
- * What is in it is ciphertext and the bookkeeping around it. A line of a
- * space is sealed on the device that wrote it with a key this server never
- * sees, so a stolen database is a pile of noise with timestamps on it.
- *
- *   rooms     one row per space: the hash of its write token, and its size
- *   lines     every sealed event, in the order this server received them
- *   people    one sealed record per person: their list of spaces
- *   peers     how far this server has read from each other server
- *   files     every uploaded file, by space and by the hash of its bytes;
- *             the bytes themselves are on disk, see files.mjs
- *
- * Migrations run on start, in order, each once, each in a transaction.
- */
-
 import pg from 'pg'
 import { DATABASE_URL } from './config.mjs'
 
 export const pool = new pg.Pool({ connectionString: DATABASE_URL, max: 12 })
+
+const MIGRATE_LOCK = 7417
 
 // Postgres bigints arrive as strings; every one here fits a double.
 pg.types.setTypeParser(20, (value) => Number(value))
@@ -78,11 +63,10 @@ const MIGRATIONS = [
   `,
 ]
 
-/** Bring the schema up to date. Safe to run on every start, from one process. */
 export async function migrate() {
   const client = await pool.connect()
   try {
-    await client.query('select pg_advisory_lock(7417)')
+    await client.query(`select pg_advisory_lock(${MIGRATE_LOCK})`)
     await client.query(
       'create table if not exists schema_version (version int primary key, applied_at timestamptz not null default now())',
     )
@@ -100,19 +84,20 @@ export async function migrate() {
       }
     }
   } finally {
-    await client.query('select pg_advisory_unlock(7417)').catch(() => undefined)
+    await client.query(`select pg_advisory_unlock(${MIGRATE_LOCK})`).catch(() => undefined)
     client.release()
   }
 }
 
-/** Wait for the database, for a container that starts before it is ready. */
-export async function ready(tries = 60) {
-  for (let i = 0; i < tries; i++) {
+const READY_TRIES = 60
+
+export async function ready() {
+  for (let i = 0; i < READY_TRIES; i++) {
     try {
       await pool.query('select 1')
       return
     } catch (err) {
-      if (i === tries - 1) throw err
+      if (i === READY_TRIES - 1) throw err
       await new Promise((r) => setTimeout(r, 1000))
     }
   }

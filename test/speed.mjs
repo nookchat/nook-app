@@ -1,24 +1,8 @@
-/**
- * How fast it feels, in milliseconds.
- *
- * Seeds one space on the server with a few thousand real, signed messages,
- * then times what a person waits for: opening the
- * space, switching channel, a sent message reaching the screen, and coming
- * back to a space already opened once. Each is the median of a few runs.
- *
- *   node test/speed.mjs [app url] [messages]
- */
+import { APP_URL, launch } from './harness.mjs'
 
-import { chromium } from 'playwright-core'
-import { nameEveryone } from './named.mjs'
+const COUNT = Number(process.argv[2] ?? 3000)
 
-const APP_URL = process.argv[2] ?? 'http://localhost:5173/'
-const COUNT = Number(process.argv[3] ?? 3000)
-const CHROME =
-  process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-
-const browser = await chromium.launch({ executablePath: CHROME, headless: true })
-nameEveryone(browser)
+const browser = await launch({ headless: true })
 const page = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage()
 await page.goto(APP_URL)
 await page.evaluate(() => localStorage.setItem('cathode.name.v1', 'Speedy'))
@@ -27,8 +11,6 @@ await page.waitForSelector('input[aria-label="Space name"]')
 
 const median = (xs) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)]
 
-// Seed: a space, two channels, COUNT messages across them, written to the
-// server the way a device writes them: signed, sealed, and posted.
 const link = await page.evaluate(async (count) => {
   const room = await import('/src/room.ts')
   const log = await import('/src/store/log.ts')

@@ -1,33 +1,18 @@
-# The Nook server, on a machine of your own.
-#
-# The easy way, which writes this file and a .env beside it and starts it:
+# The Nook server. Easiest install (writes this file and a .env, then starts it):
 #
 #   curl -fsSL https://raw.githubusercontent.com/nebbsie/stream/main/server/install.sh | sh
 #
-# By hand: put CATHODE_DOMAIN=your.domain in a .env next to this file (the
-# rest has defaults), then
-#
+# By hand: set CATHODE_DOMAIN=your.domain in a .env next to this file, then run
 #   docker compose up -d
 #
-# Four containers:
+#   cathode   the server
+#   db        Postgres, which holds the spaces as ciphertext
+#   caddy     HTTPS with a Let's Encrypt certificate (profile tls)
+#   turn      coturn, for calls on networks that block them (profile turn)
 #
-#   cathode   the server: spaces, the WebSocket, the API, TURN credentials
-#   db        Postgres, where the spaces are kept (as ciphertext)
-#   caddy     HTTPS for your domain, with a certificate from Let's Encrypt
-#   turn      coturn, which carries calls on networks that block them
-#
-# Only the server and its database, to try it on this machine:
-#
-#   docker compose up -d cathode
-#
-# and use http://localhost:8787 as the server address in Nook.
-#
-# Update to the newest server: run the installer again, or
-#
-#   docker compose pull && docker compose up -d
-#
-# Every setting below has a default, and a line in .env overrides it. See
-# server/README.md for all of them.
+# Local try-out: docker compose up -d cathode, then use http://localhost:8787 in Nook.
+# Update: run the installer again, or docker compose pull && docker compose up -d
+# A line in .env overrides any default below. See server/README.md.
 
 name: cathode
 
@@ -41,34 +26,32 @@ services:
       db:
         condition: service_healthy
     ports:
-      # Plain HTTP, so only this machine by default: the world comes in through
-      # Caddy. Set CATHODE_BIND=0.0.0.0 to put your own proxy in front instead.
+      # Plain HTTP, local only. Set CATHODE_BIND=0.0.0.0 for your own proxy.
       - '${CATHODE_BIND:-127.0.0.1}:8787:8787'
     volumes:
-      # Uploaded files, sealed, in /data/files. Back this up beside the database.
+      # Sealed uploads in /data/files. Back this up with the database.
       - cathode-data:/data
     environment:
       DATABASE_URL: postgres://cathode:${POSTGRES_PASSWORD:-cathode}@db:5432/cathode
-      # The name this server answers on. Its address and its TURN addresses follow from it.
+      # The server's domain. Its public and TURN addresses default from it.
       CATHODE_DOMAIN: ${CATHODE_DOMAIN:-}
       CATHODE_PUBLIC_URL: ${CATHODE_PUBLIC_URL:-}
-      # The pages that may use this server. * is any page, which is what a
-      # server for friends wants; narrow it to your own page if you like.
+      # Pages that may use this server, comma separated. * is any page.
       CATHODE_ORIGINS: ${CATHODE_ORIGINS:-*}
-      # TURN, for calls: on when the installer made a secret for it.
+      # TURN for calls: on when a secret is set.
       CATHODE_TURN_SECRET: ${CATHODE_TURN_SECRET:-}
       CATHODE_TURN_URLS: ${CATHODE_TURN_URLS:-}
       CATHODE_TURN_ONLY: ${CATHODE_TURN_ONLY:-1}
-      # A cluster with friends. Empty runs on its own. See server/README.md.
+      # A cluster with friends. Empty runs alone.
       CATHODE_PEERS: ${CATHODE_PEERS:-}
       CATHODE_CLUSTER_SECRET: ${CATHODE_CLUSTER_SECRET:-}
-      # Files: the largest one may be, and how much one space may keep.
+      # Byte limits: one file, files per space, lines per space.
       CATHODE_MAX_FILE_BYTES: ${CATHODE_MAX_FILE_BYTES:-104857600}
       CATHODE_MAX_ROOM_FILE_BYTES: ${CATHODE_MAX_ROOM_FILE_BYTES:-5368709120}
       CATHODE_MAX_ROOM_BYTES: ${CATHODE_MAX_ROOM_BYTES:-268435456}
-      # Link cards: 0 stops this server learning which links people preview.
+      # Link cards. 0 stops the server from seeing which links are previewed.
       CATHODE_PREVIEWS: ${CATHODE_PREVIEWS:-1}
-      # GIF search for everybody here, off until a key is given. One is enough.
+      # GIF search, off until one key is set.
       CATHODE_KLIPY_KEY: ${CATHODE_KLIPY_KEY:-}
       CATHODE_TENOR_KEY: ${CATHODE_TENOR_KEY:-}
       CATHODE_GIPHY_KEY: ${CATHODE_GIPHY_KEY:-}
@@ -96,8 +79,7 @@ services:
     ports:
       - '80:80'
       - '443:443'
-    # HTTPS for the domain, and everything passed to the server, WebSockets
-    # included. No Caddyfile: this is all it needs.
+    # HTTPS for the domain, proxied to the server with WebSockets. No Caddyfile needed.
     command: caddy reverse-proxy --from ${CATHODE_DOMAIN:-localhost} --to cathode:8787
     volumes:
       - caddy-data:/data
@@ -109,8 +91,7 @@ services:
     image: coturn/coturn:4.6
     container_name: cathode-turn
     restart: unless-stopped
-    # TURN needs a wide range of UDP ports, and host networking is the only
-    # sane way to give a container one.
+    # Host networking gives TURN its wide UDP port range.
     network_mode: host
     command:
       - -n
@@ -127,7 +108,7 @@ services:
       - --no-tls
       - --no-dtls
       - --no-multicast-peers
-      # Never relay into this machine's own network.
+      # Never relay into private networks.
       - --denied-peer-ip=0.0.0.0-0.255.255.255
       - --denied-peer-ip=10.0.0.0-10.255.255.255
       - --denied-peer-ip=100.64.0.0-100.127.255.255

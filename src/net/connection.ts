@@ -1,42 +1,15 @@
-/**
- * One WebSocket per server, carrying every space this device is in on it.
- *
- * A space lives on its server, and everything a space does goes over this
- * connection, both ways:
- *
- *   history   read page by page from wherever this device last got to
- *   writes    every event said here, sealed, kept, and acknowledged
- *   live      every event said anywhere else, the moment it is kept
- *   signals   handshakes, typing, and the rest of what is not kept
- *   presence  who is here, held by the server and said when it changes
- *
- * One connection for all of them, because a device wants to hear about every
- * space it is in at once: a direct message in one, a mention in another. Each
- * space rides it as a Channel, which is also that space's one transport for
- * the signal bus.
- *
- * Every line is sealed with the space's key before it leaves and every event
- * is checked on the way back in, so the server keeps and passes on what it
- * cannot read and cannot forge.
- *
- * The space is on every server of its cluster, so when the one this is
- * talking to goes quiet, the next is tried. Each numbers lines its own way,
- * so where a space has read to is kept per server, and a server not read from
- * yet is read from the start: what is already here costs a check.
- */
-
 import { serverUrl } from '../backend'
 import type { Room } from '../room'
-import { openLine, sealEvent } from './server-api'
 import type { LogEvent } from '../store/log'
 import { backoffDelay, type Transport, type TransportEvents, type TransportStatus } from '../signal/transport'
 import { answered, discover, endpoints } from './cluster'
+import { openLine, sealEvent } from './server-api'
 
-/** Signals held while the connection is down, and for how long. */
-const SIGNAL_LIMIT = 120
-const SIGNAL_TTL_MS = 20_000
-/** A write batch stays well under the frame the server accepts. */
-const PUT_BYTES = 600_000
+const HELD_SIGNAL_LIMIT = 120
+const HELD_SIGNAL_TTL_MS = 20_000
+/** Well under the largest frame the server accepts. */
+const PUT_BATCH_BYTES = 600_000
+const FAILURES_BEFORE_NEXT_SERVER = 2
 
 type Incoming =
   | { t: 'page' | 'ev'; room: string; at: number; lines: unknown[] }
@@ -49,7 +22,6 @@ type Incoming =
 type Outgoing = Record<string, unknown> & { t: string }
 
 export class Connection {
-  /** The server that names the spaces on this connection. */
   readonly base: string
   status: TransportStatus = 'idle'
   private ws: WebSocket | null = null
@@ -61,7 +33,6 @@ export class Connection {
 
   constructor(base: string) {
     this.base = serverUrl(base)
-    // Learn the rest of the cluster now, while the first one answers.
     void discover(this.base)
   }
 
@@ -69,23 +40,17 @@ export class Connection {
     return this.status === 'open'
   }
 
-  /** The server this is talking to now. */
   get serving(): string {
     return this.current || this.base
   }
 
-  /** Carry a space on this connection. Dials if it is the first. */
   add(channel: Channel): void {
     this.channels.set(channel.room.id, channel)
     if (this.open) channel.opened()
     else if (!this.ws && this.retryTimer === null) this.dial()
   }
 
-  /**
-   * Stop carrying a space, if this is still the channel carrying it. A space
-   * left and opened again at once has a new channel by the time the old one
-   * finishes closing, and the old one must not take the new one with it.
-   */
+  /** A space closed and opened again at once already has a new channel, which must stay. */
   remove(room: string, channel: Channel): void {
     if (this.channels.get(room) !== channel) return
     this.channels.delete(room)
@@ -102,11 +67,10 @@ export class Connection {
     }
   }
 
-  /** The next server: the same one until it has failed twice, then the next in the cluster. */
   private pick(): string {
     const all = endpoints(this.base)
     if (!this.current || !all.includes(this.current)) return all[0]
-    if (this.failures < 2) return this.current
+    if (this.failures < FAILURES_BEFORE_NEXT_SERVER) return this.current
     this.failures = 0
     return all[(all.indexOf(this.current) + 1) % all.length]
   }
@@ -153,9 +117,6 @@ export class Connection {
       }
       this.channels.get(message.room)?.take(message)
     }
-    ws.onerror = () => {
-      // The close handler runs next and owns the retry.
-    }
     ws.onclose = () => {
       if (this.ws !== ws) return
       this.failures += 1
@@ -183,7 +144,6 @@ export class Connection {
       this.ws = null
       ws.onopen = null
       ws.onmessage = null
-      ws.onerror = null
       ws.onclose = null
       try {
         ws.close()
@@ -196,7 +156,6 @@ export class Connection {
 
 const connections = new Map<string, Connection>()
 
-/** The one connection to a server, made the first time it is wanted. */
 export function connectionTo(server: string): Connection {
   const base = serverUrl(server)
   let held = connections.get(base)
@@ -207,38 +166,27 @@ export function connectionTo(server: string): Connection {
   return held
 }
 
-/**
- * One space on a connection: its history, its writes, its signals and its
- * presence. The signal bus's one transport for the space.
- */
 export class Channel implements Transport {
   readonly name: string
   readonly room: Room
-  status: TransportStatus = 'idle'
-  ready = false
 
-  /** Events that arrived, opened but not yet checked. The space checks them. */
   onEvents: ((events: unknown[]) => void) | null = null
-  /** A session the server says has gone. */
   onLeft: ((session: string) => void) | null = null
-  /** A write the server refused, with its reason. It will not heal by retrying. */
   onRefused: ((why: string) => void) | null = null
-  /** The first time the history has been read to the end. */
   readonly loaded: Promise<void>
 
-  /** How far this space has read on each server, by that server's own numbers. Memory only. */
-  readonly read = new Map<string, number>()
+  /** Each server numbers lines its own way, so the read position is kept per server. */
+  private readonly readTo = new Map<string, number>()
 
   private readonly connection: Connection
   private events: TransportEvents | null = null
   private signals: { wire: string; expires: number }[] = []
   private state: { d: string; id: string } | null = null
-  /** Writes not yet acknowledged, by request id, kept sealed so a resend is byte for byte. */
+  /** Kept sealed so a resend is byte for byte: the server keeps one copy of a line it already has. */
   private readonly unacked = new Map<string, string[]>()
   private nextId = 0
   private markLoaded: () => void = () => undefined
-  /** Opening happens in order, so pages land in the order they were sent. */
-  private opening: Promise<void> = Promise.resolve()
+  private openInOrder: Promise<void> = Promise.resolve()
 
   constructor(connection: Connection, room: Room, name: string) {
     this.connection = connection
@@ -247,26 +195,23 @@ export class Channel implements Transport {
     this.loaded = new Promise((done) => (this.markLoaded = done))
   }
 
-  /** Which server the space is on right now, for the status line. */
   get serving(): string {
     return this.connection.serving
   }
 
   private get at(): number {
-    return this.read.get(this.connection.serving) ?? 0
+    return this.readTo.get(this.connection.serving) ?? 0
   }
 
   private set at(value: number) {
-    this.read.set(this.connection.serving, value)
+    this.readTo.set(this.connection.serving, value)
   }
 
   private send(message: Outgoing): boolean {
     return this.connection.send({ ...message, room: this.room.id })
   }
 
-  // ---- the transport the signal bus sees ----
-
-  connect(_topic: string, events: TransportEvents): void {
+  connect(events: TransportEvents): void {
     this.events = events
     this.connection.add(this)
   }
@@ -275,15 +220,10 @@ export class Channel implements Transport {
     if (this.send({ t: 'sig', d: wire })) return
     const now = Date.now()
     this.signals = this.signals.filter((m) => m.expires > now)
-    if (this.signals.length >= SIGNAL_LIMIT) this.signals.shift()
-    this.signals.push({ wire, expires: now + SIGNAL_TTL_MS })
+    if (this.signals.length >= HELD_SIGNAL_LIMIT) this.signals.shift()
+    this.signals.push({ wire, expires: now + HELD_SIGNAL_TTL_MS })
   }
 
-  /**
-   * Who this is, kept by the server. Sent when it changes and never on a
-   * timer: the server hands the latest to whoever arrives, and tells the
-   * space when this session goes. Kept here to say again on reconnecting.
-   */
   publishState(wire: string, session: string): void {
     this.state = { d: wire, id: session }
     this.send({ t: 'state', ...this.state })
@@ -295,9 +235,6 @@ export class Channel implements Transport {
     this.statusChanged('idle')
   }
 
-  // ---- the store ----
-
-  /** Keep these events on the server. Queued until it says it has them. */
   async put(events: LogEvent[]): Promise<void> {
     if (events.length === 0) return
     const lines = await Promise.all(events.map((e) => sealEvent(this.room.key, e)))
@@ -312,32 +249,21 @@ export class Channel implements Transport {
       size = 0
     }
     for (const line of lines) {
-      if (batch.length > 0 && size + line.length > PUT_BYTES) flush()
+      if (batch.length > 0 && size + line.length > PUT_BATCH_BYTES) flush()
       batch.push(line)
       size += line.length
     }
     flush()
   }
 
-  /** How many writes are still waiting for the server. Zero is the healthy answer. */
-  get pending(): number {
-    return this.unacked.size
-  }
-
-  // ---- what the connection tells it ----
-
   statusChanged(status: TransportStatus, detail?: string): void {
-    this.status = status
-    this.ready = status === 'open'
     this.events?.onStatus(this, status, detail)
   }
 
-  /** The connection is up: say who this is, ask for what was missed, resend what was not kept. */
   opened(): void {
     this.statusChanged('open')
     if (this.state) this.send({ t: 'state', ...this.state })
     this.send({ t: 'hello', from: this.at })
-    // The server keeps one copy of a line it already has.
     for (const [id, lines] of this.unacked) this.send({ t: 'put', id, lines, w: this.room.write })
     const now = Date.now()
     const held = this.signals.filter((m) => m.expires > now)
@@ -357,10 +283,9 @@ export class Channel implements Transport {
       case 'ev': {
         const { at, lines } = message
         if (!Array.isArray(lines)) return
-        // A space's lines come in order, so the highest number seen means
-        // everything below it has been seen too.
+        // Lines arrive in order, so the highest number seen covers everything below it.
         if (at > this.at) this.at = at
-        this.opening = this.opening.then(async () => {
+        this.openInOrder = this.openInOrder.then(async () => {
           const opened = await Promise.all(lines.map((line) => openLine(this.room.key, line)))
           const events = opened.filter((e) => e !== null)
           if (events.length) this.onEvents?.(events)
@@ -369,10 +294,10 @@ export class Channel implements Transport {
       }
       case 'live':
         if (message.at > this.at) this.at = message.at
-        void this.opening.then(() => this.markLoaded())
+        void this.openInOrder.then(() => this.markLoaded())
         return
       case 'ack':
-        // Not moved: lines before this one may still be on their way down.
+        // `at` stays: lines before this one may still be on their way down.
         this.unacked.delete(message.id)
         return
       case 'nack':

@@ -1,11 +1,3 @@
-/**
- * One HostPeer is one viewer.
- *
- * The host is always the offerer, in the first negotiation and in every later
- * one. That removes the glare problem, so we do not need the perfect
- * negotiation dance. The viewer only ever answers.
- */
-
 import { rtcConfig } from './config'
 import {
   applyContentHint,
@@ -28,32 +20,24 @@ export interface HostPeerOptions {
   send: (type: 'offer' | 'ice', data: unknown) => void
   onChange: () => void
   onFailed: (reason: string) => void
-  /** A line of chat arrived from this viewer. */
-  onChat: (raw: string) => void
 }
 
+// The host always offers and the viewer only answers, so there is no glare.
 export class HostPeer {
   readonly id: string
   readonly pc: RTCPeerConnection
-  readonly joinedAt = Date.now()
 
   state: RTCPeerConnectionState = 'new'
-  /** When the state last changed. The host uses it to clear away dead viewers. */
-  stateSince = Date.now()
   stats: StatsSnapshot = { ...EMPTY_STATS }
   plan: QualityPlan | null = null
-  codec: string | null = null
 
   private readonly opts: HostPeerOptions
   private readonly tracker: StatsTracker
-  private videoSender: RTCRtpSender | null = null
-  private audioSender: RTCRtpSender | null = null
-  private videoTransceiver: RTCRtpTransceiver | null = null
-  private chat: RTCDataChannel | null = null
-  private pendingCandidates: RTCIceCandidateInit[] = []
+  private readonly video: RTCRtpTransceiver | null = null
+  private readonly pendingCandidates: RTCIceCandidateInit[] = []
   private makingOffer = false
   private hasRemote = false
-  private restarted = false
+  private iceRestarted = false
   private closed = false
 
   constructor(opts: HostPeerOptions) {
@@ -62,30 +46,16 @@ export class HostPeer {
     this.pc = new RTCPeerConnection(rtcConfig())
     this.tracker = new StatsTracker(this.pc, 'out')
 
-    const video = opts.stream.getVideoTracks()[0] ?? null
-    const audio = opts.stream.getAudioTracks()[0] ?? null
+    const video = opts.stream.getVideoTracks()[0]
+    const audio = opts.stream.getAudioTracks()[0]
 
     if (video) {
       applyContentHint(video, opts.mode)
-      this.videoTransceiver = this.pc.addTransceiver(video, {
-        direction: 'sendonly',
-        streams: [opts.stream],
-      })
-      this.videoSender = this.videoTransceiver.sender
-      this.codec = preferCodecs(this.videoTransceiver, opts.mode, opts.codec, opts.hardware)
+      this.video = this.pc.addTransceiver(video, { direction: 'sendonly', streams: [opts.stream] })
+      preferCodecs(this.video, opts.mode, opts.codec, opts.hardware)
     }
     if (audio) {
-      this.audioSender = this.pc.addTransceiver(audio, {
-        direction: 'sendonly',
-        streams: [opts.stream],
-      }).sender
-    }
-
-    // Chat rides the same connection. Created before the first offer, so it is
-    // in the very first negotiation and needs no second one.
-    this.chat = this.pc.createDataChannel('chat', { ordered: true })
-    this.chat.onmessage = (ev) => {
-      if (typeof ev.data === 'string') opts.onChat(ev.data)
+      this.pc.addTransceiver(audio, { direction: 'sendonly', streams: [opts.stream] })
     }
 
     this.pc.onicecandidate = (ev) => {
@@ -97,7 +67,6 @@ export class HostPeer {
     }
 
     this.pc.onconnectionstatechange = () => {
-      if (this.pc.connectionState !== this.state) this.stateSince = Date.now()
       this.state = this.pc.connectionState
       if (this.state === 'failed') this.onFailure()
       opts.onChange()
@@ -147,41 +116,15 @@ export class HostPeer {
   }
 
   async setPlan(plan: QualityPlan): Promise<void> {
-    if (!this.videoSender || samePlan(this.plan, plan)) return
+    if (!this.video || samePlan(this.plan, plan)) return
     this.plan = plan
-    await applyPlan(this.videoSender, plan)
+    await applyPlan(this.video.sender, plan)
   }
 
-  setMode(mode: Mode, codec: CodecChoice, hardware: string[] = []): void {
-    const track = this.videoSender?.track ?? null
-    applyContentHint(track, mode)
-    if (this.videoTransceiver && this.pc.signalingState === 'stable') {
-      this.codec = preferCodecs(this.videoTransceiver, mode, codec, hardware)
-    }
-  }
-
-  /** Swap the shared surface with no renegotiation. */
-  async replaceVideo(track: MediaStreamTrack | null): Promise<void> {
-    if (!this.videoSender) return
-    await this.videoSender.replaceTrack(track).catch(() => undefined)
-  }
-
-  async replaceAudio(track: MediaStreamTrack | null): Promise<void> {
-    if (!this.audioSender) return
-    await this.audioSender.replaceTrack(track).catch(() => undefined)
-  }
-
-  /** True once chat can actually carry a line to this viewer. */
-  get chatReady(): boolean {
-    return this.chat?.readyState === 'open'
-  }
-
-  sendChat(raw: string): void {
-    if (this.chat?.readyState !== 'open') return
-    try {
-      this.chat.send(raw)
-    } catch {
-      // The channel closed between the check and the send. Nothing to salvage.
+  setMode(mode: Mode, codec: CodecChoice, hardware: string[]): void {
+    applyContentHint(this.video?.sender.track ?? null, mode)
+    if (this.video && this.pc.signalingState === 'stable') {
+      preferCodecs(this.video, mode, codec, hardware)
     }
   }
 
@@ -197,24 +140,18 @@ export class HostPeer {
     this.pc.onnegotiationneeded = null
     this.pc.onconnectionstatechange = null
     this.pc.oniceconnectionstatechange = null
-    if (this.chat) this.chat.onmessage = null
     try {
       this.pc.close()
-    } catch {
-      /* already closed */
-    }
+    } catch {}
   }
 
   private onFailure(): void {
     if (this.closed) return
-    if (!this.restarted) {
-      // One free retry. A path can break when a viewer switches network.
-      this.restarted = true
+    if (!this.iceRestarted) {
+      this.iceRestarted = true
       try {
         this.pc.restartIce()
-      } catch {
-        /* not supported, the message below covers it */
-      }
+      } catch {}
       void this.negotiate()
       return
     }

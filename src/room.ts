@@ -1,65 +1,23 @@
-/**
- * A room is one space.
- *
- * Whoever makes it makes a secret and writes it into the URL fragment, so the
- * browser never sends it to the webserver. From the secret we derive two values:
- *
- *   roomId   the name the server keeps the space under
- *   roomKey  an AES-GCM key that encrypts every event and signal
- *
- * The server therefore sees a random name and ciphertext only. It cannot read
- * a message, the offer, the answer, or the IP candidates.
- *
- * The code is short enough to say out loud, three groups of four:
- *
- *   https://cathode.video/#K7M2-9QPT-VB2W
- *
- * It uses Crockford's base32 alphabet, which leaves out I, L, O and U, so there
- * is no letter that can be misread as a digit and nothing in it spells anything.
- * Twelve symbols at five bits each is 60 bits, which is not enough on its own,
- * so the code is stretched into a key rather than used as one. See ROUNDS.
- */
-
 import { serverTag, serverUrl } from './backend'
+import { toHex } from './bytes'
 import { endpoints, learn } from './net/cluster'
 
 const enc = new TextEncoder()
 
-/** Crockford base32. No I, no L, no O, no U. */
-const ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
-const SYMBOLS = 12
-const GROUP = 4
-
-/**
- * How hard it is to turn a code into a key.
- *
- * The code shrank from twenty five symbols to twelve, which is 60 bits rather
- * than 125, and 60 bits is not enough on its own: an attacker can subscribe to
- * the relay with a wildcard, keep the ciphertext, and grind offline at whatever
- * rate their hardware allows. At ten billion guesses a second, plain hashing
- * would fall in a few years.
- *
- * So the code is stretched. A quarter of a million rounds of PBKDF2 costs a few
- * hundred milliseconds once, when a space is opened, and multiplies the
- * attacker's work by the same quarter million. That puts 60 bits back out of
- * reach while leaving a code short enough to read down a phone.
- */
-const ROUNDS = 250_000
+const CROCKFORD_BASE32 = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
+const CODE_LENGTH = 12
+const GROUP_SIZE = 4
+// A 60-bit code is too weak alone against offline grinding, so it is stretched.
+const PBKDF2_ROUNDS = 250_000
+const MAX_LINK_SERVERS = 5
+const LOCKED_SUFFIX = '.P'
+const SERVER_SEPARATOR = '@'
 
 export interface Room {
-  /** The canonical code, upper case with no hyphens. The password of the room. */
   secret: string
-  /** The name the server keeps the space under. Derived from the secret, so it leaks nothing. */
   id: string
-  /** AES-GCM key for every event and signal. */
   key: CryptoKey
-  /**
-   * Proof, for the server, that a writer holds the code. The room id is not
-   * a secret, so anybody who learns it could otherwise fill the space with
-   * junk until its trim ate the real history. This token is
-   * derived from the secret like everything else, so holding the link is
-   * holding the right to write.
-   */
+  /** Proof for the server that a writer holds the code: the room id is public. */
   write: string
 }
 
@@ -70,32 +28,16 @@ function concat(a: Uint8Array, b: Uint8Array): Uint8Array {
   return out
 }
 
-function hex(bytes: Uint8Array): string {
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
-}
-
-/**
- * A fresh room code, 60 bits before stretching.
- *
- * One random byte per symbol, masked to five bits. A byte is uniform over 256
- * and 256 divides evenly by 32, so the mask leaves it uniform: no rejection
- * loop and no bias.
- */
 export function newSecret(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(SYMBOLS))
-  return Array.from(bytes, (b) => ALPHABET[b & 31]).join('')
+  const bytes = crypto.getRandomValues(new Uint8Array(CODE_LENGTH))
+  // 256 is a multiple of 32, so masking a uniform byte stays unbiased.
+  return Array.from(bytes, (b) => CROCKFORD_BASE32[b & 31]).join('')
 }
 
-/** Three groups of four, for a person to read down a phone. */
 export function formatSecret(secret: string): string {
-  return (secret.match(new RegExp(`.{1,${GROUP}}`, 'g')) ?? []).join('-')
+  return (secret.match(new RegExp(`.{1,${GROUP_SIZE}}`, 'g')) ?? []).join('-')
 }
 
-/**
- * Accept a code however it was typed: any case, with or without hyphens or
- * spaces, and with the letters Crockford says to fold. Returns null when what
- * is left is not a code.
- */
 export function parseSecret(raw: string): string | null {
   const cleaned = raw
     .trim()
@@ -103,28 +45,20 @@ export function parseSecret(raw: string): string | null {
     .replace(/[\s-]/g, '')
     .replace(/O/g, '0')
     .replace(/[IL]/g, '1')
-  if (cleaned.length !== SYMBOLS) return null
-  for (const ch of cleaned) if (!ALPHABET.includes(ch)) return null
+  if (cleaned.length !== CODE_LENGTH) return null
+  for (const ch of cleaned) if (!CROCKFORD_BASE32.includes(ch)) return null
   return cleaned
 }
 
-/** A short random id for one peer in one session. */
 export function newPeerId(): string {
-  return hex(crypto.getRandomValues(new Uint8Array(6)))
+  return toHex(crypto.getRandomValues(new Uint8Array(6)))
 }
 
-/**
- * Turn a code, and an optional password, into a room.
- *
- * The code alone is already a key, so a password is a second factor rather than
- * the only one: it means holding the link is not enough. It is mixed into both
- * the topic and the key, so a wrong password does not produce a room you can
- * see and fail to read. It produces a different room entirely, on a topic
- * nobody is talking on.
- *
- * That also means a password cannot be changed later without changing the
- * space, which is why it is asked for once, when the space is made.
- */
+// Each value is a hash of the stretched bytes under its own label, so the public id reveals nothing.
+async function labelled(stretched: Uint8Array, label: string): Promise<Uint8Array> {
+  return new Uint8Array(await crypto.subtle.digest('SHA-256', concat(stretched, enc.encode(label)) as BufferSource))
+}
+
 export async function deriveRoom(secret: string, password = ''): Promise<Room> {
   const canonical = parseSecret(secret)
   if (!canonical) throw new Error('That is not a valid room code.')
@@ -143,29 +77,18 @@ export async function deriveRoom(secret: string, password = ''): Promise<Room> {
         name: 'PBKDF2',
         hash: 'SHA-256',
         salt: enc.encode('cathode-space-v3'),
-        iterations: ROUNDS,
+        iterations: PBKDF2_ROUNDS,
       },
       material,
       256,
     ),
   )
 
-  // The topic and the key both come from the stretched bytes, kept apart by a
-  // label, so the public topic gives away nothing about the key.
-  const idBytes = new Uint8Array(
-    await crypto.subtle.digest(
-      'SHA-256',
-      concat(stretched, enc.encode('topic')) as BufferSource,
-    ),
-  )
-  const id = hex(idBytes).slice(0, 32)
-
-  const keyBytes = new Uint8Array(
-    await crypto.subtle.digest(
-      'SHA-256',
-      concat(stretched, enc.encode('signal')) as BufferSource,
-    ),
-  )
+  const [idBytes, keyBytes, writeBytes] = await Promise.all([
+    labelled(stretched, 'topic'),
+    labelled(stretched, 'signal'),
+    labelled(stretched, 'archive'),
+  ])
   const key = await crypto.subtle.importKey(
     'raw',
     keyBytes as BufferSource,
@@ -174,38 +97,15 @@ export async function deriveRoom(secret: string, password = ''): Promise<Room> {
     ['encrypt', 'decrypt'],
   )
 
-  const writeBytes = new Uint8Array(
-    await crypto.subtle.digest(
-      'SHA-256',
-      concat(stretched, enc.encode('archive')) as BufferSource,
-    ),
-  )
-  const write = hex(writeBytes)
-
-  return { secret: canonical, id, key, write }
+  return { secret: canonical, id: toHex(idBytes).slice(0, 32), key, write: toHex(writeBytes) }
 }
 
-/** The link the host shares. The code stays after the hash, so it is client side only. */
 export function roomLink(secret: string, locked = false, server = ''): string {
   const { origin, pathname } = window.location
   return `${origin}${pathname}#${linkTail(secret, locked, server)}`
 }
 
-/**
- * A locked space says so in its link, so whoever opens it is asked for the
- * password rather than dropped into an empty room they cannot explain.
- */
-const LOCK = '.P'
-
-/**
- * A space on a server says which one, after an @, so everybody who opens the
- * link talks in the same place. See backend.ts. The server is not a secret:
- * it is only an address, and it is in the fragment like the rest.
- */
-const AT = '@'
-
-/** A chat app may have escaped the server in a link. A bad escape is no server. */
-function unescapeTag(tag: string): string {
+function unescapeServerTag(tag: string): string {
   try {
     return decodeURIComponent(tag)
   } catch {
@@ -213,65 +113,43 @@ function unescapeTag(tag: string): string {
   }
 }
 
-/*
- * The rest of the cluster rides after the first, comma separated, so somebody
- * opening the invite while the first server is down still gets in.
- */
 function linkTail(secret: string, locked: boolean, server: string): string {
   const tags = server ? endpointsInOrder(server).map(serverTag).filter(Boolean) : []
-  return `${formatSecret(secret)}${locked ? LOCK : ''}${tags.length ? `${AT}${tags.join(',')}` : ''}`
+  const servers = tags.length ? `${SERVER_SEPARATOR}${tags.join(',')}` : ''
+  return `${formatSecret(secret)}${locked ? LOCKED_SUFFIX : ''}${servers}`
 }
 
-/** The space's own server first, then the rest of its cluster. */
 function endpointsInOrder(server: string): string[] {
   const first = serverUrl(server)
-  return [first, ...endpoints(first).filter((u) => u !== first)].slice(0, 5)
+  return [first, ...endpoints(first).filter((u) => u !== first)].slice(0, MAX_LINK_SERVERS)
 }
 
 export interface LinkInfo {
   secret: string
   locked: boolean
-  /**
-   * The server the link names, or undefined when it names none. Undefined
-   * rather than empty, because a bare code says nothing about where a space
-   * runs, and the device may already know.
-   */
+  /** Undefined, not empty, when the link names no server: the device may know one. */
   server?: string
 }
 
 export function parseLink(raw: string): LinkInfo | null {
   const trimmed = raw.trim()
-  const at = trimmed.indexOf(AT)
+  const at = trimmed.indexOf(SERVER_SEPARATOR)
   const code = at >= 0 ? trimmed.slice(0, at) : trimmed
-  const named = at >= 0 ? unescapeTag(trimmed.slice(at + 1)).split(',').map(serverUrl) : []
+  const named = at >= 0 ? unescapeServerTag(trimmed.slice(at + 1)).split(',').map(serverUrl) : []
   const server = at >= 0 ? named[0] : undefined
   if (server && named.length > 1) learn(server, named.slice(1).filter(Boolean))
-  // A link that names a server nobody could reach is not half a link.
   if (at >= 0 && !server) return null
-  const locked = code.toUpperCase().endsWith(LOCK)
-  const secret = parseSecret(locked ? code.slice(0, -LOCK.length) : code)
+  const locked = code.toUpperCase().endsWith(LOCKED_SUFFIX)
+  const secret = parseSecret(locked ? code.slice(0, -LOCKED_SUFFIX.length) : code)
   if (!secret) return null
   return server ? { secret, locked, server } : { secret, locked }
 }
 
-/** The link without its scheme, for showing rather than for copying. */
-export function shortLink(secret: string, locked = false, server = ''): string {
-  const { host, pathname } = window.location
-  const tail = linkTail(secret, locked, server)
-  return `${host}${pathname === '/' ? '' : pathname}/#${tail}`.replace('//#', '/#')
-}
-
-/** Read the room out of the current URL, or null when this is a fresh visit. */
 export function readLink(): LinkInfo | null {
   const frag = window.location.hash.replace(/^#/, '')
   return frag ? parseLink(frag) : null
 }
 
-/**
- * Put the room in the address bar, so the link can be shared straight from
- * there. replaceState rather than pushState: the back button should leave the
- * app, not walk backwards through rooms that no longer exist.
- */
 export function setLinkSecret(secret: string, locked = false, server = ''): void {
   history.replaceState(null, '', `#${linkTail(secret, locked, server)}`)
 }

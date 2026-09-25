@@ -1,30 +1,23 @@
-/**
- * Nook: spaces with text channels, voice and screen sharing, kept on a
- * server, sealed end to end. Read README.md.
- *
- * On opening, every space you are in starts at once (space/registry.ts), so
- * the switcher shows what is new everywhere and home lists every direct message.
- * One screen is on show at a time: home, or one space.
- */
-
 import './styles.css'
 import { mentionsMe } from './chat'
+import { checkSupport } from './diagnostics'
 import { clearLink, readLink, setLinkSecret } from './room'
 import { spaces } from './space/registry'
-import { newSpaceServer } from './store/server-spaces'
 import type { SpaceRuntime } from './space/runtime'
 import { nameChosen, shortKey } from './store/identity'
+import { newSpaceServer } from './store/server-spaces'
 import { findSpace } from './store/spaces'
+import { installCalls } from './ui/call'
 import { clear } from './ui/dom'
 import { HomeView, type DirectRef } from './ui/home-view'
-import { installCalls } from './ui/call'
 import { notify } from './ui/notify'
 import { createWindow, type WindowChrome } from './ui/shell'
 import { chirpMessage, isNews } from './ui/sounds'
 import { spaceList } from './ui/space-list'
 import { SpaceView } from './ui/space-view'
 import { toast } from './ui/toast'
-import { checkSupport } from './diagnostics'
+
+const DEVICE_LINK_PREFIX = '#link='
 
 const app = document.getElementById('app')
 if (!app) throw new Error('The page could not find its mount point.')
@@ -33,7 +26,6 @@ const mount = app
 interface Screen {
   destroy(): void
   readonly isLive: boolean
-  /** Which space this is, so a link to the same one is left alone. */
   readonly secret?: string
   readonly locked?: boolean
   readonly server?: string
@@ -55,17 +47,14 @@ function freshWindow(title: string): WindowChrome {
   return chrome
 }
 
-/** Home: direct messages on the left, and your spaces or a conversation beside them. */
 async function showHome(dm: DirectRef | null = null, making = false): Promise<void> {
   clearLink()
   const chrome = freshWindow('Nook: chat, voice and screen sharing')
   const home = new HomeView(chrome.body, chrome, {
     page: () =>
       spaceList({
-        // A name means this space is being made, so whoever typed it claims it.
         open: (secret, locked, password, name, server) =>
           void enter(secret, locked, password, name !== undefined, name, server),
-        // A server just added may already hold spaces, from another device.
         refresh: () => {
           void spaces.catchUp()
           void showHome(null, true)
@@ -108,13 +97,7 @@ function openSpace(space: SpaceRuntime): void {
   void view.start()
 }
 
-/**
- * Open a space, asking for the password only when this device does not have it.
- *
- * The password is mixed into the room id, so opening a locked space without it
- * does not fail: it lands in a different, empty room under the same code. So
- * your list is asked before a bare code is trusted.
- */
+// A wrong password opens a different, empty room, so the known list is asked first.
 async function enter(
   secret: string,
   locked?: boolean,
@@ -144,16 +127,12 @@ async function enter(
   openSpace(space)
 }
 
-/*
- * Something new in any space. The space on screen says so itself; a direct
- * message, or a mention anywhere else, is said here, with a sound and a
- * notification when the tab is behind something else.
- */
 spaces.fresh.add((space, events) => {
   const chat = space.chat
   if (!chat) return
   const onScreen = active instanceof SpaceView && active.space === space
   const reading = active instanceof HomeView ? active.showing : null
+  let names: Map<string, string> | null = null
   for (const e of events) {
     if (e.author === chat.me || !isNews(e.at)) continue
     const who = chat.nameOf(e.author) || shortKey(e.author)
@@ -163,13 +142,14 @@ spaces.fresh.add((space, events) => {
       if (reading?.room === space.room.id && reading.key === e.author && !document.hidden) continue
       chirpMessage()
       toast(`${who} sent you a message`, 'info', 8000, { label: 'Read', run: open })
-      // Who rather than what: a private message is not for a lock screen.
+      // Say who, not what: a private message is not for a lock screen.
       notify(who, 'Sent you a private message', open)
       continue
     }
     if (onScreen || e.kind !== 'said') continue
     const text = String(e.body.text ?? '')
-    if (!mentionsMe(text, chat.log.names(), chat.me)) continue
+    names ??= chat.log.names()
+    if (!mentionsMe(text, names, chat.me)) continue
     const where = chat.spaceName() || 'a space'
     const open = (): void => openSpace(space)
     chirpMessage()
@@ -178,38 +158,27 @@ spaces.fresh.add((space, events) => {
   }
 })
 
-// A device link in the address is not a space, whatever its letters look like.
-const linked = window.location.hash.startsWith('#link=') ? null : readLink()
+const linked = window.location.hash.startsWith(DEVICE_LINK_PREFIX) ? null : readLink()
 
-// A call can come in from any space, whatever is on screen.
 installCalls((space, key) => void showHome({ room: space.room.id, key }))
 
 async function start(): Promise<void> {
-  // Opened with a link from another device: become that person first. The page starts again after.
-  if (window.location.hash.startsWith('#link=')) {
+  if (window.location.hash.startsWith(DEVICE_LINK_PREFIX)) {
     const { linkFromAddress } = await import('./ui/link-device')
     if (await linkFromAddress(mount)) return
   }
-  // Somebody new says what to call them before any space hears a name at all.
   if (!nameChosen()) {
     const { welcome } = await import('./ui/welcome')
     await welcome(mount, linked !== null)
   }
-  // Every space you are in, running, before anything is drawn from them.
   void spaces.load()
   if (linked) void enter(linked.secret, linked.locked, '', false, '', linked.server)
   else void showHome()
 }
 void start()
 
-/*
- * A link that arrives while the app is already open: the code lives in the
- * fragment, so it changes the hash and reloads nothing. Rewrites made here are
- * skipped, because those already opened the space.
- */
 window.addEventListener('hashchange', () => {
-  // A device link opened in a page already running: start again, which is where links are taken.
-  if (window.location.hash.startsWith('#link=')) {
+  if (window.location.hash.startsWith(DEVICE_LINK_PREFIX)) {
     window.location.reload()
     return
   }

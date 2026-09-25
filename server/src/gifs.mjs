@@ -1,24 +1,3 @@
-/**
- * GIF search, with the server's key.
- *
- * The key lives here, in the server's environment, and nowhere else: not in
- * the page, not in anybody's browser, and not in a setting a member can
- * change. Everybody in a space on this server gets the same search, and
- * nobody has to go and get a key of their own.
- *
- * Three services can hold up that end. Which one is decided by which
- * variable holds the key, never guessed from the key's shape, because a
- * wrong guess hands one company's key to another company:
- *
- *   CATHODE_KLIPY_KEY   Klipy: a test key from partner.klipy.com in a minute
- *   CATHODE_TENOR_KEY   Tenor: a Google API key, from developers.google.com/tenor
- *   CATHODE_GIPHY_KEY   Giphy: after registering an app at developers.giphy.com
- *
- * The first one set, in that order, is the one used. What is searched for
- * reaches that service, from this server: that is the deal, and the reason
- * search is off until somebody who runs the server turns it on.
- */
-
 import { GIPHY_KEY, KLIPY_KEY, TENOR_KEY } from './config.mjs'
 
 const LIMIT = 24
@@ -26,27 +5,22 @@ const TIMEOUT_MS = 5000
 const CACHE_MS = 10 * 60 * 1000
 const CACHE_MAX = 500
 
-/** The service in use, and its key, or null when search is off. */
-function held() {
-  if (KLIPY_KEY) return { service: 'klipy', label: 'Klipy', key: KLIPY_KEY }
-  if (TENOR_KEY) return { service: 'tenor', label: 'Tenor', key: TENOR_KEY }
-  if (GIPHY_KEY) return { service: 'giphy', label: 'Giphy', key: GIPHY_KEY }
-  return null
-}
+// Chosen by which variable holds the key, never by the key's shape: a wrong guess leaks a key.
+const USING = KLIPY_KEY
+  ? { service: 'klipy', label: 'Klipy', key: KLIPY_KEY }
+  : TENOR_KEY
+    ? { service: 'tenor', label: 'Tenor', key: TENOR_KEY }
+    : GIPHY_KEY
+      ? { service: 'giphy', label: 'Giphy', key: GIPHY_KEY }
+      : null
 
-export const hasGifs = () => held() !== null
+export const hasGifs = () => USING !== null
 
-/** Who answers a search, as a person would name them. */
-export const gifService = () => held()?.label ?? ''
+export const gifService = () => USING?.label ?? ''
 
-/*
- * Klipy wants to know who is asking, one id per person, and there is nobody
- * here to be. Everybody sends the same word: it is honest about there being
- * one client rather than inventing a number that follows a person around.
- */
+// One id for everybody, so Klipy cannot follow a person.
 const KLIPY_CUSTOMER = 'cathode'
 
-/** The address a search goes to. Exported for the tests. */
 export function urlFor({ service, key }, q) {
   const k = encodeURIComponent(key)
   if (service === 'tenor') {
@@ -61,12 +35,10 @@ export function urlFor({ service, key }, q) {
       : 'https://api.giphy.com/v1/gifs/trending?'
     return `${base}api_key=${k}&limit=${LIMIT}&rating=pg-13`
   }
-  // Klipy carries the key in the path rather than the query.
   const where = q ? `search?q=${encodeURIComponent(q)}&` : 'trending?'
   return `https://api.klipy.com/api/v1/${k}/gifs/${where}per_page=${LIMIT}&page=1&customer_id=${KLIPY_CUSTOMER}&content_filter=medium`
 }
 
-/** A picture address, if that is what is there. Anything else is nothing. */
 const str = (value) => (typeof value === 'string' && value.startsWith('https://') ? value : '')
 
 function at(value, ...path) {
@@ -99,26 +71,16 @@ function fromGiphy(body) {
   }))
 }
 
-/*
- * Klipy hands back a tree of sizes, and the names in it are theirs to change.
- *
- * So rather than naming a path through it, every address inside one result is
- * gathered and sorted by what it is, then by how wide it is. What gets said is
- * a webm where there is one, and a gif otherwise: a webm is a fraction of the
- * weight and the chat plays it on a loop. A jpg of the first frame loses to
- * anything that moves, whatever the widths say. The grid gets the smallest
- * picture a plain img can draw, and falls back to the clip.
- */
+// Klipy's size names are not stable, so rank every address by kind, then width.
 const RANK = { webm: 4, gif: 3, webp: 2, mp4: 1, still: 0 }
+const KIND = { webm: 'webm', gif: 'gif', webp: 'webp', mp4: 'mp4', m4v: 'mp4' }
 
 function pictures(node, depth = 0) {
   if (depth > 5 || typeof node !== 'object' || node === null) return []
   const url = str(node.url)
   const found = /\.(gif|webp|png|jpe?g|webm|mp4|m4v)(\?|$)/i.exec(url)
   if (url && found) {
-    const ext = found[1].toLowerCase()
-    const kind =
-      ext === 'webm' ? 'webm' : ext === 'gif' ? 'gif' : ext === 'webp' ? 'webp' : ext === 'mp4' || ext === 'm4v' ? 'mp4' : 'still'
+    const kind = KIND[found[1].toLowerCase()] ?? 'still'
     return [{ url, width: typeof node.width === 'number' ? node.width : 0, kind }]
   }
   const out = []
@@ -139,7 +101,6 @@ function fromKlipy(body) {
   })
 }
 
-/** What a service answered, as one big picture and one small one each. Exported for the tests. */
 export function readGifs(service, body) {
   const list = service === 'tenor' ? fromTenor(body) : service === 'giphy' ? fromGiphy(body) : fromKlipy(body)
   return list
@@ -150,23 +111,19 @@ export function readGifs(service, body) {
 
 const cache = new Map()
 
-/**
- * GIFs for a term, or what is popular now for an empty one. Null when the
- * service did not answer, and an empty list when search is off.
- */
 export async function gifs(term) {
-  const using = held()
-  if (!using) return { gifs: [], from: '' }
+  if (!USING) return { gifs: [], from: '' }
   const q = term.trim().slice(0, 80)
-  const was = cache.get(q.toLowerCase())
+  const key = q.toLowerCase()
+  const was = cache.get(key)
   if (was && Date.now() - was.at < CACHE_MS) return was.data
   try {
-    const upstream = await fetch(urlFor(using, q), { signal: AbortSignal.timeout(TIMEOUT_MS) })
+    const upstream = await fetch(urlFor(USING, q), { signal: AbortSignal.timeout(TIMEOUT_MS) })
     if (!upstream.ok) return null
     const body = await upstream.json()
-    const data = { gifs: readGifs(using.service, body), from: using.label }
+    const data = { gifs: readGifs(USING.service, body), from: USING.label }
     if (cache.size >= CACHE_MAX) cache.delete(cache.keys().next().value)
-    cache.set(q.toLowerCase(), { at: Date.now(), data })
+    cache.set(key, { at: Date.now(), data })
     return data
   } catch {
     return null

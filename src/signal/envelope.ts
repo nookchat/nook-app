@@ -1,16 +1,13 @@
-/**
- * The signal envelope.
- *
- * Every message that crosses the server is one sealed envelope:
- *
- *   base64url( 12 byte random IV || AES-GCM ciphertext of the JSON )
- *
- * A server operator sees a random room name and opaque bytes. A server cannot
- * forge a message either, because it does not hold the key.
- */
+import { fromBase64Url, toBase64Url } from '../bytes'
+
+// Wire format: base64url(12 byte IV || AES-GCM ciphertext of the JSON envelope).
 
 const enc = new TextEncoder()
 const dec = new TextDecoder()
+
+const IV_BYTES = 12
+const GCM_TAG_BYTES = 16
+const MIN_SEALED_BYTES = IV_BYTES + GCM_TAG_BYTES + 1
 
 export type MsgType =
   | 'announce' // host to everyone: the room is live
@@ -21,14 +18,14 @@ export type MsgType =
   | 'bye' // either side leaves
   | 'deny' // host refused the viewer, or the room is full
   | 'ping' // viewer keep alive, so the host can drop dead entries
-  | 'moffer' // mesh handshake, chat links between every pair
+  | 'moffer' // mesh handshake
   | 'manswer'
   | 'mice'
-  | 'voffer' // voice channel handshake, audio only
+  | 'voffer' // voice channel handshake
   | 'vanswer'
   | 'vice'
   | 'vmove' // an admin moving somebody between voice channels
-  | 'mdata' // a mesh line carried by the relay, for a space on a server
+  | 'mdata' // a mesh line carried by the relay
   | 'ring' // a call between two people: ringing them
   | 'ring-no' // declined
   | 'ring-busy' // already on a call
@@ -36,53 +33,23 @@ export type MsgType =
 
 export interface Envelope {
   v: 1
-  /** Random id, used to drop duplicates that arrive over two relays. */
   id: string
   from: string
   /** Absent means broadcast to the room. */
   to?: string
-  /** Milliseconds since epoch. Used for the replay window. */
+  /** The sender's clock, so information only: never checked against ours. */
   t: number
   type: MsgType
   data?: unknown
 }
 
-export type OutgoingEnvelope = Pick<Envelope, 'type'> &
-  Partial<Pick<Envelope, 'to' | 'data'>>
+export type OutgoingEnvelope = Pick<Envelope, 'type'> & Partial<Pick<Envelope, 'to' | 'data'>>
 
-/**
- * How long a message id stays in the replay guard. This uses the clock of the
- * machine that receives the message, never the clock of the sender.
- *
- * An earlier version also rejected an envelope whose `t` was more than two
- * minutes from the local clock. That broke every room between two machines
- * whose clocks disagreed, which is common, and the symptom was a viewer stuck
- * on "looking for the host". The id guard below already stops a replay, and the
- * room key already stops a forgery, so the sender clock is now information
- * only.
- */
 const GUARD_TTL_MS = 120_000
 
 function randomId(): string {
   const b = crypto.getRandomValues(new Uint8Array(8))
   return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('')
-}
-
-function b64urlEncode(bytes: Uint8Array): string {
-  let bin = ''
-  const chunk = 0x8000
-  for (let i = 0; i < bytes.length; i += chunk) {
-    bin += String.fromCharCode(...bytes.subarray(i, i + chunk))
-  }
-  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-}
-
-function b64urlDecode(text: string): Uint8Array<ArrayBuffer> {
-  const pad = text.length % 4 === 0 ? '' : '='.repeat(4 - (text.length % 4))
-  const bin = atob(text.replace(/-/g, '+').replace(/_/g, '/') + pad)
-  const out = new Uint8Array(new ArrayBuffer(bin.length))
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
-  return out
 }
 
 export function buildEnvelope(from: string, msg: OutgoingEnvelope): Envelope {
@@ -93,43 +60,37 @@ export function buildEnvelope(from: string, msg: OutgoingEnvelope): Envelope {
 }
 
 export async function seal(key: CryptoKey, env: Envelope): Promise<string> {
-  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES))
   const ct = new Uint8Array(
     await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(JSON.stringify(env))),
   )
   const wire = new Uint8Array(iv.length + ct.length)
   wire.set(iv, 0)
   wire.set(ct, iv.length)
-  return b64urlEncode(wire)
+  return toBase64Url(wire)
 }
 
-/** Returns null for anything we cannot trust. A bad message is never an exception. */
+/** Null for anything that cannot be trusted. Never throws. */
 export async function open(key: CryptoKey, wire: string): Promise<Envelope | null> {
   try {
     if (wire.length < 20 || wire.length > 400_000) return null
-    const bytes = b64urlDecode(wire)
-    if (bytes.length < 29) return null
-    const iv = bytes.subarray(0, 12)
-    const ct = bytes.subarray(12)
+    const bytes = fromBase64Url(wire)
+    if (bytes.length < MIN_SEALED_BYTES) return null
+    const iv = bytes.subarray(0, IV_BYTES)
+    const ct = bytes.subarray(IV_BYTES)
     const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct)
     const env = JSON.parse(dec.decode(plain)) as Envelope
     if (env?.v !== 1 || typeof env.id !== 'string' || typeof env.from !== 'string') return null
     if (typeof env.type !== 'string') return null
-    // Deliberately no check against env.t. See the note on GUARD_TTL_MS.
     return env
   } catch {
     return null
   }
 }
 
-/**
- * Drops a message id we have already handled. Two relays deliver the same
- * envelope, so this runs on every inbound message.
- */
 export class ReplayGuard {
-  private seen = new Map<string, number>()
+  private readonly seen = new Map<string, number>()
 
-  /** True when the id is new. False when we have seen it inside the window. */
   accept(id: string): boolean {
     const now = Date.now()
     if (this.seen.size > 500) this.prune(now)

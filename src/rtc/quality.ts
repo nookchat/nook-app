@@ -1,13 +1,5 @@
-/**
- * Quality control.
- *
- * A mesh host encodes and sends the picture once per viewer. Upload and
- * processor time are therefore the two hard limits. This module turns one
- * choice by the host, a preset, into concrete sender settings for every viewer.
- */
-
 export type Mode = 'text' | 'motion'
-export type Degradation = 'maintain-framerate' | 'maintain-resolution' | 'balanced'
+type Degradation = 'maintain-framerate' | 'maintain-resolution' | 'balanced'
 
 export interface QualityPlan {
   maxBitrateKbps: number
@@ -16,41 +8,30 @@ export interface QualityPlan {
   degradation: Degradation
 }
 
-export interface QualityInput {
+interface QualityInput {
   mode: Mode
-  /** Total upload the host allows for all viewers together, in kilobits. */
+  /** Total upload for all viewers together. */
   budgetKbps: number
   viewerCount: number
   width: number
   height: number
   fps: number
-  /** Multiplier on the ladder below. Under one means more compression. */
   bitrateScale: number
 }
 
-// ---------------------------------------------------------------------------
-// Presets
-// ---------------------------------------------------------------------------
-
 export type PresetId = 'docs' | 'slides' | 'video' | 'game' | 'detail' | 'light' | 'custom'
 
-export interface Preset {
+interface Preset {
   id: PresetId
   name: string
-  /** A concrete example, so the host does not have to guess. */
   useWhen: string
   mode: Mode
-  /** Source height cap. 0 keeps whatever the display gives. */
+  /** 0 keeps whatever the display gives. */
   maxHeight: number
   fps: number
   bitrateScale: number
 }
 
-/**
- * The default is deliberately not the highest setting. A screen share is read,
- * not admired, and a smaller picture starts faster, stays sharp on text, and
- * leaves room for more viewers.
- */
 export const PRESETS: Preset[] = [
   {
     id: 'docs',
@@ -120,29 +101,7 @@ export function presetById(id: PresetId): Preset | null {
   return PRESETS.find((p) => p.id === id) ?? null
 }
 
-export const RESOLUTION_CHOICES: { label: string; height: number; note: string }[] = [
-  { label: 'Original', height: 0, note: 'Whatever the display gives, up to 4K' },
-  { label: '1440p', height: 1440, note: 'Sharp on a large monitor' },
-  { label: '1080p', height: 1080, note: 'Sharp text, quick to start' },
-  { label: '720p', height: 720, note: 'Kind to a slow upload' },
-  { label: '540p', height: 540, note: 'Last resort, or a wide mesh' },
-]
-
-export const FPS_CHOICES: { label: string; fps: number; note: string }[] = [
-  { label: '5 fps', fps: 5, note: 'Still pages only' },
-  { label: '10 fps', fps: 10, note: 'Reading, very low bandwidth' },
-  { label: '15 fps', fps: 15, note: 'Documents and code' },
-  { label: '24 fps', fps: 24, note: 'Slides and scrolling' },
-  { label: '30 fps', fps: 30, note: 'Video and games' },
-  { label: '60 fps', fps: 60, note: 'Fast games, costs a lot' },
-]
-
-// ---------------------------------------------------------------------------
-// The bitrate ladder
-// ---------------------------------------------------------------------------
-
-/** What one stream wants when bandwidth is free. Kilobits per second. */
-const LADDER: { maxPixels: number; text: number; motion: number }[] = [
+const IDEAL_KBPS_BY_PIXELS: { maxPixels: number; text: number; motion: number }[] = [
   { maxPixels: 960 * 540, text: 700, motion: 1100 },
   { maxPixels: 1280 * 720, text: 1200, motion: 2000 },
   { maxPixels: 1920 * 1080, text: 2500, motion: 4000 },
@@ -150,21 +109,13 @@ const LADDER: { maxPixels: number; text: number; motion: number }[] = [
   { maxPixels: Number.MAX_SAFE_INTEGER, text: 6000, motion: 10000 },
 ]
 
-/** Below this a screen share stops being readable, so we never go under it. */
-const FLOOR_KBPS = 300
+const READABLE_FLOOR_KBPS = 300
 
-export function idealBitrateKbps(
-  mode: Mode,
-  width: number,
-  height: number,
-  bitrateScale = 1,
-  fps = 30,
-): number {
+function idealBitrateKbps(mode: Mode, width: number, height: number, bitrateScale: number, fps: number): number {
   const pixels = Math.max(1, width * height)
-  const step = LADDER.find((s) => pixels <= s.maxPixels) ?? LADDER[LADDER.length - 1]
+  const step =
+    IDEAL_KBPS_BY_PIXELS.find((s) => pixels <= s.maxPixels) ?? IDEAL_KBPS_BY_PIXELS[IDEAL_KBPS_BY_PIXELS.length - 1]
   const base = mode === 'text' ? step.text : step.motion
-  // Frame rate moves the bill, but not in a straight line. Half the frames cost
-  // well over half the bits, because each frame still carries new detail.
   const fpsFactor = Math.min(1.35, Math.max(0.55, (fps / 30) ** 0.5))
   return Math.round(base * bitrateScale * fpsFactor)
 }
@@ -173,10 +124,8 @@ export function planFor(input: QualityInput): QualityPlan {
   const { mode, budgetKbps, viewerCount, width, height, fps, bitrateScale } = input
   const ideal = idealBitrateKbps(mode, width, height, bitrateScale, fps)
   const share = Math.floor(budgetKbps / Math.max(1, viewerCount))
-  const maxBitrateKbps = Math.max(FLOOR_KBPS, Math.min(ideal, share))
+  const maxBitrateKbps = Math.max(READABLE_FLOOR_KBPS, Math.min(ideal, share))
 
-  // When the share is far below the ideal, sending fewer pixels beats sending
-  // the same pixels badly. The same is true once the mesh gets wide.
   let scaleDown = 1
   const ratio = maxBitrateKbps / ideal
   if (viewerCount > 6 || ratio < 0.3) scaleDown = 2
@@ -200,7 +149,6 @@ export function samePlan(a: QualityPlan | null, b: QualityPlan): boolean {
   )
 }
 
-/** Push a plan onto one video sender. Browsers vary, so every field is guarded. */
 export async function applyPlan(sender: RTCRtpSender, plan: QualityPlan): Promise<void> {
   try {
     const params = sender.getParameters()
@@ -220,10 +168,6 @@ export async function applyPlan(sender: RTCRtpSender, plan: QualityPlan): Promis
   }
 }
 
-/**
- * Tell the encoder what the picture is. Chrome uses this to choose between
- * sharp text and smooth motion before any bitrate maths happens.
- */
 export function applyContentHint(track: MediaStreamTrack | null, mode: Mode): void {
   if (!track) return
   try {
@@ -236,18 +180,8 @@ export function applyContentHint(track: MediaStreamTrack | null, mode: Mode): vo
 
 export type CodecChoice = 'auto' | 'AV1' | 'VP9' | 'VP8' | 'H264' | 'H265'
 
-/**
- * VP9 and AV1 carry screen text far better per bit than VP8 or H264, because
- * they have screen content coding tools. VP9 first for text: AV1 encodes are
- * expensive, and a mesh host runs one encode per viewer.
- *
- * Moving pictures take a different route. If this machine has a hardware
- * encoder, that comes first, because it holds the same resolution for less than
- * half the processor and leaves the rest for the game or the video. Text stays
- * on VP9 whatever the hardware offers, since a hardware encoder is tuned for
- * camera video and smears small type.
- */
-function codecOrder(mode: Mode, choice: CodecChoice, hardware: string[] = []): string[] {
+// Text stays on VP9 even with a hardware encoder: hardware encoders smear small type.
+function codecOrder(mode: Mode, choice: CodecChoice, hardware: string[]): string[] {
   if (choice !== 'auto') return [`video/${choice}`]
   if (mode === 'text') return ['video/VP9', 'video/AV1', 'video/H264', 'video/VP8']
 
@@ -256,38 +190,37 @@ function codecOrder(mode: Mode, choice: CodecChoice, hardware: string[] = []): s
   return [...accelerated, ...fallback.filter((m) => !accelerated.includes(m))]
 }
 
+const HELPER_CODECS = new Set(['rtx', 'red', 'ulpfec', 'flexfec-03'])
+
 export function availableCodecs(): string[] {
   const caps = typeof RTCRtpSender !== 'undefined' ? RTCRtpSender.getCapabilities?.('video') : null
   if (!caps) return []
   const names = new Set<string>()
   for (const c of caps.codecs) {
-    const short = c.mimeType.split('/')[1]?.toUpperCase()
-    if (short && !['RTX', 'RED', 'ULPFEC', 'FLEXFEC-03'].includes(short)) names.add(short)
+    const short = c.mimeType.split('/')[1]?.toLowerCase()
+    if (short && !HELPER_CODECS.has(short)) names.add(short.toUpperCase())
   }
   return [...names]
 }
 
-/** Returns the codec the transceiver now prefers, or null when we could not set one. */
 export function preferCodecs(
   transceiver: RTCRtpTransceiver,
   mode: Mode,
-  choice: CodecChoice = 'auto',
-  hardware: string[] = [],
-): string | null {
+  choice: CodecChoice,
+  hardware: string[],
+): void {
   try {
     const caps = RTCRtpSender.getCapabilities?.('video')
-    if (!caps || typeof transceiver.setCodecPreferences !== 'function') return null
+    if (!caps || typeof transceiver.setCodecPreferences !== 'function') return
 
     const wanted = codecOrder(mode, choice, hardware).map((m) => m.toLowerCase())
     const rank = (mime: string): number => {
       const i = wanted.indexOf(mime.toLowerCase())
       return i === -1 ? wanted.length + 1 : i
     }
+    const isHelper = (mime: string): boolean => HELPER_CODECS.has(mime.split('/')[1]?.toLowerCase() ?? '')
 
     // Keep the helper payload types, but push them behind the real codecs.
-    const helpers = ['video/rtx', 'video/red', 'video/ulpfec', 'video/flexfec-03']
-    const isHelper = (m: string): boolean => helpers.includes(m.toLowerCase())
-
     const sorted = [...caps.codecs].sort((a, b) => {
       const ha = isHelper(a.mimeType) ? 1 : 0
       const hb = isHelper(b.mimeType) ? 1 : 0
@@ -295,11 +228,6 @@ export function preferCodecs(
       return rank(a.mimeType) - rank(b.mimeType)
     })
 
-    if (sorted.length === 0) return null
-    transceiver.setCodecPreferences(sorted)
-    const first = sorted.find((c) => !isHelper(c.mimeType))
-    return first ? first.mimeType.split('/')[1] : null
-  } catch {
-    return null
-  }
+    if (sorted.length > 0) transceiver.setCodecPreferences(sorted)
+  } catch {}
 }

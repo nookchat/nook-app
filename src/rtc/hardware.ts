@@ -1,34 +1,4 @@
-/**
- * Which codecs this machine can encode on the GPU.
- *
- * WebRTC gives a page no way to demand a hardware encoder. The browser decides,
- * from the codec, the resolution and the platform. What a page *can* do is find
- * out which codecs have a hardware encoder at all, and then ask for those first.
- *
- * Two sources agree on the answer, and neither is a guess:
- *
- *   WebCodecs   `isConfigSupported` with hardwareAcceleration 'prefer-hardware'
- *               fails outright when no hardware encoder can serve the config.
- *   Media Caps  `encodingInfo` reports `powerEfficient`, which is the platform
- *               saying the work will not land on the processor.
- *
- * Measured on an Apple M4 Pro, one viewer, 1920x1080 at 60 frames, this is what
- * the difference is worth:
- *
- *   H265   1920x1080  0.41 cores   hardware, VideoToolbox
- *   VP9    1920x1080  0.87 cores   software
- *   AV1    1920x1080  2.05 cores   software
- *
- * Same picture, less than half the processor. `npm run test:cpu` reruns that on
- * your own machine.
- *
- * The preference applies to moving pictures only. A hardware encoder is tuned
- * for camera video, and it smears small text, so documents stay on VP9 where
- * the screen content tools live and the bill is small anyway.
- */
-
-/** WebCodecs identifiers for the codecs WebRTC might offer. */
-const WEBCODECS: Record<string, string> = {
+const WEBCODECS_IDS: Record<string, string> = {
   H265: 'hev1.1.6.L93.B0',
   H264: 'avc1.42001f',
   AV1: 'av01.0.04M.08',
@@ -36,15 +6,11 @@ const WEBCODECS: Record<string, string> = {
   VP8: 'vp8',
 }
 
-/** Order to try, best compression per bit first among the hardware candidates. */
-const CANDIDATES = ['H265', 'AV1', 'H264', 'VP9', 'VP8']
+const CANDIDATES_BEST_FIRST = ['H265', 'AV1', 'H264', 'VP9', 'VP8']
 
 export interface HardwareProbe {
-  /** Short codec names with a hardware encoder on this machine, best first. */
   hardware: string[]
-  /** True once the probe has run, whatever it found. */
   checked: boolean
-  /** How the answer was reached, for the diagnostics panel. */
   note: string
 }
 
@@ -55,7 +21,7 @@ export const NO_HARDWARE: HardwareProbe = {
 }
 
 async function webCodecsHardware(name: string, width: number, height: number, fps: number): Promise<boolean> {
-  const codec = WEBCODECS[name]
+  const codec = WEBCODECS_IDS[name]
   if (!codec || typeof VideoEncoder === 'undefined') return false
   try {
     const result = await VideoEncoder.isConfigSupported({
@@ -94,32 +60,26 @@ async function powerEfficient(name: string, width: number, height: number, fps: 
   }
 }
 
-/**
- * Ask the browser which codecs it can encode without the processor.
- *
- * Only codecs that WebRTC will actually offer are considered, so a hardware
- * encoder the connection could never negotiate is never suggested.
- */
 export async function probeHardwareEncoders(
   offerable: string[],
   width = 1920,
   height = 1080,
   fps = 60,
 ): Promise<HardwareProbe> {
+  const names = CANDIDATES_BEST_FIRST.filter((name) => offerable.includes(name))
+  const results = await Promise.all(
+    names.map((name) =>
+      Promise.all([webCodecsHardware(name, width, height, fps), powerEfficient(name, width, height, fps)]),
+    ),
+  )
   const found: string[] = []
   const reasons: string[] = []
-
-  for (const name of CANDIDATES) {
-    if (!offerable.includes(name)) continue
-    const [viaWebCodecs, viaCaps] = await Promise.all([
-      webCodecsHardware(name, width, height, fps),
-      powerEfficient(name, width, height, fps),
-    ])
-    if (viaWebCodecs || viaCaps) {
-      found.push(name)
-      reasons.push(`${name} (${[viaWebCodecs && 'WebCodecs', viaCaps && 'power efficient'].filter(Boolean).join(', ')})`)
-    }
-  }
+  names.forEach((name, i) => {
+    const [viaWebCodecs, viaCaps] = results[i]
+    if (!viaWebCodecs && !viaCaps) return
+    found.push(name)
+    reasons.push(`${name} (${[viaWebCodecs && 'WebCodecs', viaCaps && 'power efficient'].filter(Boolean).join(', ')})`)
+  })
 
   return {
     hardware: found,

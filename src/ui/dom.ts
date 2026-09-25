@@ -1,8 +1,6 @@
-/** Tiny DOM helpers. Nook has no UI framework, because it does not need one. */
-
 type Child = Node | string | number | null | undefined | false
 
-export interface Props {
+interface Props {
   class?: string
   text?: string
   html?: string
@@ -61,19 +59,7 @@ export function h<K extends keyof HTMLElementTagNameMap>(
 }
 
 export function clear(node: Element): void {
-  while (node.firstChild) node.removeChild(node.firstChild)
-}
-
-export function pill(text: string, tone: 'good' | 'warn' | 'bad' | '' = ''): HTMLSpanElement {
-  return h('span', { class: `pill ${tone}`.trim(), text })
-}
-
-export function labelled(labelText: string, control: HTMLElement, hint?: string): HTMLDivElement {
-  return h('div', {}, [
-    h('label', { text: labelText }),
-    control,
-    hint ? h('div', { class: 'tiny faint', text: hint, style: { marginTop: '4px' } }) : null,
-  ])
+  node.replaceChildren()
 }
 
 export function fmtKbps(kbps: number): string {
@@ -81,33 +67,12 @@ export function fmtKbps(kbps: number): string {
   return kbps >= 1000 ? `${(kbps / 1000).toFixed(1)} Mb/s` : `${Math.round(kbps)} kb/s`
 }
 
-export function fmtBytes(bytes: number): string {
-  if (bytes < 1024) return `${Math.round(bytes)} B`
-  const units = ['kB', 'MB', 'GB', 'TB']
-  let value = bytes / 1024
-  let unit = 0
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024
-    unit += 1
-  }
-  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`
-}
-
-export function fmtDuration(ms: number): string {
-  const total = Math.floor(ms / 1000)
-  const h2 = Math.floor(total / 3600)
-  const m = Math.floor((total % 3600) / 60)
-  const s = total % 60
-  const pad = (n: number): string => String(n).padStart(2, '0')
-  return h2 > 0 ? `${h2}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`
-}
-
 export async function copyText(text: string): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(text)
     return true
   } catch {
-    // Clipboard permission is denied, or the page is not focused. Fall back.
+    // Clipboard write fails without permission or focus.
     try {
       const ta = h('textarea', { value: text, style: { position: 'fixed', opacity: '0' } })
       document.body.append(ta)
@@ -121,15 +86,7 @@ export async function copyText(text: string): Promise<boolean> {
   }
 }
 
-/**
- * Act on the press rather than the release.
- *
- * A click needs the press and the release on the same element. A list that
- * redraws while it is being pointed at (who is here, what they are doing)
- * replaces the button in between, and the click never comes: the menu that
- * opens on the second try. The keyboard, which clicks without pressing, still
- * works.
- */
+// A list redrawn between press and release never gets the click, so act on the press.
 export function onPress(el: HTMLElement, fn: (ev: Event) => void): void {
   let pressed = 0
   el.addEventListener('pointerdown', (ev) => {

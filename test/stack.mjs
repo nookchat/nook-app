@@ -1,14 +1,3 @@
-/**
- * The whole thing, for the browser tests: Postgres, a Nook server on 8787,
- * and the page served by Vite with that server built in.
- *
- *   node test/stack.mjs           starts all three and waits
- *
- * The browser tests expect it to be running, the way they expected Vite
- * before. Tests that need a server of their own (a cluster, a server that
- * dies) still start one beside it.
- */
-
 import { spawn } from 'node:child_process'
 import { startServer } from './pg.mjs'
 

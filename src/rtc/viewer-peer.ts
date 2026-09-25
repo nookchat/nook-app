@@ -1,20 +1,13 @@
-/**
- * The viewer side of one connection. It only answers, never offers, so a
- * renegotiation from the host is always safe.
- */
-
 import { rtcConfig } from './config'
 import { EMPTY_STATS, StatsTracker, type StatsSnapshot } from './stats'
+
+const HOST_ICE_RESTART_GRACE_MS = 6000
 
 export interface ViewerPeerOptions {
   send: (type: 'answer' | 'ice', data: unknown) => void
   onStream: (stream: MediaStream) => void
   onChange: () => void
   onFailed: (reason: string) => void
-  /** A line of chat arrived from the host. */
-  onChat: (raw: string) => void
-  /** The chat channel opened, so anything queued can go now. */
-  onChatReady: () => void
 }
 
 export class ViewerPeer {
@@ -25,10 +18,9 @@ export class ViewerPeer {
   private readonly opts: ViewerPeerOptions
   private readonly tracker: StatsTracker
   private readonly stream = new MediaStream()
-  private chat: RTCDataChannel | null = null
-  private pendingCandidates: RTCIceCandidateInit[] = []
+  private readonly pendingCandidates: RTCIceCandidateInit[] = []
   private hasRemote = false
-  private restarted = false
+  private failureSeen = false
   private closed = false
 
   constructor(opts: ViewerPeerOptions) {
@@ -44,17 +36,6 @@ export class ViewerPeer {
       }
       this.stream.addTrack(ev.track)
       this.opts.onStream(this.stream)
-    }
-
-    // The host opens the chat channel, so we only have to catch it.
-    this.pc.ondatachannel = (ev) => {
-      if (ev.channel.label !== 'chat') return
-      this.chat = ev.channel
-      this.chat.onmessage = (m) => {
-        if (typeof m.data === 'string') opts.onChat(m.data)
-      }
-      this.chat.onopen = () => opts.onChatReady()
-      if (this.chat.readyState === 'open') opts.onChatReady()
     }
 
     this.pc.onicecandidate = (ev) => {
@@ -97,19 +78,6 @@ export class ViewerPeer {
     await this.pc.addIceCandidate(candidate).catch(() => undefined)
   }
 
-  get chatReady(): boolean {
-    return this.chat?.readyState === 'open'
-  }
-
-  sendChat(raw: string): void {
-    if (this.chat?.readyState !== 'open') return
-    try {
-      this.chat.send(raw)
-    } catch {
-      // The channel closed between the check and the send.
-    }
-  }
-
   async sample(): Promise<StatsSnapshot> {
     this.stats = await this.tracker.sample()
     return this.stats
@@ -119,34 +87,23 @@ export class ViewerPeer {
     if (this.closed) return
     this.closed = true
     this.pc.ontrack = null
-    this.pc.ondatachannel = null
-    if (this.chat) {
-      this.chat.onmessage = null
-      this.chat.onopen = null
-    }
     this.pc.onicecandidate = null
     this.pc.onconnectionstatechange = null
     this.pc.oniceconnectionstatechange = null
     try {
       this.pc.close()
-    } catch {
-      /* already closed */
-    }
+    } catch {}
   }
 
   private onFailure(): void {
-    if (this.closed) return
-    if (!this.restarted) {
-      // The host owns the offer, so we wait one moment for its ICE restart.
-      this.restarted = true
-      window.setTimeout(() => {
-        if (!this.closed && this.pc.connectionState === 'failed') {
-          this.opts.onFailed(
-            'The direct connection failed. Your network blocks peer to peer traffic. Try another network, or a phone hotspot.',
-          )
-        }
-      }, 6000)
-      return
-    }
+    if (this.closed || this.failureSeen) return
+    this.failureSeen = true
+    window.setTimeout(() => {
+      if (!this.closed && this.pc.connectionState === 'failed') {
+        this.opts.onFailed(
+          'The direct connection failed. Your network blocks peer to peer traffic. Try another network, or a phone hotspot.',
+        )
+      }
+    }, HOST_ICE_RESTART_GRACE_MS)
   }
 }

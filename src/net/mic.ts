@@ -1,46 +1,14 @@
-/**
- * What happens to your microphone before anybody hears it.
- *
- * Chrome, Edge and Safari all ship the same three pieces of processing that
- * every call application has used for years, and they run in the audio driver
- * rather than in the page, so they cost nothing and add no delay:
- *
- *   echo cancellation   stops the far end hearing themselves through your
- *                       speakers, which is what causes howling without a headset
- *   noise suppression   takes out steady background noise: fans, traffic, a
- *                       room's hum
- *   auto gain           evens out how loud you are, so leaning back does not
- *                       make you disappear
- *
- * This is the same family of processing as the one in the well known call
- * applications, though not the same model. Theirs is a neural network trained
- * on noise, which is better at the hard cases: typing, a dog, somebody talking
- * behind you. Running one of those here means shipping a model into the page
- * and an audio worklet to run it in, which is a real piece of work rather than
- * a setting, and it is not what this file does.
- *
- * All three default to on, because for talking to people that is right almost
- * always. They are off-switches for the case they get wrong: music, a guitar,
- * anything where the processing hears the content as noise and fights it.
- */
-
 const KEY = 'cathode.mic.v1'
 
 export interface MicSettings {
   echo: boolean
   denoise: boolean
   gain: boolean
-  /**
-   * Run the neural denoiser as well as the driver's own.
-   *
-   * The two do different jobs and stack: the driver takes out the steady
-   * sound, the network takes out the rest. On by default, because the case it
-   * fixes is the common one and the cost is a tenth of a core.
-   */
+  /** The neural denoiser, on top of the driver's own noise suppression. */
   smart: boolean
-  /** The microphone to use, by the browser's id for it. Empty is the system's own choice. */
+  /** A device id. Empty is the system's own choice. */
   input?: string
-  /** Where voices come out, the same way. Empty is the system's own choice. */
+  /** A device id. Empty is the system's own choice. */
   output?: string
 }
 
@@ -72,14 +40,6 @@ export function setMicSettings(next: MicSettings): void {
   }
 }
 
-/**
- * Why the microphone did not open, in words that say what to do about it.
- *
- * The browser pops its permission ask on its own whenever the answer is not
- * already no. When the answer is already no, nothing will pop, ever, and the
- * one useful thing to say is where the browser keeps that switch. A missing
- * device is its own story, and everything else stays honest and vague.
- */
 export async function explainMicRefusal(err: unknown): Promise<string> {
   const name = err instanceof Error ? err.name : ''
   if (name === 'NotFoundError' || name === 'OverconstrainedError') {
@@ -97,7 +57,7 @@ export async function explainMicRefusal(err: unknown): Promise<string> {
         )
       }
     } catch {
-      /* Not every browser lets this be asked. The vaguer line below holds. */
+      /* not every browser lets this be asked */
     }
     return 'The microphone was refused. Join again to be asked again.'
   }
@@ -107,28 +67,19 @@ export async function explainMicRefusal(err: unknown): Promise<string> {
   return 'Nook could not open your microphone.'
 }
 
-/** What to ask getUserMedia for. */
 export function micConstraints(): MediaTrackConstraints {
   const s = micSettings()
   return {
     echoCancellation: s.echo,
     noiseSuppression: s.denoise,
     autoGainControl: s.gain,
-    // Exact: a browser may take "ideal" as a suggestion and open the default instead. See openMic.
+    // Exact: a browser may treat "ideal" as a suggestion and open the default instead.
     ...(s.input ? { deviceId: { exact: s.input } } : {}),
   }
 }
 
-/** Said when the microphone or speaker chosen in Settings changes, so a call can move to it. */
 export const DEVICES_CHANGED = 'cathode:devices'
 
-/**
- * Open the chosen microphone, or the system's own when none is chosen.
- *
- * The chosen one exactly: asked for as a preference, a browser was free to
- * open the default instead, and did. When it is not there any more (unplugged,
- * or another machine's id), the system's own opens rather than nothing.
- */
 export async function openMic(): Promise<MediaStream> {
   try {
     return await navigator.mediaDevices.getUserMedia({ audio: micConstraints(), video: false })
@@ -140,14 +91,12 @@ export async function openMic(): Promise<MediaStream> {
   }
 }
 
-/** Send what an element plays to the chosen speaker, where the browser can. */
 export function playOn(el: HTMLMediaElement): void {
   const output = micSettings().output
   const media = el as HTMLMediaElement & { setSinkId?: (id: string) => Promise<void> }
   if (output && media.setSinkId) void media.setSinkId(output).catch(() => undefined)
 }
 
-/** The microphones and speakers this device has, with names once the page may see them. */
 export async function audioDevices(): Promise<{ inputs: MediaDeviceInfo[]; outputs: MediaDeviceInfo[] }> {
   try {
     const all = await navigator.mediaDevices.enumerateDevices()
@@ -157,24 +106,5 @@ export async function audioDevices(): Promise<{ inputs: MediaDeviceInfo[]; outpu
     }
   } catch {
     return { inputs: [], outputs: [] }
-  }
-}
-
-/**
- * What the browser actually did with the request.
- *
- * Asking is not getting: a device or a platform can ignore any of it, and the
- * settings screen should say what is true rather than what was wanted.
- */
-export function micActual(stream: MediaStream | null): Partial<MicSettings> {
-  const track = stream?.getAudioTracks()[0]
-  if (!track?.getSettings) return {}
-  const s = track.getSettings() as Record<string, unknown>
-  const read = (k: string): boolean | undefined =>
-    typeof s[k] === 'boolean' ? (s[k] as boolean) : undefined
-  return {
-    echo: read('echoCancellation'),
-    denoise: read('noiseSuppression'),
-    gain: read('autoGainControl'),
   }
 }

@@ -1,20 +1,4 @@
-/*
- * Nook.
- *
- * One look, and every value it is made of lives in the block below. Nothing
- * further down names a colour: a colour written into a layout rule is a colour
- * that has to be found again by hand when the palette moves.
- *
- * The look is a dark room with the furniture floating in it. The canvas is
- * near black, and each part of the app (the channels, the conversation, who is
- * here) is its own rounded pane on it, lifted by shade rather than outlined.
- * The one colour is the beam: a flat cyan, the colour of a cathode ray tube
- * lighting up. It marks what is yours to press and what is live. No
- * gradients: a flat colour reads as a button, a gradient reads as an advert.
- */
-
 :root {
-  /* Depth, from the back of the window to the front of it. */
   --bg: #0a0b0e;
   --pane: #111217;
   --face: #15161c;
@@ -24,33 +8,31 @@
   --line: #2a2d37;
   --line-soft: rgb(255 255 255 / 6%);
 
+  /* Every ink clears 4.5:1 on every surface: test/polish.test.mjs. */
   --fg: #eef0f5;
   --fg-dim: #b9bdc9;
-  /* Every ink below clears 4.5 to 1 on every surface above: test/polish-check. */
   --fg-faint: #9095a3;
   --fg-disabled: #5a5f6c;
   --heading: #9095a3;
 
-  /* The beam. The fill is bright, so what sits on it is dark. */
   --accent: #3cc8ff;
   --accent-fg: #03121c;
   --accent-text: #7fd6ff;
-  /* One flat colour: no gradient anywhere. The name stays for every rule that uses it. */
   --beam: var(--accent);
   --accent-hover: #6cd6ff;
   --glow: 0 0 18px rgb(60 200 255 / 32%);
   --accent-wash: rgb(60 200 255 / 9%);
-  /* What is selected is raised rather than painted. */
   --select: rgb(255 255 255 / 8%);
+  --select-strong: rgb(255 255 255 / 16%);
   --select-fg: #ffffff;
-  /* Text on the red of a live badge or a count. */
   --on-live: #ffffff;
 
   --good: #3ddc84;
   --warn: #f0b232;
   --bad: #ff6b78;
   --live: #ff4d5e;
-  --progress: var(--beam);
+  --on-good: #04140a;
+  --hover-lift: #fff;
 
   --field-bg: #0d0e12;
   --field-border: 1px solid var(--line);
@@ -74,11 +56,27 @@
   --pane-radius: 16px;
   --gap: 8px;
   --shadow: 0 16px 40px rgb(0 0 0 / 55%), 0 0 0 1px var(--line-soft);
+  --shadow-small: 0 6px 16px rgb(0 0 0 / 35%);
+  --shadow-picture: 0 20px 60px rgb(0 0 0 / 60%);
+  --head-shadow: 0 1px 0 rgb(0 0 0 / 20%);
+  --scrim: rgb(0 0 0 / 62%);
+  --scrim-rail: rgb(0 0 0 / 55%);
+  --scrim-lightbox: rgb(0 0 0 / 78%);
+  --scrim-viewer: rgb(4 5 8 / 94%);
+  --mask-solid: #000;
   --tip-bg: var(--surface-2);
   --tip-border: var(--line);
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 
-  /* The one square button, on the corner of a dialog. */
+  --video-bg: #000;
+  --on-media: #fff;
+  --media-chip: rgb(0 0 0 / 55%);
+  --media-chip-hover: rgb(0 0 0 / 70%);
+  --media-note: rgb(0 0 0 / 72%);
+  --media-text-shadow: 0 1px 3px rgb(0 0 0 / 70%);
+  --avatar-fg: #0d1014;
+  --qr-bg: #fff;
+
   --cap-size: 28px;
 
   --sans: "Inter var", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
@@ -89,12 +87,11 @@
   color-scheme: dark;
 }
 
-/* =========================================================================
-   Structure. Nothing below this line names a colour.
-   ========================================================================= */
-
 * {
   box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: var(--surface-2) transparent;
+  touch-action: manipulation;
 }
 
 html,
@@ -120,12 +117,6 @@ body {
   background: color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
-/* Thin, dark scrollbars that stay out of the way until they are wanted. */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--surface-2) transparent;
-}
-
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
@@ -149,11 +140,6 @@ body {
   overflow: hidden;
 }
 
-/*
- * The app fills the window: the rail of spaces down the left, and the screen
- * beside it. Both sit on the bare canvas, and everything a screen draws is a
- * pane floating on that.
- */
 .app-shell {
   flex: 1 1 auto;
   min-width: 0;
@@ -181,8 +167,6 @@ main {
   overflow-y: auto;
   overflow-x: hidden;
 }
-
-/* ---------- the first visit ---------- */
 
 .welcome {
   display: grid;
@@ -223,7 +207,6 @@ main {
   padding: 6px 0 2px;
 }
 
-/* The face is the button: a picture of you is added by pressing it. */
 .welcome-face {
   position: relative;
   width: 72px;
@@ -285,7 +268,6 @@ main {
   color: var(--fg-dim);
 }
 
-/* Coming back: the two ways in, each a wide button that says what it needs. */
 .welcome-option {
   display: flex;
   align-items: center;
@@ -328,7 +310,6 @@ main {
   white-space: normal;
 }
 
-/* What to do on the other device, in the order it is done. */
 .welcome-steps {
   display: flex;
   flex-direction: column;
@@ -344,7 +325,6 @@ main {
   color: var(--accent);
 }
 
-/* A backup file goes here, chosen or dropped. */
 .backup-drop {
   display: flex;
   flex-direction: column;
@@ -377,7 +357,6 @@ main {
   color: var(--fg);
 }
 
-/* Linking a device: the QR code, then the code and server to type, one under the other. */
 .link-offer {
   display: flex;
   flex-direction: column;
@@ -402,7 +381,6 @@ main {
   text-align: center;
 }
 
-/* The code and its server, one under the other, named as the new device names them. */
 .link-pair {
   display: flex;
   flex-direction: column;
@@ -427,7 +405,6 @@ main {
   letter-spacing: 0;
 }
 
-/* What to be careful of, with a shield, not hidden in the small print. */
 .link-warn {
   display: flex;
   align-items: flex-start;
@@ -485,12 +462,6 @@ main {
   text-align: center;
 }
 
-/* ---------- the switcher ---------- */
-
-/*
- * A space's tile, the size its container asks for: its initials on its own
- * colour, squared off a little. Home's is the mark; making one is a plus.
- */
 .space-face {
   --size: 28px;
   flex: 0 0 auto;
@@ -521,7 +492,6 @@ main {
   display: contents;
 }
 
-/* On the switcher's button: a dot for news elsewhere, a count for what is aimed at you. */
 .switch-mark {
   flex: 0 0 auto;
   width: 8px;
@@ -564,13 +534,6 @@ main {
   border-radius: 12px;
 }
 
-/* ---------- status line ---------- */
-
-/*
- * What is happening, in one quiet line. In a space it sits under your own
- * name, where Discord puts your status; the first cell repeats the header, so
- * it is left out there.
- */
 .status-bar {
   display: flex;
   align-items: center;
@@ -591,7 +554,6 @@ main {
   white-space: nowrap;
 }
 
-/* The count of who is here never gives way; the address after it does. */
 .status-cell.grow + .status-cell {
   flex: 0 0 auto;
 }
@@ -604,22 +566,10 @@ main {
   content: "· ";
 }
 
-/* ---------- typography ---------- */
-
-h1,
-h2,
-h3 {
+h1 {
   margin: 0;
   font-weight: bold;
   line-height: 1.2;
-}
-
-h2 {
-  font-size: calc(var(--size) + 3px);
-}
-
-.dim {
-  color: var(--fg-dim);
 }
 
 .faint {
@@ -635,19 +585,12 @@ h2 {
   line-height: 1.4;
 }
 
-.mono {
-  font-family: var(--mono);
-  font-size: var(--size-small);
-}
-
 .truncate {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* A section label. Small, spaced, and grey: it names the thing under it and
-   then gets out of the way. */
 .eyebrow {
   font-size: 11px;
   font-weight: 600;
@@ -656,7 +599,6 @@ h2 {
   color: var(--heading);
 }
 
-/* The one at the top of the conversation is a heading rather than a label. */
 .space-head .eyebrow {
   font-size: var(--size);
   letter-spacing: 0;
@@ -664,8 +606,6 @@ h2 {
   font-weight: 600;
   color: var(--fg);
 }
-
-/* ---------- buttons ---------- */
 
 button {
   font-family: var(--sans);
@@ -722,7 +662,6 @@ summary:focus-visible,
   display: block;
 }
 
-/* The beam, on the one thing on the screen most worth pressing. */
 button.primary {
   background: var(--beam);
   color: var(--accent-fg);
@@ -736,12 +675,6 @@ button.primary:hover:not(:disabled) {
 }
 
 button.danger {
-  color: var(--bad);
-}
-
-button.primary.danger,
-button.danger.solid {
-  background: color-mix(in srgb, var(--live) 18%, var(--surface-2));
   color: var(--bad);
 }
 
@@ -777,8 +710,6 @@ button.tiny-btn {
   padding: 1px 10px;
 }
 
-/* On, as opposed to selected. Tinted with the accent rather than outlined in
-   it: a coloured border on a resting button reads as a focus ring. */
 button.on {
   background: color-mix(in srgb, var(--accent) 16%, var(--surface-2));
   color: var(--fg);
@@ -794,8 +725,6 @@ button.ghost.danger.on {
   background: color-mix(in srgb, var(--live) 16%, transparent);
   color: var(--bad);
 }
-
-/* ---------- fields ---------- */
 
 input[type="text"],
 input[type="password"],
@@ -872,9 +801,6 @@ hr {
   margin: 10px 0;
 }
 
-/* ---------- panels ---------- */
-
-/* A card is a raised surface, not an outline. */
 .card {
   background: var(--surface);
   border: 1px solid var(--line-soft);
@@ -916,8 +842,6 @@ hr {
   display: none !important;
 }
 
-/* ---------- pills ---------- */
-
 .pill {
   display: inline-flex;
   align-items: center;
@@ -933,7 +857,6 @@ hr {
   white-space: nowrap;
 }
 
-/* Somebody is sharing here: a red lozenge, like every live badge. */
 .pill.live {
   background: var(--live);
   color: var(--on-live);
@@ -959,14 +882,6 @@ hr {
   border-color: transparent;
 }
 
-/*
- * Presence, in one dot.
- *
- * Green is here and reading. Orange is here with this tab behind something
- * else. Hollow is a device that answers with the link between us still coming
- * up. They were all the colour of the text beside them until now, which is to
- * say they said nothing at all.
- */
 .dot {
   width: 7px;
   height: 7px;
@@ -992,16 +907,6 @@ hr {
   box-shadow: inset 0 0 0 1.5px var(--fg-faint);
 }
 
-.dot.live {
-  animation: pulse 1.6s steps(2, end) infinite;
-}
-
-@keyframes pulse {
-  50% {
-    opacity: 0.2;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -1009,12 +914,6 @@ hr {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
-}
-
-/* ---------- layout ---------- */
-
-.pad {
-  padding: 10px;
 }
 
 .center-page {
@@ -1030,8 +929,6 @@ hr {
   width: 100%;
   max-width: 430px;
 }
-
-/* ---------- settings ---------- */
 
 main.settings {
   margin: var(--gap);
@@ -1057,7 +954,6 @@ main.settings .sheet {
   color: var(--fg-dim);
 }
 
-
 .settings-title {
   font-size: 24px;
   font-weight: 800;
@@ -1071,13 +967,6 @@ main.settings .sheet {
   }
 }
 
-/* ---------- home ---------- */
-
-/*
- * Home is a pane on the canvas like everything else, with the mark and one
- * line at the top, your spaces on the left, and making or joining one on the
- * right.
- */
 main.home {
   margin: var(--gap) var(--gap) var(--gap) 0;
   background: var(--face);
@@ -1128,8 +1017,11 @@ main.home {
   min-height: 240px;
 }
 
-/* With nothing to list yet, making one is the first thing on a narrow screen. */
 @media (max-width: 860px) {
+  .home-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .home-spaces {
     min-height: 0;
   }
@@ -1187,23 +1079,8 @@ main.home {
   padding: 36px 12px;
 }
 
-.home .chips {
-  gap: 6px;
-}
-
-.home .chip {
-  min-height: 32px;
-  padding: 0 14px;
-}
-
 .join-button {
   flex-direction: row-reverse;
-}
-
-@media (max-width: 860px) {
-  .home-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }
 
 @media (max-width: 780px) {
@@ -1220,95 +1097,7 @@ main.home {
   .home-title {
     font-size: 28px;
   }
-
 }
-
-.host-grid {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
-  gap: 8px;
-  padding: 8px;
-}
-
-.host-grid.wide {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.host-grid.wide .host-side {
-  display: none;
-}
-
-.host-side {
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.host-controls {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding-right: 2px;
-}
-
-.viewer-grid {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 290px;
-  gap: 6px;
-  padding: 6px;
-}
-
-@media (max-width: 900px) {
-  .host-grid {
-    flex: 0 0 auto;
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(180px, 40dvh) auto;
-  }
-
-  .host-controls {
-    overflow: visible;
-  }
-
-  .viewer-grid {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(180px, 50dvh) minmax(160px, auto);
-  }
-
-  .host-side .chat-panel {
-    height: auto;
-    min-height: 200px;
-  }
-}
-
-.viewer-row {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 4px 8px;
-  padding: 6px 0;
-  border-top: 1px solid var(--line-soft);
-}
-
-.viewer-row:first-of-type {
-  border-top: 0;
-  padding-top: 2px;
-}
-
-.statline {
-  grid-column: 1 / -1;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 3px;
-}
-
-/* ---------- the share code ---------- */
 
 .share-code {
   font-family: var(--mono);
@@ -1328,107 +1117,6 @@ main.home {
   overflow-wrap: anywhere;
 }
 
-.share-link {
-  font-size: calc(var(--size-small) - 0.5px);
-  font-family: var(--mono);
-  color: var(--fg-faint);
-  text-align: center;
-}
-
-/* ---------- presets ---------- */
-
-.presets {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  background: var(--field-bg);
-  border: var(--field-border);
-  outline: var(--field-inset);
-  outline-offset: -2px;
-  border-radius: var(--field-radius);
-  padding: 2px;
-}
-
-.preset {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 2px;
-  width: 100%;
-  text-align: left;
-  padding: 5px 7px;
-  min-height: 0;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  box-shadow: none;
-  white-space: normal;
-  color: var(--fg);
-  font-weight: 400;
-}
-
-.preset:hover:not(.custom) {
-  background: var(--surface-2);
-  border: 0;
-}
-
-.preset.on {
-  background: var(--select);
-  color: var(--select-fg);
-}
-
-.preset.on .preset-name,
-.preset.on .faint,
-.preset.on .dim {
-  color: var(--select-fg);
-}
-
-.preset.custom {
-  cursor: default;
-}
-
-.preset-name {
-  font-weight: bold;
-  font-size: var(--size-small);
-}
-
-.preset-why {
-  line-height: 1.35;
-}
-
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 3px;
-}
-
-.chip {
-  padding: 1px 8px;
-  min-height: calc(var(--btn-h) - 3px);
-  font-size: var(--size-small);
-  border-radius: var(--pill-radius);
-}
-
-/* ---------- readouts ---------- */
-
-.plan-box {
-  background: var(--tip-bg);
-  border: 1px solid var(--tip-border);
-  border-radius: var(--radius-sm);
-  padding: 5px 7px;
-  font-size: var(--size-small);
-  color: var(--fg);
-}
-
-.plan-line {
-  color: var(--fg);
-}
-
-.plan-box .warn {
-  color: var(--warn);
-  font-weight: bold;
-}
-
 .empty {
   padding: 10px;
   border: 1px dashed var(--line);
@@ -1438,57 +1126,6 @@ main.home {
   display: flex;
   flex-direction: column;
   gap: 2px;
-}
-
-.summary-card {
-  background: var(--surface);
-}
-
-.meter {
-  height: 13px;
-  background: var(--field-bg);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  padding: 1px;
-  overflow: hidden;
-  flex: 1 1 auto;
-  min-width: 40px;
-}
-
-.meter > i {
-  display: block;
-  height: 100%;
-  width: 0%;
-  background-image: var(--progress);
-  transition: width 90ms linear;
-}
-
-.shortcuts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  justify-content: center;
-  font-size: var(--size-small);
-  color: #cfd6df;
-}
-
-.shortcuts span {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-
-kbd {
-  font-family: var(--sans);
-  font-size: calc(var(--size-small) - 1px);
-  font-weight: bold;
-  color: var(--fg);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  padding: 0 4px;
-  min-width: 16px;
-  text-align: center;
 }
 
 details.adv > summary {
@@ -1511,22 +1148,9 @@ details.adv[open] > summary {
   margin-bottom: 6px;
 }
 
-.support-list {
-  margin: 0;
-  padding-left: 16px;
-  font-size: var(--size-small);
-  color: var(--fg-dim);
-}
-
-.support-list li {
-  margin: 3px 0;
-}
-
-/* ---------- video surface ---------- */
-
 .surface {
   position: relative;
-  background: #000;
+  background: var(--video-bg);
   overflow: hidden;
   min-height: 0;
   min-width: 0;
@@ -1536,14 +1160,9 @@ details.adv[open] > summary {
   border-radius: var(--panel-radius);
 }
 
-.surface.fullbleed {
-  border: 0;
-  flex: 1 1 auto;
-}
-
 .surface video {
   display: block;
-  background: #000;
+  background: var(--video-bg);
 }
 
 .surface[data-mode="fit"] video {
@@ -1577,45 +1196,6 @@ details.adv[open] > summary {
 
 .surface[data-mode="actual"].grabbing {
   cursor: grabbing;
-}
-
-.surface-overlay {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  background: linear-gradient(180deg, rgb(10 14 20 / 92%), rgb(6 9 14 / 96%));
-  text-align: center;
-  padding: 16px;
-  color: #fff;
-  z-index: 3;
-}
-
-.surface-overlay .dim,
-.surface-overlay p {
-  color: #cfd6df;
-}
-
-.surface-badges {
-  position: absolute;
-  top: 6px;
-  left: 6px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 3px;
-  z-index: 2;
-  pointer-events: none;
-  max-width: calc(100% - 12px);
-}
-
-.surface-badges .pill {
-  background: rgb(0 0 0 / 62%);
-  border-color: rgb(255 255 255 / 20%);
-  color: #eef2f7;
-}
-
-.surface.hide-bar .surface-badges {
-  opacity: 0;
 }
 
 .surface-bar {
@@ -1662,11 +1242,6 @@ details.adv[open] > summary {
   cursor: none;
 }
 
-.surface.no-controls .surface-bar,
-.surface.no-controls .surface-badges {
-  display: none;
-}
-
 .vol {
   display: flex;
   align-items: center;
@@ -1686,15 +1261,6 @@ details.adv[open] > summary {
   text-align: center;
 }
 
-.pick {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  text-align: center;
-  max-width: 420px;
-}
-
 .sound-prompt {
   position: absolute;
   right: 8px;
@@ -1702,23 +1268,6 @@ details.adv[open] > summary {
   z-index: 5;
 }
 
-/* ---------- the space: channels left, the room in the middle, people right ---------- */
-
-/*
- * Three panes floating on the canvas.
- *
- * Rounded, a gap apart, and told apart by shade: the side panes sit back and
- * the conversation sits a step forward. No borders between them; the gap is
- * the border.
- */
-/*
- * Held back until the store has answered.
- *
- * The layout is laid out, so nothing moves when it arrives; what is hidden is
- * the content, because for the frame and a half before the log is read the only
- * thing this can say about the room is wrong. If the wait ever runs long, a
- * word appears rather than a blank screen.
- */
 .space-grid.loading > * {
   visibility: hidden;
 }
@@ -1770,14 +1319,6 @@ details.adv[open] > summary {
   }
 }
 
-.rail-hidden .space-grid {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.rail-hidden .rail {
-  display: none;
-}
-
 .rail {
   min-height: 0;
   display: flex;
@@ -1787,7 +1328,6 @@ details.adv[open] > summary {
   border-radius: var(--pane-radius);
 }
 
-/* What scrolls inside a pane, with the header above and the footer below it. */
 .rail-scroll {
   flex: 1 1 auto;
   min-height: 0;
@@ -1819,7 +1359,6 @@ details.adv[open] > summary {
   border-radius: 6px;
 }
 
-/* The name of the place, at the top of the pane that lists what is in it. */
 .space-title {
   flex: 0 0 auto;
   display: flex;
@@ -1828,7 +1367,7 @@ details.adv[open] > summary {
   min-height: 52px;
   padding: 0 14px 0 16px;
   border-bottom: 1px solid var(--line-soft);
-  box-shadow: 0 1px 0 rgb(0 0 0 / 20%);
+  box-shadow: var(--head-shadow);
 }
 
 .space-name,
@@ -1840,18 +1379,12 @@ details.adv[open] > summary {
   letter-spacing: -0.005em;
 }
 
-.space-where {
-  display: inline-flex;
-  color: var(--accent-text);
-}
-
 .rail-list {
   display: flex;
   flex-direction: column;
   gap: 1px;
 }
 
-/* One space on the home screen: the space, and the way out of it. */
 .space-row {
   gap: 4px;
 }
@@ -1866,10 +1399,6 @@ details.adv[open] > summary {
   opacity: 1;
 }
 
-/*
- * A channel. Grey until it has something new, white when it does, raised when
- * it is the one open, with the beam down its left edge.
- */
 .rail-item {
   position: relative;
   justify-content: flex-start;
@@ -1916,10 +1445,9 @@ details.adv[open] > summary {
 
 .rail-item.unread {
   color: var(--fg);
-  font-weight: 650;
+  font-weight: bold;
 }
 
-/* A dot on the edge for a channel with something new, as long as it is not open. */
 .rail-item.unread:not(.on)::before {
   content: "";
   position: absolute;
@@ -1957,7 +1485,6 @@ details.adv[open] > summary {
   opacity: 0.8;
 }
 
-/* The face, with presence as a dot cut out of its corner. */
 .person-face,
 .me-face {
   position: relative;
@@ -1979,11 +1506,6 @@ details.adv[open] > summary {
   box-shadow: 0 0 0 3px var(--surface);
 }
 
-.person-face > .dot.idle {
-  box-shadow: 0 0 0 3px var(--pane), inset 0 0 0 2px var(--fg-faint);
-}
-
-/* Talking: a ring round the face, in green, like every voice app. */
 .rail-person.talking .person-face .avatar {
   box-shadow: 0 0 0 2px var(--pane), 0 0 0 4px var(--good);
 }
@@ -2021,19 +1543,12 @@ details.adv[open] > summary {
   color: var(--good);
 }
 
-/* Whoever runs the place, said in one glyph on the same line as their name. */
 .crown {
   flex: 0 0 auto;
   display: inline-flex;
   color: var(--warn);
 }
 
-/*
- * The way in to what you can do about somebody.
- *
- * Faint until the row is under the pointer, and always there for a keyboard,
- * which is the same bargain the actions on a message make.
- */
 .person-more {
   flex: 0 0 auto;
   width: 26px;
@@ -2054,8 +1569,6 @@ details.adv[open] > summary {
   }
 }
 
-/* ---------- voice, and you ---------- */
-
 .voice-channel {
   display: flex;
   flex-direction: column;
@@ -2071,7 +1584,6 @@ details.adv[open] > summary {
   color: var(--fg-dim);
 }
 
-/* The dot is kept for anything that reads it; the face says it now. */
 .voice-member > .dot {
   display: none;
 }
@@ -2092,7 +1604,6 @@ details.adv[open] > summary {
   display: none;
 }
 
-/* Connected: the strip above your name while you are in a voice channel. */
 .voice-bar {
   flex: 0 0 auto;
   display: flex;
@@ -2123,7 +1634,6 @@ details.adv[open] > summary {
   box-shadow: 0 0 10px var(--good);
 }
 
-/* You, at the foot of the channels. */
 .me-panel {
   flex: 0 0 auto;
   display: flex;
@@ -2157,7 +1667,6 @@ details.adv[open] > summary {
   color: var(--fg);
 }
 
-/* The space's name, as the button that opens its menu. */
 .space-title-button {
   flex: 1 1 auto;
   min-width: 0;
@@ -2184,12 +1693,10 @@ details.adv[open] > summary {
   text-align: left;
 }
 
-/* On home the conversation has its own header; the panel's is not needed. */
 .home-grid-shell .chat-head {
   display: none;
 }
 
-/* Sharing in voice: the red badge beside whoever is live. */
 .live-badge {
   flex: 0 0 auto;
   min-height: 18px;
@@ -2217,7 +1724,6 @@ details.adv[open] > summary {
   background: color-mix(in srgb, var(--live) 16%, transparent);
 }
 
-/* Search: an icon until it is wanted. */
 .search-wrap {
   display: flex;
   align-items: center;
@@ -2235,7 +1741,6 @@ details.adv[open] > summary {
   display: flex;
 }
 
-/* The one control on your own preview: what kind of thing you are sharing. */
 .share-quality {
   position: absolute;
   top: 10px;
@@ -2250,7 +1755,6 @@ details.adv[open] > summary {
   backdrop-filter: blur(8px);
 }
 
-/* Home: direct messages, each with the space it belongs to. */
 .dm-item {
   min-height: 44px;
   gap: 10px;
@@ -2281,7 +1785,6 @@ details.adv[open] > summary {
 }
 
 @media (max-width: 780px) {
-  /* A phone shows the list or the conversation, never both. */
   .home-grid-shell .rail-left {
     position: static;
     transform: none;
@@ -2290,7 +1793,6 @@ details.adv[open] > summary {
     border-radius: 0;
   }
 
-  /* No conversation open: the messages, short, above your spaces. */
   .home-grid-shell:not(.dm-open) {
     display: flex;
     flex-direction: column;
@@ -2321,7 +1823,6 @@ details.adv[open] > summary {
   }
 }
 
-/* Settings: a preference, said in words, with the switch at the end. */
 .switch-list {
   display: flex;
   flex-direction: column;
@@ -2360,13 +1861,11 @@ details.adv[open] > summary {
   min-width: 0;
 }
 
-/* What a switch does, in as many lines as it takes, never under the switch. */
 .switch-about {
   white-space: normal;
   line-height: 1.35;
 }
 
-/* A small button on its own line, where the eye starts rather than in the middle. */
 button.start {
   align-self: flex-start;
 }
@@ -2413,7 +1912,6 @@ button.start {
   opacity: 0.4;
 }
 
-/* Settings, You: your face, which is the button for changing it, beside your name. */
 .profile-row {
   display: flex;
   align-items: center;
@@ -2436,7 +1934,6 @@ button.start {
   align-self: flex-start;
 }
 
-/* Your ID, small: a thing to copy now and then, not the thing on the page. */
 .share-code.id-code {
   padding: 5px 10px;
   font-size: 13px;
@@ -2457,7 +1954,6 @@ button.start {
   margin-bottom: 10px;
 }
 
-/* Settings: servers, and the three commands to run one. */
 .server-row {
   padding: 8px 10px;
   border-radius: 10px;
@@ -2562,8 +2058,6 @@ button.start {
   align-self: center;
 }
 
-/* ---------- the conversation pane ---------- */
-
 .space-main {
   min-height: 0;
   min-width: 0;
@@ -2574,14 +2068,13 @@ button.start {
   overflow: hidden;
 }
 
-/* Where you are, and the things you do to where you are. */
 .space-head {
   flex: 0 0 auto;
   gap: 6px;
   min-height: 52px;
   padding: 0 10px 0 16px;
   border-bottom: 1px solid var(--line-soft);
-  box-shadow: 0 1px 0 rgb(0 0 0 / 20%);
+  box-shadow: var(--head-shadow);
 }
 
 .channel-head {
@@ -2628,7 +2121,6 @@ button.start {
   box-shadow: 0 0 18px color-mix(in srgb, var(--live) 30%, transparent);
 }
 
-/* Search, as a field with a glass in it. */
 .search-box {
   position: relative;
   flex: 0 0 auto;
@@ -2652,23 +2144,20 @@ button.start {
 
 input[type="text"].space-search {
   width: 100%;
-  min-height: 30px;
+  min-height: calc(var(--btn-h) - 3px);
   padding-left: 30px;
   font-size: var(--size-small);
   background: var(--bg);
   border-color: transparent;
   border-radius: 8px;
-  transition: width 160ms var(--ease), border-color 120ms var(--ease), box-shadow 120ms var(--ease);
+  transition: border-color 120ms var(--ease), box-shadow 120ms var(--ease);
 }
-
 
 .stage {
   flex: 0 0 auto;
   height: 48%;
   min-height: 200px;
-  /* A gap below, so the conversation reads as scrolling under a line, not under the picture. */
   margin: 10px 12px 8px;
-  /* One stream is the whole stage; two split it evenly, side by side. */
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: minmax(0, 1fr);
@@ -2686,7 +2175,6 @@ input[type="text"].space-search {
     0 0 48px -12px color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
-/* Whose screen this is, said on the picture itself. */
 .stage-tag {
   position: absolute;
   top: 10px;
@@ -2705,22 +2193,8 @@ input[type="text"].space-search {
   pointer-events: none;
 }
 
-.share-panel {
-  flex: 0 0 auto;
-  margin: 10px 12px 0;
-}
-
-.stream-bar {
-  margin: 10px 12px 4px;
-}
-
-/* The conversation fades out under the picture rather than being cut off by it. */
 .space-main:has(.stage:not(.hidden)) .chat-log {
-  mask-image: linear-gradient(to bottom, transparent 0, #000 20px);
-}
-
-.search-results {
-  margin: 8px 12px 0;
+  mask-image: linear-gradient(to bottom, transparent 0, var(--mask-solid) 20px);
 }
 
 .space-main .chat-panel {
@@ -2728,25 +2202,6 @@ input[type="text"].space-search {
   min-height: 120px;
 }
 
-/* The invite, at the foot of who is here. */
-.invite-card {
-  flex: 0 0 auto;
-  margin: 8px;
-  padding: 12px;
-  border-radius: 12px;
-  background: var(--surface);
-  border: 1px solid var(--line-soft);
-}
-
-.invite-card .share-code {
-  font-size: 14px;
-  padding: 7px 4px;
-  letter-spacing: 0.08em;
-  background: var(--bg);
-  border-color: transparent;
-}
-
-/* The two buttons that call the side panes in on a phone. */
 .rail-button {
   display: none;
   flex: 0 0 auto;
@@ -2756,14 +2211,6 @@ input[type="text"].space-search {
   display: none;
 }
 
-/*
- * A phone.
- *
- * One pane, all of it conversation, edge to edge. The side panes slide in over
- * the top when they are asked for and go away the moment anything in them is
- * used, because a channel list covering the room you just picked is a list you
- * have to dismiss twice.
- */
 @media (max-width: 780px) {
   .space-grid,
   .space-grid.members-hidden {
@@ -2819,7 +2266,7 @@ input[type="text"].space-search {
     position: absolute;
     inset: 0;
     z-index: 30;
-    background: rgb(0 0 0 / 55%);
+    background: var(--scrim-rail);
     backdrop-filter: blur(2px);
   }
 
@@ -2829,8 +2276,7 @@ input[type="text"].space-search {
     min-height: 50px;
   }
 
-  .channel-topic,
-  .share-label {
+  .channel-topic {
     display: none;
   }
 
@@ -2857,9 +2303,6 @@ input[type="text"].space-search {
   }
 }
 
-/* ---------- chat ---------- */
-
-/* The conversation, with nothing drawn around it. */
 .chat-panel {
   position: relative;
   display: flex;
@@ -2869,12 +2312,6 @@ input[type="text"].space-search {
   padding: 0;
   border: 0;
   background: transparent;
-}
-
-.host-side .chat-panel {
-  flex: 0 0 auto;
-  height: 42%;
-  min-height: 170px;
 }
 
 .chat-head {
@@ -2890,16 +2327,13 @@ input[type="text"].space-search {
   background: transparent;
   border: 0;
   padding: 8px 0 14px;
-  /* What people wrote is what is read here, so it is a size up from the rest. */
   font-size: calc(var(--size) + 1px);
   line-height: 1.45;
   overflow-wrap: anywhere;
   color: var(--fg-dim);
-  /* A change inside the log never makes the browser lay out anything outside it. */
   contain: content;
 }
 
-/* The very top of a conversation, said as the top. */
 .chat-intro {
   display: flex;
   flex-direction: column;
@@ -2919,7 +2353,6 @@ input[type="text"].space-search {
   font-size: 14px;
 }
 
-/* A date, with the rule running through it rather than above it. */
 .chat-day {
   display: flex;
   align-items: center;
@@ -2938,14 +2371,6 @@ input[type="text"].space-search {
   background: var(--line-soft);
 }
 
-/*
- * A message is a line of text beside a face.
- *
- * The first line of a run carries the face in the gutter and the name and the
- * time on the line above the words; the rest of the run is just the words,
- * with the time waiting in the gutter for the pointer. What tells you which
- * line you are on is the tint the row takes under it.
- */
 .chat-row {
   position: relative;
   display: flex;
@@ -2975,7 +2400,6 @@ input[type="text"].space-search {
   color: var(--fg-dim);
 }
 
-/* Who wrote it, and when, above the first line of their run. */
 .chat-who {
   position: relative;
   display: flex;
@@ -2997,7 +2421,6 @@ input[type="text"].space-search {
   color: var(--fg);
 }
 
-/* A note about the room rather than something somebody said. */
 .chat-line.system {
   padding: 2px 16px 2px 72px;
   color: var(--fg-faint);
@@ -3012,7 +2435,6 @@ input[type="text"].space-search {
   font-variant-numeric: tabular-nums;
 }
 
-/* In a run, the time lives in the gutter and appears under the pointer. */
 .chat-line > .chat-at.on-hover {
   position: absolute;
   left: -64px;
@@ -3033,7 +2455,6 @@ input[type="text"].space-search {
   opacity: 0.92;
 }
 
-/* A message of only emoji, a reply of one thumbs up included, is drawn large. */
 .chat-text.jumbo {
   display: inline-block;
   font-size: 2.75em;
@@ -3042,7 +2463,6 @@ input[type="text"].space-search {
   opacity: 1;
 }
 
-/* Who a reply answers, in the colour of their level. */
 .chat-reply-name {
   font-weight: 600;
 }
@@ -3064,13 +2484,6 @@ input[type="text"].space-search {
   text-decoration: underline;
 }
 
-/*
- * Reply, react, edit, pin, as a small floating bar on the row's top right.
- *
- * Faded rather than removed, so they stay in the tab order: the only way to
- * react to a message must not be to hover it, which is no way at all on a
- * phone and no way at all with a keyboard.
- */
 .chat-actions {
   position: absolute;
   top: -16px;
@@ -3083,7 +2496,7 @@ input[type="text"].space-search {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 9px;
-  box-shadow: 0 6px 16px rgb(0 0 0 / 35%);
+  box-shadow: var(--shadow-small);
   opacity: 0;
   pointer-events: none;
   transition: opacity 90ms linear;
@@ -3098,14 +2511,6 @@ input[type="text"].space-search {
 .chat-row.acting .chat-actions {
   opacity: 1;
   pointer-events: auto;
-}
-
-/* No pointer to hover with: tapping the message brings them up. */
-@media (hover: none) {
-  .chat-actions {
-    opacity: 0;
-    pointer-events: none;
-  }
 }
 
 .chat-actions button {
@@ -3161,8 +2566,6 @@ input[type="text"].space-search {
   color: var(--fg-faint);
 }
 
-/* ---------- the composer ---------- */
-
 .chat-compose {
   flex: 0 0 auto;
   padding: 0 16px 16px;
@@ -3172,7 +2575,6 @@ input[type="text"].space-search {
   gap: 4px;
 }
 
-/* One rounded box with everything you can put in a message inside it. */
 .compose-box {
   gap: 2px;
   padding: 5px 5px 5px 14px;
@@ -3250,14 +2652,10 @@ input[type="text"].space-search {
   color: var(--fg-disabled);
 }
 
-/* Pressed while files were still going up: it breathes until they are there, then sends. */
 .send-button.waiting {
   animation: live-pulse 1.2s ease-in-out infinite;
 }
 
-/* ---------- files ---------- */
-
-/* The clip sits at the start of the box, where the eye starts. */
 .compose-box:has(.attach-button:not(.hidden)) {
   padding-left: 4px;
 }
@@ -3271,7 +2669,6 @@ input[type="text"].space-search {
   color: var(--fg);
 }
 
-/* What is attached, above the box, while it goes up. */
 .attach-tray {
   display: flex;
   flex-wrap: wrap;
@@ -3285,7 +2682,6 @@ input[type="text"].space-search {
   display: flex;
   align-items: center;
   gap: 10px;
-  /* As wide as its name wants, up to a point, so a name or a reason is read rather than cut. */
   width: auto;
   min-width: 220px;
   max-width: min(420px, 100%);
@@ -3302,7 +2698,6 @@ input[type="text"].space-search {
 
 .attach-chip.failed .attach-words .tiny {
   color: var(--bad);
-  /* Why it failed is the point, so it wraps rather than being cut off. */
   white-space: normal;
   overflow: visible;
   text-overflow: clip;
@@ -3342,7 +2737,6 @@ input[type="text"].space-search {
   min-height: 22px;
 }
 
-/* How far it has gone, along the bottom edge. */
 .attach-bar {
   position: absolute;
   left: 0;
@@ -3360,7 +2754,6 @@ input[type="text"].space-search {
   opacity: 0;
 }
 
-/* A file held over the conversation. */
 .drop-cover {
   position: absolute;
   inset: 8px;
@@ -3388,7 +2781,6 @@ input[type="text"].space-search {
   color: var(--fg);
 }
 
-/* In a message: pictures and videos in a row, other files as cards under them. */
 .att-block {
   display: flex;
   flex-direction: column;
@@ -3470,23 +2862,21 @@ input[type="text"].space-search {
   height: 54px;
   margin: -27px 0 0 -27px;
   border-radius: 50%;
-  background: rgb(0 0 0 / 55%);
-  color: #fff;
+  background: var(--media-chip);
+  color: var(--on-media);
   backdrop-filter: blur(6px);
   transition: transform 160ms var(--ease), background 160ms var(--ease);
 }
 
 .att-play > .icon {
-  /* The triangle already sits right of the middle of its own box, which is where the eye puts a play mark. */
   margin: 0;
 }
 
 .att-video:hover .att-play {
   transform: scale(1.08);
-  background: rgb(0 0 0 / 70%);
+  background: var(--media-chip-hover);
 }
 
-/* The share of it that has arrived, over the play mark while it loads. */
 .att-video.loading .att-play > .icon {
   display: none;
 }
@@ -3503,16 +2893,16 @@ input[type="text"].space-search {
   bottom: 8px;
   display: flex;
   justify-content: space-between;
-  color: #fff;
+  color: var(--on-media);
   font-size: 11.5px;
   font-weight: 600;
-  text-shadow: 0 1px 3px rgb(0 0 0 / 70%);
+  text-shadow: var(--media-text-shadow);
   pointer-events: none;
 }
 
 .att-video.playing {
   cursor: default;
-  background: #000;
+  background: var(--video-bg);
 }
 
 .att-cant {
@@ -3526,8 +2916,8 @@ input[type="text"].space-search {
   gap: 6px;
   padding: 10px 12px;
   border-radius: 10px;
-  background: rgb(0 0 0 / 72%);
-  color: #fff;
+  background: var(--media-note);
+  color: var(--on-media);
   font-size: 13px;
   line-height: 1.4;
 }
@@ -3536,7 +2926,7 @@ input[type="text"].space-search {
   display: block;
   width: 100%;
   height: 100%;
-  background: #000;
+  background: var(--video-bg);
 }
 
 .att-file {
@@ -3585,9 +2975,6 @@ input[type="text"].space-search {
   height: 36px;
 }
 
-/* ---------- calls between two people ---------- */
-
-/* Somebody calling: over everything, until it is answered or it stops. */
 .call-card {
   position: fixed;
   top: 18px;
@@ -3639,24 +3026,24 @@ input[type="text"].space-search {
   min-height: 44px;
   padding: 0;
   border-radius: 50%;
-  color: #fff;
 }
 
 .call-answer {
   background: var(--good);
-  color: #04140a;
+  color: var(--on-good);
 }
 
 .call-answer:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--good) 85%, #fff);
+  background: color-mix(in srgb, var(--good) 85%, var(--hover-lift));
 }
 
 .call-decline {
   background: var(--live);
+  color: var(--on-live);
 }
 
 .call-decline:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--live) 85%, #fff);
+  background: color-mix(in srgb, var(--live) 85%, var(--hover-lift));
 }
 
 .call-decline.small-round {
@@ -3666,7 +3053,6 @@ input[type="text"].space-search {
   min-height: 34px;
 }
 
-/* Over a direct conversation, while calling or in a call. */
 .call-strip {
   display: flex;
   align-items: center;
@@ -3692,8 +3078,6 @@ input[type="text"].space-search {
 .voice-dock {
   border-top: 1px solid var(--line-soft);
 }
-
-/* ---------- settings, voice ---------- */
 
 .field-row {
   display: flex;
@@ -3722,7 +3106,11 @@ input[type="text"].space-search {
 }
 
 .meter {
+  flex: 1 1 auto;
+  min-width: 40px;
   height: 8px;
+  padding: 1px;
+  border: 1px solid var(--line);
   border-radius: 4px;
   background: var(--surface-2);
   overflow: hidden;
@@ -3751,15 +3139,13 @@ input[type="text"].space-search {
   flex: 0 0 auto;
 }
 
-/* ---------- the picture viewer ---------- */
-
 .viewer {
   position: fixed;
   inset: 0;
   z-index: 95;
   display: flex;
   flex-direction: column;
-  background: rgb(4 5 8 / 94%);
+  background: var(--scrim-viewer);
   backdrop-filter: blur(10px);
   animation: appear 140ms var(--ease);
 }
@@ -3795,17 +3181,12 @@ input[type="text"].space-search {
   overflow: hidden;
 }
 
-/*
- * Inside the window, whatever its shape. A percentage of the stage did not
- * hold a tall picture, because the stage took the picture's height, so the
- * limit is the window itself, less the bar above and the margins.
- */
 .viewer-img {
   max-width: min(100%, calc(100vw - 144px));
   max-height: min(100%, calc(100dvh - 96px));
   object-fit: contain;
   border-radius: 6px;
-  box-shadow: 0 20px 60px rgb(0 0 0 / 60%);
+  box-shadow: var(--shadow-picture);
   cursor: zoom-in;
   transition: filter 200ms var(--ease);
 }
@@ -3814,7 +3195,6 @@ input[type="text"].space-search {
   filter: blur(18px);
 }
 
-/* Looked at closely: its own size, and the stage scrolls. */
 .viewer.zoomed .viewer-stage {
   align-items: flex-start;
   justify-content: flex-start;
@@ -3837,12 +3217,12 @@ input[type="text"].space-search {
   margin-top: -23px;
   padding: 0;
   border-radius: 50%;
-  background: rgb(255 255 255 / 8%);
+  background: var(--select);
   color: var(--fg);
 }
 
 .viewer-step:hover:not(:disabled) {
-  background: rgb(255 255 255 / 16%);
+  background: var(--select-strong);
 }
 
 .viewer-step.back {
@@ -3874,8 +3254,6 @@ input[type="text"].space-search {
   }
 }
 
-/* ---------- faces ---------- */
-
 .avatar {
   flex: 0 0 auto;
   display: inline-flex;
@@ -3883,7 +3261,7 @@ input[type="text"].space-search {
   justify-content: center;
   border-radius: 50%;
   overflow: hidden;
-  color: #0d1014;
+  color: var(--avatar-fg);
   font-weight: 700;
   line-height: 1;
   user-select: none;
@@ -3895,8 +3273,6 @@ input[type="text"].space-search {
   object-fit: cover;
   display: block;
 }
-
-/* ---------- what a message can be made of ---------- */
 
 .chat-code {
   margin: 4px 0;
@@ -3932,7 +3308,6 @@ input[type="text"].space-search {
   margin: 1px 0;
 }
 
-/* Hidden from a glance, and honest about being no more than that. */
 .spoiler {
   background: var(--surface-2);
   color: transparent;
@@ -3947,13 +3322,10 @@ input[type="text"].space-search {
   cursor: auto;
 }
 
-/* Something you did rather than something you said. */
 .chat-text.emote {
   font-style: italic;
   color: var(--fg-dim);
 }
-
-/* ---------- the way back down ---------- */
 
 .chat-scroll {
   position: relative;
@@ -3965,7 +3337,7 @@ input[type="text"].space-search {
 
 .to-bottom {
   position: absolute;
-  /* Centred by its margins, not by a transform: a pressed button nudges itself with one, and took this sideways. */
+  /* Centred by margins, because button:active sets transform. */
   left: 0;
   right: 0;
   width: max-content;
@@ -3988,14 +3360,11 @@ input[type="text"].space-search {
   border-color: transparent;
 }
 
-/* ---------- a row in the rail that carries a menu ---------- */
-
 .rail-row {
   position: relative;
   gap: 2px;
 }
 
-/* Over the end of the row rather than beside it, so every row is the full width. */
 .rail-row .person-more {
   position: absolute;
   right: 4px;
@@ -4015,8 +3384,6 @@ input[type="text"].space-search {
   }
 }
 
-/* ---------- mentions, threads, unread, typing ---------- */
-
 .mention {
   color: var(--accent-text);
   background: var(--accent-wash);
@@ -4025,14 +3392,11 @@ input[type="text"].space-search {
   padding: 0 3px;
 }
 
-/* Being named is different from reading a name. */
 .mention.me {
   background: var(--accent);
   color: var(--accent-fg);
 }
 
-/* A message that names you: a warm wash across the whole row, with a bar on
-   the edge so it still says so when the wash is under the pointer tint. */
 .chat-row:has(.calls-me) {
   background: color-mix(in srgb, var(--warn) 8%, transparent);
   box-shadow: inset 3px 0 0 var(--warn);
@@ -4042,7 +3406,6 @@ input[type="text"].space-search {
   background: color-mix(in srgb, var(--warn) 12%, transparent);
 }
 
-/* The line you came back to read. */
 .chat-new {
   display: flex;
   align-items: center;
@@ -4063,7 +3426,6 @@ input[type="text"].space-search {
   opacity: 0.6;
 }
 
-/* The same rule, drawn under a question rather than under what you have read. */
 .chat-new.thread {
   color: var(--fg-faint);
 }
@@ -4082,7 +3444,6 @@ input[type="text"].space-search {
   color: var(--accent-text);
 }
 
-/* The way in to a stream, on the line that announced it. Gone when it ends. */
 .chat-join {
   margin: 6px 0 2px;
   min-height: 30px;
@@ -4114,7 +3475,6 @@ input[type="text"].space-search {
   background: transparent;
 }
 
-/* A time on every line of a run is noise; a time on demand is not. */
 .chat-at.on-hover {
   opacity: 0;
 }
@@ -4132,11 +3492,6 @@ input[type="text"].space-search {
   color: var(--fg-faint);
 }
 
-/*
- * How much room is left in the message, shown only in the last stretch of it.
- * A counter that is always there is a rule being read out to somebody who was
- * not about to break it.
- */
 .chat-room-left {
   flex: 0 0 auto;
   align-self: center;
@@ -4149,13 +3504,6 @@ input[type="text"].space-search {
   color: var(--bad);
   font-weight: 600;
 }
-
-.rail-item.unread {
-  color: var(--fg);
-  font-weight: bold;
-}
-
-/* ---------- menus ---------- */
 
 .menu {
   position: fixed;
@@ -4201,7 +3549,6 @@ input[type="text"].space-search {
   background: color-mix(in srgb, var(--bad) 16%, var(--surface-2));
 }
 
-/* The note under a label explains it; it is not a second label. */
 .menu-item .tiny {
   white-space: normal;
   line-height: 1.3;
@@ -4215,7 +3562,6 @@ input[type="text"].space-search {
   gap: 1px;
 }
 
-/* An item with a face or an icon in front: one row, the words beside it. */
 .menu-item.has-lead {
   flex-direction: row;
   align-items: center;
@@ -4258,7 +3604,6 @@ input[type="text"].space-search {
   background: var(--line-soft);
 }
 
-/* How loud somebody is, for you: at the top of their menu while they are in voice. */
 .menu-volume {
   display: flex;
   flex-direction: column;
@@ -4287,8 +3632,6 @@ input[type="text"].space-search {
   padding: 4px 2px;
   border-radius: 8px;
 }
-
-/* ---------- mention autocomplete ---------- */
 
 .mention-pop {
   position: fixed;
@@ -4333,14 +3676,8 @@ input[type="text"].space-search {
   border-color: transparent;
 }
 
-/* ---------- search ---------- */
-
-input[type="text"].space-search {
-  font-size: var(--size-small);
-  min-height: calc(var(--btn-h) - 3px);
-}
-
 .search-results {
+  margin: 8px 12px 0;
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -4377,8 +3714,6 @@ input[type="text"].space-search {
   max-width: 100%;
 }
 
-/* ---------- the quick reaction slots in settings ---------- */
-
 .quick-slots {
   gap: 4px;
 }
@@ -4396,13 +3731,6 @@ input[type="text"].space-search {
   font-size: var(--size-small);
 }
 
-/* ---------- the emoji picker ---------- */
-
-/*
- * A popover on the body, never a child of the panel that opened it: the chat
- * log scrolls and would clip it, and the rail is narrow enough that a picker
- * inside it would be a column of two.
- */
 .emoji-pop {
   position: fixed;
   z-index: 70;
@@ -4513,7 +3841,6 @@ input[type="text"].emoji-search {
   line-height: 1;
 }
 
-
 .chat-replying {
   display: flex;
   align-items: center;
@@ -4525,10 +3852,8 @@ input[type="text"].emoji-search {
   padding: 2px 4px 2px 7px;
 }
 
-/* ---------- QR and dialogs ---------- */
-
 .qr-frame {
-  background: #fff;
+  background: var(--qr-bg);
   padding: 10px;
   display: grid;
   place-items: center;
@@ -4550,7 +3875,7 @@ input[type="text"].emoji-search {
   display: grid;
   place-items: center;
   padding: 14px;
-  background: rgb(0 0 0 / 62%);
+  background: var(--scrim);
 }
 
 .modal {
@@ -4598,8 +3923,6 @@ input[type="text"].emoji-search {
   margin-bottom: 12px;
 }
 
-/* ---------- notifications ---------- */
-
 .toasts {
   position: fixed;
   right: 14px;
@@ -4641,23 +3964,18 @@ input[type="text"].emoji-search {
   padding: 0 5px;
 }
 
-/* Words in the same message sit on their own line, above the picture. */
 .chat-line.has-picture .chat-text.boxed {
   display: block;
 }
 
-/* A picture posted in the chat. Capped so one GIF cannot own the channel. */
 .chat-image-wrap {
   display: block;
   margin-top: 4px;
   max-width: min(320px, 100%);
   line-height: 0;
-  /* A click looks closer rather than leaving, and the hand says so. */
   cursor: zoom-in;
 }
 
-/* A picture, up close. Over the conversation rather than instead of it:
-   escape, or a click anywhere, puts it away. */
 .lightbox {
   position: fixed;
   inset: 0;
@@ -4665,7 +3983,7 @@ input[type="text"].emoji-search {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgb(0 0 0 / 78%);
+  background: var(--scrim-lightbox);
   cursor: zoom-out;
 }
 
@@ -4684,10 +4002,6 @@ input[type="text"].emoji-search {
   background: var(--surface-2);
 }
 
-/*
- * A clip is a GIF that weighs less, so it is drawn as one: no controls, no
- * sound, and no way to pause it, because nobody ever wanted to pause a GIF.
- */
 .chat-clip {
   display: block;
   cursor: pointer;
@@ -4697,26 +4011,6 @@ input[type="text"].emoji-search {
   display: none;
 }
 
-/* Somebody who belongs here but is not here now. */
-
-
-/* The messages held up at the top of a channel. */
-
-/*
- * Pinned, said in a word on the message.
- *
- * It was a coloured bar down the left edge, which on a bubble is a stripe
- * across the corner radius and reads as damage rather than as a state.
- */
-/*
- * The word carries it. A tinted edge as well would say the same thing twice,
- * and in the same colour as being mentioned, which is a different thing.
- */
-.chat-line.pinned {
-  border-color: var(--line);
-}
-
-/* The GIF picker: a grid one click from being said. */
 .gif-pop {
   position: fixed;
   left: 50%;
@@ -4748,7 +4042,6 @@ input[type="text"].gif-search {
   overflow-y: auto;
 }
 
-/* Hung off its button rather than centred: see openGifPicker. */
 .gif-pop.placed {
   width: min(460px, calc(100vw - 16px));
   transform: none;
@@ -4766,10 +4059,6 @@ input[type="text"].gif-search {
   outline: 2px solid var(--accent);
 }
 
-/*
- * The soundboard: buttons big enough to hit in a hurry, because that is when
- * a soundboard gets used.
- */
 .sound-pop {
   position: fixed;
   z-index: 70;
@@ -4796,7 +4085,7 @@ input[type="text"].gif-search {
   align-items: center;
   gap: 2px;
   padding: 8px 4px;
-  background: var(--raised, var(--surface));
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -4816,12 +4105,10 @@ input[type="text"].gif-search {
 }
 
 .sound-name {
-  font-size: var(--size-tiny, 11px);
-  color: var(--muted, inherit);
+  font-size: 11px;
   text-align: center;
 }
 
-/* What is behind a link, said on a card under the message that carries it. */
 .link-card {
   display: flex;
   gap: 10px;
@@ -4872,11 +4159,6 @@ input[type="text"].gif-search {
   color: var(--warn);
 }
 
-/* Where a pin just took you. Fades out on its own. */
-/*
- * Where a jump landed: lit, with the accent down its edge, long enough to
- * find it once the scroll has stopped, and then let go of slowly.
- */
 @keyframes found {
   0%,
   60% {
@@ -4893,10 +4175,9 @@ input[type="text"].gif-search {
   animation: found 5s ease-out forwards;
 }
 
-/* Who is live in this channel. One card each, the watched one pressed in. */
 .stream-bar {
-  /* Its own height, always: a strip that scrolls sideways cuts off whatever it is squeezed out of. */
   flex: 0 0 auto;
+  margin: 10px 12px 4px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -4912,11 +4193,6 @@ input[type="text"].gif-search {
   gap: 6px;
   padding: 0 8px 0 6px;
   color: var(--bad);
-}
-
-/* Close goes at the far end, away from the streams it is not one of. */
-.stream-tab.quiet {
-  margin-left: auto;
 }
 
 .stream-tab {
@@ -4941,15 +4217,14 @@ input[type="text"].gif-search {
   color: var(--fg);
 }
 
-/* The one on your screen: a thin ring of the live red, not a block of grey. */
 .stream-tab.on {
   border-color: color-mix(in srgb, var(--live) 55%, transparent);
   background: color-mix(in srgb, var(--live) 9%, var(--surface));
   color: var(--fg);
 }
 
-/* Close: words, not another card. */
 .stream-tab.quiet {
+  margin-left: auto;
   padding: 4px 12px;
   border-color: transparent;
   background: transparent;
@@ -4962,7 +4237,6 @@ input[type="text"].gif-search {
   color: var(--fg);
 }
 
-/* Live is red and it breathes, which is what live has meant since television. */
 .live-dot {
   width: 7px;
   height: 7px;
@@ -4982,10 +4256,6 @@ input[type="text"].gif-search {
   }
 }
 
-/*
- * Somebody talking. Green, and a ring, because a colour change alone is not
- * much use to anybody who cannot tell these two greens apart.
- */
 .dot.talking {
   background: var(--good);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--good) 45%, transparent);
@@ -4996,13 +4266,6 @@ input[type="text"].gif-search {
   font-weight: bold;
 }
 
-.pill.talking {
-  border-color: var(--good);
-  color: var(--good);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--good) 40%, transparent);
-}
-
-/* A poll: one bar per answer, the bar being its share of the votes cast. */
 .poll {
   display: flex;
   flex-direction: column;
@@ -5052,14 +4315,6 @@ input[type="text"].gif-search {
   color: var(--fg-dim);
 }
 
-/*
- * What you can do with a message, on a screen with no pointer.
- *
- * Under the message rather than beside it. Beside it is right when there is
- * room, and on a phone a wide bubble leaves none: the buttons would hang off
- * the edge and be clipped by the scroller. Asked for by tapping the message,
- * because there is no hovering here, and big enough to hit with a thumb.
- */
 @media (max-width: 780px) {
   .chat-actions {
     position: static;
@@ -5083,22 +4338,16 @@ input[type="text"].gif-search {
   }
 }
 
-/* The camera, while it is looking for a linking code. */
 .scan-video {
   width: 100%;
   max-height: 220px;
   object-fit: cover;
-  background: #000;
+  background: var(--video-bg);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
 }
 
-/*
- * A phone zooms into any text field set smaller than 16 pixels the moment it
- * is tapped, and does not zoom back out. So on a touch screen every field is
- * 16 pixels, whatever the rule for it says, and the page stays as it was.
- * Pinching to zoom still works: the viewport does not forbid it.
- */
+/* iOS zooms into any field under 16px on focus. */
 @media (pointer: coarse) {
   input,
   textarea,
@@ -5108,19 +4357,6 @@ input[type="text"].gif-search {
   }
 }
 
-/*
- * No zoom on a double tap. A phone waits to see whether a tap is the first of
- * two, and zooms if it is, so tapping a button twice zoomed the page. This
- * keeps scrolling and pinching and drops only the double tap, on everything.
- * The picture of a shared screen sets its own, because it does its own zoom.
- */
-* {
-  touch-action: manipulation;
-}
-
-/* ---------- levels ---------- */
-
-/* A level's colour, as a dot beside its name. Hollow for the ordinary colour. */
 .level-dot {
   flex: 0 0 auto;
   width: 10px;

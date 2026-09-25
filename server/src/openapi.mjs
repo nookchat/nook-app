@@ -1,9 +1,5 @@
-/**
- * The API, described, and served at /api/v1/openapi.json for anybody who
- * wants to build a client or poke at a server with a tool that reads it.
- */
-
 import { VERSION } from './config.mjs'
+import { MAX_PAGE_LINES } from './store.mjs'
 
 const error = {
   type: 'object',
@@ -18,6 +14,7 @@ const error = {
 
 const room = { name: 'room', in: 'path', required: true, schema: { type: 'string', pattern: '^[0-9a-f]{32}$' } }
 const person = { name: 'id', in: 'path', required: true, schema: { type: 'string', pattern: '^[0-9a-f]{64}$' } }
+const link = { name: 'id', in: 'path', required: true, schema: { type: 'string', pattern: '^[0-9a-f]{32}$' } }
 const write = { name: 'x-cathode-write', in: 'header', required: true, schema: { type: 'string' } }
 const errors = {
   400: { description: 'Bad request', content: { 'application/json': { schema: error } } },
@@ -53,7 +50,7 @@ export const openapi = {
         parameters: [
           room,
           { name: 'after', in: 'query', schema: { type: 'integer', minimum: 0 } },
-          { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 1000 } },
+          { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: MAX_PAGE_LINES } },
         ],
         responses: {
           200: {
@@ -130,12 +127,12 @@ export const openapi = {
     '/api/v1/links/{id}': {
       put: {
         summary: 'Leave a sealed device link: everything a new device needs, sealed with a key made from a code. Kept in memory for ten minutes',
-        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', pattern: '^[0-9a-f]{32}$' } }],
+        parameters: [link],
         responses: { 200: { description: 'Waiting' }, 409: { description: 'Already waiting' }, ...errors },
       },
       get: {
         summary: 'Take a device link. It is gone after this',
-        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string', pattern: '^[0-9a-f]{32}$' } }],
+        parameters: [link],
         responses: { 200: { description: 'The sealed link' }, 404: { description: 'Used, or run out' } },
       },
     },

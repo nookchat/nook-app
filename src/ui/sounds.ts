@@ -1,21 +1,7 @@
-/**
- * Small noises.
- *
- * Generated rather than loaded: three short blips out of an oscillator cost
- * nothing to ship and never wait on a network. They are deliberately quiet and
- * short, because a chat that pings loudly is a chat people mute.
- *
- * Two rules stop them becoming a nuisance. Nothing plays for anything you did
- * yourself, and nothing plays for old news: syncing with a peer can deliver
- * hundreds of messages at once, and every one of them is already history.
- */
-
 const KEY = 'cathode.sounds.v1'
 
-/** Ignore anything older than this. Backfill is not news. */
-const NEWS_MS = 45_000
-/** At most one noise this often, however much arrives. */
-const GAP_MS = 400
+const NEWS_MAX_AGE_MS = 45_000
+const MIN_GAP_MS = 400
 
 let context: AudioContext | null = null
 let lastAt = 0
@@ -32,21 +18,12 @@ export function setSounds(on: boolean): void {
   try {
     localStorage.setItem(KEY, on ? 'on' : 'off')
   } catch {
-    /* the choice lasts for this session only */
+    /* storage blocked */
   }
 }
 
-/**
- * The one audio context, shared.
- *
- * A browser gives a page a small number of these and never takes one back, so
- * the soundboard borrows this one rather than opening a second.
- */
+// Browsers cap the AudioContexts a page may open, so the soundboard shares this one.
 export function sharedAudio(): AudioContext | null {
-  return audio()
-}
-
-function audio(): AudioContext | null {
   if (context) return context
   try {
     const Ctor: typeof AudioContext =
@@ -59,7 +36,6 @@ function audio(): AudioContext | null {
   return context
 }
 
-/** One soft note, short, with a fade so it never clicks. */
 function note(
   freq: number,
   at: number,
@@ -67,7 +43,7 @@ function note(
   gain = 0.05,
   shape: OscillatorType = 'sine',
 ): void {
-  const ctx = audio()
+  const ctx = sharedAudio()
   if (!ctx) return
   const osc = ctx.createOscillator()
   const vol = ctx.createGain()
@@ -85,21 +61,14 @@ function note(
 function play(notes: [number, number][], shape: OscillatorType = 'sine'): void {
   if (!soundsOn()) return
   const now = Date.now()
-  if (now - lastAt < GAP_MS) return
+  if (now - lastAt < MIN_GAP_MS) return
   lastAt = now
-  const ctx = audio()
+  const ctx = sharedAudio()
   if (!ctx) return
-  // A page that has never been clicked cannot make a noise. Nothing to do but
-  // let it stay quiet until it can.
   if (ctx.state === 'suspended') void ctx.resume().catch(() => undefined)
   for (const [freq, delay] of notes) note(freq, ctx.currentTime + delay, 0.09, 0.05, shape)
 }
 
-/**
- * Something was said. Two bright notes, up, the way the messengers of 2003
- * announced a line: glassy rather than mellow, which is what a triangle wave
- * is for. Their actual recordings belong to Microsoft; the feel does not.
- */
 export function chirpMessage(): void {
   play(
     [
@@ -110,7 +79,6 @@ export function chirpMessage(): void {
   )
 }
 
-/** Somebody walked into the voice channel you are in. The door, opening. */
 export function chirpJoin(): void {
   play([
     [520, 0],
@@ -119,7 +87,6 @@ export function chirpJoin(): void {
   ])
 }
 
-/** And walked out again. */
 export function chirpLeave(): void {
   play([
     [780, 0],
@@ -127,13 +94,9 @@ export function chirpLeave(): void {
   ])
 }
 
-/**
- * Somebody is calling: four notes, again and again, until it is answered,
- * declined or given up. Gives back the way to stop it.
- */
 export function ring(): () => void {
   if (!soundsOn()) return () => undefined
-  const ctx = audio()
+  const ctx = sharedAudio()
   if (!ctx) return () => undefined
   if (ctx.state === 'suspended') void ctx.resume().catch(() => undefined)
   const once = (): void => {
@@ -148,16 +111,10 @@ export function ring(): () => void {
   return () => window.clearInterval(timer)
 }
 
-/** True when the event is recent enough to be worth a noise. */
 export function isNews(at: number): boolean {
-  return Date.now() - at < NEWS_MS
+  return Date.now() - at < NEWS_MAX_AGE_MS
 }
 
-/**
- * A line read aloud in the browser's own voice. Not run through the shared
- * throttle: a spoken line is asked for by name and rationed by its own rule
- * at the caller.
- */
 export function speak(text: string): void {
   if (!soundsOn()) return
   const line = text.trim()
@@ -165,6 +122,6 @@ export function speak(text: string): void {
   try {
     window.speechSynthesis.speak(new SpeechSynthesisUtterance(line))
   } catch {
-    /* a page without a voice stays quiet */
+    /* no speech synthesis */
   }
 }

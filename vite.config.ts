@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite'
 
 export default defineConfig({
-  // Relative base, so the built site works from any sub path on any static host.
+  // Relative, so the build works from any sub path on a static host.
   base: './',
   server: {
     host: true,

@@ -1,0 +1,297 @@
+import { APP_URL, FAKE_MEDIA, check, finish, launch, stoppedEarly } from './harness.mjs'
+
+const browser = await launch({ args: FAKE_MEDIA })
+
+const BOX = '[aria-label="Write a message"]'
+
+async function person(name) {
+  const page = await (await browser.newContext({ viewport: { width: 1280, height: 820 } })).newPage()
+  await page.goto(APP_URL)
+  await page.evaluate((n) => localStorage.setItem('cathode.name.v1', n), name)
+  await page.reload()
+  await page.waitForSelector('input[aria-label="Space name"]')
+  return page
+}
+
+async function say(page, text) {
+  await page.click(BOX)
+  await page.keyboard.type(text)
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(350)
+}
+
+async function sayLines(page, lines) {
+  await page.click(BOX)
+  for (let i = 0; i < lines.length; i++) {
+    if (i > 0) {
+      await page.keyboard.down('Shift')
+      await page.keyboard.press('Enter')
+      await page.keyboard.up('Shift')
+    }
+    await page.keyboard.type(lines[i])
+  }
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(350)
+}
+
+const texts = (page) =>
+  page.$$eval('.chat-text', (els) => els.map((e) => e.textContent.trim()))
+
+async function switchTo(page, label) {
+  await page.click('button[aria-label="Switch space"]')
+  await page.click(`.menu.switcher .menu-item:has-text("${label}")`)
+}
+
+try {
+  const alice = await person('Alice')
+  await alice.fill('input[aria-label="Space name"]', 'everything')
+  await alice.click('button:has-text("New space")')
+  await alice.waitForSelector('.space-name')
+  await alice.waitForTimeout(900)
+  const link = alice.url()
+
+  const bob = await person('Bob')
+  await bob.goto(link)
+  await bob.waitForFunction(
+    () => document.querySelector('.space-name')?.textContent === 'everything',
+    null,
+    { timeout: 60_000 },
+  )
+
+  await say(alice, '**bold** *italic* ~~struck~~ ||secret|| `code` and snake_case_word')
+  await sayLines(alice, ['```js', 'const x = 1', '```'])
+  await sayLines(alice, ['> quoted line', '- one', '- two'])
+
+  const marks = await alice.evaluate(() => ({
+    bold: !!document.querySelector('.chat-text strong'),
+    italic: !!document.querySelector('.chat-text em'),
+    struck: !!document.querySelector('.chat-text s'),
+    spoiler: !!document.querySelector('.spoiler'),
+    code: !!document.querySelector('.chat-text code'),
+    fence: document.querySelector('.chat-code code')?.textContent ?? '',
+    quote: document.querySelector('.chat-quote')?.textContent ?? '',
+    list: document.querySelectorAll('.chat-list li').length,
+    snake: (document.querySelector('.chat-text')?.textContent ?? '').includes('snake_case_word'),
+  }))
+  check('bold, italic and strikethrough', marks.bold && marks.italic && marks.struck)
+  check('inline code and spoilers', marks.code && marks.spoiler)
+  check('a fenced block keeps what was typed', marks.fence === 'const x = 1', marks.fence)
+  check('a quote and a list', marks.quote.includes('quoted line') && marks.list === 2)
+  check('an underscore inside a word is left alone', marks.snake === true)
+
+  const hiddenFirst = await alice.$eval('.spoiler', (el) => el.classList.contains('shown'))
+  await alice.click('.spoiler')
+  const shownAfter = await alice.$eval('.spoiler', (el) => el.classList.contains('shown'))
+  check('a spoiler opens on a click, and not before', !hiddenFirst && shownAfter)
+
+  await say(alice, '/me waves at everybody')
+  const emote = await alice.$eval('.chat-text.emote', (el) => el.textContent.trim())
+  check('/me reads as something you did', emote === 'Alice waves at everybody', emote)
+
+  await say(alice, '/shrug')
+  const all = await texts(alice)
+  check('/shrug survives the formatter intact', all[all.length - 1] === '¯\\_(ツ)_/¯', all[all.length - 1])
+
+  await say(alice, '/nope')
+  check('an unknown command is not posted to everybody', !(await texts(alice)).includes('/nope'))
+
+  await say(alice, '//not a command')
+  check('two slashes says one', (await texts(alice)).includes('/not a command'))
+
+  // The voice is stubbed: a test rig has no speakers worth trusting.
+  await bob.evaluate(() => {
+    window.__spoken = []
+    window.speechSynthesis.speak = (u) => window.__spoken.push(u.text)
+  })
+  await say(alice, '/tts hello out there')
+  const bobHeard = await bob
+    .waitForFunction(() => window.__spoken.includes('hello out there'), null, { timeout: 15_000 })
+    .then(() => true)
+    .catch(() => false)
+  check('/tts is read aloud on the other side', bobHeard)
+  check('and the line is written down too', (await texts(alice)).includes('hello out there'))
+
+  await alice.fill(BOX, '/tts too soon')
+  await alice.press(BOX, 'Enter')
+  await alice.waitForTimeout(400)
+  const ttsRationed = await alice.evaluate(() =>
+    [...document.querySelectorAll('.toast')].some((t) => t.textContent.includes('Easy')),
+  )
+  check('a second spoken line straight after is rationed', ttsRationed)
+
+  await say(alice, '/topic what we are doing today')
+  await alice.waitForTimeout(500)
+  const topic = await alice.$eval('.channel-topic', (el) => el.textContent)
+  check('a channel can say what it is for', topic === 'what we are doing today', topic)
+
+  await say(alice, '/rename The Main Room')
+  await alice.waitForTimeout(600)
+  const railed = await alice.$$eval('.rail-left .rail-item', (els) =>
+    els.map((e) => e.textContent.trim()),
+  )
+  check('and be called something else', railed.some((r) => r.includes('The Main Room')), railed.join(' | '))
+
+  const stillRoutes = await alice.evaluate(() =>
+    [...document.querySelectorAll('.chat-text')].some((e) => e.textContent.includes('bold')),
+  )
+  check('renaming keeps everything that was said in it', stillRoutes)
+
+  const seenByBob = await bob
+    .waitForFunction(
+      () => [...document.querySelectorAll('.rail-item')].some((e) => e.textContent.includes('The Main Room')),
+      null,
+      { timeout: 30_000 },
+    )
+    .then(() => true)
+    .catch(() => false)
+  check('everybody else sees the new name', seenByBob)
+
+  alice.once('dialog', (d) => d.accept('scratch'))
+  await alice.click('.rail-left button[title="Make a text channel"]')
+  await alice.waitForTimeout(700)
+  await say(alice, 'something in the scratch channel')
+  const row = alice.locator('.rail-row', { hasText: 'scratch' })
+  await row.locator('.person-more').evaluate((el) => el.focus())
+  await row.locator('.person-more').click()
+  await alice.waitForSelector('.menu')
+  alice.once('dialog', (d) => d.accept())
+  await alice.click('.menu-item:has(.menu-label:text-is("Delete"))')
+  await alice.waitForTimeout(900)
+  const afterDelete = await alice.$$eval('.rail-left .rail-item', (els) =>
+    els.map((e) => e.textContent.trim()),
+  )
+  check('a channel can be deleted', !afterDelete.some((r) => r.includes('scratch')), afterDelete.join(' | '))
+  check(
+    'and what was said in it goes with it',
+    !(await texts(alice)).some((t) => t.includes('scratch channel')),
+  )
+
+  await say(bob, 'something regrettable')
+  await alice.waitForFunction(
+    () => [...document.querySelectorAll('.chat-text')].some((e) => e.textContent.includes('regrettable')),
+    null,
+    { timeout: 30_000 },
+  )
+  const bobsRow = alice.locator('.chat-row', { hasText: 'regrettable' })
+  const remove = bobsRow.locator('button[aria-label="Delete this message"]')
+  await remove.evaluate((el) => el.focus())
+  alice.once('dialog', (d) => d.accept())
+  await remove.click()
+  await alice.waitForTimeout(800)
+  check(
+    'an admin can take down somebody else’s message',
+    !(await texts(alice)).some((t) => t.includes('regrettable')),
+  )
+  const goneForBob = await bob
+    .waitForFunction(
+      () => ![...document.querySelectorAll('.chat-text')].some((e) => e.textContent.includes('regrettable')),
+      null,
+      { timeout: 30_000 },
+    )
+    .then(() => true)
+    .catch(() => false)
+  check('and it goes for the person who wrote it too', goneForBob)
+
+  await say(alice, '/dm Bob a private word')
+  await alice.waitForTimeout(1200)
+  const dmTitle = await alice.evaluate(() => ({
+    home: !!document.querySelector('.home-grid-shell.dm-open'),
+    who: document.querySelector('.space-head .channel-name')?.textContent ?? '',
+  }))
+  check('a private conversation opens on its own, on home', dmTitle.home && dmTitle.who === 'Bob', JSON.stringify(dmTitle))
+  check('and holds what was said', (await texts(alice)).includes('a private word'))
+
+  const bobGot = await bob
+    .waitForFunction(() => document.querySelector('.space-title-button .switch-mark.loud')?.textContent === '1', null, {
+      timeout: 30_000,
+    })
+    .then(() => true)
+    .catch(() => false)
+  check('it reaches the person it is for, wherever they are looking', bobGot)
+
+  await switchTo(bob, 'Home')
+  await bob.waitForSelector('.dm-item', { timeout: 10_000 })
+  const listed = await bob.$eval('.dm-item', (el) => el.textContent)
+  check('home lists it, with the space it belongs to', listed.includes('Alice') && listed.includes('everything'), listed)
+  await bob.click('.dm-item')
+  await bob.waitForTimeout(700)
+  check('who can read it', (await texts(bob)).includes('a private word'))
+
+  await say(bob, 'and one back')
+  const backToAlice = await alice
+    .waitForFunction(
+      () => [...document.querySelectorAll('.chat-text')].some((e) => e.textContent.includes('one back')),
+      null,
+      { timeout: 30_000 },
+    )
+    .then(() => true)
+    .catch(() => false)
+  check('and answer', backToAlice)
+
+  const sealed = await alice.evaluate(async () => {
+    const { spaces } = await import('/src/space/registry.ts')
+    const dm = spaces.all()[0]?.chat.log.all().find((e) => e.kind === 'dm')
+    return dm ? JSON.stringify(dm.body) : ''
+  })
+  check('what the space stores is sealed', sealed.length > 0 && !sealed.includes('private word'), sealed.slice(0, 60))
+
+  await switchTo(alice, 'everything')
+  await alice.waitForSelector(BOX)
+  await switchTo(bob, 'everything')
+  await bob.waitForSelector(BOX)
+  await alice.waitForTimeout(600)
+
+  await alice.click(BOX)
+  await alice.keyboard.type('half a thought')
+  alice.once('dialog', (d) => d.accept('other'))
+  await alice.click('.rail-left button[title="Make a text channel"]')
+  await alice.waitForTimeout(700)
+  check('switching channel empties the box', (await alice.inputValue(BOX)) === '')
+  await alice.click('.rail-left .rail-item:has-text("The Main Room")')
+  await alice.waitForTimeout(500)
+  check(
+    'and coming back puts the draft back',
+    (await alice.inputValue(BOX)) === 'half a thought',
+    await alice.inputValue(BOX),
+  )
+  await alice.fill(BOX, '')
+
+  await say(alice, 'the first draft')
+  await alice.click(BOX)
+  await alice.keyboard.press('ArrowUp')
+  await alice.waitForTimeout(300)
+  check('up edits your last message', (await alice.inputValue(BOX)) === 'the first draft')
+  await alice.keyboard.press('Escape')
+  check('escape puts it down again', (await alice.inputValue(BOX)) === '')
+
+  const initials = await alice.$$eval('.chat-who .avatar', (els) =>
+    els.map((e) => e.textContent.trim()),
+  )
+  check('everybody has a face from the start', initials.length > 0 && initials[0] === 'A', initials.join())
+
+  const picture = await alice.evaluate(async () => {
+    const { squareThumb } = await import('/src/ui/avatar.ts')
+    // A tiny picture made here, so the test needs no file on disk.
+    const canvas = document.createElement('canvas')
+    canvas.width = 200
+    canvas.height = 120
+    const ctx = canvas.getContext('2d')
+    ctx.fillStyle = '#c0392b'
+    ctx.fillRect(0, 0, 200, 120)
+    const blob = await new Promise((done) => canvas.toBlob(done, 'image/png'))
+    const file = new File([blob], 'me.png', { type: 'image/png' })
+    const url = await squareThumb(file)
+    return { length: url.length, kind: url.slice(0, 20) }
+  })
+  check(
+    'a picture is shrunk until it fits in one event',
+    picture.length < 2600 && picture.kind.startsWith('data:image/'),
+    `${picture.length} characters, ${picture.kind}`,
+  )
+} catch (err) {
+  stoppedEarly(err)
+} finally {
+  await browser.close()
+}
+
+finish()

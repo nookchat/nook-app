@@ -1,19 +1,3 @@
-/**
- * Settings, Voice: which microphone and speaker, a way to hear yourself, and
- * a way to find out whether calls on your servers can connect at all.
- *
- * "Voice does not work" has three usual causes, and this tells them apart:
- *
- *   the wrong microphone     the meter stays flat while you talk
- *   the wrong speaker        the meter moves, and Hear yourself is silent
- *   the server's relay       both are fine, and the connection test says the
- *                            relay did not answer
- *
- * The test runs the microphone through exactly what a call uses, the
- * browser's processing and the noise removal, so what the meter shows and
- * what you hear back is what the others would get.
- */
-
 import { fetchIce, serverTag } from '../backend'
 import { denoise, type Denoiser } from '../net/denoise'
 import { audioDevices, DEVICES_CHANGED, explainMicRefusal, micSettings, openMic, playOn, setMicSettings } from '../net/mic'
@@ -52,7 +36,7 @@ async function startTest(onLevel: (level: number, label: string) => void): Promi
     analyser.getFloatTimeDomainData(data)
     let sum = 0
     for (const v of data) sum += v * v
-    // Loudness, spread so talking fills most of the bar and the room barely moves it.
+    // Maps -60 dBFS to -10 dBFS onto 0 to 1.
     const rms = Math.sqrt(sum / data.length)
     onLevel(Math.min(1, Math.max(0, (20 * Math.log10(rms + 1e-8) + 60) / 50)), label)
     requestAnimationFrame(tick)
@@ -81,7 +65,6 @@ async function startTest(onLevel: (level: number, label: string) => void): Promi
   }
 }
 
-/** Ask a server for its relay and see whether the relay answers. */
 async function testRelay(server: string): Promise<{ ok: boolean; text: string }> {
   const ice = await fetchIce(server)
   const tag = serverTag(server)
@@ -123,19 +106,12 @@ async function testRelay(server: string): Promise<{ ok: boolean; text: string }>
   }
 }
 
-/** The card's contents. */
 export function voiceSettings(more: HTMLElement[] = []): HTMLElement {
   const input = h('select', { ariaLabel: 'Microphone' })
   const output = h('select', { ariaLabel: 'Speaker' })
   const fill = async (): Promise<void> => {
     const { inputs, outputs } = await audioDevices()
     const s = micSettings()
-    /*
-     * The system's own first, which is where a new device starts and what
-     * follows it when something is plugged in. Then each device by name. A
-     * browser gives no names, and no ids to choose by, until the page has
-     * been allowed the microphone once, so until then there is a way to ask.
-     */
     const options = (select: HTMLSelectElement, list: MediaDeviceInfo[], chosen: string, what: string): number => {
       const system = list.find((d) => d.deviceId === 'default')?.label.replace(/^Default - /, '')
       select.replaceChildren(h('option', { value: '', text: system ? `The system’s ${what} (${system})` : `The system’s ${what}` }))
@@ -147,10 +123,8 @@ export function voiceSettings(more: HTMLElement[] = []): HTMLElement {
     const mics = options(input, inputs, s.input ?? '', 'microphone')
     options(output, outputs, s.output ?? '', 'speaker')
     named.classList.toggle('hidden', mics > 0 || inputs.length === 0)
-    // A browser without a way to choose the speaker says so by not listing one.
     output.disabled = outputs.length === 0 || !('setSinkId' in HTMLMediaElement.prototype)
   }
-  // A call that is running moves to the new choice at once: see Voice.switchMic.
   input.addEventListener('change', () => {
     setMicSettings({ ...micSettings(), input: input.value })
     window.dispatchEvent(new Event(DEVICES_CHANGED))
@@ -161,7 +135,7 @@ export function voiceSettings(more: HTMLElement[] = []): HTMLElement {
     window.dispatchEvent(new Event(DEVICES_CHANGED))
     if (test) void restart()
   })
-  // Before the page may see the microphones' names, it cannot offer them.
+  // Browsers hide device names and ids until the microphone has been allowed once.
   const named = h('button', { class: 'ghost small start hidden', text: 'Show microphones' })
   named.addEventListener('click', async () => {
     try {
@@ -172,10 +146,13 @@ export function voiceSettings(more: HTMLElement[] = []): HTMLElement {
     }
     void fill()
   })
-  navigator.mediaDevices?.addEventListener?.('devicechange', () => void fill())
+  const onDeviceChange = (): void => {
+    if (root.isConnected) void fill()
+    else navigator.mediaDevices.removeEventListener('devicechange', onDeviceChange)
+  }
+  navigator.mediaDevices?.addEventListener?.('devicechange', onDeviceChange)
   void fill()
 
-  // ---- the microphone test ----
   const bar = h('i')
   const meter = h('div', { class: 'meter', role: 'meter', ariaLabel: 'Microphone level' }, [bar])
   const which = h('span', { class: 'tiny faint truncate' })
@@ -183,8 +160,12 @@ export function voiceSettings(more: HTMLElement[] = []): HTMLElement {
   const hearButton = h('button', { class: 'ghost hidden' }, [icon('volume', 15), 'Hear yourself'])
   let test: Test | null = null
   let hearing = false
+  const watch = new MutationObserver(() => {
+    if (!root.isConnected) stop()
+  })
 
   const stop = (): void => {
+    watch.disconnect()
     test?.stop()
     test = null
     hearing = false
@@ -199,11 +180,11 @@ export function voiceSettings(more: HTMLElement[] = []): HTMLElement {
     try {
       test = await startTest((level, label) => {
         bar.style.width = `${Math.round(level * 100)}%`
-        which.textContent = label
+        if (which.textContent !== label) which.textContent = label
       })
+      watch.observe(document.body, { childList: true, subtree: true })
       testButton.replaceChildren(icon('stop', 13), 'Stop test')
       hearButton.classList.remove('hidden')
-      // With a name for each device now that the page may see them.
       void fill()
     } catch (err) {
       which.textContent = err instanceof Error ? err.message : 'The microphone would not open.'
@@ -228,7 +209,6 @@ export function voiceSettings(more: HTMLElement[] = []): HTMLElement {
     hearButton.classList.toggle('on', hearing)
   })
 
-  // ---- the connection test ----
   const results = h('div', { class: 'stack tight' })
   const relayButton = h('button', {}, [icon('server', 15), 'Test connection'])
   relayButton.addEventListener('click', async () => {
@@ -240,7 +220,7 @@ export function voiceSettings(more: HTMLElement[] = []): HTMLElement {
       relayButton.disabled = false
       return
     }
-    const answers = await Promise.all(servers.map((s) => testRelay(s)))
+    const answers = await Promise.all(servers.map(testRelay))
     results.replaceChildren(
       ...answers.map((a) =>
         h('div', { class: `relay-result ${a.ok ? 'good' : 'bad'}` }, [h('i', { class: `dot ${a.ok ? 'good' : 'bad'}` }), h('span', { text: a.text })]),
@@ -254,19 +234,10 @@ export function voiceSettings(more: HTMLElement[] = []): HTMLElement {
     named,
     h('label', { class: 'field-row' }, [h('span', { class: 'field-label', text: 'Speaker' }), output]),
     h('div', { class: 'mic-test' }, [h('div', { class: 'row wrap' }, [testButton, hearButton]), meter, which]),
-    // The rest is for when something is wrong, or for somebody who likes switches.
     h('details', { class: 'adv' }, [
       h('summary', { text: 'More' }),
       h('div', { class: 'stack tight' }, [...more, h('div', { class: 'row wrap' }, [relayButton]), results]),
     ]),
   ])
-  // Leaving settings stops the test, so the microphone light goes out.
-  const watch = new MutationObserver(() => {
-    if (!root.isConnected && test) {
-      stop()
-      watch.disconnect()
-    }
-  })
-  watch.observe(document.body, { childList: true, subtree: true })
   return root
 }

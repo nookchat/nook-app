@@ -1,10 +1,3 @@
-/**
- * Host settings that survive a reload.
- *
- * There is no server, so this lives in localStorage. A person who shares a
- * screen every day should not have to pick the same preset every time.
- */
-
 import {
   DEFAULT_PRESET,
   presetById,
@@ -13,9 +6,8 @@ import {
   type PresetId,
 } from './rtc/quality'
 
-const KEY = 'cathode.settings.v1'
-/** What the same settings were filed under before the app was renamed. */
-const LEGACY_KEY = 'beam.settings.v1'
+const SETTINGS_KEY = 'cathode.settings.v1'
+const LEGACY_SETTINGS_KEY = 'beam.settings.v1'
 
 export interface HostSettings {
   presetId: PresetId
@@ -24,7 +16,6 @@ export interface HostSettings {
   fps: number
   bitrateScale: number
   budgetKbps: number
-  /** True while Nook sets the budget from what it measures. */
   budgetAuto: boolean
   maxViewers: number
   approve: boolean
@@ -32,7 +23,7 @@ export interface HostSettings {
   shareSystemAudio: boolean
 }
 
-export function defaultSettings(): HostSettings {
+function defaultSettings(): HostSettings {
   const preset = presetById(DEFAULT_PRESET)!
   return {
     presetId: preset.id,
@@ -52,11 +43,10 @@ export function defaultSettings(): HostSettings {
 export function loadSettings(): HostSettings {
   const base = defaultSettings()
   try {
-    const raw = localStorage.getItem(KEY) ?? localStorage.getItem(LEGACY_KEY)
+    const raw = localStorage.getItem(SETTINGS_KEY) ?? localStorage.getItem(LEGACY_SETTINGS_KEY)
     if (!raw) return base
     const saved = JSON.parse(raw) as Partial<HostSettings>
     const merged: HostSettings = { ...base, ...saved }
-    // Never trust stored numbers. A hand edited value must not break a session.
     merged.fps = clamp(merged.fps, 1, 60, base.fps)
     merged.maxHeight = clamp(merged.maxHeight, 0, 4320, base.maxHeight)
     merged.bitrateScale = clamp(merged.bitrateScale, 0.2, 3, base.bitrateScale)
@@ -72,10 +62,8 @@ export function loadSettings(): HostSettings {
 
 export function saveSettings(settings: HostSettings): void {
   try {
-    localStorage.setItem(KEY, JSON.stringify(settings))
-  } catch {
-    // Private mode, or a full quota. Losing a preference is not worth an error.
-  }
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
+  } catch {}
 }
 
 function clamp(value: unknown, min: number, max: number, fallback: number): number {

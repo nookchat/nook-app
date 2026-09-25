@@ -1,121 +1,70 @@
-/**
- * Link cards: a thing a browser cannot do alone.
- *
- * A browser cannot read another site's page, so a chat message with a link in
- * it cannot grow a card by itself. This server does it for the spaces on it,
- * and it is one of the two places it learns something about what is said:
- * which links get previewed. CATHODE_PREVIEWS=0 turns cards off. The other
- * place is GIF search, in gifs.mjs.
- */
-
-import { lookup } from 'node:dns/promises'
+import { lookup } from 'node:dns'
+import http from 'node:http'
+import https from 'node:https'
+import { isIP } from 'node:net'
+import { isPrivateAddress } from './addresses.mjs'
 import { PREVIEW_LOCAL } from './config.mjs'
 
-/*
- * Link previews.
- *
- * A browser cannot read another site's page, so a chat message with a link in
- * it cannot grow a card by itself. Somebody has to go and look, and this is
- * the one machine the space already chose to trust with being awake. It
- * learns which links get previewed, which is less than the ciphertext it
- * already holds; a space that dislikes even that runs no archive.
- *
- * It fetches with care, because "go and look at any URL" is an invitation:
- * only http and https, never an address that resolves into this machine's own
- * network, redirects walked by hand so they cannot smuggle one in, five
- * seconds and half a megabyte at most, and everything cached so a room of
- * thirty people costs a site one visit.
- */
 const PREVIEW_TIMEOUT_MS = 5000
 const PREVIEW_MAX_BYTES = 512 * 1024
 const PREVIEW_CACHE_MS = 10 * 60 * 1000
 const PREVIEW_CACHE_MAX = 500
 const previews = new Map()
 
-function privateAddress(ip) {
-  let v4 = ip
-  const low = ip.toLowerCase()
-  if (low.includes(':')) {
-    if (low.startsWith('::ffff:')) v4 = low.slice(7)
-    else {
-      return (
-        low === '::1' ||
-        low === '::' ||
-        low.startsWith('fc') ||
-        low.startsWith('fd') ||
-        low.startsWith('fe80')
-      )
+function checkedLookup(host, options, done) {
+  lookup(host, { ...options, all: true }, (err, addresses) => {
+    if (err) return done(err)
+    if (!PREVIEW_LOCAL && addresses.some((a) => isPrivateAddress(a.address))) {
+      return done(Object.assign(new Error(`${host} is a private address`), { code: 'EPRIVATE' }))
     }
-  }
-  const [a, b] = v4.split('.').map(Number)
-  return (
-    !Number.isFinite(a) ||
-    a === 0 ||
-    a === 127 ||
-    a === 10 ||
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168) ||
-    (a === 169 && b === 254)
-  )
+    if (options.all) done(null, addresses)
+    else done(null, addresses[0].address, addresses[0].family)
+  })
 }
 
-async function hostAllowed(host) {
-  // For tests, which have nowhere to stand but localhost.
-  if (PREVIEW_LOCAL) return true
-  try {
-    const addresses = await lookup(host, { all: true })
-    return addresses.length > 0 && addresses.every((a) => !privateAddress(a.address))
-  } catch {
-    return false
-  }
+function get(url, signal) {
+  const client = url.protocol === 'https:' ? https : http
+  return new Promise((resolve, reject) => {
+    client
+      .get(url, { lookup: checkedLookup, signal, headers: { 'user-agent': 'cathode/preview', accept: 'text/html' } }, resolve)
+      .on('error', reject)
+  })
 }
 
-/** The first chunk of a page, or null for anything that is not a public html page. */
 async function fetchPage(rawUrl) {
+  const signal = AbortSignal.timeout(PREVIEW_TIMEOUT_MS)
   let url = rawUrl
-  for (let hop = 0; hop < 4; hop++) {
-    let parsed
-    try {
-      parsed = new URL(url)
-    } catch {
-      return null
-    }
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null
-    if (!(await hostAllowed(parsed.hostname))) return null
+  try {
+    for (let hop = 0; hop < 4; hop++) {
+      const parsed = new URL(url)
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null
+      const literal = parsed.hostname.replace(/^\[|\]$/g, '')
+      // A literal address never reaches the lookup, so it is checked here.
+      if (!PREVIEW_LOCAL && isIP(literal) && isPrivateAddress(literal)) return null
 
-    const ctrl = new AbortController()
-    const timer = setTimeout(() => ctrl.abort(), PREVIEW_TIMEOUT_MS)
-    try {
-      const res = await fetch(url, {
-        redirect: 'manual',
-        signal: ctrl.signal,
-        headers: { 'user-agent': 'cathode/preview', accept: 'text/html' },
-      })
-      if (res.status >= 300 && res.status < 400) {
-        const to = res.headers.get('location')
-        if (!to) return null
-        url = new URL(to, url).href
+      const res = await get(parsed, signal)
+      if (res.statusCode >= 300 && res.statusCode < 400) {
+        res.resume()
+        if (!res.headers.location) return null
+        url = new URL(res.headers.location, url).href
         continue
       }
-      if (!res.ok || !(res.headers.get('content-type') ?? '').includes('text/html')) {
+      if (res.statusCode < 200 || res.statusCode >= 300 || !(res.headers['content-type'] ?? '').includes('text/html')) {
+        res.resume()
         return null
       }
-      const reader = res.body.getReader()
       const chunks = []
       let read = 0
-      while (read < PREVIEW_MAX_BYTES) {
-        const { done, value } = await reader.read()
-        if (done) break
-        chunks.push(value)
-        read += value.length
+      for await (const chunk of res) {
+        chunks.push(chunk)
+        read += chunk.length
+        if (read >= PREVIEW_MAX_BYTES) break
       }
-      void reader.cancel().catch(() => undefined)
+      res.destroy()
       return Buffer.concat(chunks).toString('utf8')
-    } catch {
-      return null
-    } finally {
-      clearTimeout(timer)
     }
+  } catch {
+    return null
   }
   return null
 }
@@ -148,7 +97,7 @@ function previewOf(html, pageUrl) {
       const abs = new URL(rawImage, pageUrl)
       if (abs.protocol === 'http:' || abs.protocol === 'https:') image = abs.href
     } catch {
-      /* a picture that is not an address is no picture */
+      /* not an address */
     }
   }
   const out = {}
@@ -160,14 +109,11 @@ function previewOf(html, pageUrl) {
   return out
 }
 
-
-/** What is behind a link, cached, or an empty card for anything that is not a page. */
 export async function preview(wanted) {
   const held = previews.get(wanted)
   if (held && Date.now() - held.at < PREVIEW_CACHE_MS) return held.data
   const html = await fetchPage(wanted)
-  // A page that answered nothing is cached as nothing, so a dead link does
-  // not cost one fetch per person who scrolls past it.
+  // Cache failures too, so a dead link costs one fetch, not one per reader.
   const data = html ? previewOf(html, wanted) : {}
   if (previews.size >= PREVIEW_CACHE_MAX) previews.delete(previews.keys().next().value)
   previews.set(wanted, { at: Date.now(), data })
