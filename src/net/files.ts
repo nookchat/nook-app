@@ -1,6 +1,7 @@
 import { fromBase64Url, toBase64Url } from '../bytes'
 import type { Attachment } from '../store/log'
 import { endpoints } from './cluster'
+import { faststart } from './faststart'
 import { health } from './server-api'
 
 const DEFAULT_MAX_BYTES = 100 * 1024 * 1024
@@ -10,7 +11,7 @@ const POSTER_PX = 960
 const IV_BYTES = 12
 const TAG_BYTES = 16
 /** Plain bytes in each sealed piece. The service worker in public/stream-sw.js reads the same layout. */
-export const CHUNK_BYTES = 1024 * 1024
+export const CHUNK_BYTES = 256 * 1024
 const LOOK_TIMEOUT_MS = 8000
 
 async function sealBytes(key: CryptoKey, plain: ArrayBuffer): Promise<Blob> {
@@ -295,6 +296,9 @@ export class SpaceFiles {
       const converted = await reencode(file, (part) => onStage?.(`Converting so everyone can watch it · ${Math.floor(part * 100)}%`))
       if (signal.aborted) throw new DOMException('Stopped', 'AbortError')
       if (converted) file = converted
+    }
+    if (/^(video|audio)\/(mp4|quicktime|x-m4a|m4a)$/.test(file.type) || /\.(mp4|m4v|mov|m4a)$/i.test(file.name)) {
+      file = await faststart(file)
     }
     const look = await lookAt(file)
     const key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt'])

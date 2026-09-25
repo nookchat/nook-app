@@ -44,8 +44,41 @@ export function soundByName(text: string): Sound | null {
   return SOUNDS.find((s) => s.id === want || s.label.toLowerCase().replace(/\s+/g, '') === want) ?? null
 }
 
-const MIN_GAP_MS = 600
-let lastAt = 0
+const VOLUME_KEY = 'nook:board-volume'
+
+/** How loud the soundboard plays here, from 0 to 1. */
+export function boardVolume(): number {
+  try {
+    const saved = Number(localStorage.getItem(VOLUME_KEY))
+    if (localStorage.getItem(VOLUME_KEY) !== null && Number.isFinite(saved)) return Math.min(1, Math.max(0, saved))
+  } catch {
+    /* storage can be blocked */
+  }
+  return 0.8
+}
+
+export function setBoardVolume(level: number): void {
+  try {
+    localStorage.setItem(VOLUME_KEY, String(Math.min(1, Math.max(0, level))))
+  } catch {
+    /* storage can be blocked */
+  }
+  const ctx = sharedAudio()
+  const node = ctx ? levels.get(ctx) : undefined
+  if (ctx && node) node.gain.setTargetAtTime(LOUDNESS * boardVolume(), ctx.currentTime, 0.02)
+}
+
+const LOUDNESS = 1.6
+const levels = new WeakMap<AudioContext, GainNode>()
+
+/** Each sound playing now, by id, so playing it again starts it over. */
+const playing = new Map<string, GainNode>()
+/** Where the voice being built right now sends its sound. */
+let target: AudioNode | null = null
+
+function into(ctx: AudioContext): AudioNode {
+  return target ?? out(ctx)
+}
 
 /**
  * Every sound goes through one chain: a gentle top cut, a small room, and a
@@ -85,7 +118,8 @@ function out(ctx: AudioContext): AudioNode {
   squeeze.attack.value = 0.004
   squeeze.release.value = 0.2
   const level = ctx.createGain()
-  level.gain.value = 1.4
+  level.gain.value = LOUDNESS * boardVolume()
+  levels.set(ctx, level)
   input.connect(tone)
   tone.connect(dry)
   tone.connect(verb)
@@ -100,13 +134,30 @@ function out(ctx: AudioContext): AudioNode {
 
 function ready(): AudioContext | null {
   if (!soundsOn()) return null
-  const now = Date.now()
-  if (now - lastAt < MIN_GAP_MS) return null
   const ctx = sharedAudio()
   if (!ctx) return null
-  lastAt = now
   if (ctx.state === 'suspended') void ctx.resume().catch(() => undefined)
   return ctx
+}
+
+/** A fresh path for one play of `id`. The last play of the same sound fades out at once. */
+function freshPlay(ctx: AudioContext, id: string, seconds: number): GainNode {
+  const old = playing.get(id)
+  if (old) {
+    old.gain.cancelScheduledValues(ctx.currentTime)
+    old.gain.setValueAtTime(old.gain.value, ctx.currentTime)
+    old.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.03)
+    window.setTimeout(() => old.disconnect(), 80)
+  }
+  const bus = ctx.createGain()
+  bus.connect(out(ctx))
+  playing.set(id, bus)
+  window.setTimeout(() => {
+    if (playing.get(id) !== bus) return
+    playing.delete(id)
+    bus.disconnect()
+  }, (seconds + 1.5) * 1000)
+  return bus
 }
 
 export function playSound(id: string): boolean {
@@ -114,16 +165,19 @@ export function playSound(id: string): boolean {
   if (!voice) return false
   const ctx = ready()
   if (!ctx) return false
+  target = freshPlay(ctx, id, 3)
   try {
-    voice(ctx, ctx.currentTime + 0.02)
+    voice(ctx, ctx.currentTime + 0.01)
   } catch {
     return false
+  } finally {
+    target = null
   }
   return true
 }
 
 /** A sound somebody added, already decoded. */
-export function playClip(buffer: AudioBuffer): boolean {
+export function playClip(id: string, buffer: AudioBuffer): boolean {
   const ctx = ready()
   if (!ctx) return false
   const src = ctx.createBufferSource()
@@ -131,7 +185,7 @@ export function playClip(buffer: AudioBuffer): boolean {
   const vol = ctx.createGain()
   vol.gain.value = 0.8
   src.connect(vol)
-  vol.connect(out(ctx))
+  vol.connect(freshPlay(ctx, id, Math.min(buffer.duration, CUSTOM_MAX_S)))
   const at = ctx.currentTime + 0.02
   src.start(at)
   if (buffer.duration > CUSTOM_MAX_S) {
@@ -197,7 +251,7 @@ function tone(
     } else {
       osc.connect(vol)
     }
-    vol.connect(out(ctx))
+    vol.connect(into(ctx))
     osc.start(at)
     osc.stop(at + opts.len + 0.02)
   }
@@ -237,7 +291,7 @@ function hiss(
 
   src.connect(filter)
   filter.connect(vol)
-  vol.connect(out(ctx))
+  vol.connect(into(ctx))
   src.start(at)
   src.stop(at + opts.len + 0.02)
 }
@@ -363,7 +417,7 @@ const VOICES: Record<string, Voice> = {
     lfo.connect(depth)
     depth.connect(carrier.frequency)
     carrier.connect(vol)
-    vol.connect(out(ctx))
+    vol.connect(into(ctx))
     lfo.start(at)
     carrier.start(at)
     lfo.stop(at + 0.5)
@@ -454,6 +508,25 @@ interface BoardOptions {
 
 let open: { close(): void; anchor: HTMLElement } | null = null
 
+function volumeRow(): HTMLElement {
+  const value = h('span', { class: 'tiny faint sound-volume-value' })
+  const range = h('input', { type: 'range', min: '0', max: '100', step: '1', ariaLabel: 'Soundboard volume' })
+  range.value = String(Math.round(boardVolume() * 100))
+  const paint = (): void => {
+    value.textContent = `${range.value}%`
+  }
+  range.addEventListener('input', () => {
+    setBoardVolume(Number(range.value) / 100)
+    paint()
+  })
+  paint()
+  return h('label', { class: 'row sound-volume', title: 'How loud the soundboard is for you' }, [
+    icon('volume-low', 16),
+    range,
+    value,
+  ])
+}
+
 export function openSoundboard(options: BoardOptions): void {
   if (open && open.anchor === options.anchor) {
     open.close()
@@ -479,6 +552,7 @@ export function openSoundboard(options: BoardOptions): void {
       ),
     ]),
     grid,
+    volumeRow(),
     foot,
   ])
 

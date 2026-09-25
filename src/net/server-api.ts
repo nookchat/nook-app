@@ -7,6 +7,15 @@ export interface LinkPreview {
   description?: string
   image?: string
   site?: string
+  /** The picture's size, when the page says. */
+  width?: number
+  height?: number
+  /** A wide picture, shown big under the words. */
+  large?: boolean
+  /** The site's theme colour, for the bar down the side. */
+  colour?: string
+  icon?: string
+  video?: boolean
 }
 
 /** A kept line is an event sealed in a signal envelope, so there is one sealed format. */
@@ -32,7 +41,14 @@ export function preview(server: string, url: string): Promise<LinkPreview | null
     const res = await ask(server, `/api/v1/preview?url=${encodeURIComponent(url)}`)
     if (!res?.ok) return null
     const body = (await res.json().catch(() => null)) as LinkPreview | null
-    return body && (body.title || body.description || body.image) ? body : null
+    if (!body || !(body.title || body.description || body.image)) return null
+    // Pictures come through the server that made the card, named by a path on it.
+    const base = server.replace(/\/+$/, '')
+    for (const field of ['image', 'icon'] as const) {
+      const path = body[field]
+      if (path?.startsWith('/api/')) body[field] = `${base}${path}`
+    }
+    return body
   })()
   previews.set(key, asking)
   return asking

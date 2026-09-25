@@ -72,7 +72,7 @@ import { VideoSurface } from './video-surface'
 
 const RECENT_MS = 14 * 24 * 60 * 60 * 1000
 const STATS_MS = 2000
-const SOUND_EVERY_MS = 1500
+const SOUND_EVERY_MS = 120
 const LINK_EVERY_MS = 3000
 
 /** 4:05, or 1:04:05 past the hour. */
@@ -268,6 +268,7 @@ export class SpaceView {
   private soundSentAt = 0
   private readonly clips = new Map<string, Promise<AudioBuffer | null>>()
   private readonly soundHeard = new Map<string, number>()
+  private readonly soundSaid = new Map<string, number>()
   private ttsSentAt = 0
   private readonly ttsHeard = new Map<string, number>()
   private serverWarned = false
@@ -323,10 +324,10 @@ export class SpaceView {
     'button',
     {
       class: 'ghost icon-only voice-board',
-      title: 'Soundboard: only the people in here hear it',
+      title: 'Soundboard: only the people in your voice channel hear it',
       ariaLabel: 'Soundboard',
     },
-    [icon('music', 15)],
+    [icon('music', 19)],
   )
   private readonly typing = new Map<string, { channel: string; at: number }>()
   private lastTypingSent = 0
@@ -709,7 +710,7 @@ export class SpaceView {
   private async play(id: string): Promise<boolean> {
     if (!id.startsWith(CUSTOM)) return playSound(id)
     const buffer = await this.clip(id)
-    return buffer ? playClip(buffer) : false
+    return buffer ? playClip(id, buffer) : false
   }
 
   private sendSound(id: string): void {
@@ -720,11 +721,9 @@ export class SpaceView {
       toast('Join a voice channel to play sounds. Only the people in it hear them.', 'warn')
       return
     }
+    // Played as fast as it is clicked; a flood beyond that is only thinned out.
     const now = Date.now()
-    if (now - this.soundSentAt < SOUND_EVERY_MS) {
-      toast('One sound at a time.', 'warn')
-      return
-    }
+    if (now - this.soundSentAt < SOUND_EVERY_MS) return
     this.soundSentAt = now
     this.mesh?.broadcast(JSON.stringify({ t: 'sound', s: sound.id, v: here }))
     if (this.voice?.state.deafened) return
@@ -746,6 +745,10 @@ export class SpaceView {
     if (!allowNow(this.soundHeard, key, SOUND_EVERY_MS)) return true
     void this.play(sound.id).then((played) => {
       if (!played) return
+      // One word per person and sound while it is being played again and again.
+      const said = `${key}:${sound.id}`
+      if (Date.now() - (this.soundSaid.get(said) ?? 0) < 4000) return
+      this.soundSaid.set(said, Date.now())
       const who = (key && this.chat?.nameOf(key)) || 'Somebody'
       toast(`${who} played ${sound.label} ${sound.emoji}`, 'info', 3000)
     })
@@ -2076,7 +2079,6 @@ export class SpaceView {
       const head = h('div', { class: `rail-item voice-head${here === name ? ' on' : ''}` }, [
         join,
         timer,
-        here === name && !isCallChannel(name) ? this.boardButton : null,
         people.size ? h('span', { class: 'pill', text: String(people.size) }) : null,
       ])
       head.addEventListener('click', (ev) => {
@@ -2319,6 +2321,7 @@ export class SpaceView {
           },
           [icon(state.deafened ? 'headphones-off' : 'headphones', 19)],
         ),
+        ...(isCallChannel(state.channel) ? [] : [this.boardButton]),
         this.shareButton,
         h(
           'button',

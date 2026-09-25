@@ -2,11 +2,11 @@ import { clusterUrls, fromPeer, linesFor, peerHealth, peopleFor, roomsFor } from
 import { HAS_TURN, MAX_FILE_BYTES, PREVIEWS, TURN_ONLY, VERSION, originAllowed } from './config.mjs'
 import { FILE_ID, filesFor, keep, send } from './files.mjs'
 import { gifService, gifs, hasGifs } from './gifs.mjs'
-import { ApiError, allow, fail, readJson, reply } from './http.mjs'
+import { ApiError, allow, corsHeaders, fail, readJson, reply } from './http.mjs'
 import { LINK_ID, MAX_LINK, putLink, takeLink } from './links.mjs'
 import { liveFor } from './live.mjs'
 import { openapi } from './openapi.mjs'
-import { preview } from './preview.mjs'
+import { preview, previewImage } from './preview.mjs'
 import { localStates } from './sockets.mjs'
 import {
   append,
@@ -163,6 +163,22 @@ export async function handle(req, res) {
         const id = personOf(b)
         if (method === 'GET') return reply(res, 200, await person(id))
         if (method === 'PUT' || method === 'POST') return reply(res, 200, await writePerson(req, id))
+      }
+      if (a === 'preview' && b === 'image' && method === 'GET') {
+        if (!PREVIEWS) throw new ApiError(404, 'off', 'Link cards are turned off on this server.')
+        const picture = await previewImage(url.searchParams.get('url') ?? '')
+        if (!picture) throw new ApiError(404, 'not_found', 'There is no such picture here.')
+        res.writeHead(200, {
+          ...corsHeaders(req),
+          'content-type': picture.type,
+          'content-length': picture.body.length,
+          'cache-control': 'public, max-age=86400',
+          'content-security-policy': "default-src 'none'; sandbox",
+          'cross-origin-resource-policy': 'cross-origin',
+          'x-content-type-options': 'nosniff',
+        })
+        res.end(picture.body)
+        return
       }
       if (a === 'preview' && method === 'GET') {
         limited(req)

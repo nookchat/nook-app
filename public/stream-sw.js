@@ -123,78 +123,127 @@ async function fetchSealed(info, from, to) {
   throw last ?? new Error('No server had that file.')
 }
 
-async function piecesStream(info, key, first, last, start, end) {
+// Opened pieces, shared by every request for the same file, so the jumps a
+// player makes to find its index do not fetch the same bytes twice.
+const CACHE_BYTES = 96 * 1024 * 1024
+/** `${id}:${index}` -> { promise, bytes } in the order they were used */
+const cache = new Map()
+let cachedBytes = 0
+
+function remember(name, entry) {
+  cache.set(name, entry)
+  while (cachedBytes > CACHE_BYTES && cache.size > 1) {
+    const [oldName, old] = cache.entries().next().value
+    if (oldName === name) break
+    cache.delete(oldName)
+    cachedBytes -= old.bytes
+  }
+}
+
+/** Pieces fetched in one go: enough to play on, not the whole rest of the file. */
+function windowOf(info) {
+  return Math.max(2, Math.floor((2 * 1024 * 1024) / info.chunk))
+}
+
+/** Starts fetching from piece `first`, up to a window's worth, skipping what is held. */
+function fetchWindow(info, key, first) {
   const total = pieces(info)
-  const from = sealedAt(info, first)
-  const to = sealedAt(info, last) + IV_BYTES + plainOf(info, last) + TAG_BYTES - 1
-  const { res, skip } = await fetchSealed(info, from, to)
-  const reader = res.body.getReader()
+  let last = first
+  while (last + 1 < total && last + 1 < first + windowOf(info) && !cache.has(`${info.id}:${last + 1}`)) last++
 
-  let held = []
-  let heldBytes = 0
-  let toSkip = skip
-  let index = first
-
-  const take = (n) => {
-    const out = new Uint8Array(n)
-    let at = 0
-    while (at < n) {
-      const head = held[0]
-      const want = n - at
-      if (head.length <= want) {
-        out.set(head, at)
-        at += head.length
-        held.shift()
-      } else {
-        out.set(head.subarray(0, want), at)
-        held[0] = head.subarray(want)
-        at += want
-      }
-    }
-    heldBytes -= n
-    return out
+  const waiting = []
+  for (let i = first; i <= last; i++) {
+    let settle
+    const promise = new Promise((ok, fail) => (settle = { ok, fail }))
+    promise.catch(() => undefined)
+    const entry = { promise, bytes: 0 }
+    remember(`${info.id}:${i}`, entry)
+    waiting.push({ index: i, settle, entry })
   }
 
+  void (async () => {
+    try {
+      const from = sealedAt(info, first)
+      const to = sealedAt(info, last) + IV_BYTES + plainOf(info, last) + TAG_BYTES - 1
+      const { res, skip } = await fetchSealed(info, from, to)
+      const reader = res.body.getReader()
+      let held = new Uint8Array(0)
+      let toSkip = skip
+      for (const wait of waiting) {
+        const need = IV_BYTES + plainOf(info, wait.index) + TAG_BYTES
+        while (held.length < need) {
+          const { done, value } = await reader.read()
+          if (done) throw new Error('The file arrived cut short.')
+          let chunk = value
+          if (toSkip > 0) {
+            const drop = Math.min(toSkip, chunk.length)
+            toSkip -= drop
+            chunk = chunk.subarray(drop)
+          }
+          if (!chunk.length) continue
+          const joined = new Uint8Array(held.length + chunk.length)
+          joined.set(held)
+          joined.set(chunk, held.length)
+          held = joined
+        }
+        const sealed = held.subarray(0, need)
+        held = held.slice(need)
+        const opened = new Uint8Array(
+          await crypto.subtle.decrypt(
+            { name: 'AES-GCM', iv: sealed.subarray(0, IV_BYTES), additionalData: label(wait.index, wait.index === total - 1) },
+            key,
+            sealed.subarray(IV_BYTES),
+          ),
+        )
+        wait.entry.bytes = opened.length
+        // Counted only while held: one dropped while it was on its way never counted.
+        if (cache.get(`${info.id}:${wait.index}`) === wait.entry) cachedBytes += opened.length
+        wait.settle.ok(opened)
+      }
+      reader.cancel().catch(() => undefined)
+    } catch (err) {
+      for (const wait of waiting) {
+        if (cache.get(`${info.id}:${wait.index}`) === wait.entry && wait.entry.bytes === 0) cache.delete(`${info.id}:${wait.index}`)
+        wait.settle.fail(err)
+      }
+    }
+  })()
+}
+
+function piece(info, key, index) {
+  const name = `${info.id}:${index}`
+  let entry = cache.get(name)
+  if (!entry) {
+    fetchWindow(info, key, index)
+    entry = cache.get(name)
+  } else {
+    // Used again: move it to the back, so it is the last to go.
+    cache.delete(name)
+    cache.set(name, entry)
+  }
+  return entry.promise
+}
+
+async function piecesStream(info, key, first, last, start, end) {
+  const total = pieces(info)
+  let index = first
+  // The first piece is waited for here, so a failure is a failed response, not a broken body.
+  await piece(info, key, first)
   return new ReadableStream({
     async pull(controller) {
       if (index > last) {
         controller.close()
-        reader.cancel().catch(() => undefined)
         return
       }
-      const plain = plainOf(info, index)
-      const need = IV_BYTES + plain + TAG_BYTES
-      while (heldBytes < need) {
-        const { done, value } = await reader.read()
-        if (done) throw new Error('The file arrived cut short.')
-        let chunk = value
-        if (toSkip > 0) {
-          const drop = Math.min(toSkip, chunk.length)
-          toSkip -= drop
-          chunk = chunk.subarray(drop)
-        }
-        if (chunk.length) {
-          held.push(chunk)
-          heldBytes += chunk.length
-        }
-      }
-      const sealed = take(need)
-      const opened = new Uint8Array(
-        await crypto.subtle.decrypt(
-          { name: 'AES-GCM', iv: sealed.subarray(0, IV_BYTES), additionalData: label(index, index === total - 1) },
-          key,
-          sealed.subarray(IV_BYTES),
-        ),
-      )
+      const opened = await piece(info, key, index)
+      // Read ahead while this one is played.
+      const ahead = index + Math.ceil(windowOf(info) / 2)
+      if (ahead <= last && ahead < total && !cache.has(`${info.id}:${ahead}`)) piece(info, key, ahead)
       const base = index * info.chunk
       const lo = Math.max(0, start - base)
-      const hi = Math.min(plain, end - base + 1)
+      const hi = Math.min(opened.length, end - base + 1)
       controller.enqueue(opened.subarray(lo, hi))
       index++
-    },
-    cancel() {
-      held = []
-      reader.cancel().catch(() => undefined)
     },
   })
 }

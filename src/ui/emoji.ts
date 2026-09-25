@@ -395,6 +395,33 @@ interface PickerOptions {
   sticky?: boolean
 }
 
+function emojiCell(ch: string): HTMLElement {
+  const label = describe(ch) || ch
+  // No listeners here: the grid listens once for all of them.
+  return h('button', { class: 'emoji-cell', text: ch, title: label, ariaLabel: label })
+}
+
+function emojiSection(label: string, list: string[]): HTMLElement {
+  const row = h('div', { class: 'emoji-row' })
+  for (const ch of list) row.append(emojiCell(ch))
+  return h('div', { class: 'emoji-section' }, [h('div', { class: 'emoji-head', text: label }), row])
+}
+
+/** Every group, built once and moved into whichever picker is open. */
+let groupSections: HTMLElement[] | null = null
+
+function sections(): HTMLElement[] {
+  groupSections ??= ALL.map(({ group, list }) => emojiSection(group.label, list.map((e) => e.ch)))
+  return groupSections
+}
+
+/** Builds the picker's insides while nothing else is happening, so the first open is quick. */
+export function warmEmoji(): void {
+  const idle = (window as Window & { requestIdleCallback?: (cb: () => void) => void }).requestIdleCallback
+  if (idle) idle(() => sections())
+  else window.setTimeout(() => sections(), 1500)
+}
+
 export function openEmojiPicker(options: PickerOptions): void {
   if (open && open.anchor === options.anchor) {
     open.close()
@@ -435,27 +462,26 @@ export function openEmojiPicker(options: PickerOptions): void {
     else close()
   }
 
-  const cell = (ch: string): HTMLElement => {
-    const label = describe(ch) || ch
-    return h('button', {
-      class: 'emoji-cell',
-      text: ch,
-      title: label,
-      ariaLabel: label,
-      on: {
-        click: () => pick(ch),
-        mouseenter: () => setPreview(ch),
-        focus: () => setPreview(ch),
-      },
-    })
+  const cellAt = (target: EventTarget | null): HTMLElement | null => {
+    const hit = (target as Element | null)?.closest?.('.emoji-cell')
+    return hit instanceof HTMLElement && grid.contains(hit) ? hit : null
   }
+  grid.addEventListener('click', (ev) => {
+    const hit = cellAt(ev.target)
+    if (hit?.textContent) pick(hit.textContent)
+  })
+  grid.addEventListener('mouseover', (ev) => {
+    const hit = cellAt(ev.target)
+    if (hit?.textContent) setPreview(hit.textContent)
+  })
+  grid.addEventListener('focusin', (ev) => {
+    const hit = cellAt(ev.target)
+    if (hit?.textContent) setPreview(hit.textContent)
+  })
 
   const section = (label: string, list: string[]): void => {
     if (list.length === 0) return
-    grid.append(h('div', { class: 'emoji-head', text: label }))
-    const row = h('div', { class: 'emoji-row' })
-    for (const ch of list) row.append(cell(ch))
-    grid.append(row)
+    grid.append(emojiSection(label, list))
   }
 
   function paint(query: string): void {
@@ -474,7 +500,7 @@ export function openEmojiPicker(options: PickerOptions): void {
       return
     }
     section('Recent', recentEmoji())
-    for (const { group, list } of ALL) section(group.label, list.map((e) => e.ch))
+    grid.append(...sections())
   }
 
   for (const { group } of ALL) {
@@ -490,7 +516,7 @@ export function openEmojiPicker(options: PickerOptions): void {
             paint('')
             const heads = [...grid.querySelectorAll('.emoji-head')]
             const head = heads.find((el) => el.textContent === group.label)
-            if (head instanceof HTMLElement) grid.scrollTop = head.offsetTop - grid.offsetTop
+            if (head instanceof HTMLElement) head.scrollIntoView({ block: 'start' })
           },
         },
       }),

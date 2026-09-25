@@ -47,6 +47,21 @@ function onlyEmoji(text: string): boolean {
 
 const UTF8 = new TextEncoder()
 
+/** 0 for black to 1 for white, or 0 for anything that is not a plain colour. */
+function brightness(colour: string): number {
+  let rgb: number[] = []
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(colour.trim())
+  if (hex) {
+    const full = hex[1].length === 3 ? [...hex[1]].map((c) => c + c).join('') : hex[1]
+    rgb = [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16))
+  } else {
+    const fn = /^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})/i.exec(colour.trim())
+    if (fn) rgb = fn.slice(1, 4).map(Number)
+  }
+  if (rgb.length !== 3) return 0
+  return (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255
+}
+
 function spoiler(text: string): HTMLElement {
   const box = h('span', {
     class: 'spoiler',
@@ -1181,37 +1196,69 @@ export class ChatPanel {
     if (!this.previewFor) return
     const link = text.match(/https?:\/\/[^\s<>"')\]]+/)?.[0]
     if (!link || pictures.includes(link)) return
-    const box = h('a', { class: 'link-card hidden' })
-    box.href = link
-    box.target = '_blank'
-    box.rel = 'noreferrer noopener'
+    const box = h('div', { class: 'link-card hidden' })
     line.append(box)
     void this.previewFor(link)
       .then((p) => {
         if (!p || (!p.title && !p.description && !p.image)) return
-        const image = p.image && /^https?:\/\//.test(p.image) ? p.image : ''
-        if (image) {
-          const img = h('img', { class: 'link-card-img' })
+        const web = (url: string | undefined): string => (url && /^https?:\/\//.test(url) ? url : '')
+        const picture = (url: string, cls: string): HTMLImageElement => {
+          const img = h('img', { class: cls })
           img.alt = ''
           img.loading = 'lazy'
           img.referrerPolicy = 'no-referrer'
-          img.src = image
-          img.addEventListener('error', () => img.remove())
-          box.append(img)
+          img.src = url
+          return img
+        }
+        const out = (child: HTMLElement): HTMLAnchorElement => {
+          const a = h('a', {}, [child])
+          a.href = link
+          a.target = '_blank'
+          a.rel = 'noreferrer noopener'
+          return a
         }
         let host = ''
         try {
-          host = new URL(link).hostname
+          host = new URL(link).hostname.replace(/^www\./, '')
         } catch {
           /* leave the host empty */
         }
-        box.append(
-          h('div', { class: 'link-card-body stack tight' }, [
-            h('div', { class: 'link-card-title truncate', text: p.title || link }),
-            p.description ? h('div', { class: 'link-card-desc tiny', text: p.description }) : null,
-            h('div', { class: 'tiny faint truncate', text: p.site || host }),
-          ]),
-        )
+
+        // The bar down the side takes the site's own colour, as Discord does.
+        // A near black one would vanish into the card, so those keep the plain line.
+        if (p.colour && brightness(p.colour) > 0.12) box.style.setProperty('--site', p.colour)
+
+        const site = h('div', { class: 'link-card-site' })
+        const favicon = web(p.icon)
+        if (favicon) {
+          const img = picture(favicon, 'link-card-icon')
+          img.addEventListener('error', () => img.remove())
+          site.append(img)
+        }
+        site.append(h('span', { class: 'truncate', text: p.site || host }))
+
+        const body = h('div', { class: 'link-card-body' }, [site])
+        if (p.title) body.append(out(h('span', { class: 'link-card-title', text: p.title })))
+        if (p.description) body.append(h('div', { class: 'link-card-desc', text: p.description }))
+        box.append(body)
+
+        const image = web(p.image)
+        if (image && p.large) {
+          const hero = picture(image, 'link-card-hero')
+          if (p.width && p.height) hero.style.aspectRatio = `${p.width} / ${p.height}`
+          const frame = out(hero)
+          frame.className = 'link-card-frame'
+          if (p.video) frame.append(h('span', { class: 'link-card-play' }, [icon('play', 22)]))
+          hero.addEventListener('error', () => frame.remove())
+          box.append(frame)
+          box.classList.add('large')
+        } else if (image) {
+          const thumb = picture(image, 'link-card-thumb')
+          const frame = out(thumb)
+          frame.className = 'link-card-side'
+          thumb.addEventListener('error', () => frame.remove())
+          box.append(frame)
+        }
         box.classList.remove('hidden')
       })
       .catch(() => undefined)

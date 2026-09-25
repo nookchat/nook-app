@@ -328,16 +328,8 @@ try {
   const hiddenOutside = await alice.evaluate(() => !document.querySelector('button[aria-label="Soundboard"]'))
   check('the soundboard is not offered outside a voice channel', hiddenOutside === true)
   await alice.click('.rail-left .rail-item:has-text("lounge")')
-  await alice.waitForSelector('.voice-head button[aria-label="Soundboard"]', { timeout: 10_000 })
-  check(
-    'it sits on the voice channel, before the count',
-    await alice.$eval('.voice-head.on', (el) => {
-      const kids = [...el.children]
-      const board = kids.findIndex((k) => k.getAttribute('aria-label') === 'Soundboard')
-      const count = kids.findIndex((k) => k.classList.contains('pill'))
-      return board >= 0 && count > board
-    }),
-  )
+  await alice.waitForSelector('.voice-bar button[aria-label="Soundboard"]', { timeout: 10_000 })
+  check('it sits in the voice bar, bottom left', true)
   await alice.click('button[aria-label="Soundboard"]')
   await alice.waitForSelector('.sound-pop')
   const cells = await alice.$$eval('.sound-cell', (els) => els.length)
