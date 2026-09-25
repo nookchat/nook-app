@@ -325,17 +325,38 @@ try {
   check('and the count is out of the way when there is room', quiet)
   await alice.fill(BOX, '')
 
-  const hiddenOutside = await alice.evaluate(() =>
-    document.querySelector('button[aria-label="Soundboard"]')?.classList.contains('hidden'),
-  )
+  const hiddenOutside = await alice.evaluate(() => !document.querySelector('button[aria-label="Soundboard"]'))
   check('the soundboard is not offered outside a voice channel', hiddenOutside === true)
   await alice.click('.rail-left .rail-item:has-text("lounge")')
-  await alice.waitForSelector('button[aria-label="Soundboard"]:not(.hidden)', { timeout: 10_000 })
+  await alice.waitForSelector('.voice-head button[aria-label="Soundboard"]', { timeout: 10_000 })
+  check(
+    'it sits on the voice channel, before the count',
+    await alice.$eval('.voice-head.on', (el) => {
+      const kids = [...el.children]
+      const board = kids.findIndex((k) => k.getAttribute('aria-label') === 'Soundboard')
+      const count = kids.findIndex((k) => k.classList.contains('pill'))
+      return board >= 0 && count > board
+    }),
+  )
   await alice.click('button[aria-label="Soundboard"]')
   await alice.waitForSelector('.sound-pop')
   const cells = await alice.$$eval('.sound-cell', (els) => els.length)
   check('the board opens with something on it', cells >= 12, `${cells} sounds`)
 
+  await alice.click('button[aria-label="Play Airhorn for everybody"]')
+  const outside = await bob
+    .waitForFunction(
+      () => [...document.querySelectorAll('.toast')].some((t) => t.textContent.includes('Alice played Airhorn')),
+      null,
+      { timeout: 3000 },
+    )
+    .then(() => true)
+    .catch(() => false)
+  check('somebody who is not in the voice channel does not hear it', !outside)
+
+  await bob.click('.rail-left .rail-item:has-text("lounge")')
+  await bob.waitForSelector('.voice-head.on', { timeout: 10_000 })
+  await bob.waitForTimeout(2000)
   await alice.click('button[aria-label="Play Airhorn for everybody"]')
   const heard = await bob
     .waitForFunction(
@@ -345,7 +366,7 @@ try {
     )
     .then(() => true)
     .catch(() => false)
-  check('everybody in the space hears it', heard)
+  check('somebody in the voice channel hears it', heard)
 
   const wrote = await bob.$$eval('.chat-text', (els) =>
     els.some((e) => e.textContent.includes('Airhorn')),

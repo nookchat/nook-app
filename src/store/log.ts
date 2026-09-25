@@ -18,6 +18,7 @@ const EVENT_KINDS = [
   'close',
   'dm',
   'note',
+  'board',
 ] as const
 
 export type EventKind = (typeof EVENT_KINDS)[number]
@@ -503,6 +504,33 @@ export class RoomLog {
     })
   }
 
+  /** Sounds people added to the soundboard. The adder or a channel keeper may take one off. */
+  boardSounds(): BoardSound[] {
+    return this.cached('board', () => {
+      const auth = this.authority()
+      const sounds = new Map<string, BoardSound>()
+      const gone = new Set<string>()
+      for (const e of this.all()) {
+        if (e.kind !== 'board' || auth.isKicked(e.author)) continue
+        const id = cleanNoteId(e.body.id)
+        if (!id || gone.has(id)) continue
+        const had = sounds.get(id)
+        if (e.body.gone === true) {
+          if (!had || (e.author !== had.maker && !auth.can(e.author, 'channels'))) continue
+          sounds.delete(id)
+          gone.add(id)
+          continue
+        }
+        if (had) continue
+        const file = cleanFiles([e.body.file])[0]
+        if (!file || sounds.size >= MAX_BOARD_SOUNDS) continue
+        const label = String(e.body.label ?? '').replace(/\s+/g, ' ').trim().slice(0, 24) || 'Sound'
+        sounds.set(id, { id, label, emoji: oneEmoji(String(e.body.emoji ?? '')) || '🔊', file, maker: e.author })
+      }
+      return [...sounds.values()]
+    })
+  }
+
   private deletedChannels(): Set<string> {
     const live = new Set(this.channels())
     const gone = new Set<string>()
@@ -777,6 +805,16 @@ export interface ThreadInfo {
   newest: number
 }
 
+export const MAX_BOARD_SOUNDS = 60
+
+export interface BoardSound {
+  id: string
+  label: string
+  emoji: string
+  file: Attachment
+  maker: string
+}
+
 export interface NoteInfo {
   id: string
   title: string
@@ -819,7 +857,12 @@ export interface Attachment {
   thumb?: string
   /** Id of the sealed first frame, stored as its own file. */
   poster?: string
+  /** Sealed in pieces of this many plain bytes, so it can be read a piece at a time. */
+  chunk?: number
 }
+
+export const MIN_CHUNK = 64 * 1024
+export const MAX_CHUNK = 16 * 1024 * 1024
 
 export const MAX_FILES = 10
 
@@ -859,6 +902,9 @@ export function cleanFiles(raw: unknown): Attachment[] {
       file.thumb = f.thumb
     }
     if (typeof f.poster === 'string' && /^[0-9a-f]{64}$/.test(f.poster)) file.poster = f.poster
+    if (typeof f.chunk === 'number' && Number.isInteger(f.chunk) && f.chunk >= MIN_CHUNK && f.chunk <= MAX_CHUNK) {
+      file.chunk = f.chunk
+    }
     out.push(file)
   }
   return out

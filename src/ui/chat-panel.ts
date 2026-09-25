@@ -142,7 +142,6 @@ export class ChatPanel {
   onThread: ((rootId: string | null) => void) | null = null
   onDirect: ((key: string | null) => void) | null = null
   onGif: (() => void) | null = null
-  onSound: (() => void) | null = null
   streamLive: ((key: string, channel: string) => boolean) | null = null
   onWatch: ((key: string, channel: string) => void) | null = null
   previewFor: ((url: string) => Promise<LinkPreview | null>) | null = null
@@ -155,7 +154,6 @@ export class ChatPanel {
   private readonly sendButton: HTMLButtonElement
   private readonly emojiButton: HTMLButtonElement
   private readonly gifButton: HTMLButtonElement
-  private readonly soundButton: HTMLButtonElement
   private readonly replyBar: HTMLDivElement
   private readonly nameRow: HTMLDivElement
   private readonly typingLine: HTMLDivElement
@@ -302,16 +300,6 @@ export class ChatPanel {
       ariaLabel: 'Find a GIF',
       on: { click: () => this.onGif?.() },
     })
-    this.soundButton = h(
-      'button',
-      {
-        class: 'ghost icon-only hidden',
-        title: 'Soundboard',
-        ariaLabel: 'Soundboard',
-        on: { click: () => this.onSound?.() },
-      },
-      [icon('volume', 20)],
-    )
 
     this.nameRow = h('div', { class: 'row' }, [
       h('span', { class: 'tiny faint', text: 'You', style: { width: '26px' } }),
@@ -375,7 +363,6 @@ export class ChatPanel {
           this.textInput,
           this.roomLeft,
           this.gifButton,
-          this.soundButton,
           this.emojiButton,
           this.sendButton,
         ]),
@@ -416,14 +403,6 @@ export class ChatPanel {
       this.tray.add([...(ev.dataTransfer?.files ?? [])])
       this.textInput.focus()
     })
-  }
-
-  showSoundboard(on: boolean): void {
-    this.soundButton.classList.toggle('hidden', !on)
-  }
-
-  get soundAnchor(): HTMLElement {
-    return this.soundButton
   }
 
   get gifAnchor(): HTMLElement {

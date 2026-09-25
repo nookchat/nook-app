@@ -1,13 +1,19 @@
 import { h } from './dom'
 import { icon } from './icons'
 import { placeNear } from './emoji'
+import { onContextMenu } from './menu'
 import { sharedAudio, soundsOn } from './sounds'
 
-interface Sound {
+export interface Sound {
   id: string
   label: string
   emoji: string
 }
+
+/** A sound somebody added: its id on the wire is CUSTOM + the board id. */
+export const CUSTOM = 'c:'
+/** Longest a sound that somebody added plays for. */
+export const CUSTOM_MAX_S = 10
 
 // The id is the wire payload: renaming one breaks older peers.
 export const SOUNDS: Sound[] = [
@@ -23,6 +29,9 @@ export const SOUNDS: Sound[] = [
   { id: 'buzzer', label: 'Buzzer', emoji: '⛔' },
   { id: 'zap', label: 'Zap', emoji: '⚡' },
   { id: 'pop', label: 'Pop', emoji: '🫧' },
+  { id: 'tada', label: 'Ta-da', emoji: '✨' },
+  { id: 'whoosh', label: 'Whoosh', emoji: '💨' },
+  { id: 'crickets', label: 'Crickets', emoji: '🦗' },
 ]
 
 export function soundById(id: string): Sound | null {
@@ -38,22 +47,105 @@ export function soundByName(text: string): Sound | null {
 const MIN_GAP_MS = 600
 let lastAt = 0
 
-export function playSound(id: string): boolean {
-  if (!soundsOn()) return false
+/**
+ * Every sound goes through one chain: a gentle top cut, a small room, and a
+ * compressor, so the synthesised ones sound less like a test tone and a loud
+ * sound somebody added cannot blow anybody's ears out.
+ */
+const chains = new WeakMap<AudioContext, AudioNode>()
+
+function room(ctx: AudioContext, seconds: number): AudioBuffer {
+  const frames = Math.floor(ctx.sampleRate * seconds)
+  const buffer = ctx.createBuffer(2, frames, ctx.sampleRate)
+  for (let c = 0; c < 2; c++) {
+    const data = buffer.getChannelData(c)
+    for (let i = 0; i < frames; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / frames, 3)
+  }
+  return buffer
+}
+
+function out(ctx: AudioContext): AudioNode {
+  const had = chains.get(ctx)
+  if (had) return had
+  const input = ctx.createGain()
+  const tone = ctx.createBiquadFilter()
+  tone.type = 'lowpass'
+  tone.frequency.value = 9000
+  tone.Q.value = 0.5
+  const dry = ctx.createGain()
+  dry.gain.value = 1
+  const wet = ctx.createGain()
+  wet.gain.value = 0.16
+  const verb = ctx.createConvolver()
+  verb.buffer = room(ctx, 1.1)
+  const squeeze = ctx.createDynamicsCompressor()
+  squeeze.threshold.value = -18
+  squeeze.knee.value = 12
+  squeeze.ratio.value = 4
+  squeeze.attack.value = 0.004
+  squeeze.release.value = 0.2
+  const level = ctx.createGain()
+  level.gain.value = 1.4
+  input.connect(tone)
+  tone.connect(dry)
+  tone.connect(verb)
+  verb.connect(wet)
+  dry.connect(squeeze)
+  wet.connect(squeeze)
+  squeeze.connect(level)
+  level.connect(ctx.destination)
+  chains.set(ctx, input)
+  return input
+}
+
+function ready(): AudioContext | null {
+  if (!soundsOn()) return null
   const now = Date.now()
-  if (now - lastAt < MIN_GAP_MS) return false
+  if (now - lastAt < MIN_GAP_MS) return null
   const ctx = sharedAudio()
-  if (!ctx) return false
-  const voice = VOICES[id]
-  if (!voice) return false
+  if (!ctx) return null
   lastAt = now
   if (ctx.state === 'suspended') void ctx.resume().catch(() => undefined)
+  return ctx
+}
+
+export function playSound(id: string): boolean {
+  const voice = VOICES[id]
+  if (!voice) return false
+  const ctx = ready()
+  if (!ctx) return false
   try {
     voice(ctx, ctx.currentTime + 0.02)
   } catch {
     return false
   }
   return true
+}
+
+/** A sound somebody added, already decoded. */
+export function playClip(buffer: AudioBuffer): boolean {
+  const ctx = ready()
+  if (!ctx) return false
+  const src = ctx.createBufferSource()
+  src.buffer = buffer
+  const vol = ctx.createGain()
+  vol.gain.value = 0.8
+  src.connect(vol)
+  vol.connect(out(ctx))
+  const at = ctx.currentTime + 0.02
+  src.start(at)
+  if (buffer.duration > CUSTOM_MAX_S) {
+    vol.gain.setValueAtTime(0.8, at + CUSTOM_MAX_S - 0.3)
+    vol.gain.linearRampToValueAtTime(0.0001, at + CUSTOM_MAX_S)
+    src.stop(at + CUSTOM_MAX_S)
+  }
+  return true
+}
+
+export async function decodeClip(bytes: ArrayBuffer): Promise<AudioBuffer> {
+  const ctx = sharedAudio()
+  if (!ctx) throw new Error('This browser cannot play sounds.')
+  return ctx.decodeAudioData(bytes)
 }
 
 function tone(
@@ -67,6 +159,10 @@ function tone(
     gain: number
     attack?: number
     unisonCents?: number
+    /** Low pass, in Hz: takes the fizz off a saw or a square. */
+    cut?: number
+    /** Vibrato: rate in Hz and depth in cents. */
+    wobble?: [number, number]
   },
 ): void {
   const make = (cents: number): void => {
@@ -74,6 +170,16 @@ function tone(
     const vol = ctx.createGain()
     osc.type = opts.shape ?? 'sine'
     osc.detune.value = cents
+    if (opts.wobble) {
+      const lfo = ctx.createOscillator()
+      const depth = ctx.createGain()
+      lfo.frequency.value = opts.wobble[0]
+      depth.gain.value = opts.wobble[1]
+      lfo.connect(depth)
+      depth.connect(osc.detune)
+      lfo.start(at)
+      lfo.stop(at + opts.len + 0.02)
+    }
     osc.frequency.setValueAtTime(opts.from, at)
     if (opts.to !== undefined && opts.to !== opts.from) {
       osc.frequency.exponentialRampToValueAtTime(Math.max(20, opts.to), at + opts.len)
@@ -82,8 +188,16 @@ function tone(
     vol.gain.setValueAtTime(0.0001, at)
     vol.gain.linearRampToValueAtTime(opts.gain, at + rise)
     vol.gain.exponentialRampToValueAtTime(0.0001, at + opts.len)
-    osc.connect(vol)
-    vol.connect(ctx.destination)
+    if (opts.cut) {
+      const filter = ctx.createBiquadFilter()
+      filter.type = 'lowpass'
+      filter.frequency.value = opts.cut
+      osc.connect(filter)
+      filter.connect(vol)
+    } else {
+      osc.connect(vol)
+    }
+    vol.connect(out(ctx))
     osc.start(at)
     osc.stop(at + opts.len + 0.02)
   }
@@ -123,7 +237,7 @@ function hiss(
 
   src.connect(filter)
   filter.connect(vol)
-  vol.connect(ctx.destination)
+  vol.connect(out(ctx))
   src.start(at)
   src.stop(at + opts.len + 0.02)
 }
@@ -146,6 +260,8 @@ function blast(ctx: AudioContext, at: number, len: number): void {
       gain,
       attack: 0.02,
       unisonCents: 7,
+      cut: 3800,
+      wobble: [6, 8],
     })
   }
 }
@@ -181,10 +297,12 @@ const VOICES: Record<string, Voice> = {
         shape: 'sawtooth',
         from: freq,
         to: freq * 0.94,
-        len: long ? 0.6 : 0.26,
+        len: long ? 0.9 : 0.26,
         gain: 0.09,
         attack: 0.03,
         unisonCents: 9,
+        cut: 2200,
+        wobble: long ? [5, 30] : undefined,
       })
     }
   },
@@ -202,9 +320,10 @@ const VOICES: Record<string, Voice> = {
   },
 
   applause: (ctx, at) => {
-    for (let i = 0; i < 44; i += 1) {
-      const when = at + Math.random() * 1.5
-      const swell = when - at < 0.25 ? 0.5 : 1
+    hiss(ctx, at, { len: 1.9, gain: 0.018, type: 'bandpass', freq: 2200, q: 0.6 })
+    for (let i = 0; i < 110; i += 1) {
+      const when = at + Math.random() * 1.8
+      const swell = when - at < 0.25 ? 0.5 : when - at > 1.4 ? 0.6 : 1
       hiss(ctx, when, {
         len: 0.045,
         gain: (0.012 + Math.random() * 0.02) * swell,
@@ -244,7 +363,7 @@ const VOICES: Record<string, Voice> = {
     lfo.connect(depth)
     depth.connect(carrier.frequency)
     carrier.connect(vol)
-    vol.connect(ctx.destination)
+    vol.connect(out(ctx))
     lfo.start(at)
     carrier.start(at)
     lfo.stop(at + 0.5)
@@ -252,8 +371,9 @@ const VOICES: Record<string, Voice> = {
   },
 
   coin: (ctx, at) => {
-    tone(ctx, at, { shape: 'square', from: 988, len: 0.08, gain: 0.07 })
-    tone(ctx, at + 0.08, { shape: 'square', from: 1319, len: 0.4, gain: 0.07 })
+    tone(ctx, at, { shape: 'square', from: 988, len: 0.08, gain: 0.06, cut: 5000 })
+    tone(ctx, at + 0.08, { shape: 'square', from: 1319, len: 0.5, gain: 0.06, cut: 5000 })
+    tone(ctx, at + 0.08, { shape: 'sine', from: 2638, len: 0.35, gain: 0.02 })
   },
 
   bell: (ctx, at) => {
@@ -271,6 +391,7 @@ const VOICES: Record<string, Voice> = {
         gain: 0.07,
         attack: 0.004,
         unisonCents: -18,
+        cut: 2600,
       })
       tone(ctx, at + delay, { shape: 'sawtooth', from: 70, len: 0.22, gain: 0.05 })
     }
@@ -279,6 +400,39 @@ const VOICES: Record<string, Voice> = {
   zap: (ctx, at) => {
     tone(ctx, at, { shape: 'square', from: 1600, to: 110, len: 0.28, gain: 0.08 })
     hiss(ctx, at, { len: 0.28, gain: 0.02, type: 'bandpass', freq: 2400, endFreq: 300, q: 3 })
+  },
+
+  tada: (ctx, at) => {
+    // A brass chord stabbed twice, the second held.
+    const chord = [523, 659, 784, 1047]
+    for (const [delay, len] of [
+      [0, 0.12],
+      [0.16, 0.9],
+    ] as const) {
+      for (const freq of chord) {
+        tone(ctx, at + delay, { shape: 'sawtooth', from: freq, len, gain: 0.035, attack: 0.012, unisonCents: 6, cut: 3200 })
+      }
+      tone(ctx, at + delay, { shape: 'triangle', from: 262, len, gain: 0.06 })
+    }
+    hiss(ctx, at + 0.16, { len: 0.8, gain: 0.05, type: 'highpass', freq: 7000, endFreq: 4000 })
+  },
+
+  whoosh: (ctx, at) => {
+    hiss(ctx, at, { len: 0.55, gain: 0.16, type: 'bandpass', freq: 300, endFreq: 3800, q: 2.5 })
+    hiss(ctx, at + 0.1, { len: 0.45, gain: 0.07, type: 'bandpass', freq: 3800, endFreq: 500, q: 3 })
+  },
+
+  crickets: (ctx, at) => {
+    for (const [start, freq] of [
+      [0, 4400],
+      [0.55, 4700],
+      [1.1, 4400],
+    ] as const) {
+      for (let i = 0; i < 4; i += 1) {
+        const t = at + start + i * 0.05
+        tone(ctx, t, { shape: 'sine', from: freq, len: 0.035, gain: 0.05, attack: 0.004, wobble: [55, 40] })
+      }
+    }
   },
 
   pop: (ctx, at) => {
@@ -290,6 +444,12 @@ const VOICES: Record<string, Voice> = {
 interface BoardOptions {
   anchor: HTMLElement
   onPick(id: string): void
+  /** Sounds people added, with ids that start with CUSTOM. */
+  custom?: Sound[]
+  onAdd?(): void
+  /** Only called for sounds this person may take off. */
+  onRemove?(id: string): void
+  canRemove?(id: string): boolean
 }
 
 let open: { close(): void; anchor: HTMLElement } | null = null
@@ -322,22 +482,57 @@ export function openSoundboard(options: BoardOptions): void {
     foot,
   ])
 
-  for (const sound of SOUNDS) {
-    grid.append(
-      h(
-        'button',
-        {
-          class: 'sound-cell',
-          title: `Play ${sound.label} for everybody`,
-          ariaLabel: `Play ${sound.label} for everybody`,
-          on: { click: () => options.onPick(sound.id) },
-        },
-        [
-          h('span', { class: 'sound-emoji', text: sound.emoji }),
-          h('span', { class: 'sound-name', text: sound.label }),
-        ],
-      ),
+  const cell = (sound: Sound, mine: boolean): HTMLElement => {
+    const button = h(
+      'button',
+      {
+        class: `sound-cell${mine ? ' custom' : ''}`,
+        title: `Play ${sound.label} for everybody in voice`,
+        ariaLabel: `Play ${sound.label} for everybody`,
+        on: { click: () => options.onPick(sound.id) },
+      },
+      [
+        h('span', { class: 'sound-emoji', text: sound.emoji }),
+        h('span', { class: 'sound-name', text: sound.label }),
+      ],
     )
+    if (mine && options.onRemove && options.canRemove?.(sound.id)) {
+      onContextMenu(button, () => [
+        {
+          label: `Take ${sound.label} off`,
+          note: 'For everybody in this space',
+          danger: true,
+          run: () => options.onRemove?.(sound.id),
+        },
+      ])
+    }
+    return button
+  }
+
+  for (const sound of SOUNDS) grid.append(cell(sound, false))
+  const custom = options.custom ?? []
+  if (custom.length || options.onAdd) {
+    grid.append(h('div', { class: 'sound-split eyebrow', text: 'Added here' }))
+    for (const sound of custom) grid.append(cell(sound, true))
+    if (options.onAdd) {
+      grid.append(
+        h(
+          'button',
+          {
+            class: 'sound-cell sound-add',
+            title: 'Add a sound for this space, up to 10 seconds',
+            ariaLabel: 'Add a sound',
+            on: {
+              click: () => {
+                close()
+                options.onAdd?.()
+              },
+            },
+          },
+          [icon('plus', 20), h('span', { class: 'sound-name', text: 'Add a sound' })],
+        ),
+      )
+    }
   }
 
   const onKey = (ev: KeyboardEvent): void => {
@@ -360,7 +555,9 @@ export function openSoundboard(options: BoardOptions): void {
   }
 
   open = { close, anchor: options.anchor }
-  foot.textContent = soundsOn() ? 'Everybody here hears it.' : 'Sounds are off. Turn them on in Settings to play these.'
+  foot.textContent = soundsOn()
+    ? 'Everybody in this voice channel hears it.'
+    : 'Sounds are off. Turn them on in Settings to play these.'
   document.body.append(pop)
   placeNear(pop, options.anchor)
   window.addEventListener('keydown', onKey, true)

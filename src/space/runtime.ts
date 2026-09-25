@@ -146,6 +146,8 @@ export class SpaceRuntime {
       voice: this.voice?.state.channel ?? undefined,
       muted: this.voice?.state.channel && this.voice.state.muted ? true : undefined,
       deafened: this.voice?.state.channel && this.voice.state.deafened ? true : undefined,
+      // How long, not since when: the clocks of two devices differ.
+      voiceFor: this.voice?.state.channel ? Math.max(0, Date.now() - this.voice.state.since) : undefined,
       ...this.extras(),
     })
     mesh.onData = (from, raw) => this.emit('data', from, raw)

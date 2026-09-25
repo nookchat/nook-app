@@ -152,14 +152,27 @@ function videoTile(file: Attachment, source: SpaceFiles | null, most: { w: numbe
     tile.classList.add('loading')
     progress.classList.remove('hidden')
     progress.textContent = '0%'
-    try {
-      const url = await source.url(file, (done, total) => {
+    const whole = (): Promise<string> =>
+      source.url(file, (done, total) => {
         if (total) progress.textContent = `${Math.min(99, Math.floor((done / total) * 100))}%`
       })
+    try {
+      // Plays as it arrives when it can; the whole file first when it cannot.
+      const stream = source.streamUrl(file)
       const video = h('video', { class: 'att-player' })
       video.controls = true
       video.playsInline = true
-      video.src = url
+      if (stream) {
+        video.src = stream
+        await new Promise<void>((ok, fail) => {
+          video.addEventListener('loadedmetadata', () => ok(), { once: true })
+          video.addEventListener('error', () => fail(new Error('the stream did not play')), { once: true })
+        }).catch(async () => {
+          video.src = await whole()
+        })
+      } else {
+        video.src = await whole()
+      }
       tile.classList.add('playing')
       tile.replaceChildren(video)
       tile.removeAttribute('role')
@@ -246,14 +259,15 @@ function fileCard(file: Attachment, source: SpaceFiles | null): HTMLElement {
     save.before(play)
     play.addEventListener('click', async () => {
       play.disabled = true
-      const blob = await fetching()
-      if (!blob || !source) {
+      const stream = source?.streamUrl(file) ?? null
+      const blob = stream ? null : await fetching()
+      if ((!stream && !blob) || !source) {
         play.disabled = false
         return
       }
       const audio = h('audio', { class: 'att-audio' })
       audio.controls = true
-      audio.src = await source.url(file)
+      audio.src = stream ?? (await source.url(file))
       play.remove()
       card.after(audio)
       await audio.play().catch(() => undefined)

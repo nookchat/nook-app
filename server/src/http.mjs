@@ -6,7 +6,8 @@ const BUCKET_IDLE_MS = 60_000
 
 const CORS = {
   vary: 'origin',
-  'access-control-allow-headers': 'content-type,x-nook-write,authorization',
+  'access-control-allow-headers': 'content-type,x-nook-write,authorization,range',
+  'access-control-expose-headers': 'content-range,content-length,accept-ranges',
   'access-control-allow-methods': 'GET,POST,PUT,OPTIONS',
   'access-control-max-age': '86400',
 }

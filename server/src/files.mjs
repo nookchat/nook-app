@@ -81,13 +81,28 @@ export async function send(req, res, room, id) {
   let size = await sizeOf(room, id)
   if (size === null && (await fromPeers(room, id))) size = await sizeOf(room, id)
   if (size === null) throw new ApiError(404, 'not_found', 'There is no such file here.')
-  res.writeHead(200, {
+  const headers = {
     ...corsHeaders(req),
     'content-type': 'application/octet-stream',
-    'content-length': size,
+    'accept-ranges': 'bytes',
     'cache-control': 'private, max-age=31536000, immutable',
     'x-content-type-options': 'nosniff',
-  })
+  }
+  // One range, so a video can be read a piece at a time and jumped about in.
+  const range = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range ?? '').trim())
+  if (range && (range[1] || range[2])) {
+    const start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]))
+    const end = range[1] && range[2] ? Math.min(Number(range[2]), size - 1) : size - 1
+    if (!Number.isSafeInteger(start) || start >= size || end < start) {
+      res.writeHead(416, { ...headers, 'content-range': `bytes */${size}`, 'content-length': 0 })
+      res.end()
+      return
+    }
+    res.writeHead(206, { ...headers, 'content-range': `bytes ${start}-${end}/${size}`, 'content-length': end - start + 1 })
+    await pipeline(createReadStream(pathOf(room, id), { start, end }), res).catch(() => undefined)
+    return
+  }
+  res.writeHead(200, { ...headers, 'content-length': size })
   await pipeline(createReadStream(pathOf(room, id)), res).catch(() => undefined)
 }
 

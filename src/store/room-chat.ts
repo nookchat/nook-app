@@ -19,6 +19,7 @@ import {
   type Authority,
   type ChannelInfo,
   type NoteInfo,
+  type BoardSound,
   type EventKind,
   type Level,
   type LogEvent,
@@ -88,6 +89,18 @@ export class RoomChat {
     if (title !== undefined) body.title = cleanNoteTitle(title) || 'Untitled'
     if (text !== undefined) body.text = trimToWire(text, MAX_TEXT)
     return this.write('note', body)
+  }
+
+  boardSounds(): BoardSound[] {
+    return this.log.boardSounds()
+  }
+
+  addBoardSound(id: string, label: string, emoji: string, file: Attachment): Promise<LogEvent> {
+    return this.write('board', { id, label: label.slice(0, 24), emoji: oneEmoji(emoji), file })
+  }
+
+  dropBoardSound(id: string): Promise<LogEvent> {
+    return this.write('board', { id, gone: true })
   }
 
   dropNote(id: string): Promise<LogEvent> {

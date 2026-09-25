@@ -45,7 +45,19 @@ import { spaces } from '../space/registry'
 import { spaceFace, switcherButton } from './space-switcher'
 import { voiceDock } from './call'
 import { chirpMessage, isNews, speak } from './sounds'
-import { openSoundboard, playSound, soundById, soundByName, SOUNDS } from './soundboard'
+import type { LinkQuality } from '../net/voice'
+import {
+  CUSTOM,
+  CUSTOM_MAX_S,
+  decodeClip,
+  openSoundboard,
+  playClip,
+  playSound,
+  soundById,
+  soundByName,
+  SOUNDS,
+  type Sound,
+} from './soundboard'
 import { avatarOf, ChatPanel, imageLinks } from './chat-panel'
 import { clear, copyText, fmtKbps, h, onPress } from './dom'
 import { icon } from './icons'
@@ -61,6 +73,17 @@ import { VideoSurface } from './video-surface'
 const RECENT_MS = 14 * 24 * 60 * 60 * 1000
 const STATS_MS = 2000
 const SOUND_EVERY_MS = 1500
+const LINK_EVERY_MS = 3000
+
+/** 4:05, or 1:04:05 past the hour. */
+function clockFor(ms: number): string {
+  const all = Math.max(0, Math.floor(ms / 1000))
+  const hours = Math.floor(all / 3600)
+  const minutes = Math.floor((all % 3600) / 60)
+  const seconds = String(all % 60).padStart(2, '0')
+  return hours ? `${hours}:${String(minutes).padStart(2, '0')}:${seconds}` : `${minutes}:${seconds}`
+}
+const MAX_SOUND_BYTES = 2 * 1024 * 1024
 const TTS_EVERY_MS = 5000
 const TTS_MAX_CHARS = 280
 const TYPING_EVERY_MS = 2000
@@ -243,6 +266,7 @@ export class SpaceView {
   private readonly newestMoveBy = new Map<string, number>()
   private readonly watchingBy = new Map<string, string[]>()
   private soundSentAt = 0
+  private readonly clips = new Map<string, Promise<AudioBuffer | null>>()
   private readonly soundHeard = new Map<string, number>()
   private ttsSentAt = 0
   private readonly ttsHeard = new Map<string, number>()
@@ -284,6 +308,26 @@ export class SpaceView {
   private readonly away = new Set<string>()
   /** Sessions in voice that have muted or deafened themselves. */
   private readonly quiet = new Map<string, 'muted' | 'deafened'>()
+  /** The newest look at the voice connection, taken every few seconds while in voice. */
+  private link: {
+    peers: LinkQuality[]
+    pingMs: number | null
+    jitterMs: number | null
+    lossPct: number | null
+    serverMs: number | null
+  } | null = null
+  private linkBusy = false
+  /** When each session in voice came into its channel, by our clock. */
+  private readonly voiceSince = new Map<string, number>()
+  private readonly boardButton = h(
+    'button',
+    {
+      class: 'ghost icon-only voice-board',
+      title: 'Soundboard: only the people in here hear it',
+      ariaLabel: 'Soundboard',
+    },
+    [icon('music', 15)],
+  )
   private readonly typing = new Map<string, { channel: string; at: number }>()
   private lastTypingSent = 0
   private mentions = 0
@@ -372,6 +416,9 @@ export class SpaceView {
     void probeHardwareEncoders(availableCodecs()).then((probe) => (this.gpu = probe))
 
     this.timers.push(window.setInterval(() => void this.tick(), STATS_MS))
+    this.timers.push(window.setInterval(() => this.tickTimers(), 1000))
+    this.timers.push(window.setInterval(() => void this.sampleLink(), LINK_EVERY_MS))
+    this.boardButton.addEventListener('click', () => this.openBoard(this.boardButton))
     document.addEventListener('visibilitychange', this.onVisible)
     window.addEventListener('keydown', this.onShortcut)
     this.draw()
@@ -466,6 +513,7 @@ export class SpaceView {
     this.sharers.delete(id)
     this.away.delete(id)
     this.quiet.delete(id)
+    this.voiceSince.delete(id)
     this.typing.delete(id)
     this.watchingBy.delete(id)
   }
@@ -537,6 +585,15 @@ export class SpaceView {
     const wasAway = this.away.has(from)
     if (data.away === true) this.away.add(from)
     else this.away.delete(from)
+
+    if (typeof data.voiceFor === 'number' && Number.isFinite(data.voiceFor) && data.voiceFor >= 0) {
+      const since = Date.now() - data.voiceFor
+      const had = this.voiceSince.get(from)
+      // Announces repeat; the first answer is the best, unless they left and came back.
+      if (!had || Math.abs(had - since) > 5000) this.voiceSince.set(from, since)
+    } else {
+      this.voiceSince.delete(from)
+    }
 
     const wasQuiet = this.quiet.get(from)
     const quiet = data.deafened === true ? 'deafened' : data.muted === true ? 'muted' : null
@@ -611,39 +668,152 @@ export class SpaceView {
     this.chatPanel.setTyping([...people.values()])
   }
 
+  /** The board's own sounds and the ones people added here, by wire id. */
+  private allSounds(): Sound[] {
+    const added = (this.chat?.boardSounds() ?? []).map((b) => ({ id: CUSTOM + b.id, label: b.label, emoji: b.emoji }))
+    return [...SOUNDS, ...added]
+  }
+
+  private findSound(id: string): Sound | null {
+    return soundById(id) ?? this.allSounds().find((s) => s.id === id) ?? null
+  }
+
+  private findSoundByName(text: string): Sound | null {
+    const want = text.trim().toLowerCase().replace(/\s+/g, '')
+    return soundByName(text) ?? this.allSounds().find((s) => s.label.toLowerCase().replace(/\s+/g, '') === want) ?? null
+  }
+
+  /** Decoded once, then kept: a sound somebody added is fetched and opened like any file. */
+  private clip(id: string): Promise<AudioBuffer | null> {
+    const had = this.clips.get(id)
+    if (had) return had
+    const board = this.chat?.boardSounds().find((b) => CUSTOM + b.id === id)
+    if (!board) return Promise.resolve(null)
+    const work = filesFor(this.space)
+      .open(board.file)
+      .then((blob) => blob.arrayBuffer())
+      .then((bytes) => decodeClip(bytes))
+      .catch(() => {
+        this.clips.delete(id)
+        return null
+      })
+    this.clips.set(id, work)
+    return work
+  }
+
+  /** Opened ahead, so the first play of an added sound is not late. */
+  private warmClips(): void {
+    for (const b of this.chat?.boardSounds() ?? []) void this.clip(CUSTOM + b.id)
+  }
+
+  private async play(id: string): Promise<boolean> {
+    if (!id.startsWith(CUSTOM)) return playSound(id)
+    const buffer = await this.clip(id)
+    return buffer ? playClip(buffer) : false
+  }
+
   private sendSound(id: string): void {
-    const sound = soundById(id)
+    const sound = this.findSound(id)
     if (!sound) return
+    const here = this.voice?.state.channel
+    if (!here) {
+      toast('Join a voice channel to play sounds. Only the people in it hear them.', 'warn')
+      return
+    }
     const now = Date.now()
     if (now - this.soundSentAt < SOUND_EVERY_MS) {
       toast('One sound at a time.', 'warn')
       return
     }
     this.soundSentAt = now
-    this.mesh?.broadcast(JSON.stringify({ t: 'sound', s: sound.id, c: this.channel }))
-    if (!playSound(sound.id)) {
-      toast(`${sound.label} went out. Your own sounds are off in Settings.`, 'info', 4000)
-    }
+    this.mesh?.broadcast(JSON.stringify({ t: 'sound', s: sound.id, v: here }))
+    if (this.voice?.state.deafened) return
+    void this.play(sound.id).then((played) => {
+      if (!played) toast(`${sound.label} went out. Your own sounds are off in Settings.`, 'info', 4000)
+    })
   }
 
   private takeSound(from: string, raw: string): boolean {
-    const note = parseNote<{ s?: unknown }>(raw, 'sound')
+    const note = parseNote<{ s?: unknown; v?: unknown }>(raw, 'sound')
     if (!note) return false
-    const sound = typeof note.s === 'string' ? soundById(note.s) : null
+    const sound = typeof note.s === 'string' ? this.findSound(note.s) : null
     if (!sound) return true
+    // Only for the people standing in the same voice channel as the one who played it.
+    const here = this.voice?.state.channel
+    if (!here || note.v !== here || this.voice?.whereIs(from) !== here) return true
+    if (this.voice?.state.deafened) return true
     const key = this.keyOf(from)
     if (!allowNow(this.soundHeard, key, SOUND_EVERY_MS)) return true
-    if (playSound(sound.id)) {
+    void this.play(sound.id).then((played) => {
+      if (!played) return
       const who = (key && this.chat?.nameOf(key)) || 'Somebody'
       toast(`${who} played ${sound.label} ${sound.emoji}`, 'info', 3000)
-    }
+    })
     return true
   }
 
   private openBoard(anchor: HTMLElement | null): void {
-    const button = anchor ?? this.chatPanel.soundAnchor
-    if (!button) return
-    openSoundboard({ anchor: button, onPick: (id) => this.sendSound(id) })
+    const button = anchor ?? this.voiceList.querySelector<HTMLElement>('button[aria-label="Soundboard"]')
+    if (!button) {
+      toast('Join a voice channel to play sounds.', 'warn')
+      return
+    }
+    this.warmClips()
+    const chat = this.chat
+    openSoundboard({
+      anchor: button,
+      onPick: (id) => this.sendSound(id),
+      custom: this.allSounds().filter((s) => s.id.startsWith(CUSTOM)),
+      onAdd: () => void this.addSound(),
+      canRemove: (id) => {
+        const board = chat?.boardSounds().find((b) => CUSTOM + b.id === id)
+        return !!board && !!chat && (board.maker === chat.me || chat.can('channels'))
+      },
+      onRemove: (id) => {
+        const sound = this.findSound(id)
+        if (!sound || !window.confirm(`Take ${sound.label} off the soundboard for everybody?`)) return
+        void this.publish((c) => c.dropBoardSound(id.slice(CUSTOM.length)))
+      },
+    })
+  }
+
+  private async addSound(): Promise<void> {
+    const pick = h('input', { type: 'file' })
+    pick.accept = 'audio/*'
+    const file = await new Promise<File | null>((ok) => {
+      pick.addEventListener('change', () => ok(pick.files?.[0] ?? null), { once: true })
+      pick.addEventListener('cancel', () => ok(null), { once: true })
+      pick.click()
+    })
+    if (!file) return
+    if (file.size > MAX_SOUND_BYTES) {
+      toast(`A sound may be at most ${Math.round(MAX_SOUND_BYTES / 1024 / 1024)} MB.`, 'warn')
+      return
+    }
+    let length = 0
+    try {
+      length = (await decodeClip(await file.arrayBuffer())).duration
+    } catch {
+      toast('That file is not a sound this browser can play.', 'warn')
+      return
+    }
+    if (length > CUSTOM_MAX_S + 0.5) {
+      toast(`A sound may be at most ${CUSTOM_MAX_S} seconds. That one is ${Math.round(length)}.`, 'warn')
+      return
+    }
+    const named = window.prompt('What is the sound called?', file.name.replace(/\.[^.]+$/, '').slice(0, 24))
+    if (named === null || !named.trim()) return
+    const emoji = window.prompt('One emoji for it', '🔊') ?? '🔊'
+    toast(`Adding ${named.trim()}...`, 'info', 2500)
+    try {
+      const sent = await filesFor(this.space).send(file, () => undefined, new AbortController().signal)
+      const bytes = crypto.getRandomValues(new Uint8Array(8))
+      const id = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')
+      await this.publish((c) => c.addBoardSound(id, named.trim(), emoji.trim() || '🔊', sent))
+      toast(`${named.trim()} is on the soundboard.`, 'good', 3000)
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'That sound could not be added.', 'bad')
+    }
   }
 
   private sendSpoken(arg: string): void {
@@ -775,9 +945,10 @@ export class SpaceView {
           this.openBoard(null)
           return true
         }
-        const sound = soundByName(arg)
+        const sound = this.findSoundByName(arg)
         if (!sound) {
-          toast(`No sound called ${arg}. There is: ${SOUNDS.map((s) => s.id).join(', ')}`, 'warn', 7000)
+          const names = this.allSounds().map((s) => (s.id.startsWith(CUSTOM) ? s.label : s.id))
+          toast(`No sound called ${arg}. There is: ${names.join(', ')}`, 'warn', 7000)
           return true
         }
         this.sendSound(sound.id)
@@ -1443,7 +1614,6 @@ export class SpaceView {
     panel.streamLive = (key) => this.sharerByKey(key) !== null
     panel.onWatch = (key) => this.joinStream(key)
     panel.onGif = () => void this.openGifPicker('')
-    panel.onSound = () => this.openBoard(panel.soundAnchor ?? null)
     panel.commands = COMMANDS
     panel.actions = {
       say: (text, replyTo, inThread, files) =>
@@ -1885,24 +2055,35 @@ export class SpaceView {
     const avatars = chat?.log.avatars() ?? new Map<string, string>()
     for (const name of chat?.channels(true) ?? [DEFAULT_VOICE]) {
       const people = this.sessionsByPerson(this.voice?.membersOf(name) ?? [], peers)
-      const row = h('div', { class: 'voice-channel' }, [
-        h(
-          'button',
-          {
-            class: `rail-item${here === name ? ' on' : ''}`,
-            title:
-              here === name
-                ? 'You are in here. Click to leave.'
-                : 'Join this voice channel. Everybody in it hears everybody else.',
-            on: { click: () => void this.joinVoice(name) },
-          },
-          [
-            icon('volume', 16),
-            h('span', { class: 'truncate grow', text: name }),
-            people.size ? h('span', { class: 'pill', text: String(people.size) }) : null,
-          ],
-        ),
+      const join = h(
+        'button',
+        {
+          class: 'voice-join',
+          title:
+            here === name
+              ? 'You are in here. Click to leave.'
+              : 'Join this voice channel. Everybody in it hears everybody else.',
+          on: { click: () => void this.joinVoice(name) },
+        },
+        [icon('volume', 16), h('span', { class: 'truncate grow', text: name })],
+      )
+      const since = this.channelSince(name)
+      const timer = since ? h('span', { class: 'voice-timer', title: 'How long somebody has been in here' }) : null
+      if (timer && since) {
+        timer.dataset.since = String(since)
+        timer.textContent = clockFor(Date.now() - since)
+      }
+      const head = h('div', { class: `rail-item voice-head${here === name ? ' on' : ''}` }, [
+        join,
+        timer,
+        here === name && !isCallChannel(name) ? this.boardButton : null,
+        people.size ? h('span', { class: 'pill', text: String(people.size) }) : null,
       ])
+      head.addEventListener('click', (ev) => {
+        if ((ev.target as Element).closest('button')) return
+        void this.joinVoice(name)
+      })
+      const row = h('div', { class: 'voice-channel' }, [head])
       for (const [key, ids] of people) {
         row.append(this.voiceMember(key, ids, peers, names.get(key) ?? '', avatars.get(key) ?? ''))
       }
@@ -1979,6 +2160,113 @@ export class SpaceView {
     return member
   }
 
+  /** When the first of the people now in a voice channel came in. */
+  private channelSince(name: string): number | null {
+    let first = Infinity
+    for (const id of this.voice?.membersOf(name) ?? []) {
+      const at = id === this.selfId ? this.voice?.state.since : this.voiceSince.get(id)
+      if (at && at < first) first = at
+    }
+    return Number.isFinite(first) ? first : null
+  }
+
+  private tickTimers(): void {
+    const now = Date.now()
+    for (const el of this.voiceList?.querySelectorAll<HTMLElement>('.voice-timer[data-since]') ?? []) {
+      const text = clockFor(now - Number(el.dataset.since))
+      if (el.textContent !== text) el.textContent = text
+    }
+  }
+
+  private async sampleLink(): Promise<void> {
+    if (!this.voice?.state.channel || this.linkBusy || document.hidden) {
+      if (!this.voice?.state.channel) this.link = null
+      return
+    }
+    this.linkBusy = true
+    try {
+      const peers = await this.voice.quality()
+      const mean = (values: (number | null)[]): number | null => {
+        const known = values.filter((v): v is number => v !== null)
+        return known.length ? known.reduce((a, b) => a + b, 0) / known.length : null
+      }
+      let serverMs: number | null = null
+      const base = this.space.channel?.serving ?? this.server
+      if (base) {
+        const started = performance.now()
+        const res = await fetch(`${base}/api/v1/health`, { mode: 'cors', cache: 'no-store', signal: AbortSignal.timeout(4000) }).catch(
+          () => null,
+        )
+        if (res?.ok) serverMs = Math.round(performance.now() - started)
+      }
+      this.link = {
+        peers,
+        pingMs: mean(peers.map((p) => p.pingMs)),
+        jitterMs: mean(peers.map((p) => p.jitterMs)),
+        lossPct: mean(peers.map((p) => p.lossPct)),
+        serverMs,
+      }
+      this.paintLink()
+    } finally {
+      this.linkBusy = false
+    }
+  }
+
+  /** good, warn or bad, from the ping and the loss. */
+  private linkGrade(): 'good' | 'warn' | 'bad' {
+    const link = this.link
+    if (!link) return 'good'
+    const ping = link.pingMs ?? link.serverMs ?? 0
+    const loss = link.lossPct ?? 0
+    if (ping > 250 || loss > 5) return 'bad'
+    if (ping > 120 || loss > 2) return 'warn'
+    return 'good'
+  }
+
+  private linkWords(): string {
+    const link = this.link
+    const ping = link?.pingMs ?? link?.serverMs ?? null
+    return ping === null ? 'Connected' : `${Math.round(ping)} ms ping`
+  }
+
+  private paintLink(): void {
+    const state = this.voiceBar.querySelector('.voice-bar-state')
+    if (!state) return
+    const grade = this.linkGrade()
+    state.querySelector('.dot')?.setAttribute('class', `dot ${grade}`)
+    state.classList.remove('good', 'warn', 'bad')
+    state.classList.add(grade)
+    const words = state.querySelector('.voice-bar-words')
+    if (words) words.textContent = this.linkWords()
+  }
+
+  private linkDetails(): HTMLElement {
+    const link = this.link
+    const ms = (v: number | null | undefined): string => (v === null || v === undefined ? '...' : `${Math.round(v)} ms`)
+    const pct = (v: number | null | undefined): string => (v === null || v === undefined ? '...' : `${v.toFixed(1)}%`)
+    const line = (label: string, value: string): HTMLElement =>
+      h('div', { class: 'row spread link-line' }, [h('span', { class: 'faint', text: label }), h('span', { text: value })])
+    const box = h('div', { class: 'link-box' }, [
+      h('div', { class: 'menu-volume-label', text: 'Connection' }),
+      line('Average ping', ms(link?.pingMs)),
+      line('Server', ms(link?.serverMs)),
+      line('Jitter', ms(link?.jitterMs)),
+      line('Packet loss', pct(link?.lossPct)),
+    ])
+    const peers = this.peersById()
+    if (link?.peers.length) {
+      box.append(h('div', { class: 'menu-line' }), h('div', { class: 'menu-volume-label', text: 'To each person' }))
+      for (const p of link.peers) {
+        const key = peers.get(p.peerId)?.key ?? ''
+        const name = (key && this.chat?.nameOf(key)) || shortKey(key || p.peerId)
+        box.append(line(name, `${ms(p.pingMs)}${p.lossPct ? ` · ${pct(p.lossPct)} lost` : ''}`))
+      }
+    } else if (link) {
+      box.append(h('div', { class: 'tiny faint', text: 'Nobody else is in here, so the ping is to the server.' }))
+    }
+    return box
+  }
+
   private renderVoiceBar(): void {
     const state = this.voice?.state
     this.voiceBar.classList.toggle('hidden', !state?.channel)
@@ -1986,7 +2274,24 @@ export class SpaceView {
       clear(this.voiceBar)
       this.voiceBar.append(
         h('div', { class: 'voice-bar-text' }, [
-          h('span', { class: 'voice-bar-state' }, [h('i', { class: 'dot good' }), 'Connected']),
+          (() => {
+            const grade = this.linkGrade()
+            const button = h(
+              'button',
+              {
+                class: `voice-bar-state ${grade}`,
+                title: 'Ping, jitter and packet loss',
+                ariaLabel: 'Connection details',
+                data: { menu: 'link' },
+              },
+              [h('i', { class: `dot ${grade}` }), h('span', { class: 'voice-bar-words truncate', text: this.linkWords() })],
+            )
+            button.addEventListener('click', () => {
+              if (!this.link) void this.sampleLink()
+              openMenu(button, [{ custom: this.linkDetails() }])
+            })
+            return button
+          })(),
           h('span', {
             class: 'tiny faint truncate',
             text: isCallChannel(state.channel)
@@ -2027,7 +2332,6 @@ export class SpaceView {
         ),
       )
     }
-    this.chatPanel.showSoundboard(Boolean(state?.channel))
   }
 
   private async joinVoice(name: string): Promise<void> {

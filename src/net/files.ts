@@ -8,12 +8,63 @@ const CACHE_BYTES = 400 * 1024 * 1024
 const THUMB_PX = 24
 const POSTER_PX = 960
 const IV_BYTES = 12
+const TAG_BYTES = 16
+/** Plain bytes in each sealed piece. The service worker in public/stream-sw.js reads the same layout. */
+export const CHUNK_BYTES = 1024 * 1024
 const LOOK_TIMEOUT_MS = 8000
 
 async function sealBytes(key: CryptoKey, plain: ArrayBuffer): Promise<Blob> {
   const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES))
   const box = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv as BufferSource }, key, plain)
   return new Blob([iv, box], { type: 'application/octet-stream' })
+}
+
+/** Each piece's place, and whether it is the last, are bound in, so pieces cannot be moved or dropped. */
+function pieceLabel(index: number, last: boolean): Uint8Array {
+  const label = new Uint8Array(5)
+  new DataView(label.buffer).setUint32(0, index)
+  label[4] = last ? 1 : 0
+  return label
+}
+
+/** Piece by piece: an IV, then the sealed piece with its tag. */
+async function sealPieces(key: CryptoKey, file: Blob, chunk: number): Promise<Blob> {
+  const count = Math.max(1, Math.ceil(file.size / chunk))
+  const parts: BlobPart[] = []
+  for (let i = 0; i < count; i++) {
+    const plain = await file.slice(i * chunk, (i + 1) * chunk).arrayBuffer()
+    const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES))
+    const box = await crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv: iv as BufferSource, additionalData: pieceLabel(i, i === count - 1) as BufferSource },
+      key,
+      plain,
+    )
+    parts.push(iv, box)
+  }
+  return new Blob(parts, { type: 'application/octet-stream' })
+}
+
+async function openPieces(keyText: string, sealed: ArrayBuffer, size: number, chunk: number): Promise<Blob> {
+  const key = await crypto.subtle.importKey('raw', fromBase64Url(keyText), 'AES-GCM', false, ['decrypt'])
+  const count = Math.max(1, Math.ceil(size / chunk))
+  const parts: BlobPart[] = []
+  let at = 0
+  for (let i = 0; i < count; i++) {
+    const plain = i < count - 1 ? chunk : size - i * chunk
+    const length = IV_BYTES + plain + TAG_BYTES
+    if (at + length > sealed.byteLength) throw new Error('The file arrived cut short.')
+    const iv = new Uint8Array(sealed, at, IV_BYTES)
+    const box = new Uint8Array(sealed, at + IV_BYTES, plain + TAG_BYTES)
+    parts.push(
+      await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv, additionalData: pieceLabel(i, i === count - 1) as BufferSource },
+        key,
+        box,
+      ),
+    )
+    at += length
+  }
+  return new Blob(parts)
 }
 
 async function openBytes(keyText: string, sealed: ArrayBuffer): Promise<ArrayBuffer> {
@@ -248,7 +299,7 @@ export class SpaceFiles {
     const look = await lookAt(file)
     const key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt'])
     const raw = new Uint8Array(await crypto.subtle.exportKey('raw', key))
-    const sealed = await sealBytes(key, await file.arrayBuffer())
+    const sealed = await sealPieces(key, file, CHUNK_BYTES)
     const posterSealed = look.poster ? await sealBytes(key, await look.poster.arrayBuffer()) : null
     const total = sealed.size + (posterSealed?.size ?? 0)
     const id = await this.upload(sealed, (done) => onProgress(done, total), signal)
@@ -261,6 +312,7 @@ export class SpaceFiles {
       type: file.type || 'application/octet-stream',
       size: file.size,
       key: toBase64Url(raw),
+      chunk: CHUNK_BYTES,
     }
     if (look.w && look.h) {
       attachment.w = look.w
@@ -316,9 +368,28 @@ export class SpaceFiles {
   open(file: Attachment, onProgress?: Progress): Promise<Blob> {
     const cached = opened.get(file.id)
     if (cached) return cached
-    const work = this.fetchOpen(file.id, file.key, file.type, onProgress)
+    const work = this.fetchOpen(file.id, file.key, file.type, onProgress, file)
     remember(file.id, work)
     return work
+  }
+
+  /**
+   * An address the browser can play while it downloads, a piece at a time, through the
+   * service worker. Null when there is no service worker, or the file was sealed whole.
+   */
+  streamUrl(file: Attachment): string | null {
+    if (!file.chunk || opened.has(file.id)) return null
+    if (!streamReady()) return null
+    const token = toBase64Url(crypto.getRandomValues(new Uint8Array(16)))
+    streams.set(token, {
+      id: file.id,
+      key: file.key,
+      size: file.size,
+      chunk: file.chunk,
+      type: file.type,
+      urls: this.bases().map((base) => `${base}/api/v1/spaces/${this.room}/files/${file.id}`),
+    })
+    return `${STREAM_PATH}${token}`
   }
 
   poster(file: Attachment): Promise<Blob | null> {
@@ -340,7 +411,13 @@ export class SpaceFiles {
     return url
   }
 
-  private async fetchOpen(id: string, key: string, type: string, onProgress?: Progress): Promise<Blob> {
+  private async fetchOpen(
+    id: string,
+    key: string,
+    type: string,
+    onProgress?: Progress,
+    file?: Attachment,
+  ): Promise<Blob> {
     let last: unknown = null
     for (const base of this.bases()) {
       try {
@@ -362,6 +439,7 @@ export class SpaceFiles {
           onProgress?.(done, total)
         }
         const sealed = await new Blob(parts as BlobPart[]).arrayBuffer()
+        if (file?.chunk) return new Blob([await openPieces(key, sealed, file.size, file.chunk)], { type })
         return new Blob([await openBytes(key, sealed)], { type })
       } catch (err) {
         last = err
@@ -369,6 +447,43 @@ export class SpaceFiles {
     }
     throw last ?? new Error('No server had that file.')
   }
+}
+
+interface StreamInfo {
+  id: string
+  key: string
+  size: number
+  chunk: number
+  type: string
+  urls: string[]
+}
+
+const STREAM_PATH = './nook-stream/'
+const streams = new Map<string, StreamInfo>()
+let streaming = false
+
+function streamReady(): boolean {
+  return streaming && !!navigator.serviceWorker?.controller
+}
+
+/**
+ * The service worker plays a sealed file as it arrives. It asks this page what a token
+ * means, so the key never goes in an address and never leaves the browser.
+ */
+export function startStreaming(): void {
+  if (!('serviceWorker' in navigator) || !window.isSecureContext) return
+  navigator.serviceWorker.addEventListener('message', (ev: MessageEvent) => {
+    const data = ev.data as { type?: string; token?: string } | null
+    if (data?.type !== 'nook-stream' || typeof data.token !== 'string') return
+    ev.ports[0]?.postMessage(streams.get(data.token) ?? null)
+  })
+  navigator.serviceWorker
+    .register('./stream-sw.js', { scope: './' })
+    .then(() => navigator.serviceWorker.ready)
+    .then(() => {
+      streaming = true
+    })
+    .catch(() => undefined)
 }
 
 /** Another server of the cluster would refuse it too. */

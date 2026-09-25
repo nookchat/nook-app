@@ -13,6 +13,16 @@ export interface VoiceState {
   muted: boolean
   /** Hears nobody. Deafened also means muted. */
   deafened: boolean
+  /** When this session came into the channel, by this clock. */
+  since: number
+}
+
+/** How the line to one person in the channel is doing. Null when not known yet. */
+export interface LinkQuality {
+  peerId: string
+  pingMs: number | null
+  jitterMs: number | null
+  lossPct: number | null
 }
 
 export class Voice {
@@ -36,6 +46,7 @@ export class Voice {
   private channel: string | null = null
   private muted = false
   private deafened = false
+  private since = 0
   /** The mute to go back to when deafened ends. */
   private mutedBeforeDeaf = false
   private readonly standing = new Map<string, string>()
@@ -79,7 +90,7 @@ export class Voice {
   }
 
   get state(): VoiceState {
-    return { channel: this.channel, muted: this.muted, deafened: this.deafened }
+    return { channel: this.channel, muted: this.muted, deafened: this.deafened, since: this.since }
   }
 
   /** Includes this session when it stands there. */
@@ -109,6 +120,7 @@ export class Voice {
       if (this.cleaner) this.mic = this.cleaner.stream
     }
     this.channel = channel
+    this.since = Date.now()
     this.muted = false
     this.deafened = false
     this.failed.clear()
@@ -192,6 +204,15 @@ export class Voice {
   /** The microphone before any cleaning, which names the device. */
   get source(): MediaStream | null {
     return this.rawMic
+  }
+
+  async quality(): Promise<LinkQuality[]> {
+    const out: LinkQuality[] = []
+    for (const [peerId, call] of this.calls) {
+      if (!call.live) continue
+      out.push({ peerId, ...(await call.quality()) })
+    }
+    return out
   }
 
   get connected(): number {
@@ -352,6 +373,46 @@ class Call {
         this.close()
       }
       hooks.onChange()
+    }
+  }
+
+  private lostBefore = 0
+  private gotBefore = 0
+
+  async quality(): Promise<Omit<LinkQuality, 'peerId'>> {
+    const none = { pingMs: null, jitterMs: null, lossPct: null }
+    let report: RTCStatsReport
+    try {
+      report = await this.pc.getStats()
+    } catch {
+      return none
+    }
+    let pair: Record<string, unknown> | undefined
+    let inbound: Record<string, unknown> | undefined
+    let chosen = ''
+    report.forEach((stat: Record<string, unknown>) => {
+      if (stat.type === 'transport' && typeof stat.selectedCandidatePairId === 'string') chosen = stat.selectedCandidatePairId
+    })
+    report.forEach((stat: Record<string, unknown>) => {
+      if (stat.type === 'candidate-pair' && (stat.id === chosen || (!chosen && stat.nominated && stat.state === 'succeeded'))) {
+        pair = stat
+      }
+      if (stat.type === 'inbound-rtp' && stat.kind === 'audio') inbound = stat
+    })
+    const rtt = typeof pair?.currentRoundTripTime === 'number' ? pair.currentRoundTripTime : null
+    const jitter = typeof inbound?.jitter === 'number' ? inbound.jitter : null
+    let lossPct: number | null = null
+    if (inbound && typeof inbound.packetsLost === 'number' && typeof inbound.packetsReceived === 'number') {
+      const lost = inbound.packetsLost - this.lostBefore
+      const got = inbound.packetsReceived - this.gotBefore
+      this.lostBefore = inbound.packetsLost
+      this.gotBefore = inbound.packetsReceived
+      if (lost + got > 0) lossPct = Math.max(0, (lost / (lost + got)) * 100)
+    }
+    return {
+      pingMs: rtt === null ? null : Math.round(rtt * 1000),
+      jitterMs: jitter === null ? null : Math.round(jitter * 1000),
+      lossPct,
     }
   }
 
