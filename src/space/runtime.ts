@@ -14,7 +14,7 @@ import type { RoomNote } from '../store/notes'
 import { PREFS_CHANGED } from '../store/prefs'
 import { RoomChat } from '../store/room-chat'
 import { bookFor, stable } from '../store/server-spaces'
-import { avatarKnown, loadAvatar } from '../ui/avatar'
+import { adoptAvatar, avatarKnown, avatarSavedAt, loadAvatar } from '../ui/avatar'
 import { chirpJoin, chirpLeave } from '../ui/sounds'
 
 const LAST_SEEN_REFRESH_MS = 60 * 60 * 1000
@@ -206,7 +206,7 @@ export class SpaceRuntime {
       if (open.name) await chat.setSpaceName(open.name)
     }
     // Announcing no picture before the record arrives would erase the known one.
-    await chat.announceName(chat.displayName, avatarKnown() ? loadAvatar() : undefined)
+    await chat.announceName(chat.displayName, this.pictureToAnnounce())
     window.addEventListener(PREFS_CHANGED, this.onPrefs)
     this.emit('changed')
   }
@@ -216,8 +216,16 @@ export class SpaceRuntime {
     if (!which.includes('cathode.avatar.v1') && !which.includes('cathode.name.v1')) return
     const name = loadIdentity().name
     this.mesh?.setName(name)
-    void this.chat.announceName(name, avatarKnown() ? loadAvatar() : undefined)
+    void this.chat.announceName(name, this.pictureToAnnounce())
     this.emit('changed')
+  }
+
+  private pictureToAnnounce(): string | undefined {
+    if (!avatarKnown()) return undefined
+    const saidAt = this.chat.log.lastProfileAt(this.chat.me)
+    if (saidAt <= avatarSavedAt()) return loadAvatar()
+    adoptAvatar(this.chat.avatarOf(this.chat.me), saidAt)
+    return undefined
   }
 
   private readonly onVisible = (): void => {

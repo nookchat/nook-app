@@ -640,6 +640,14 @@ export class RoomLog {
     return [root, ...all.filter((m) => m.inThread && m.replyTo === rootId)]
   }
 
+  lastProfileAt(author: string): number {
+    const events = this.all()
+    for (let i = events.length - 1; i >= 0; i--) {
+      if (events[i].kind === 'profile' && events[i].author === author) return events[i].at
+    }
+    return 0
+  }
+
   avatars(): Map<string, string> {
     return this.cached('avatars', () => this.foldAvatars())
   }

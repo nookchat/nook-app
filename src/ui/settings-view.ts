@@ -1,15 +1,11 @@
-/**
- * Settings: who you are, which servers you use, the space you came from, and
- * a few preferences. Short on words on purpose; the README says the rest.
- */
-
 import { cleanName } from '../chat'
 import { SELF_HOSTING_URL, checkServer, serverTag, serverUrl, setDefaultServer } from '../backend'
 import { health } from '../net/server-api'
 import { micSettings, setMicSettings } from '../net/mic'
 import { loadIdentity, saveDisplayName, shortKey } from '../store/identity'
+import { spaces } from '../space/registry'
 import { addServer, knownServers, newSpaceServer, ownServers } from '../store/server-spaces'
-import { loadAvatar, saveAvatar, squareThumb } from './avatar'
+import { saveAvatar, squareThumb } from './avatar'
 import { avatarOf } from './chat-panel'
 import { clear, copyText, h } from './dom'
 import { openEmojiPicker, quickReactions, setQuickReactions } from './emoji'
@@ -20,12 +16,9 @@ import { setSounds, soundsOn } from './sounds'
 import { toast } from './toast'
 import { voiceSettings } from './voice-settings'
 
-/** The guide to running a server, in the repository. */
-
-export interface SettingsActions {
+interface SettingsActions {
   rename(name: string, avatar?: string): void
   back(): void
-  /** The space itself, when settings was opened from inside one. */
   space?: {
     name: string
     admin: boolean
@@ -34,7 +27,6 @@ export interface SettingsActions {
     leave(): Promise<void>
     remove(): Promise<void>
     removed?: { key: string; name: string; restore(): void }[]
-    /** The levels of the space, for somebody whose level may change them. */
     levels?: () => HTMLElement
   }
 }
@@ -44,12 +36,9 @@ const card = (title: string, ...children: (Node | null)[]): HTMLElement =>
 
 const note = (text: string): HTMLElement => h('div', { class: 'tiny faint', text })
 
-/** A row that says what it is, with a switch at the end that flips when pressed. */
 function toggle(label: string, on: () => boolean, set: (next: boolean) => void, about = ''): HTMLButtonElement {
   const button = switchRow(label, about)
-  const paint = (): void => {
-    button.setAttribute('aria-checked', String(on()))
-  }
+  const paint = (): void => button.setAttribute('aria-checked', String(on()))
   button.addEventListener('click', () => {
     set(!on())
     paint()
@@ -69,16 +58,10 @@ function switchRow(label: string, about = ''): HTMLButtonElement {
 }
 
 export function settingsView(actions: SettingsActions): HTMLElement {
-  /*
-   * Closed with the cross at the top right, or Escape, the way every
-   * dialog-shaped thing closes. Escape is left alone while something inside
-   * settings has it, such as a dialog or a picker on top.
-   */
   const close = (): void => {
     window.removeEventListener('keydown', onEscape, true)
     actions.back()
   }
-  // Heard before anything opened on top of settings, which is then still open, and has the key.
   const onEscape = (ev: KeyboardEvent): void => {
     if (ev.key !== 'Escape' || ev.defaultPrevented) return
     if (document.querySelector('.scrim, .menu, .emoji-picker, .emoji-pop, .viewer, .gif-pop')) return
@@ -87,7 +70,6 @@ export function settingsView(actions: SettingsActions): HTMLElement {
   window.addEventListener('keydown', onEscape, true)
   const identity = loadIdentity()
 
-  // ---- profile ----
   const name = h('input', { type: 'text', value: identity.name, ariaLabel: 'Your name', placeholder: 'Your name' })
   const save = h('button', { class: 'primary', text: 'Save', ariaLabel: 'Save name' })
   const commit = (): void => {
@@ -102,11 +84,9 @@ export function settingsView(actions: SettingsActions): HTMLElement {
   }
   save.addEventListener('click', commit)
   name.addEventListener('keydown', (ev) => {
-    if ((ev as KeyboardEvent).key === 'Enter') commit()
+    if (ev.key === 'Enter') commit()
   })
 
-  // ---- your account ----
-  // Whether this device has saved a backup, so nobody finds out the day they needed one.
   const backupNote = note('')
   const sayBackup = (): void => {
     const at = lastBackup()
@@ -116,13 +96,10 @@ export function settingsView(actions: SettingsActions): HTMLElement {
   }
   sayBackup()
 
-  // A picture travels inside the signed event that carries your name, shrunk to fit.
   const picture = h('button', { class: 'welcome-face profile-face', ariaLabel: 'Change your picture', title: 'Change your picture' })
   const removePicture = h('button', { class: 'ghost tiny-btn hidden', text: 'Remove' })
-  const pickPicture = h('input', { type: 'text', ariaLabel: 'Choose a picture' })
-  pickPicture.type = 'file'
+  const pickPicture = h('input', { type: 'file', class: 'hidden', ariaLabel: 'Choose a picture' })
   pickPicture.accept = 'image/*'
-  pickPicture.classList.add('hidden')
   picture.addEventListener('click', () => pickPicture.click())
   removePicture.addEventListener('click', () => {
     saveAvatar('')
@@ -130,9 +107,11 @@ export function settingsView(actions: SettingsActions): HTMLElement {
     drawAvatar()
   })
   const drawAvatar = (): void => {
-    picture.replaceChildren(avatarOf(identity.pubkey, identity.name, loadAvatar(), 56), h('span', { class: 'welcome-face-edit' }, [icon('edit', 12)]))
-    removePicture.classList.toggle('hidden', !loadAvatar())
+    const avatar = spaces.myAvatar()
+    picture.replaceChildren(avatarOf(identity.pubkey, identity.name, avatar, 56), h('span', { class: 'welcome-face-edit' }, [icon('edit', 12)]))
+    removePicture.classList.toggle('hidden', !avatar)
   }
+  const stopWatching = spaces.watchMyAvatar(() => (picture.isConnected ? drawAvatar() : stopWatching()))
   pickPicture.addEventListener('change', async () => {
     const chosen = pickPicture.files?.[0]
     if (!chosen) return
@@ -154,13 +133,7 @@ export function settingsView(actions: SettingsActions): HTMLElement {
     toast(ok ? 'ID copied.' : 'Could not copy the ID.', ok ? 'info' : 'warn')
   })
 
-  // ---- servers ----
   const serverList = h('div', { class: 'stack tight' })
-  /*
-   * Yours first: the ones you added, where your new spaces go. Then the ones
-   * an invite led to, which hold spaces you joined and nothing else of yours
-   * unless you choose to use one.
-   */
   const drawServers = (): void => {
     const own = ownServers()
     const joined = knownServers().filter((s) => !own.includes(s))
@@ -196,7 +169,6 @@ export function settingsView(actions: SettingsActions): HTMLElement {
       void health(server).then((state) => {
         dot.className = `dot ${state.up ? 'good' : 'bad'}`
         dot.title = state.up ? `Up${state.version ? `, version ${state.version}` : ''}` : 'Not answering'
-        // The rest of its cluster: every one keeps a copy of every space.
         for (const peer of state.peers) {
           peers.append(
             h('div', { class: 'row tiny faint' }, [
@@ -248,12 +220,10 @@ export function settingsView(actions: SettingsActions): HTMLElement {
 
   addRow.append(addInput, addButton)
 
-  // Run your own: the one command, and the guide for the rest.
-  // One command: it asks for the domain and does the rest. See server/install.sh.
-  const commands = ['curl -fsSL https://raw.githubusercontent.com/nebbsie/stream/main/server/install.sh | sh']
-  const copyCommands = h('button', { class: 'small' }, [icon('copy', 13), 'Copy'])
-  copyCommands.addEventListener('click', async () => {
-    const ok = await copyText(commands.join('\n'))
+  const installCommand = 'curl -fsSL https://raw.githubusercontent.com/nebbsie/stream/main/server/install.sh | sh'
+  const copyCommand = h('button', { class: 'small' }, [icon('copy', 13), 'Copy'])
+  copyCommand.addEventListener('click', async () => {
+    const ok = await copyText(installCommand)
     toast(ok ? 'Copied.' : 'Could not copy.', ok ? 'info' : 'warn')
   })
   const guide = h('a', { class: 'button-link', text: 'Full guide' })
@@ -264,13 +234,12 @@ export function settingsView(actions: SettingsActions): HTMLElement {
     h('summary', { text: 'Run a server' }),
     h('div', { class: 'stack tight' }, [
       note('On a Linux machine with Docker, and a domain pointed at it, run this. It asks for the domain and does the rest.'),
-      h('pre', { class: 'code-block', text: commands.join('\n') }),
-      h('div', { class: 'row' }, [copyCommands, guide]),
+      h('pre', { class: 'code-block', text: installCommand }),
+      h('div', { class: 'row' }, [copyCommand, guide]),
       note('Friends can each run one and join them into a cluster, so every space is kept on all of them.'),
     ]),
   ])
 
-  // ---- this space ----
   const space = actions.space
   const spaceCard = space
     ? card(
@@ -312,8 +281,8 @@ export function settingsView(actions: SettingsActions): HTMLElement {
       )
     : null
 
-  // ---- preferences ----
-  const notifyButton = switchRow('Notifications', 'For mentions and direct messages, when the tab is behind')
+  const notifyAbout = 'For mentions and direct messages, when the tab is behind'
+  const notifyButton = switchRow('Notifications', notifyAbout)
   const paintNotify = (): void => {
     const state = notifyState()
     notifyButton.setAttribute('aria-checked', String(state === 'on'))
@@ -325,7 +294,7 @@ export function settingsView(actions: SettingsActions): HTMLElement {
           ? 'Blocked by the browser. Allow them in the site settings.'
           : state === 'unsupported'
             ? 'This browser has none.'
-            : 'For mentions and direct messages, when the tab is behind'
+            : notifyAbout
     }
   }
   notifyButton.addEventListener('click', () => {
@@ -441,7 +410,6 @@ export function settingsView(actions: SettingsActions): HTMLElement {
 
         card('Servers', serverList, addOpen, addRow, own),
 
-        // What most people never need, closed until somebody looks.
         h('section', { class: 'card stack tight' }, [
           h('details', { class: 'adv settings-more' }, [
             h('summary', { text: 'More' }),

@@ -33,6 +33,11 @@ async function restore(page, path, password = '') {
   }
 }
 
+const settingsPicture = (page) =>
+  page
+    .waitForFunction(() => document.querySelector('.profile-face img')?.src ?? null, null, { timeout: 15_000 })
+    .then((h) => h.jsonValue(), () => '')
+
 const listed = (page) =>
   page
     .waitForFunction(() => {
@@ -84,10 +89,16 @@ try {
   check('and the same messages', read)
   const name = await two.evaluate(() => document.querySelector('.me-name')?.textContent ?? '')
   check('and the same name', name === 'Ana', name)
+  const everybodySees = await two.evaluate(() => document.querySelector('.chat-who .avatar-img')?.src ?? '')
   await two.evaluate(() => document.querySelector('button[aria-label="Settings"]').click())
-  const face = await two.waitForSelector('.profile-face img', { timeout: 15_000 }).then(() => true, () => false)
-  check('and the same picture, from the server', face)
+  check('and Settings shows the picture everybody sees', !!everybodySees && (await settingsPicture(two)) === everybodySees)
   await two.click('button[aria-label="Close settings"]')
+
+  await ana.reload()
+  await ana.waitForSelector('button[aria-label="Settings"]')
+  await ana.evaluate(() => document.querySelector('button[aria-label="Settings"]').click())
+  check('and so does Settings opened straight after a reload', (await settingsPicture(ana)) === everybodySees)
+  await ana.click('button[aria-label="Close settings"]')
 
   const dropped = await fresh()
   await dropped.goto(APP_URL)
@@ -113,6 +124,29 @@ try {
   await three.waitForURL((url) => !url.hash, { timeout: 15_000 }).catch(() => undefined)
   await wait(1500)
   check('but does with the right one', (await listed(three)).includes('kept'))
+
+  await ana.evaluate(() => document.querySelector('button[aria-label="Settings"]').click())
+  await ana.click('button.tiny-btn:text-is("Remove")')
+  await ana.click('button[aria-label="Close settings"]')
+  await two.goto(APP_URL)
+  await two.click('.space-row .rail-item')
+  const gone = await two
+    .waitForFunction(() => document.querySelector('.chat-who') && !document.querySelector('.chat-who .avatar-img'), null, { timeout: 15_000 })
+    .then(() => true, () => false)
+  check('a picture removed in Settings is gone for everybody', gone)
+
+  const late = await (await browser.newContext()).newPage()
+  await late.addInitScript(() => localStorage.setItem('cathode.prefs.stamps.v1', JSON.stringify({ 'cathode.avatar.v1': 2000 })))
+  await late.goto(APP_URL)
+  const newest = await late.evaluate(async () => {
+    const prefs = await import('/src/store/prefs.ts')
+    const key = 'cathode.avatar.v1'
+    prefs.takePrefs({ values: { [key]: 'data:image/webp;base64,T0xE' }, stamps: { [key]: 1000 } })
+    prefs.takePrefs({ values: { [key]: 'data:image/webp;base64,TkVX' }, stamps: { [key]: 2000 } })
+    const sent = prefs.localPrefs()
+    return `${prefs.memoryPref(key)} ${sent.stamps[key]}`
+  })
+  check('of two servers, the newer record of your picture wins, and goes out with its own time', newest === 'data:image/webp;base64,TkVX 2000', newest)
 
   const bobKey = 'b'.repeat(64)
   await ana.evaluate((key) => {

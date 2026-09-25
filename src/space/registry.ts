@@ -1,48 +1,41 @@
-/**
- * Every space you are in, running.
- *
- * When the page opens it reads your list of spaces from each of your servers
- * (see store/server-spaces.ts) and starts every one of them, so the rail can
- * show which have something new, Home can list every direct message, and a
- * mention anywhere reaches you. They share one connection per server.
- */
-
 import { BUILT_IN_SERVER, serverUrl } from '../backend'
-import { roomsChanged, ROOMS_CHANGED, type RoomNote } from '../store/notes'
-import { bookFor, knownServers } from '../store/server-spaces'
 import { deriveRoom } from '../room'
 import type { LogEvent } from '../store/log'
+import { roomsChanged, ROOMS_CHANGED, type RoomNote } from '../store/notes'
+import { PREFS_CHANGED } from '../store/prefs'
+import { bookFor, knownServers } from '../store/server-spaces'
+import { avatarKnown, loadAvatar } from '../ui/avatar'
 import { SpaceRuntime, type OpenSpace } from './runtime'
 
+const ROOMS_CHANGED_DEBOUNCE_MS = 150
+
 class Registry {
-  /** By room id. */
-  private readonly running = new Map<string, SpaceRuntime>()
-  private loading: Promise<void> | null = null
-  /** Told about something new in any space, and which. */
   readonly fresh = new Set<(space: SpaceRuntime, events: LogEvent[]) => void>()
 
-  /** Start every space on your list, once. */
+  private readonly runningByRoom = new Map<string, SpaceRuntime>()
+  private readonly openingByKey = new Map<string, Promise<SpaceRuntime>>()
+  private loading: Promise<void> | null = null
+  private catching = false
+  private changedTimer = 0
+
   load(): Promise<void> {
     this.loading ??= (async () => {
       const servers = knownServers()
       if (BUILT_IN_SERVER && !servers.includes(BUILT_IN_SERVER)) servers.unshift(BUILT_IN_SERVER)
       const notes = (await Promise.all(servers.map((s) => bookFor(s).list()))).flat()
       await Promise.all(notes.filter((n) => !n.closed && n.server).map((n) => this.startFrom(n)))
-      // A record that arrives late, from a server slow to answer, starts its spaces then.
       window.addEventListener(ROOMS_CHANGED, () => void this.catchUp())
     })()
     return this.loading
   }
 
-  private catching = false
-  /** Start whatever is on your list and not running yet, as after adding a server. */
   async catchUp(): Promise<void> {
     if (this.catching) return
     this.catching = true
     try {
       for (const server of knownServers()) {
         for (const note of await bookFor(server).list()) {
-          if (!note.closed && note.server && !this.running.has(note.room)) await this.startFrom(note)
+          if (!note.closed && note.server && !this.runningByRoom.has(note.room)) await this.startFrom(note)
         }
       }
     } finally {
@@ -50,7 +43,7 @@ class Registry {
     }
   }
 
-  private async startFrom(note: RoomNote): Promise<SpaceRuntime> {
+  private startFrom(note: RoomNote): Promise<SpaceRuntime> {
     return this.open({
       secret: note.secret,
       locked: note.locked === true,
@@ -59,57 +52,70 @@ class Registry {
     })
   }
 
-  /** Opens under way, so two asking for one space at once get one space. */
-  private readonly opening = new Map<string, Promise<SpaceRuntime>>()
-
-  /** The running space for these details, started if it is not running yet. */
   open(open: OpenSpace): Promise<SpaceRuntime> {
     const server = serverUrl(open.server)
     const key = `${server}|${open.secret}|${open.password}`
-    let held = this.opening.get(key)
+    let held = this.openingByKey.get(key)
     if (!held) {
-      held = this.start({ ...open, server }).finally(() => this.opening.delete(key))
-      this.opening.set(key, held)
+      held = this.start({ ...open, server }).finally(() => this.openingByKey.delete(key))
+      this.openingByKey.set(key, held)
     }
     return held
   }
 
   private async start(open: OpenSpace): Promise<SpaceRuntime> {
-    const server = open.server
     const room = await deriveRoom(open.secret, open.password)
-    const held = this.running.get(room.id)
+    const held = this.runningByRoom.get(room.id)
     if (held) return held
-    const space = new SpaceRuntime({ ...open, server })
-    this.running.set(room.id, space)
+    const space = new SpaceRuntime(open)
+    this.runningByRoom.set(room.id, space)
     space.on('fresh', (events) => {
       for (const fn of this.fresh) fn(space, events)
       roomsChanged()
     })
-    space.on('changed', () => this.later())
+    space.on('changed', () => this.roomsChangedSoon())
     void space.ready.catch((err) => console.error('[cathode] a space did not start', err))
     return space
   }
 
   get(room: string): SpaceRuntime | undefined {
-    return this.running.get(room)
+    return this.runningByRoom.get(room)
   }
 
   all(): SpaceRuntime[] {
-    return [...this.running.values()]
+    return [...this.runningByRoom.values()]
   }
 
-  /** Stop a space you left. Its note goes from your record separately. */
+  myAvatar(): string {
+    if (avatarKnown()) return loadAvatar()
+    for (const space of this.runningByRoom.values()) {
+      const picture = space.chat?.avatarOf(space.chat.me)
+      if (picture) return picture
+    }
+    return ''
+  }
+
+  watchMyAvatar(onChange: () => void): () => void {
+    const onFresh = (space: SpaceRuntime, events: LogEvent[]): void => {
+      if (events.some((e) => e.kind === 'profile' && e.author === space.chat.me)) onChange()
+    }
+    window.addEventListener(PREFS_CHANGED, onChange)
+    this.fresh.add(onFresh)
+    return () => {
+      window.removeEventListener(PREFS_CHANGED, onChange)
+      this.fresh.delete(onFresh)
+    }
+  }
+
   drop(room: string): void {
-    this.running.get(room)?.stop()
-    this.running.delete(room)
+    this.runningByRoom.get(room)?.stop()
+    this.runningByRoom.delete(room)
     roomsChanged()
   }
 
-  private timer = 0
-  /** Say that unread counts may have moved, at most a few times a second. */
-  private later(): void {
-    window.clearTimeout(this.timer)
-    this.timer = window.setTimeout(roomsChanged, 150)
+  private roomsChangedSoon(): void {
+    window.clearTimeout(this.changedTimer)
+    this.changedTimer = window.setTimeout(roomsChanged, ROOMS_CHANGED_DEBOUNCE_MS)
   }
 }
 

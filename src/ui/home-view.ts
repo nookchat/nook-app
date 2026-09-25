@@ -1,32 +1,19 @@
-/**
- * Home: your direct messages, from every space, and the way into the spaces.
- *
- * A private conversation belongs to a space: it is kept in that space's log,
- * sealed so only the two of you can read it, and it is with somebody you met
- * there. But it is read out here, beside every other one, the way every chat
- * app with servers does it, because who you are talking to matters more than
- * where you met them.
- */
-
+import { spaces } from '../space/registry'
+import { filesFor, type SpaceRuntime } from '../space/runtime'
 import { shortKey } from '../store/identity'
-import { loadAvatar } from './avatar'
+import { ROOMS_CHANGED } from '../store/notes'
+import { callControls, voiceDock } from './call'
 import { ChatPanel, avatarOf } from './chat-panel'
 import { h } from './dom'
 import { icon } from './icons'
-import { spaces } from '../space/registry'
-import { filesFor, type SpaceRuntime } from '../space/runtime'
-import { ROOMS_CHANGED } from '../store/notes'
 import type { WindowChrome } from './shell'
 import { homeFace, switcherButton } from './space-switcher'
-import { callControls, voiceDock } from './call'
 
-export interface HomeActions {
-  /** The home page itself: your spaces, and making or joining one. */
+interface HomeActions {
   page(): Promise<HTMLElement>
   settings(): void
 }
 
-/** A conversation, by the space it lives in and the person it is with. */
 export interface DirectRef {
   room: string
   key: string
@@ -58,11 +45,11 @@ export class HomeView {
   private readonly list = h('div', { class: 'rail-list' })
   private readonly main = h('div', { class: 'space-main' })
   private readonly shell: HTMLElement
+  private readonly me: HTMLElement
   private panel: ChatPanel | null = null
   private stopped = false
   private drawQueued = false
   private unlisten: (() => void) | null = null
-  /** The call button and strip of the conversation on show, and the way to stop them listening. */
   private callBits: { stop(): void } | null = null
   private readonly dock = voiceDock(null)
 
@@ -72,7 +59,7 @@ export class HomeView {
     this.actions = actions
     this.open = open
 
-    const me = h('div', { class: 'me-panel' }, [
+    const me = (this.me = h('div', { class: 'me-panel' }, [
       h('span', { class: 'me-face' }),
       h('div', { class: 'me-text' }, [h('span', { class: 'me-name truncate', text: 'You' }), chrome.status]),
       h(
@@ -80,7 +67,7 @@ export class HomeView {
         { class: 'ghost icon-only', title: 'Your name, your ID, and your servers', ariaLabel: 'Settings', on: { click: () => actions.settings() } },
         [icon('settings', 17)],
       ),
-    ])
+    ]))
     const left = h('div', { class: 'rail rail-left', role: 'navigation', ariaLabel: 'Direct messages' }, [
       h('div', { class: 'space-title' }, [
         switcherButton({
@@ -99,13 +86,17 @@ export class HomeView {
     ])
     this.shell = h('div', { class: 'space-grid home-grid-shell members-hidden' }, [left, this.main])
     this.root.append(h('main', {}, [this.shell]))
-    this.drawMe(me)
+    this.drawMe()
   }
 
   async start(): Promise<void> {
     const redraw = (): void => this.draw()
     window.addEventListener(ROOMS_CHANGED, redraw)
-    this.unlisten = () => window.removeEventListener(ROOMS_CHANGED, redraw)
+    const stopAvatar = spaces.watchMyAvatar(() => this.drawMe())
+    this.unlisten = () => {
+      window.removeEventListener(ROOMS_CHANGED, redraw)
+      stopAvatar()
+    }
     await this.show(this.open)
     this.draw()
   }
@@ -117,12 +108,12 @@ export class HomeView {
     this.dock.stop()
   }
 
-  private drawMe(me: HTMLElement): void {
+  private drawMe(): void {
     const any = spaces.all().find((s) => s.chat)?.chat
     const name = any?.displayName ?? ''
-    const face = me.querySelector('.me-face')
-    face?.replaceChildren(avatarOf(any?.me ?? 'you', name, loadAvatar(), 32), h('i', { class: 'dot good' }))
-    const label = me.querySelector('.me-name')
+    const face = this.me.querySelector('.me-face')
+    face?.replaceChildren(avatarOf(any?.me ?? 'you', name, spaces.myAvatar(), 32), h('i', { class: 'dot good' }))
+    const label = this.me.querySelector('.me-name')
     if (label && name) label.textContent = name
   }
 
@@ -137,8 +128,7 @@ export class HomeView {
   }
 
   private drawList(): void {
-    const all = rows()
-    const items: HTMLElement[] = all.map((row) => {
+    const items: HTMLElement[] = rows().map((row) => {
       const on = this.open?.room === row.space.room?.id && this.open?.key === row.key
       const label = row.name || shortKey(row.key)
       return h(
@@ -162,7 +152,6 @@ export class HomeView {
     this.list.replaceChildren(...items)
   }
 
-  /** Show a conversation, or the home page when there is none. */
   private async show(ref: DirectRef | null): Promise<void> {
     this.panel?.keepDraft()
     this.callBits?.stop()
@@ -229,19 +218,14 @@ export class HomeView {
     })
     panel.setDirect(ref.key, name)
     panel.render(chat.directWith(ref.key))
-    // On screen is read.
     if (!document.hidden) {
       const top = chat.directHighWater(ref.key)
-      const marks = { ...(space.note?.readDm ?? {}) }
-      if (top > (marks[ref.key] ?? 0)) {
-        marks[ref.key] = top
-        void space.remember({ readDm: marks })
-      }
+      const marks = space.note?.readDm ?? {}
+      if (top > (marks[ref.key] ?? 0)) void space.remember({ readDm: { ...marks, [ref.key]: top } })
     }
     this.chrome.setTitle(`Nook | ${name}`)
   }
 
-  /** The conversation on screen, so a notification for it can stay quiet. */
   get showing(): DirectRef | null {
     return this.open
   }

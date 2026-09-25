@@ -1,24 +1,3 @@
-/**
- * Preferences that follow you from device to device.
- *
- * They are kept on the device, where the page reads them, and a copy rides in
- * your record on each of your servers (see server-spaces.ts), sealed with a
- * key only your devices have. Each one carries when it was last changed, and
- * the newer wins, so changing a quick reaction on your phone changes it on
- * your laptop the next time it reads its record.
- *
- * Not everything goes. Your key does not: it is what opens the record. Nor do
- * the microphone and speaker you chose, which are this device's hardware, nor
- * whether this browser may show notifications, which only it can say.
- *
- * The lists of servers are joined rather than replaced: a server added on one
- * device appears on the others, and a server one of them knew is never lost
- * to a newer list from somewhere that did not.
- *
- * Your picture is kept only in the record, and in this page's memory while it
- * is open: it is yours, on your servers, not a file sitting in the browser.
- */
-
 import { VOLUMES_CHANGED } from '../net/volume'
 import { ROOMS_CHANGED } from './notes'
 
@@ -34,23 +13,19 @@ const SYNCED = [
   'cathode.servers.v1',
   'cathode.own.v1',
 ]
-const JOINED = new Set(['cathode.servers.v1', 'cathode.own.v1'])
+const MERGED_LISTS = new Set(['cathode.servers.v1', 'cathode.own.v1'])
 const STAMPS = 'cathode.prefs.stamps.v1'
-/** Kept in memory and in the record, never in the browser's storage. */
-const MEMORY = new Set(['cathode.avatar.v1'])
+const MEMORY_ONLY = new Set(['cathode.avatar.v1'])
 const memory = new Map<string, string | null>()
+const memoryStamps = new Map<string, number>()
 
-/** Said when another device's preferences arrive, with which ones changed. */
 export const PREFS_CHANGED = 'cathode:prefs'
 
 let told: (() => void) | null = null
+let applying = false
 
-/*
- * A picture from before it lived only in the record: moved into memory, once,
- * with the time it moved, so the record takes it on the next save.
- */
-function migrate(): void {
-  for (const key of MEMORY) {
+function moveMemoryOnlyOutOfStorage(): void {
+  for (const key of MEMORY_ONLY) {
     try {
       const held = localStorage.getItem(key)
       if (held === null) continue
@@ -58,30 +33,38 @@ function migrate(): void {
       localStorage.removeItem(key)
       const when = stamps()
       when[key] = Date.now()
+      memoryStamps.set(key, when[key])
       localStorage.setItem(STAMPS, JSON.stringify(when))
-    } catch {
-      /* nothing kept; nothing to move */
-    }
+    } catch {}
   }
 }
-migrate()
+moveMemoryOnlyOutOfStorage()
 
-/** A preference kept in memory: its value, or undefined when it is not known yet. */
+/** Undefined when not known yet. */
 export function memoryPref(key: string): string | null | undefined {
   return memory.has(key) ? memory.get(key) : undefined
 }
 
-/** Change one, here and, soon, in the record. */
-export function setMemoryPref(key: string, value: string | null): void {
+export function memoryPrefStamp(key: string): number {
+  return memoryStamps.get(key) ?? 0
+}
+
+export function setMemoryPref(key: string, value: string | null, at = Date.now()): void {
   memory.set(key, value)
+  memoryStamps.set(key, at)
   const when = stamps()
-  when[key] = Date.now()
+  when[key] = at
   try {
     localStorage.setItem(STAMPS, JSON.stringify(when))
-  } catch {
-    /* the time is lost; the value still goes */
-  }
+  } catch {}
   told?.()
+}
+
+export function adoptMemoryPref(key: string, value: string | null, at: number): void {
+  if (at <= memoryPrefStamp(key)) return
+  const changed = memory.get(key) !== value
+  setMemoryPref(key, value, at)
+  if (changed) window.dispatchEvent(new CustomEvent(PREFS_CHANGED, { detail: [key] }))
 }
 
 export interface Prefs {
@@ -98,15 +81,15 @@ function stamps(): Record<string, number> {
   }
 }
 
-/** The preferences as this device has them, and when each last changed. */
 export function localPrefs(): Prefs {
   const values: Record<string, string | null> = {}
   const when = stamps()
   for (const key of SYNCED) {
-    if (MEMORY.has(key)) {
-      // Not known yet is not the same as none: a record that has one keeps it.
-      if (memory.has(key)) values[key] = memory.get(key) ?? null
-      else delete when[key]
+    if (MEMORY_ONLY.has(key)) {
+      if (memory.has(key)) {
+        values[key] = memory.get(key) ?? null
+        when[key] = memoryStamps.get(key) ?? when[key]
+      } else delete when[key]
       continue
     }
     try {
@@ -118,9 +101,7 @@ export function localPrefs(): Prefs {
   return { values, stamps: when }
 }
 
-let applying = false
-
-function joined(ours: string | null, theirs: string | null): string {
+function mergedList(ours: string | null, theirs: string | null): string {
   const list = (raw: string | null): string[] => {
     try {
       const value = JSON.parse(raw ?? '[]') as unknown
@@ -132,7 +113,6 @@ function joined(ours: string | null, theirs: string | null): string {
   return JSON.stringify([...new Set([...list(ours), ...list(theirs)])])
 }
 
-/** Take whatever another device changed more recently than this one. Says whether anything changed. */
 export function takePrefs(remote: unknown): boolean {
   if (!remote || typeof remote !== 'object') return false
   const { values, stamps: theirs } = remote as Partial<Prefs>
@@ -148,19 +128,20 @@ export function takePrefs(remote: unknown): boolean {
       const when = Number(theirs[key] ?? 0)
       const value = values[key]
       if (value !== null && typeof value !== 'string') continue
-      if (MEMORY.has(key)) {
-        if (!memory.has(key) || when > (ours[key] ?? 0)) {
+      if (MEMORY_ONLY.has(key)) {
+        if (!memory.has(key) || when > (memoryStamps.get(key) ?? 0)) {
           if (memory.get(key) !== value) which.push(key)
           memory.set(key, value)
+          memoryStamps.set(key, when)
           if (when > (ours[key] ?? 0)) ours[key] = when
           changed = true
         }
         continue
       }
-      if (JOINED.has(key)) {
-        // Joined, whichever is newer: nothing known is ever dropped.
-        const next = joined(localStorage.getItem(key), value)
-        if (next !== (localStorage.getItem(key) ?? '[]')) {
+      if (MERGED_LISTS.has(key)) {
+        const held = localStorage.getItem(key)
+        const next = mergedList(held, value)
+        if (next !== (held ?? '[]')) {
           localStorage.setItem(key, next)
           servers = changed = true
         }
@@ -176,29 +157,21 @@ export function takePrefs(remote: unknown): boolean {
       if (key === 'cathode.volume.v1') volumes = true
     }
     localStorage.setItem(STAMPS, JSON.stringify(ours))
-  } catch {
-    /* nowhere to keep them; this device carries on as it was */
-  } finally {
+  } catch {} finally {
     applying = false
   }
   if (volumes) window.dispatchEvent(new Event(VOLUMES_CHANGED))
   if (which.length) window.dispatchEvent(new CustomEvent(PREFS_CHANGED, { detail: which }))
-  // A server this device had not heard of may hold spaces it should start.
   if (servers) window.dispatchEvent(new Event(ROOMS_CHANGED))
   return changed
 }
 
-/**
- * Be told whenever a preference changes on this device, so the record can be
- * saved. Every write goes through localStorage, so that is where it is heard:
- * one place, rather than a call to remember in every file that keeps one.
- */
 export function watchPrefs(onChange: () => void): void {
   told = onChange
   if (typeof Storage === 'undefined') return
   const synced = new Set(SYNCED)
+  const watched = (store: Storage, key: string): boolean => store === localStorage && !applying && synced.has(key)
   const mark = (key: string): void => {
-    if (applying || !synced.has(key)) return
     const when = stamps()
     when[key] = Date.now()
     applying = true
@@ -212,13 +185,15 @@ export function watchPrefs(onChange: () => void): void {
   const set = Storage.prototype.setItem
   const remove = Storage.prototype.removeItem
   Storage.prototype.setItem = function (this: Storage, key: string, value: string) {
+    if (!watched(this, key)) return set.call(this, key, value)
     const was = this.getItem(key)
     set.call(this, key, value)
-    if (this === localStorage && was !== value) mark(key)
+    if (was !== value) mark(key)
   }
   Storage.prototype.removeItem = function (this: Storage, key: string) {
+    if (!watched(this, key)) return remove.call(this, key)
     const was = this.getItem(key)
     remove.call(this, key)
-    if (this === localStorage && was !== null) mark(key)
+    if (was !== null) mark(key)
   }
 }

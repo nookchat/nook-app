@@ -1,5 +1,5 @@
 import { MAX_AVATAR } from '../store/log'
-import { memoryPref, setMemoryPref } from '../store/prefs'
+import { adoptMemoryPref, memoryPref, memoryPrefStamp, setMemoryPref } from '../store/prefs'
 
 const KEY = 'cathode.avatar.v1'
 
@@ -16,6 +16,14 @@ export function avatarKnown(): boolean {
 
 export function saveAvatar(picture: string): void {
   setMemoryPref(KEY, picture || null)
+}
+
+export function avatarSavedAt(): number {
+  return memoryPrefStamp(KEY)
+}
+
+export function adoptAvatar(picture: string, at: number): void {
+  adoptMemoryPref(KEY, picture || null, at)
 }
 
 export async function squareThumb(file: File): Promise<string> {
