@@ -49,6 +49,7 @@ export type IconName =
   | 'paperclip'
   | 'download'
   | 'play'
+  | 'pause'
   | 'file'
   | 'music'
   | 'chevron-right'
@@ -108,6 +109,7 @@ const PATHS: Record<IconName, string> = {
   paperclip: 'M20 11.5 12.2 19.3a4.8 4.8 0 0 1-6.8-6.8l8.3-8.3a3.2 3.2 0 0 1 4.5 4.5l-8.3 8.3a1.6 1.6 0 0 1-2.3-2.3l7.6-7.6',
   download: 'M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14',
   play: 'M8 5.2v13.6a.8.8 0 0 0 1.2.7l10.6-6.8a.8.8 0 0 0 0-1.4L9.2 4.5A.8.8 0 0 0 8 5.2z',
+  pause: 'M7.5 5h2a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM14.5 5h2a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z',
   file: 'M13.5 3.5H7A1.5 1.5 0 0 0 5.5 5v14A1.5 1.5 0 0 0 7 20.5h10a1.5 1.5 0 0 0 1.5-1.5V8.5zM13.5 3.5v5h5',
   music: 'M9 18V6l10-2v12M9 18a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0zM19 16a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z',
   'chevron-right': 'M9.5 6 15.5 12l-6 6',
@@ -115,7 +117,7 @@ const PATHS: Record<IconName, string> = {
   device: 'M8.5 3h7A1.5 1.5 0 0 1 17 4.5v15a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 7 19.5v-15A1.5 1.5 0 0 1 8.5 3zM11 18h2',
 }
 
-const FILLED = new Set<IconName>(['qr', 'stop', 'crown', 'play'])
+const FILLED = new Set<IconName>(['qr', 'stop', 'crown', 'play', 'pause'])
 
 const drawn = new Map<string, SVGSVGElement>()
 

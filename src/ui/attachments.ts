@@ -3,6 +3,7 @@ import { MAX_FILES, type Attachment } from '../store/log'
 import { h } from './dom'
 import { icon, type IconName } from './icons'
 import { toast } from './toast'
+import { videoPlayer } from './video-player'
 
 type Kind = 'image' | 'video' | 'audio' | 'file'
 
@@ -150,19 +151,22 @@ function videoTile(file: Attachment, source: SpaceFiles | null, most: { w: numbe
     if (!source || started) return
     started = true
     tile.classList.add('loading')
-    progress.classList.remove('hidden')
-    progress.textContent = '0%'
-    const whole = (): Promise<string> =>
-      source.url(file, (done, total) => {
+    const whole = (): Promise<string> => {
+      tile.classList.remove('streaming')
+      progress.classList.remove('hidden')
+      progress.textContent = '0%'
+      return source.url(file, (done, total) => {
         if (total) progress.textContent = `${Math.min(99, Math.floor((done / total) * 100))}%`
       })
+    }
     try {
       // Plays as it arrives when it can; the whole file first when it cannot.
       const stream = source.streamUrl(file)
-      const video = h('video', { class: 'att-player' })
-      video.controls = true
-      video.playsInline = true
+      const player = videoPlayer(file.name, file.dur ?? 0)
+      const video = player.video
       if (stream) {
+        // The stream gives no byte count before the video starts, so it shows a spinner, not a percentage.
+        tile.classList.add('streaming')
         video.src = stream
         await new Promise<void>((ok, fail) => {
           video.addEventListener('loadedmetadata', () => ok(), { once: true })
@@ -174,20 +178,23 @@ function videoTile(file: Attachment, source: SpaceFiles | null, most: { w: numbe
         video.src = await whole()
       }
       tile.classList.add('playing')
-      tile.replaceChildren(video)
+      tile.replaceChildren(player.root)
       tile.removeAttribute('role')
       tile.removeAttribute('tabindex')
+      tile.removeAttribute('aria-label')
+      tile.removeAttribute('title')
       warnIfNoPicture(video, tile, file, source)
       await video.play().catch(() => undefined)
     } catch {
       started = false
-      tile.classList.remove('loading')
+      tile.classList.remove('loading', 'streaming')
       progress.classList.add('hidden')
       toast(`Could not open ${file.name}.`, 'warn')
     }
   }
   tile.addEventListener('click', () => void start())
   tile.addEventListener('keydown', (ev) => {
+    if (started) return
     if (ev.key === 'Enter' || ev.key === ' ') {
       ev.preventDefault()
       void start()
