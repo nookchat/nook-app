@@ -88,6 +88,18 @@ try {
   const replied = (await lines(bob)).at(-1)
   check('a reply of one emoji is drawn large too', replied?.reply === true && replied.jumbo === true, JSON.stringify(replied))
 
+  // A picture, a reply of one emoji to it, and a picture with only an emoji beside it.
+  const PICTURE = 'https://upload.wikimedia.org/wikipedia/commons/a/a7/Camponotus_flavomarginatus_ant.jpg'
+  await say(alice, PICTURE)
+  const toPicture = alice.locator('.chat-row').last().locator('button[aria-label="Reply"]')
+  await toPicture.evaluate((el) => el.focus())
+  await toPicture.click()
+  await say(alice, '😂')
+  await say(alice, `${PICTURE} 🎉`)
+  const media = (await lines(alice)).slice(-2)
+  check('a reply of one emoji to a picture is drawn large', media[0]?.reply === true && media[0].jumbo === true, JSON.stringify(media[0]))
+  check('and so is an emoji beside a picture, without the address', media[1]?.jumbo === true && media[1].text === '🎉', JSON.stringify(media[1]))
+
   // ---- a level, made in Settings ----
   await openSettings(alice)
   await alice.waitForSelector('.levels')

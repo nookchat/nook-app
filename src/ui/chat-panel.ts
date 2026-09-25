@@ -1521,7 +1521,18 @@ export class ChatPanel {
        */
       if (pictures.length > 0) line.classList.add('has-picture')
       const onlyFiles = !m.text && (m.files?.length ?? 0) > 0
-      if (!bare && !svg && !onlyFiles) {
+      /*
+       * A picture or a GIF with only emoji beside it: the emoji, large, over
+       * the picture. The address is left out, because the picture under it
+       * already says it.
+       */
+      const beside = pictures.reduce((rest, src) => rest.split(src).join(' '), m.text).trim()
+      const emojiWithPicture = !m.emote && pictures.length > 0 && onlyEmoji(beside)
+      if (emojiWithPicture) {
+        text.classList.add('jumbo')
+        text.append(beside)
+        line.append(text)
+      } else if (!bare && !svg && !onlyFiles) {
         if (pictures.length > 0) text.classList.add('boxed')
         else if (!m.emote && onlyEmoji(m.text)) text.classList.add('jumbo')
         for (const node of formatText(m.text, this.names, this.me)) text.append(node)
