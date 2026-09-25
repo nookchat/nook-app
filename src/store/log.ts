@@ -17,6 +17,7 @@ const EVENT_KINDS = [
   'space',
   'close',
   'dm',
+  'note',
 ] as const
 
 export type EventKind = (typeof EVENT_KINDS)[number]
@@ -470,6 +471,38 @@ export class RoomLog {
       .map((name) => ({ name, label: label.get(name) || name, topic: topic.get(name) ?? '' }))
   }
 
+  /** Shared notes. Anybody still in the space may write; the maker or a channel keeper may delete. */
+  notes(): NoteInfo[] {
+    return this.cached('notes', () => {
+      const auth = this.authority()
+      const notes = new Map<string, NoteInfo>()
+      const gone = new Set<string>()
+      for (const e of this.all()) {
+        if (e.kind !== 'note' || auth.isKicked(e.author)) continue
+        const id = cleanNoteId(e.body.id)
+        if (!id || gone.has(id)) continue
+        let note = notes.get(id)
+        if (!note) {
+          if (e.body.gone === true) continue
+          note = { id, title: 'Untitled', text: '', maker: e.author, by: e.author, at: e.at, lamport: e.lamport }
+          notes.set(id, note)
+        }
+        if (e.body.gone === true) {
+          if (e.author !== note.maker && !auth.can(e.author, 'channels')) continue
+          notes.delete(id)
+          gone.add(id)
+          continue
+        }
+        if (typeof e.body.title === 'string') note.title = cleanNoteTitle(e.body.title) || 'Untitled'
+        if (typeof e.body.text === 'string') note.text = e.body.text.slice(0, MAX_TEXT)
+        note.by = e.author
+        note.at = e.at
+        note.lamport = e.lamport
+      }
+      return [...notes.values()].sort((a, b) => a.title.localeCompare(b.title))
+    })
+  }
+
   private deletedChannels(): Set<string> {
     const live = new Set(this.channels())
     const gone = new Set<string>()
@@ -742,6 +775,27 @@ export interface ThreadInfo {
   last: number
   /** Lamport clock. */
   newest: number
+}
+
+export interface NoteInfo {
+  id: string
+  title: string
+  /** Markdown. */
+  text: string
+  maker: string
+  /** Who wrote the newest version, and when by their clock. */
+  by: string
+  at: number
+  lamport: number
+}
+
+export function cleanNoteId(raw: unknown): string {
+  const id = typeof raw === 'string' ? raw : ''
+  return /^[0-9a-f]{8,32}$/.test(id) ? id : ''
+}
+
+export function cleanNoteTitle(raw: string): string {
+  return raw.replace(/\s+/g, ' ').trim().slice(0, 80)
 }
 
 export interface ChannelInfo {

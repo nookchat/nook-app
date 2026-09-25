@@ -16,6 +16,7 @@ import {
   withEmoji,
 } from './emoji'
 import { icon } from './icons'
+import { closeMenu, onContextMenu, type MenuEntry } from './menu'
 import { toast } from './toast'
 
 const FALLBACK_REACTIONS = ['👍', '😂', '🔥', '❤️', '👀']
@@ -134,6 +135,8 @@ export class ChatPanel {
   actions: ChatActions | null = null
   canPin = false
   canDelete = false
+  /** What a right click on a name or a picture in the chat offers. */
+  personMenu: ((key: string) => MenuEntry[]) | null = null
   colourOf: ColourOf = () => ''
   onTyping: (() => void) | null = null
   onThread: ((rootId: string | null) => void) | null = null
@@ -1038,6 +1041,12 @@ export class ChatPanel {
       line.style.animationDelay = `-${since}ms`
     }
     const row = h('div', { class: `chat-row${mine ? ' mine' : ''}` }, [line])
+    onContextMenu(line, (ev) => {
+      const person = (ev.target as Element).closest('.chat-name, .avatar')
+      const about = person && this.personMenu ? this.personMenu(m.author) : []
+      if (about.length) return about
+      return this.messageMenu(m, mine, who, line)
+    })
     line.addEventListener('click', (ev) => {
       if (window.matchMedia('(hover: hover)').matches) return
       const target = ev.target as HTMLElement
@@ -1375,6 +1384,79 @@ export class ChatPanel {
       )
     }
     return bar
+  }
+
+  private messageMenu(m: Message, mine: boolean, who: string, line: HTMLElement): MenuEntry[] {
+    const lead = (name: Parameters<typeof icon>[0]): HTMLElement => h('span', { class: 'menu-icon' }, [icon(name, 16)])
+    const reacted = (emoji: string): boolean => m.reactions.get(emoji)?.has(this.me) === true
+    const quick = h('div', { class: 'menu-reacts' })
+    for (const emoji of quickRow()) {
+      quick.append(
+        h('button', {
+          class: `chat-react${reacted(emoji) ? ' on' : ''}`,
+          text: emoji,
+          title: `React with ${emoji}`,
+          on: {
+            click: () => {
+              closeMenu()
+              this.actions?.react(m.id, emoji, !reacted(emoji))
+            },
+          },
+        }),
+      )
+    }
+
+    const items: MenuEntry[] = [
+      { custom: quick },
+      {
+        label: 'Add a reaction',
+        lead: lead('smile'),
+        run: () =>
+          openEmojiPicker({
+            anchor: line,
+            title: 'React to this message',
+            sticky: true,
+            onPick: (emoji) => this.actions?.react(m.id, emoji, !reacted(emoji)),
+          }),
+      },
+      'line',
+      { label: 'Reply', lead: lead('reply'), run: () => this.startReply(m) },
+    ]
+    if (!this.threadRoot) {
+      items.push({ label: 'Reply in a thread', lead: lead('thread'), run: () => this.onThread?.(m.id) })
+    }
+    if (this.canPin) {
+      items.push({
+        label: m.pinned ? 'Unpin' : 'Pin',
+        lead: lead('pin'),
+        run: () => this.actions?.pin(m.id, !m.pinned),
+      })
+    }
+    if (mine && !m.poll) items.push({ label: 'Edit', lead: lead('edit'), run: () => this.startEdit(m) })
+    if (m.text) {
+      items.push({
+        label: 'Copy text',
+        lead: lead('copy'),
+        run: () => {
+          navigator.clipboard.writeText(m.text).then(
+            () => toast('Copied.'),
+            () => toast('Could not copy that.', 'warn'),
+          )
+        },
+      })
+    }
+    if (mine || this.canDelete) {
+      items.push('line', {
+        label: 'Delete',
+        lead: lead('trash'),
+        danger: true,
+        run: () => {
+          if (!mine && !window.confirm(`Delete this message from ${who}?`)) return
+          this.actions?.retract(m.id)
+        },
+      })
+    }
+    return items
   }
 
   private reactWith(m: Message, anchor: HTMLElement): void {

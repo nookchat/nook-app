@@ -5,6 +5,7 @@ import { openEvents } from './verify-pool'
 import {
   cleanAvatar,
   cleanChannel,
+  cleanNoteTitle,
   cleanFiles,
   DEFAULT_CHANNEL,
   makeEvent,
@@ -17,6 +18,7 @@ import {
   type Attachment,
   type Authority,
   type ChannelInfo,
+  type NoteInfo,
   type EventKind,
   type Level,
   type LogEvent,
@@ -74,6 +76,22 @@ export class RoomChat {
 
   avatarOf(author: string): string {
     return this.log.avatars().get(author) ?? ''
+  }
+
+  notes(): NoteInfo[] {
+    return this.log.notes()
+  }
+
+  /** Makes the note when the id is new. Leave title or text undefined to keep what is there. */
+  saveNote(id: string, title?: string, text?: string): Promise<LogEvent> {
+    const body: Record<string, unknown> = { id }
+    if (title !== undefined) body.title = cleanNoteTitle(title) || 'Untitled'
+    if (text !== undefined) body.text = trimToWire(text, MAX_TEXT)
+    return this.write('note', body)
+  }
+
+  dropNote(id: string): Promise<LogEvent> {
+    return this.write('note', { id, gone: true })
   }
 
   channelInfo(voice = false): ChannelInfo[] {

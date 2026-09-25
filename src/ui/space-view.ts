@@ -37,6 +37,7 @@ import {
   type ChannelInfo,
   type LogEvent,
   type Message,
+  type NoteInfo,
 } from '../store/log'
 import type { RoomChat } from '../store/room-chat'
 import { filesFor, isCallChannel, type SpaceRuntime } from '../space/runtime'
@@ -48,7 +49,8 @@ import { openSoundboard, playSound, soundById, soundByName, SOUNDS } from './sou
 import { avatarOf, ChatPanel, imageLinks } from './chat-panel'
 import { clear, copyText, fmtKbps, h, onPress } from './dom'
 import { icon } from './icons'
-import { openMenu, type MenuItem, type MenuEntry } from './menu'
+import { onContextMenu, openMenu, type MenuItem, type MenuEntry } from './menu'
+import { NoteEditor } from './notes-view'
 import { placeNear } from './emoji'
 import { loadAvatar } from './avatar'
 import type { WindowChrome } from './shell'
@@ -252,6 +254,10 @@ export class SpaceView {
   private newTextButton!: HTMLButtonElement
   private newVoiceButton!: HTMLButtonElement
   private threadList!: HTMLDivElement
+  private noteList!: HTMLDivElement
+  private noteEditor!: NoteEditor
+  /** The note on screen in place of the chat, if any. */
+  private noteId: string | null = null
   private peopleList!: HTMLDivElement
   private voiceBar!: HTMLDivElement
   private shell!: HTMLElement
@@ -276,6 +282,8 @@ export class SpaceView {
   private read: Record<string, number> = {}
   private readWhenOpened = 0
   private readonly away = new Set<string>()
+  /** Sessions in voice that have muted or deafened themselves. */
+  private readonly quiet = new Map<string, 'muted' | 'deafened'>()
   private readonly typing = new Map<string, { channel: string; at: number }>()
   private lastTypingSent = 0
   private mentions = 0
@@ -444,13 +452,20 @@ export class SpaceView {
   // Only the cosmetic maps: a relay outage empties the roster while media keeps flowing.
   private prunePeers(): void {
     const alive = new Set((this.mesh?.peers() ?? []).map((p) => p.id))
-    const known = new Set([...this.sharers.keys(), ...this.away, ...this.typing.keys(), ...this.watchingBy.keys()])
+    const known = new Set([
+      ...this.sharers.keys(),
+      ...this.away,
+      ...this.quiet.keys(),
+      ...this.typing.keys(),
+      ...this.watchingBy.keys(),
+    ])
     for (const id of known) if (!alive.has(id)) this.forgetSession(id)
   }
 
   private forgetSession(id: string): void {
     this.sharers.delete(id)
     this.away.delete(id)
+    this.quiet.delete(id)
     this.typing.delete(id)
     this.watchingBy.delete(id)
   }
@@ -523,6 +538,11 @@ export class SpaceView {
     if (data.away === true) this.away.add(from)
     else this.away.delete(from)
 
+    const wasQuiet = this.quiet.get(from)
+    const quiet = data.deafened === true ? 'deafened' : data.muted === true ? 'muted' : null
+    if (quiet) this.quiet.set(from, quiet)
+    else this.quiet.delete(from)
+
     const sharing = typeof data.sharing === 'string' ? cleanChannel(data.sharing) : ''
     const wasSharing = this.sharers.get(from)
     if (sharing) this.sharers.set(from, sharing)
@@ -533,6 +553,7 @@ export class SpaceView {
     if (eyes.length) this.watchingBy.set(from, eyes)
     else this.watchingBy.delete(from)
 
+    if (wasQuiet !== this.quiet.get(from)) this.draw()
     if (wasAway !== this.away.has(from) || (wasSharing ?? '') !== sharing || hadEyes !== eyes.join()) this.draw()
     if (!sharing && this.watched.has(from)) {
       this.dropTile(from)
@@ -844,6 +865,7 @@ export class SpaceView {
 
   private openThread(rootId: string | null): void {
     this.showRail(null)
+    this.closeNote()
     this.chatPanel.keepDraft()
     this.thread = rootId
     this.chatPanel.useDraft(rootId ? `thread:${rootId}` : this.channel)
@@ -1045,6 +1067,12 @@ export class SpaceView {
     }
     this.chatPanel.canPin = chat.can('pin')
     this.chatPanel.canDelete = chat.can('delete')
+    this.chatPanel.personMenu = (key) => {
+      if (key === chat.me) return []
+      const role = chat.roles().get(key) ?? 'member'
+      const here = this.roster().some((r) => r.key === key && r.here)
+      return this.personMenu(key, role, false, here)
+    }
     const auth = chat.authority()
     this.chatPanel.colourOf = (key) => auth.levelOf(key).colour
     this.chatPanel.setNames(this.everybody(), chat.log.avatars())
@@ -1057,8 +1085,18 @@ export class SpaceView {
     }
     const info = chat.channelInfo().find((c) => c.name === this.channel)
     this.renderConversation(chat, info, thread)
-    this.renderChannelHead(info)
-    this.markRead(this.channel)
+    const note = this.noteId ? chat.notes().find((n) => n.id === this.noteId) : undefined
+    if (this.noteId && !note) {
+      toast('That note was deleted.', 'warn')
+      this.closeNote()
+    }
+    if (note) {
+      this.noteEditor.show(note)
+      this.renderNoteHead(note.title)
+    } else {
+      this.renderChannelHead(info)
+      this.markRead(this.channel)
+    }
     this.showTyping()
     this.renderSpaceName(chat)
     if (chat.isClosed && !this.closing) void this.acceptClose()
@@ -1067,6 +1105,7 @@ export class SpaceView {
     this.renderChannels()
     this.renderThreads()
     this.renderVoice()
+    this.renderNotes()
     this.renderPeople(people)
     this.renderMe()
     this.renderShareButton()
@@ -1096,6 +1135,116 @@ export class SpaceView {
     if (pinned > 0) {
       this.pinsButton.title = pinned === 1 ? 'One pinned message' : `${pinned} pinned messages`
     }
+  }
+
+  private renderNoteHead(title: string): void {
+    const sig = `note\n${title}`
+    if (this.channelTitleSig === sig) return
+    this.channelTitleSig = sig
+    clear(this.channelTitle)
+    this.channelTitle.append(
+      h('span', { class: 'channel-name' }, [icon('file', 18), h('span', { class: 'truncate', text: title })]),
+    )
+  }
+
+  private renderNotes(): void {
+    clear(this.noteList)
+    const chat = this.chat
+    if (!chat) return
+    for (const note of chat.notes()) {
+      const open = h(
+        'button',
+        {
+          class: `rail-item grow${note.id === this.noteId ? ' on' : ''}`,
+          title: `Open ${note.title}`,
+          on: { click: () => this.openNote(note.id) },
+        },
+        [icon('file', 16), h('span', { class: 'truncate grow', text: note.title })],
+      )
+      const button = h('button', {
+        class: 'ghost tiny-btn person-more',
+        title: `What you can do with ${note.title}`,
+        ariaLabel: `Actions for ${note.title}`,
+        data: { menu: `note:${note.id}` },
+      })
+      onPress(button, () => openMenu(button, this.noteActions(note)))
+      button.append(icon('more', 17))
+      const row = h('div', { class: 'row rail-row' }, [open, button])
+      onContextMenu(row, () => this.noteActions(note))
+      this.noteList.append(row)
+    }
+  }
+
+  private noteActions(note: NoteInfo): MenuItem[] {
+    const chat = this.chat
+    if (!chat) return []
+    const items: MenuItem[] = [
+      { label: 'Open', run: () => this.openNote(note.id) },
+      {
+        label: 'Rename',
+        run: () => {
+          const raw = window.prompt('What should this note be called?', note.title)
+          if (raw === null || !raw.trim()) return
+          void this.publish((c) => c.saveNote(note.id, raw))
+        },
+      },
+      {
+        label: 'Copy the markdown',
+        run: () => {
+          navigator.clipboard.writeText(note.text).then(
+            () => toast('Copied.'),
+            () => toast('Could not copy that.', 'warn'),
+          )
+        },
+      },
+    ]
+    if (note.maker === chat.me || chat.can('channels')) {
+      items.push({
+        label: 'Delete',
+        note: 'For everybody in this space',
+        danger: true,
+        run: () => {
+          if (!window.confirm(`Delete the note "${note.title}" for everybody? It cannot be undone.`)) return
+          if (this.noteId === note.id) this.openChannel(this.channel)
+          void this.publish((c) => c.dropNote(note.id))
+        },
+      })
+    }
+    return items
+  }
+
+  private async newNote(): Promise<void> {
+    const raw = window.prompt('What should the note be called?', '')
+    if (raw === null) return
+    const bytes = crypto.getRandomValues(new Uint8Array(8))
+    const id = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')
+    await this.publish((c) => c.saveNote(id, raw.trim() || 'Untitled', ''))
+    this.openNote(id)
+    this.noteEditor.focus()
+  }
+
+  private openNote(id: string): void {
+    this.showRail(null)
+    if (this.thread) {
+      this.chatPanel.keepDraft()
+      this.thread = null
+      this.chatPanel.setThread(null)
+      this.chatPanel.useDraft(this.channel)
+    }
+    this.closeSearch()
+    this.noteId = id
+    this.chatPanel.root.classList.add('hidden')
+    this.drawNow()
+  }
+
+  /** Returns true when a note was open. */
+  private closeNote(): boolean {
+    if (!this.noteId) return false
+    this.noteId = null
+    this.noteEditor.hide()
+    this.chatPanel.root.classList.remove('hidden')
+    this.channelTitleSig = ''
+    return true
   }
 
   private renderChannelHead(info: ChannelInfo | undefined): void {
@@ -1204,7 +1353,12 @@ export class SpaceView {
 
     this.channelList = h('div', { class: 'rail-list' })
     this.voiceList = h('div', { class: 'rail-list' })
-    this.threadList = h('div', { class: 'rail-list' })
+    this.threadList = h('div', { class: 'rail-list rail-threads' })
+    this.noteList = h('div', { class: 'rail-list' })
+    this.noteEditor = new NoteEditor({
+      save: (id, title, text) => this.publish((c) => c.saveNote(id, title, text)),
+      nameOf: (key) => this.chat?.nameOf(key) || shortKey(key),
+    })
     this.peopleList = h('div', { class: 'rail-list' })
     this.voiceBar = h('div', { class: 'voice-bar hidden' })
     this.stage = h('div', { class: 'stage hidden' })
@@ -1269,6 +1423,7 @@ export class SpaceView {
         this.streamBar,
         this.stage,
         this.chatPanel.root,
+        this.noteEditor.root,
       ]),
       right,
     ])
@@ -1373,6 +1528,20 @@ export class SpaceView {
           this.newVoiceButton,
         ]),
         this.voiceList,
+        h('div', { class: 'rail-head' }, [
+          h('span', { class: 'eyebrow', text: 'Notes', title: 'Notes in markdown that everybody here can read and change.' }),
+          h(
+            'button',
+            {
+              class: 'ghost icon-only rail-add',
+              title: 'Make a note',
+              ariaLabel: 'Make a note',
+              on: { click: () => void this.newNote() },
+            },
+            [icon('plus', 18)],
+          ),
+        ]),
+        this.noteList,
         this.threadList,
       ]),
       this.dock.root,
@@ -1674,7 +1843,9 @@ export class SpaceView {
         button.append(icon('more', 17))
         more = button
       }
-      this.channelList.append(h('div', { class: 'row rail-row' }, [open, more]))
+      const railRow = h('div', { class: 'row rail-row' }, [open, more])
+      onContextMenu(railRow, () => this.channelActions(channel))
+      this.channelList.append(railRow)
     }
     this.mentions = mentions
   }
@@ -1768,16 +1939,32 @@ export class SpaceView {
     const watching = this.watched.has(id)
     const member = h('div', { class: `voice-member${talking ? ' talking' : ''}` })
     if (!mine) {
-      member.addEventListener('contextmenu', (ev) => {
-        ev.preventDefault()
-        openMenu(member, [{ custom: this.volumeBlock(key, name) }])
-      })
+      onContextMenu(member, () => [{ custom: this.volumeBlock(key, name) }])
       member.title = 'Right click for their volume'
     }
     const who = h('span', { class: 'truncate grow', text: label })
     const colour = this.chat?.levelOf(key).colour
     if (colour) who.style.color = colour
     member.append(h('i', { class: `dot ${talking ? 'talking' : 'good'}` }), avatarOf(key, name, avatar, 20), who)
+    const own = this.voice?.state
+    const quiet = mine
+      ? own?.deafened
+        ? 'deafened'
+        : own?.muted
+          ? 'muted'
+          : null
+      : ids.some((i) => this.quiet.get(i) === 'deafened')
+        ? 'deafened'
+        : (ids.map((i) => this.quiet.get(i)).find(Boolean) ?? null)
+    if (quiet) {
+      const deaf = quiet === 'deafened'
+      member.append(
+        h('span', { class: 'voice-quiet', title: deaf ? 'Deafened: hears nobody' : 'Muted' }, [
+          icon('mic-off', 14),
+          deaf ? icon('headphones-off', 14) : null,
+        ]),
+      )
+    }
     if (sharing !== null) {
       member.append(
         h('button', {
@@ -1799,7 +1986,7 @@ export class SpaceView {
       clear(this.voiceBar)
       this.voiceBar.append(
         h('div', { class: 'voice-bar-text' }, [
-          h('span', { class: 'voice-bar-state' }, [h('i', { class: 'dot good' }), 'Voice connected']),
+          h('span', { class: 'voice-bar-state' }, [h('i', { class: 'dot good' }), 'Connected']),
           h('span', {
             class: 'tiny faint truncate',
             text: isCallChannel(state.channel)
@@ -1816,6 +2003,16 @@ export class SpaceView {
             on: { click: () => this.voice?.setMuted(!state.muted) },
           },
           [icon(state.muted ? 'mic-off' : 'mic', 19)],
+        ),
+        h(
+          'button',
+          {
+            class: `ghost icon-only${state.deafened ? ' danger on' : ''}`,
+            title: state.deafened ? 'Undeafen' : 'Deafen: hear nobody, and mute yourself',
+            ariaLabel: state.deafened ? 'Undeafen' : 'Deafen',
+            on: { click: () => this.voice?.setDeafened(!state.deafened) },
+          },
+          [icon(state.deafened ? 'headphones-off' : 'headphones', 19)],
         ),
         this.shareButton,
         h(
@@ -2138,7 +2335,7 @@ export class SpaceView {
     }
 
     const rowClass = `rail-person${row.here ? '' : ' away'}${row.talking ? ' talking' : ''}`
-    return h('div', { class: rowClass, title: `${level?.name ?? 'Member'} · ID ${row.key}` }, [
+    const person = h('div', { class: rowClass, title: `${level?.name ?? 'Member'} · ID ${row.key}` }, [
       h('span', { class: 'person-face' }, [
         avatarOf(row.key, row.name, avatar, 32),
         row.here
@@ -2160,6 +2357,8 @@ export class SpaceView {
       ]),
       more,
     ])
+    if (!row.you) onContextMenu(person, () => this.personMenu(row.key, role, row.you, row.here))
+    return person
   }
 
   private personDoing(row: PersonRow): HTMLElement | null {
@@ -2323,7 +2522,11 @@ export class SpaceView {
 
   private openChannel(name: string): void {
     this.showRail(null)
-    if (name === this.channel && !this.thread) return
+    const hadNote = this.closeNote()
+    if (name === this.channel && !this.thread) {
+      if (hadNote) this.draw()
+      return
+    }
     this.chatPanel.keepDraft()
     this.channel = name
     this.thread = null

@@ -11,6 +11,8 @@ const STALE_CALL_MS = 8000
 export interface VoiceState {
   channel: string | null
   muted: boolean
+  /** Hears nobody. Deafened also means muted. */
+  deafened: boolean
 }
 
 export class Voice {
@@ -33,6 +35,9 @@ export class Voice {
   private cleaner: Denoiser | null = null
   private channel: string | null = null
   private muted = false
+  private deafened = false
+  /** The mute to go back to when deafened ends. */
+  private mutedBeforeDeaf = false
   private readonly standing = new Map<string, string>()
   private timer: number | null = null
   private readonly config: () => RTCConfiguration
@@ -74,7 +79,7 @@ export class Voice {
   }
 
   get state(): VoiceState {
-    return { channel: this.channel, muted: this.muted }
+    return { channel: this.channel, muted: this.muted, deafened: this.deafened }
   }
 
   /** Includes this session when it stands there. */
@@ -105,6 +110,7 @@ export class Voice {
     }
     this.channel = channel
     this.muted = false
+    this.deafened = false
     this.failed.clear()
     this.talking.add(this.selfId, this.mic)
     this.onChange?.()
@@ -159,14 +165,28 @@ export class Voice {
     this.mic = null
     this.channel = null
     this.muted = false
+    this.deafened = false
     this.onChange?.()
   }
 
   setMuted(muted: boolean): void {
+    // Speaking again while deafened means hearing again too.
+    if (!muted && this.deafened) {
+      this.deafened = false
+      for (const call of this.calls.values()) call.setDeaf(false)
+    }
     this.muted = muted
     for (const track of this.rawMic?.getAudioTracks() ?? []) track.enabled = !muted
     for (const track of this.mic?.getAudioTracks() ?? []) track.enabled = !muted
     this.onChange?.()
+  }
+
+  setDeafened(deafened: boolean): void {
+    if (deafened === this.deafened) return
+    if (deafened) this.mutedBeforeDeaf = this.muted
+    this.deafened = deafened
+    for (const call of this.calls.values()) call.setDeaf(deafened)
+    this.setMuted(deafened ? true : this.mutedBeforeDeaf)
   }
 
   /** The microphone before any cleaning, which names the device. */
@@ -272,6 +292,7 @@ export class Voice {
       },
     })
     call.setVolume(this.volumeOf?.(peerId) ?? 1)
+    call.setDeaf(this.deafened)
     this.calls.set(peerId, call)
     return call
   }
@@ -347,6 +368,10 @@ class Call {
 
   speakers(): void {
     playOn(this.sink)
+  }
+
+  setDeaf(deaf: boolean): void {
+    this.sink.muted = deaf
   }
 
   setVolume(level: number): void {

@@ -1590,10 +1590,22 @@ button.person-more {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 3px 8px 3px 30px;
-  min-height: 28px;
+  padding: 4px 8px 4px 30px;
+  min-height: 30px;
   font-size: 13.5px;
   color: var(--fg-dim);
+}
+
+/* Room for the ring round a talking face, clear of the channel name. */
+.voice-channel > .rail-item + .voice-member {
+  margin-top: 4px;
+}
+
+.voice-quiet {
+  flex: 0 0 auto;
+  display: inline-flex;
+  gap: 2px;
+  color: var(--bad);
 }
 
 .voice-member > .dot {
@@ -1637,6 +1649,8 @@ button.person-more {
   display: flex;
   align-items: center;
   gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
   color: var(--good);
   font-size: 13px;
   font-weight: 650;
@@ -1729,6 +1743,12 @@ button.person-more {
 
 .live-badge.on {
   box-shadow: 0 0 0 2px var(--pane), 0 0 0 3px var(--live);
+}
+
+.voice-bar > button.icon-only {
+  width: 30px;
+  min-width: 30px;
+  padding: 0;
 }
 
 .voice-bar .share-button.on {
@@ -3441,7 +3461,7 @@ button.attach-remove {
   background: var(--accent-wash);
   font-weight: 600;
   border-radius: 4px;
-  padding: 0 3px;
+  padding: 1px 4px;
 }
 
 .mention.me {
@@ -3458,6 +3478,18 @@ button.attach-remove {
 .mention.me[style*="--who"] {
   background: color-mix(in srgb, var(--who) 30%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--who) 55%, transparent);
+}
+
+/* A message that tags somebody stands apart from the ones round it. */
+.chat-row:has(.mention) {
+  padding-top: 5px;
+  padding-bottom: 5px;
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+
+.chat-row.first:has(.mention) {
+  margin-top: 14px;
 }
 
 .chat-row:has(.calls-me) {
@@ -3659,6 +3691,23 @@ button.attach-remove {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.menu-reacts {
+  display: flex;
+  gap: 4px;
+  padding: 4px 4px 2px;
+}
+
+.menu-reacts .chat-react {
+  padding: 0;
+  font-size: 19px;
+  flex: 1 1 0;
+  justify-content: center;
+}
+
+.menu.context {
+  min-width: 220px;
 }
 
 .menu-line {
@@ -4348,7 +4397,6 @@ input[type="text"].gif-search {
 
 .voice-member.talking > span.grow {
   color: var(--good);
-  font-weight: bold;
 }
 
 .poll {
@@ -4564,4 +4612,272 @@ input[type="text"].gif-search {
 .level-head svg {
   flex: 0 0 auto;
   color: var(--fg-faint);
+}
+
+/* Notes: markdown on the left, how it reads on the right. */
+.note-view {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.note-bar {
+  flex: 0 0 auto;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--fg-faint);
+}
+
+input[type="text"].note-title,
+input[type="text"].note-title:hover,
+input[type="text"].note-title:focus {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  padding: 4px 0;
+  font-size: 17px;
+  font-weight: 650;
+  color: var(--fg);
+}
+
+.note-title:focus {
+  outline: none;
+}
+
+.note-status {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-modes {
+  flex: 0 0 auto;
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface);
+  border-radius: var(--btn-radius);
+}
+
+.note-modes button {
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: 12.5px;
+}
+
+.note-modes button.on {
+  background: var(--select-strong);
+  color: var(--select-fg);
+}
+
+.note-panes {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.note-view[data-mode='write'] .note-panes,
+.note-view[data-mode='read'] .note-panes {
+  grid-template-columns: 1fr;
+}
+
+.note-view[data-mode='write'] .note-reader,
+.note-view[data-mode='read'] .note-source {
+  display: none;
+}
+
+.note-source {
+  min-height: 0;
+  height: 100%;
+  resize: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 18px 20px;
+  background: var(--field-bg);
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 13.5px;
+  line-height: 1.6;
+  tab-size: 2;
+}
+
+.note-source:focus {
+  outline: none;
+}
+
+.note-view[data-mode='split'] .note-source {
+  border-right: 1px solid var(--line-soft);
+}
+
+.note-reader {
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 24px 40px;
+}
+
+.note-view[data-mode='read'] .note-reader {
+  padding-inline: max(24px, calc((100% - 760px) / 2));
+}
+
+@media (max-width: 760px) {
+  .note-panes {
+    grid-template-columns: 1fr;
+  }
+
+  .note-view[data-mode='split'] .note-reader {
+    display: none;
+  }
+
+  .note-status {
+    display: none;
+  }
+}
+
+.md {
+  color: var(--fg-dim);
+  line-height: 1.6;
+  font-size: 14.5px;
+  overflow-wrap: anywhere;
+}
+
+.md > :first-child {
+  margin-top: 0;
+}
+
+.md h1,
+.md h2,
+.md h3,
+.md h4,
+.md h5,
+.md h6 {
+  margin: 1.4em 0 0.5em;
+  color: var(--fg);
+  line-height: 1.25;
+}
+
+.md h1 {
+  font-size: 1.8em;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.md h2 {
+  font-size: 1.4em;
+  padding-bottom: 0.25em;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.md h3 {
+  font-size: 1.15em;
+}
+
+.md h4,
+.md h5,
+.md h6 {
+  font-size: 1em;
+}
+
+.md p,
+.md ul,
+.md ol,
+.md blockquote,
+.md pre,
+.md .md-table {
+  margin: 0 0 0.9em;
+}
+
+.md ul,
+.md ol {
+  padding-left: 1.6em;
+}
+
+.md li + li {
+  margin-top: 0.2em;
+}
+
+.md li > ul,
+.md li > ol {
+  margin: 0.2em 0 0;
+}
+
+.md li.task {
+  list-style: none;
+  margin-left: -1.4em;
+}
+
+.md li.task > input {
+  margin: 0 0.5em 0 0;
+  vertical-align: -1px;
+}
+
+.md a {
+  color: var(--accent-text);
+}
+
+.md strong {
+  color: var(--fg);
+}
+
+.md code {
+  font-family: var(--mono);
+  font-size: 0.88em;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--surface);
+}
+
+.md pre {
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--field-bg);
+  border: 1px solid var(--line-soft);
+  overflow: auto;
+}
+
+.md pre code {
+  padding: 0;
+  background: none;
+  font-size: 13px;
+  white-space: pre;
+}
+
+.md blockquote {
+  padding: 2px 0 2px 14px;
+  border-left: 3px solid var(--line);
+  color: var(--fg-faint);
+}
+
+.md hr {
+  margin: 1.4em 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+.md-table {
+  overflow-x: auto;
+}
+
+.md table {
+  border-collapse: collapse;
+  font-size: 0.95em;
+}
+
+.md th,
+.md td {
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  text-align: left;
+}
+
+.md th {
+  background: var(--surface);
+  color: var(--fg);
 }

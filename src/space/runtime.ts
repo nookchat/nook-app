@@ -144,6 +144,8 @@ export class SpaceRuntime {
       key: identity.pubkey,
       away: document.hidden ? true : undefined,
       voice: this.voice?.state.channel ?? undefined,
+      muted: this.voice?.state.channel && this.voice.state.muted ? true : undefined,
+      deafened: this.voice?.state.channel && this.voice.state.deafened ? true : undefined,
       ...this.extras(),
     })
     mesh.onData = (from, raw) => this.emit('data', from, raw)
@@ -183,9 +185,10 @@ export class SpaceRuntime {
     voice.onFailed = (peer) => callNews({ kind: 'failed', space: this, peer })
     voice.volumeOf = (peer) => heardAt(this.keyOf(peer))
     voice.onChange = () => {
-      const now = voice.state.channel
-      if (now !== this.voiceWas) {
-        this.voiceWas = now
+      const { channel: now, muted, deafened } = voice.state
+      const said = `${now}:${muted}:${deafened}`
+      if (said !== this.voiceWas) {
+        this.voiceWas = said
         mesh.announce()
       }
       this.emit('voice')

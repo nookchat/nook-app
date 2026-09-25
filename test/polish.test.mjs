@@ -137,10 +137,9 @@ try {
   await page.click('button:has-text("Back")')
   await page.waitForTimeout(500)
 
-  const threads = await page.$$eval('.rail-left .rail-list', (lists) => {
-    const list = lists[2]
-    return [...list.querySelectorAll('.rail-item')].map((e) => e.textContent.trim())
-  })
+  const threads = await page.$$eval('.rail-left .rail-threads .rail-item', (items) =>
+    items.map((e) => e.textContent.trim()),
+  )
   check(
     'a thread is findable from the rail after it scrolls away',
     threads.some((t) => t.includes('what should we call the release') && t.includes('2')),

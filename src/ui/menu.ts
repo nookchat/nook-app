@@ -15,6 +15,8 @@ export type MenuEntry = MenuItem | { heading: string } | { custom: HTMLElement }
 
 interface MenuOptions {
   className?: string
+  /** Opens at this point, as a right click menu does, instead of under the anchor. */
+  at?: { x: number; y: number }
 }
 
 let open: (() => void) | null = null
@@ -25,7 +27,7 @@ function sameButton(a: HTMLElement | null, b: HTMLElement): boolean {
 }
 
 export function openMenu(anchor: HTMLElement, items: MenuEntry[], options: MenuOptions = {}): void {
-  if (open && sameButton(openFor, anchor)) {
+  if (open && !options.at && sameButton(openFor, anchor)) {
     open()
     return
   }
@@ -102,8 +104,42 @@ export function openMenu(anchor: HTMLElement, items: MenuEntry[], options: MenuO
   open = close
   openFor = anchor
   document.body.append(menu)
-  placeNear(menu, anchor)
+  if (options.at) placeAt(menu, options.at.x, options.at.y)
+  else placeNear(menu, anchor)
   window.addEventListener('keydown', onKey, true)
   window.addEventListener('pointerdown', onDown, true)
   window.addEventListener('resize', close)
+}
+
+export function closeMenu(): void {
+  open?.()
+}
+
+function placeAt(menu: HTMLElement, x: number, y: number): void {
+  const box = menu.getBoundingClientRect()
+  const margin = 6
+  let left = x
+  let top = y
+  if (left + box.width > window.innerWidth - margin) left = Math.max(margin, x - box.width)
+  if (top + box.height > window.innerHeight - margin) top = Math.max(margin, y - box.height)
+  menu.style.left = `${Math.round(left)}px`
+  menu.style.top = `${Math.round(top)}px`
+}
+
+/**
+ * Puts our own menu on a right click. Shift and right click, a selection, links and
+ * text boxes still get the browser menu, so copying and opening links still works.
+ */
+export function onContextMenu(target: HTMLElement, items: (ev: MouseEvent) => MenuEntry[]): void {
+  target.addEventListener('contextmenu', (ev) => {
+    if (ev.shiftKey || ev.defaultPrevented) return
+    const hit = ev.target as Element
+    if (hit.closest?.('a[href], input, textarea, [contenteditable="true"]')) return
+    const picked = window.getSelection()?.toString() ?? ''
+    if (picked.trim() && target.contains(window.getSelection()?.anchorNode ?? null)) return
+    const entries = items(ev)
+    if (entries.length === 0) return
+    ev.preventDefault()
+    openMenu(target, entries, { className: 'context', at: { x: ev.clientX, y: ev.clientY } })
+  })
 }
