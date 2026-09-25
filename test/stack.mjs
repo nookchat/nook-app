@@ -5,7 +5,7 @@ const server = await startServer(8787)
 console.log(`server on ${server.url}, database ${server.database}`)
 
 const vite = spawn('npx', ['vite', '--port', '5173', '--strictPort'], {
-  env: { ...process.env, VITE_CATHODE_SERVER: server.url },
+  env: { ...process.env, VITE_NOOK_SERVER: server.url },
   stdio: ['ignore', 'pipe', 'inherit'],
 })
 vite.stdout.on('data', (b) => {

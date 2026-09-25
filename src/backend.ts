@@ -1,8 +1,8 @@
 import { ask, learn } from './net/cluster'
 
-export const BUILT_IN_SERVER = serverUrl(import.meta.env.VITE_CATHODE_SERVER ?? '')
+export const BUILT_IN_SERVER = serverUrl(import.meta.env.VITE_NOOK_SERVER ?? '')
 
-const DEFAULT_SERVER_KEY = 'cathode.server.v1'
+const DEFAULT_SERVER_KEY = 'nook.server.v1'
 const HEALTH_TIMEOUT_MS = 6000
 
 export const SELF_HOSTING_URL = 'https://github.com/nookchat/nook-app/blob/main/docs/self-hosting.md'
@@ -55,8 +55,8 @@ export async function checkServer(url: string): Promise<boolean> {
     const res = await fetch(`${clean}/api/v1/health`, { mode: 'cors', signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS) })
     if (!res.ok) return false
     const body = (await res.json()) as { service?: string; cluster?: unknown }
-    // Servers before 1.2 answer cathode-archive and speak the same API.
-    if (body.service !== 'cathode-server' && body.service !== 'cathode-archive') return false
+    // Servers before 1.2 answer nook-archive and speak the same API.
+    if (body.service !== 'nook-server' && body.service !== 'nook-archive') return false
     if (Array.isArray(body.cluster)) learn(clean, body.cluster.filter((u): u is string => typeof u === 'string'))
     return true
   } catch {

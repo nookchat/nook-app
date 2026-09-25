@@ -113,7 +113,7 @@ export function showLinkCode(): void {
   )
 }
 
-const SAVED_KEY = 'cathode.backup.v1'
+const SAVED_KEY = 'nook.backup.v1'
 
 export function lastBackup(): Date | null {
   try {

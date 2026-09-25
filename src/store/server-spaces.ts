@@ -5,8 +5,8 @@ import { personalBytes } from './identity'
 import { roomsChanged, type RoomNote } from './notes'
 import { localPrefs, takePrefs, watchPrefs } from './prefs'
 
-const SERVERS_KEY = 'cathode.servers.v1'
-const OWN_KEY = 'cathode.own.v1'
+const SERVERS_KEY = 'nook.servers.v1'
+const OWN_KEY = 'nook.own.v1'
 const SAVE_MS = 2000
 const SAVE_SOON_MS = 300
 const RETRY_MS = SAVE_MS * 10
@@ -41,11 +41,11 @@ let keys: Promise<Keys> | null = null
 
 function personal(): Promise<Keys> {
   keys ??= (async () => {
-    const id = toHex(await personalBytes('cathode-me-id'))
-    const token = toHex(await personalBytes('cathode-me-write'))
+    const id = toHex(await personalBytes('nook-me-id'))
+    const token = toHex(await personalBytes('nook-me-write'))
     const key = await crypto.subtle.importKey(
       'raw',
-      (await personalBytes('cathode-me-key')) as BufferSource,
+      (await personalBytes('nook-me-key')) as BufferSource,
       { name: 'AES-GCM' },
       false,
       ['encrypt', 'decrypt'],
@@ -203,7 +203,7 @@ export class ServerBook {
       const blob = await seal(key, { notes: [...this.notes.values()], prefs: localPrefs() })
       await ask(this.server, `/api/v1/people/${id}`, {
         method: 'PUT',
-        headers: { 'content-type': 'application/json', 'x-cathode-write': token },
+        headers: { 'content-type': 'application/json', 'x-nook-write': token },
         body: JSON.stringify({ blob }),
         // Browsers cap keepalive bodies at 64 KiB.
         keepalive: blob.length < 60_000,
@@ -243,7 +243,7 @@ export function ownServers(): string[] {
   // Legacy: before OWN_KEY existed, the picked server was always the user's own.
   if (own === null) {
     try {
-      const picked = serverUrl(localStorage.getItem('cathode.server.v1') ?? '')
+      const picked = serverUrl(localStorage.getItem('nook.server.v1') ?? '')
       own = picked ? [picked] : []
     } catch {
       own = []

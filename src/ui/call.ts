@@ -9,8 +9,8 @@ import { toast } from './toast'
 
 const onNews = (fn: (news: CallNews) => void): (() => void) => {
   const listener = (ev: Event): void => fn((ev as CustomEvent<CallNews>).detail)
-  window.addEventListener('cathode:call', listener)
-  return () => window.removeEventListener('cathode:call', listener)
+  window.addEventListener('nook:call', listener)
+  return () => window.removeEventListener('nook:call', listener)
 }
 
 function nameOf(space: SpaceRuntime, key: string): string {

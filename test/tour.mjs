@@ -24,7 +24,7 @@ async function person(name, width = 1440, height = 900) {
   await context.addInitScript(STUB)
   const page = await context.newPage()
   await page.goto(APP_URL)
-  await page.evaluate((n) => localStorage.setItem('cathode.name.v1', n), name)
+  await page.evaluate((n) => localStorage.setItem('nook.name.v1', n), name)
   await page.reload()
   await page.waitForSelector('input[aria-label="Space name"]')
   return page

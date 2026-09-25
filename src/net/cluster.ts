@@ -1,6 +1,6 @@
 import { serverUrl } from '../backend'
 
-const KEY = 'cathode.clusters.v1'
+const KEY = 'nook.clusters.v1'
 const ANSWER_MS = 5000
 
 type Clusters = Record<string, string[]>

@@ -104,14 +104,14 @@ export function peerGone(peer) {
 }
 
 function join(socket, room, single) {
-  let member = socket.cathodeRooms.get(room)
+  let member = socket.nookRooms.get(room)
   if (member) return member
   let members = roomMembers.get(room)
-  if (members?.size >= MAX_ROOM_SOCKETS || socket.cathodeRooms.size >= MAX_ROOMS_PER_SOCKET) return null
+  if (members?.size >= MAX_ROOM_SOCKETS || socket.nookRooms.size >= MAX_ROOMS_PER_SOCKET) return null
   if (!members) roomMembers.set(room, (members = new Set()))
   member = { socket, room, single, state: null, streaming: false, held: [] }
   members.add(member)
-  socket.cathodeRooms.set(room, member)
+  socket.nookRooms.set(room, member)
   return member
 }
 
@@ -119,7 +119,7 @@ function part(member) {
   const members = roomMembers.get(member.room)
   members?.delete(member)
   if (members?.size === 0) roomMembers.delete(member.room)
-  member.socket.cathodeRooms.delete(member.room)
+  member.socket.nookRooms.delete(member.room)
   if (!member.state) return
   toRoom(member.room, { t: 'left', id: member.state.id })
   emitLive({ room: member.room, kind: 'left', id: member.state.id })
@@ -166,7 +166,7 @@ async function onMessage(socket, single, payload) {
   const isSingle = single !== null
 
   if (message.t === 'leave') {
-    const member = socket.cathodeRooms.get(room)
+    const member = socket.nookRooms.get(room)
     if (member) part(member)
     return
   }
@@ -233,8 +233,8 @@ function open(req, socket, single) {
       `Sec-WebSocket-Accept: ${accept}\r\n\r\n`,
   )
   socket.setNoDelay(true)
-  socket.cathodeAlive = true
-  socket.cathodeRooms = new Map()
+  socket.nookAlive = true
+  socket.nookRooms = new Map()
   sockets.add(socket)
 
   let gone = false
@@ -242,7 +242,7 @@ function open(req, socket, single) {
     if (gone) return
     gone = true
     sockets.delete(socket)
-    for (const member of socket.cathodeRooms.values()) part(member)
+    for (const member of socket.nookRooms.values()) part(member)
   }
   const goodbye = (code) => {
     try {
@@ -307,11 +307,11 @@ function open(req, socket, single) {
         continue
       }
       if (opcode === 10) {
-        socket.cathodeAlive = true
+        socket.nookAlive = true
         continue
       }
       if (opcode !== 1 || !fin) return goodbye(1003)
-      queue = queue.then(() => onMessage(socket, single, payload)).catch((err) => console.error('[cathode]', err))
+      queue = queue.then(() => onMessage(socket, single, payload)).catch((err) => console.error('[nook]', err))
     }
   })
 
@@ -346,11 +346,11 @@ export function closeAll() {
 
 setInterval(() => {
   for (const socket of sockets) {
-    if (!socket.cathodeAlive) {
+    if (!socket.nookAlive) {
       socket.destroy()
       continue
     }
-    socket.cathodeAlive = false
+    socket.nookAlive = false
     try {
       socket.write(PING)
     } catch {

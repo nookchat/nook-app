@@ -7,7 +7,7 @@ const BOX = '[aria-label="Write a message"]'
 async function person(name) {
   const page = await (await browser.newContext({ viewport: { width: 1280, height: 820 } })).newPage()
   await page.goto(APP_URL)
-  await page.evaluate((n) => localStorage.setItem('cathode.name.v1', n), name)
+  await page.evaluate((n) => localStorage.setItem('nook.name.v1', n), name)
   await page.reload()
   await page.waitForSelector('input[aria-label="Space name"]')
   return page

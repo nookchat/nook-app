@@ -13,7 +13,7 @@ const line = () => randomBytes(750).toString('base64url')
 const post = (lines) =>
   fetch(`${BASE}/api/v1/spaces/${ROOM}/events`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-cathode-write': TOKEN },
+    headers: { 'content-type': 'application/json', 'x-nook-write': TOKEN },
     body: JSON.stringify(lines),
   })
 

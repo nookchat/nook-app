@@ -1,4 +1,4 @@
-const KEY = 'cathode.sounds.v1'
+const KEY = 'nook.sounds.v1'
 
 const NEWS_MAX_AGE_MS = 45_000
 const MIN_GAP_MS = 400

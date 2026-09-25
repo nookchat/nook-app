@@ -65,7 +65,7 @@ export type CallNews =
   | { kind: 'failed'; space: SpaceRuntime; peer: string }
 
 function callNews(news: CallNews): void {
-  window.dispatchEvent(new CustomEvent<CallNews>('cathode:call', { detail: news }))
+  window.dispatchEvent(new CustomEvent<CallNews>('nook:call', { detail: news }))
 }
 
 export class SpaceRuntime {
@@ -135,7 +135,7 @@ export class SpaceRuntime {
     channel.onEvents = (events) => void this.take(events)
     channel.onLeft = (session) =>
       this.bus.deliver({ v: 1, id: `left:${session}:${Date.now()}`, from: session, t: Date.now(), type: 'bye' })
-    channel.onRefused = (why) => console.warn(`[cathode] the server would not keep a write: ${why}`)
+    channel.onRefused = (why) => console.warn(`[nook] the server would not keep a write: ${why}`)
     this.channel = channel
 
     const bus = new SignalBus(this.room, this.selfId, [channel])
@@ -213,7 +213,7 @@ export class SpaceRuntime {
 
   private readonly onPrefs = (ev: Event): void => {
     const which = (ev as CustomEvent<string[]>).detail ?? []
-    if (!which.includes('cathode.avatar.v1') && !which.includes('cathode.name.v1')) return
+    if (!which.includes('nook.avatar.v1') && !which.includes('nook.name.v1')) return
     const name = loadIdentity().name
     this.mesh?.setName(name)
     void this.chat.announceName(name, this.pictureToAnnounce())
@@ -249,7 +249,7 @@ export class SpaceRuntime {
       try {
         fn(...args)
       } catch (err) {
-        console.error('[cathode]', err)
+        console.error('[nook]', err)
       }
     }
   }

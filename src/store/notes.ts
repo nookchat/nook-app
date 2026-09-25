@@ -12,7 +12,7 @@ export interface RoomNote {
   readDm?: Record<string, number>
 }
 
-export const ROOMS_CHANGED = 'cathode:rooms'
+export const ROOMS_CHANGED = 'nook:rooms'
 
 export function roomsChanged(): void {
   try {

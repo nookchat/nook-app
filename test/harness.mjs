@@ -49,7 +49,7 @@ export function nameEveryone(browser) {
   browser.newContext = async (...args) => {
     const context = await newContext(...args)
     await context.addInitScript((name) => {
-      if (!localStorage.getItem('cathode.name.v1')) localStorage.setItem('cathode.name.v1', name)
+      if (!localStorage.getItem('nook.name.v1')) localStorage.setItem('nook.name.v1', name)
     }, `Tester ${Math.random().toString(36).slice(2, 6)}`)
     return context
   }

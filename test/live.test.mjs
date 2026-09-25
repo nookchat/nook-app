@@ -24,7 +24,7 @@ try {
     const page = await context.newPage()
     await page.addInitScript(DISPLAY_STUB)
     await page.goto(APP_URL)
-    await page.evaluate((n) => localStorage.setItem('cathode.name.v1', n), name)
+    await page.evaluate((n) => localStorage.setItem('nook.name.v1', n), name)
     await page.reload()
     await page.waitForTimeout(700)
     return page

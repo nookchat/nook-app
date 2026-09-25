@@ -1,6 +1,6 @@
 FROM node:22-alpine
 
-LABEL org.opencontainers.image.title="cathode" \
+LABEL org.opencontainers.image.title="nook" \
       org.opencontainers.image.description="Nook server: end to end encrypted spaces in Postgres, one WebSocket per device, clustered across several operators"
 
 WORKDIR /app
@@ -10,7 +10,7 @@ COPY server.mjs ./
 COPY src ./src
 
 # Uploaded files go in /data/files.
-ENV CATHODE_DATA=/data
+ENV NOOK_DATA=/data
 RUN mkdir -p /data && chown node:node /data
 EXPOSE 8787
 

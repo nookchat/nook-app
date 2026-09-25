@@ -15,9 +15,9 @@ async function person(name) {
   await page.goto(APP_URL)
   await page.evaluate(
     ({ n, server }) => {
-      localStorage.setItem('cathode.name.v1', n)
-      localStorage.setItem('cathode.server.v1', server)
-      localStorage.setItem('cathode.servers.v1', JSON.stringify([server]))
+      localStorage.setItem('nook.name.v1', n)
+      localStorage.setItem('nook.server.v1', server)
+      localStorage.setItem('nook.servers.v1', JSON.stringify([server]))
     },
     { n: name, server: SERVER },
   )
@@ -50,7 +50,7 @@ try {
   check('a write without the token is refused', bare.status === 403, `${bare.status}`)
   const wrong = await fetch(`${SERVER}/api/v1/spaces/${room}/events`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-cathode-write': 'f'.repeat(64) },
+    headers: { 'content-type': 'application/json', 'x-nook-write': 'f'.repeat(64) },
     body: JSON.stringify({ events: ['junk'] }),
   })
   check("and one with a stranger's token is refused too", wrong.status === 403, `${wrong.status}`)

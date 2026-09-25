@@ -100,7 +100,7 @@ try {
   const page = await (await browser.newContext({ viewport: { width: 1280, height: 820 } })).newPage()
   page.on('pageerror', (e) => console.log('[error]', e.message))
   await page.goto(APP_URL)
-  await page.evaluate(() => localStorage.setItem('cathode.name.v1', 'Alice'))
+  await page.evaluate(() => localStorage.setItem('nook.name.v1', 'Alice'))
   await page.reload()
   await page.waitForSelector('input[aria-label="Space name"]')
   await page.fill('input[aria-label="Space name"]', 'polish')
@@ -177,16 +177,16 @@ try {
   const reads = await page.evaluate(async () => {
     const { readOffer } = await import('/src/net/link.ts')
     return {
-      link: readOffer('https://cathode.video/#link=K7M29QPTVB2W@cathode.example.org'),
-      typed: readOffer('k7m2-9qpt-vb2w', 'cathode.example.org'),
-      joined: readOffer('K7M2-9QPT-VB2W@cathode.example.org'),
+      link: readOffer('https://nook.video/#link=K7M29QPTVB2W@nook.example.org'),
+      typed: readOffer('k7m2-9qpt-vb2w', 'nook.example.org'),
+      joined: readOffer('K7M2-9QPT-VB2W@nook.example.org'),
       bare: readOffer('K7M2-9QPT-VB2W'),
       rubbish: readOffer('hello'),
     }
   })
   check(
     'a link, or its code with a server, is read the same way',
-    [reads.link, reads.typed, reads.joined].every((r) => r?.code === 'K7M29QPTVB2W' && r.server === 'https://cathode.example.org'),
+    [reads.link, reads.typed, reads.joined].every((r) => r?.code === 'K7M29QPTVB2W' && r.server === 'https://nook.example.org'),
     JSON.stringify(reads.link),
   )
   check('a code with no server, and anything else, is refused', reads.bare === null && reads.rubbish === null)

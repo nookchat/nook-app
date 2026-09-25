@@ -13,7 +13,7 @@ of them is down.
 
 - A Linux machine with [Docker](https://docs.docker.com/engine/install/). A
   small VPS is enough: 1 CPU and 1 GB of memory carries a lot of chat.
-- A domain name that points at the machine, such as `cathode.example.org`.
+- A domain name that points at the machine, such as `nook.example.org`.
 - These ports open in its firewall:
 
   | Port | For |
@@ -43,8 +43,8 @@ page, and press **Add**. Your new spaces go there.
 Nobody else sees your server until you send them an invite. An invite names
 the server, so a friend can join with no server of their own.
 
-Everything goes in a folder called `cathode`, with your settings in
-`cathode/.env`. Only the domain has to be set; everything else has a
+Everything goes in a folder called `nook`, with your settings in
+`nook/.env`. Only the domain has to be set; everything else has a
 default, and any setting in [server/README.md](../server/README.md#settings)
 can be added to `.env` to change it. Then run `docker compose up -d` in that
 folder.
@@ -53,15 +53,15 @@ folder.
 
 | Setting | What it does |
 | --- | --- |
-| `CATHODE_DOMAIN=cathode.example.org` | The domain, so it does not ask |
-| `CATHODE_TLS=0` | No Caddy, because you already have a proxy (Traefik, nginx) in front |
-| `CATHODE_TURN=0` | No TURN relay: calls go straight between people |
-| `CATHODE_DIR=/opt/cathode` | Where it goes |
+| `NOOK_DOMAIN=nook.example.org` | The domain, so it does not ask |
+| `NOOK_TLS=0` | No Caddy, because you already have a proxy (Traefik, nginx) in front |
+| `NOOK_TURN=0` | No TURN relay: calls go straight between people |
+| `NOOK_DIR=/opt/nook` | Where it goes |
 
 For example:
 
 ```
-curl -fsSL https://raw.githubusercontent.com/nookchat/nook-app/main/server/install.sh | CATHODE_DOMAIN=cathode.example.org sh
+curl -fsSL https://raw.githubusercontent.com/nookchat/nook-app/main/server/install.sh | NOOK_DOMAIN=nook.example.org sh
 ```
 
 ## Keep it up to date
@@ -82,16 +82,16 @@ noticing, and it catches up when it comes back.
    openssl rand -hex 32
    ```
 
-3. On every server, add to `cathode/.env`:
+3. On every server, add to `nook/.env`:
 
    ```
-   CATHODE_PEERS=https://friend-one.example.org,https://friend-two.example.org
-   CATHODE_CLUSTER_SECRET=the shared secret
+   NOOK_PEERS=https://friend-one.example.org,https://friend-two.example.org
+   NOOK_CLUSTER_SECRET=the shared secret
    ```
 
-   `CATHODE_PEERS` lists the other servers, not your own.
+   `NOOK_PEERS` lists the other servers, not your own.
 
-4. Restart each server, in its `cathode` folder:
+4. Restart each server, in its `nook` folder:
 
    ```
    docker compose up -d
@@ -116,26 +116,26 @@ Open Nook, **Settings, Voice**:
    checks the relay answers.
 
 If the relay does not answer, calls on that server carry no sound, because by
-default every call goes through the relay (`CATHODE_TURN_ONLY=1`). Check:
+default every call goes through the relay (`NOOK_TURN_ONLY=1`). Check:
 
 - Ports 3478 (TCP and UDP) and 49160–49260 (UDP) are open in the firewall,
   and in any cloud firewall in front of the machine.
-- `CATHODE_TURN_URLS` names your domain, and `CATHODE_TURN_SECRET` is set.
-- The `cathode-turn` container is running: `docker ps`, and
-  `docker logs cathode-turn`.
+- `NOOK_TURN_URLS` names your domain, and `NOOK_TURN_SECRET` is set.
+- The `nook-turn` container is running: `docker ps`, and
+  `docker logs nook-turn`.
 
-To let calls go direct while you fix the relay, set `CATHODE_TURN_ONLY=0` and
+To let calls go direct while you fix the relay, set `NOOK_TURN_ONLY=0` and
 restart. Calls then work on most networks, and each person in a call can see
 the other's address.
 
 ## Backups
 
-Messages are in Postgres, and files are in the `cathode-data` volume. Back up
+Messages are in Postgres, and files are in the `nook-data` volume. Back up
 both:
 
 ```
-docker exec cathode-db pg_dump -U cathode cathode > cathode-backup.sql
-docker run --rm -v cathode_cathode-data:/data -v "$PWD":/out alpine tar czf /out/cathode-files.tgz -C /data files
+docker exec nook-db pg_dump -U nook nook > nook-backup.sql
+docker run --rm -v nook_nook-data:/data -v "$PWD":/out alpine tar czf /out/nook-files.tgz -C /data files
 ```
 
 Everything in both is encrypted, so a backup is safe to keep anywhere.

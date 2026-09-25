@@ -1,7 +1,7 @@
 import { MAX_AVATAR } from '../store/log'
 import { adoptMemoryPref, memoryPref, memoryPrefStamp, setMemoryPref } from '../store/prefs'
 
-const KEY = 'cathode.avatar.v1'
+const KEY = 'nook.avatar.v1'
 
 // Avatars are drawn at 44px at most.
 const THUMB_SIDE = 48

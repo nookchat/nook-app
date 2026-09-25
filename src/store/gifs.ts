@@ -9,5 +9,5 @@ export function isClip(url: string): boolean {
 
 // Security: remove a GIF API key that old versions stored in the browser.
 try {
-  localStorage.removeItem('cathode.gifkey.v1')
+  localStorage.removeItem('nook.gifkey.v1')
 } catch {}

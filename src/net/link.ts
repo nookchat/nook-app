@@ -10,7 +10,7 @@ import { knownClusters, learn } from './cluster'
 const LINK_ROUNDS = 200_000
 const BACKUP_ROUNDS = 600_000
 const LINK_TTL_MS = 10 * 60 * 1000
-const SALT = 'cathode device link v1'
+const SALT = 'nook device link v1'
 const enc = new TextEncoder()
 
 interface Bundle {
@@ -134,7 +134,7 @@ export async function takeOffer(offer: { code: string; server: string }): Promis
 }
 
 interface BackupFile {
-  cathode: 'backup'
+  nook: 'backup'
   version: 1
   keep: string
   saved: string
@@ -160,7 +160,7 @@ async function passwordKey(password: string, salt: Uint8Array): Promise<CryptoKe
 
 export async function backupFile(password = ''): Promise<{ name: string; blob: Blob }> {
   const account = bundleOfThisDevice()
-  const file: BackupFile = { cathode: 'backup', version: 1, keep: KEEP, saved: new Date().toISOString(), name: account.n }
+  const file: BackupFile = { nook: 'backup', version: 1, keep: KEEP, saved: new Date().toISOString(), name: account.n }
   if (password) {
     const salt = crypto.getRandomValues(new Uint8Array(16))
     const iv = crypto.getRandomValues(new Uint8Array(12))
@@ -179,7 +179,7 @@ export async function backupFile(password = ''): Promise<{ name: string; blob: B
 export function readBackup(text: string): { locked: boolean; name: string } | null {
   try {
     const file = JSON.parse(text) as Partial<BackupFile>
-    if (file.cathode !== 'backup' || (!file.account && !file.sealed)) return null
+    if (file.nook !== 'backup' || (!file.account && !file.sealed)) return null
     return { locked: !!file.sealed, name: typeof file.name === 'string' ? file.name : '' }
   } catch {
     return null

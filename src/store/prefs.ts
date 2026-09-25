@@ -2,24 +2,24 @@ import { VOLUMES_CHANGED } from '../net/volume'
 import { ROOMS_CHANGED } from './notes'
 
 const SYNCED = [
-  'cathode.name.v1',
-  'cathode.avatar.v1',
-  'cathode.quick.v1',
-  'cathode.emoji.v1',
-  'cathode.volume.v1',
-  'cathode.sounds.v1',
-  'cathode.rail.v1',
-  'cathode.settings.v1',
-  'cathode.servers.v1',
-  'cathode.own.v1',
+  'nook.name.v1',
+  'nook.avatar.v1',
+  'nook.quick.v1',
+  'nook.emoji.v1',
+  'nook.volume.v1',
+  'nook.sounds.v1',
+  'nook.rail.v1',
+  'nook.settings.v1',
+  'nook.servers.v1',
+  'nook.own.v1',
 ]
-const MERGED_LISTS = new Set(['cathode.servers.v1', 'cathode.own.v1'])
-const STAMPS = 'cathode.prefs.stamps.v1'
-const MEMORY_ONLY = new Set(['cathode.avatar.v1'])
+const MERGED_LISTS = new Set(['nook.servers.v1', 'nook.own.v1'])
+const STAMPS = 'nook.prefs.stamps.v1'
+const MEMORY_ONLY = new Set(['nook.avatar.v1'])
 const memory = new Map<string, string | null>()
 const memoryStamps = new Map<string, number>()
 
-export const PREFS_CHANGED = 'cathode:prefs'
+export const PREFS_CHANGED = 'nook:prefs'
 
 let told: (() => void) | null = null
 let applying = false
@@ -154,7 +154,7 @@ export function takePrefs(remote: unknown): boolean {
       ours[key] = when
       changed = true
       which.push(key)
-      if (key === 'cathode.volume.v1') volumes = true
+      if (key === 'nook.volume.v1') volumes = true
     }
     localStorage.setItem(STAMPS, JSON.stringify(ours))
   } catch {} finally {

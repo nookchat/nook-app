@@ -4,7 +4,7 @@ import { sql, startServer } from './pg.mjs'
 const SECRET = 'a-cluster-secret-for-tests'
 const A = 'http://localhost:8811'
 const B = 'http://localhost:8812'
-const cluster = (self, peer) => ({ CATHODE_PUBLIC_URL: self, CATHODE_PEERS: peer, CATHODE_CLUSTER_SECRET: SECRET })
+const cluster = (self, peer) => ({ NOOK_PUBLIC_URL: self, NOOK_PEERS: peer, NOOK_CLUSTER_SECRET: SECRET })
 let a = await startServer(8811, cluster(A, B))
 const b = await startServer(8812, cluster(B, A))
 
@@ -16,9 +16,9 @@ async function person(name) {
   await page.goto(APP_URL)
   await page.evaluate(
     ({ n, server }) => {
-      localStorage.setItem('cathode.name.v1', n)
-      localStorage.setItem('cathode.server.v1', server)
-      localStorage.setItem('cathode.servers.v1', JSON.stringify([server]))
+      localStorage.setItem('nook.name.v1', n)
+      localStorage.setItem('nook.server.v1', server)
+      localStorage.setItem('nook.servers.v1', JSON.stringify([server]))
     },
     { n: name, server: A },
   )

@@ -7,7 +7,7 @@ const BOX = '[aria-label="Write a message"]'
 
 const waitFor = (fn, ms) => poll(() => fn().catch(() => null), ms, 300)
 
-const cluster = (self, peer) => ({ CATHODE_PUBLIC_URL: self, CATHODE_PEERS: peer, CATHODE_CLUSTER_SECRET: 'live-cluster-check-secret' })
+const cluster = (self, peer) => ({ NOOK_PUBLIC_URL: self, NOOK_PEERS: peer, NOOK_CLUSTER_SECRET: 'live-cluster-check-secret' })
 const a = await startServer(8805, cluster(A, B))
 const b = await startServer(8806, cluster(B, A))
 const browser = await launch({ args: [...FAKE_MEDIA, AUTOPLAY], named: false })
@@ -19,11 +19,11 @@ async function person(name, server) {
   await page.goto(APP_URL)
   await page.evaluate(
     ({ n, s }) => {
-      localStorage.setItem('cathode.name.v1', n)
-      localStorage.setItem('cathode.server.v1', s)
-      localStorage.setItem('cathode.own.v1', JSON.stringify([s]))
-      localStorage.setItem('cathode.servers.v1', JSON.stringify([s]))
-      localStorage.setItem('cathode.clusters.v1', JSON.stringify({ [s]: [] }))
+      localStorage.setItem('nook.name.v1', n)
+      localStorage.setItem('nook.server.v1', s)
+      localStorage.setItem('nook.own.v1', JSON.stringify([s]))
+      localStorage.setItem('nook.servers.v1', JSON.stringify([s]))
+      localStorage.setItem('nook.clusters.v1', JSON.stringify({ [s]: [] }))
     },
     { n: name, s: server },
   )

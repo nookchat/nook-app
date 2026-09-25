@@ -19,7 +19,7 @@ export const hasGifs = () => USING !== null
 export const gifService = () => USING?.label ?? ''
 
 // One id for everybody, so Klipy cannot follow a person.
-const KLIPY_CUSTOMER = 'cathode'
+const KLIPY_CUSTOMER = 'nook'
 
 export function urlFor({ service, key }, q) {
   const k = encodeURIComponent(key)
@@ -27,7 +27,7 @@ export function urlFor({ service, key }, q) {
     const base = q
       ? `https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(q)}&`
       : 'https://tenor.googleapis.com/v2/featured?'
-    return `${base}key=${k}&limit=${LIMIT}&media_filter=gif,tinygif&contentfilter=medium&client_key=cathode`
+    return `${base}key=${k}&limit=${LIMIT}&media_filter=gif,tinygif&contentfilter=medium&client_key=nook`
   }
   if (service === 'giphy') {
     const base = q

@@ -67,14 +67,14 @@ try {
   await ana.waitForSelector('.profile-face img', { timeout: 10_000 })
   await ana.click('button[aria-label="Close settings"]')
   await wait(3000)
-  const inBrowser = await ana.evaluate(() => localStorage.getItem('cathode.avatar.v1'))
+  const inBrowser = await ana.evaluate(() => localStorage.getItem('nook.avatar.v1'))
   check('your picture is not kept in the browser', inBrowser === null, String(inBrowser).slice(0, 30))
 
   const plain = await backUp(ana)
   const file = JSON.parse(plain.text)
   check('and the backup does not carry it: it is on the server', !plain.text.includes('data:image'), `${plain.text.length} bytes`)
   check('and Settings says a backup was saved', plain.noted)
-  check('a backup is one file, named for its owner, that says what it is', plain.name === 'nook-Ana.json' && file.cathode === 'backup' && /private/.test(file.keep), plain.name)
+  check('a backup is one file, named for its owner, that says what it is', plain.name === 'nook-Ana.json' && file.nook === 'backup' && /private/.test(file.keep), plain.name)
 
   const two = await fresh()
   await restore(two, plain.path)
@@ -136,11 +136,11 @@ try {
   check('a picture removed in Settings is gone for everybody', gone)
 
   const late = await (await browser.newContext()).newPage()
-  await late.addInitScript(() => localStorage.setItem('cathode.prefs.stamps.v1', JSON.stringify({ 'cathode.avatar.v1': 2000 })))
+  await late.addInitScript(() => localStorage.setItem('nook.prefs.stamps.v1', JSON.stringify({ 'nook.avatar.v1': 2000 })))
   await late.goto(APP_URL)
   const newest = await late.evaluate(async () => {
     const prefs = await import('/src/store/prefs.ts')
-    const key = 'cathode.avatar.v1'
+    const key = 'nook.avatar.v1'
     prefs.takePrefs({ values: { [key]: 'data:image/webp;base64,T0xE' }, stamps: { [key]: 1000 } })
     prefs.takePrefs({ values: { [key]: 'data:image/webp;base64,TkVX' }, stamps: { [key]: 2000 } })
     const sent = prefs.localPrefs()
@@ -150,8 +150,8 @@ try {
 
   const bobKey = 'b'.repeat(64)
   await ana.evaluate((key) => {
-    localStorage.setItem('cathode.quick.v1', JSON.stringify(['🦄', '🍕', '🎸']))
-    localStorage.setItem('cathode.volume.v1', JSON.stringify({ level: { [key]: 0.25 }, muted: {} }))
+    localStorage.setItem('nook.quick.v1', JSON.stringify(['🦄', '🍕', '🎸']))
+    localStorage.setItem('nook.volume.v1', JSON.stringify({ level: { [key]: 0.25 }, muted: {} }))
   }, bobKey)
   // The record is saved a couple of seconds after a change, and read when a page opens.
   await wait(4000)
@@ -160,8 +160,8 @@ try {
   const carried = await two
     .waitForFunction(
       (key) => {
-        const quick = localStorage.getItem('cathode.quick.v1') ?? ''
-        const volume = JSON.parse(localStorage.getItem('cathode.volume.v1') ?? '{}')
+        const quick = localStorage.getItem('nook.quick.v1') ?? ''
+        const volume = JSON.parse(localStorage.getItem('nook.volume.v1') ?? '{}')
         return quick.includes('🦄') && volume.level?.[key] === 0.25 ? quick : null
       },
       bobKey,

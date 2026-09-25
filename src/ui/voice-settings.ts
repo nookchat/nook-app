@@ -97,7 +97,7 @@ async function testRelay(server: string): Promise<{ ok: boolean; text: string }>
           ok: false,
           text:
             `${tag}: the relay did not answer, and this server sends every call through it, so calls will not connect. ` +
-            'Check that ports 3478 and 49160–49260 are open and that CATHODE_TURN_URLS names this server.',
+            'Check that ports 3478 and 49160–49260 are open and that NOOK_TURN_URLS names this server.',
         }
   } catch {
     return { ok: false, text: `${tag}: the relay could not be tried from this browser.` }

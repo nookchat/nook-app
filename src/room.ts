@@ -76,7 +76,7 @@ export async function deriveRoom(secret: string, password = ''): Promise<Room> {
       {
         name: 'PBKDF2',
         hash: 'SHA-256',
-        salt: enc.encode('cathode-space-v3'),
+        salt: enc.encode('nook-space-v3'),
         iterations: PBKDF2_ROUNDS,
       },
       material,

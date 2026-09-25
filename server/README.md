@@ -28,7 +28,7 @@ to update. [docs/self-hosting.md](../docs/self-hosting.md) says the same step
 by step, with the choices it takes.
 
 The folder it makes holds `docker-compose.yml` and `.env`. Only
-`CATHODE_DOMAIN` has to be in `.env`: the server's address and its TURN
+`NOOK_DOMAIN` has to be in `.env`: the server's address and its TURN
 addresses follow from it, and everything else has a default. Any setting
 under [Settings](#settings) can go in `.env` to change it; then run
 `docker compose up -d` in that folder.
@@ -39,16 +39,16 @@ Open these ports in the firewall:
 | --- | --- |
 | 80 and 443, TCP | Caddy, which gets the certificate and serves HTTPS |
 | 3478, TCP and UDP | TURN |
-| 49160–49260, UDP | TURN relay ports. Change them with `CATHODE_TURN_MIN_PORT` and `CATHODE_TURN_MAX_PORT` |
+| 49160–49260, UDP | TURN relay ports. Change them with `NOOK_TURN_MIN_PORT` and `NOOK_TURN_MAX_PORT` |
 
 `COMPOSE_PROFILES` in `.env` selects the extra containers: `tls` starts Caddy,
 and `turn` starts coturn. Leave out `tls` if you already have a reverse proxy,
-and set `CATHODE_BIND=0.0.0.0` so that the proxy can reach port 8787.
+and set `NOOK_BIND=0.0.0.0` so that the proxy can reach port 8787.
 
 ### Only the server, to try it
 
 ```
-docker compose -f server/docker-compose.yml up -d cathode
+docker compose -f server/docker-compose.yml up -d nook
 ```
 
 This starts the server and its database. Use `localhost:8787` as the server
@@ -81,16 +81,16 @@ file a key of its own, encrypts the file with it, and puts the key in the
 message that carries the file, which is sealed with the space's key. So the
 server keeps bytes it cannot open, and never sees a key.
 
-The bytes are on disk, one file each, in `CATHODE_FILES` (`/data/files` in the
-container, on the `cathode-data` volume). Back that folder up beside the
+The bytes are on disk, one file each, in `NOOK_FILES` (`/data/files` in the
+container, on the `nook-data` volume). Back that folder up beside the
 database. In a cluster every server copies every file from the others, and a
 server asked for a file it has not got yet fetches it from the others first.
 
-A file may be at most `CATHODE_MAX_FILE_BYTES` (100 MB) once sealed, and one
-space may hold `CATHODE_MAX_ROOM_FILE_BYTES` (5 GB) of them. Past either an
+A file may be at most `NOOK_MAX_FILE_BYTES` (100 MB) once sealed, and one
+space may hold `NOOK_MAX_ROOM_FILE_BYTES` (5 GB) of them. Past either an
 upload is refused, and the page says why.
 
-A server that ran an earlier version kept spaces as files in `CATHODE_DATA`.
+A server that ran an earlier version kept spaces as files in `NOOK_DATA`.
 It moves them into the database the first time it starts, once, and leaves
 the files where they are.
 
@@ -105,15 +105,15 @@ Version 1, under `/api/v1`. A running server describes it at
 | `GET /api/v1/health` | What this server is, what it offers, and every server in its cluster |
 | `GET /api/v1/ice` | Short lived TURN credentials |
 | `GET /api/v1/spaces/:room/events?after=N&limit=L` | Sealed lines after line `N`, a page at a time. `at` is where the next page starts, and `more` says there is one |
-| `POST /api/v1/spaces/:room/events` | Keeps `{ "events": [sealed lines] }`. Needs `x-cathode-write`. The first write claims the space with its token |
+| `POST /api/v1/spaces/:room/events` | Keeps `{ "events": [sealed lines] }`. Needs `x-nook-write`. The first write claims the space with its token |
 | `WS /api/v1/socket` | Everything every space on this device does, on one connection. See below |
 | `WS /api/v1/spaces/:room/socket` | The same for one space. Messages leave out `room` |
-| `POST /api/v1/spaces/:room/files` | Keeps the sealed file in the body. Needs `x-cathode-write`. Answers `{ "id", "size" }`, where `id` is the SHA-256 of the body |
+| `POST /api/v1/spaces/:room/files` | Keeps the sealed file in the body. Needs `x-nook-write`. Answers `{ "id", "size" }`, where `id` is the SHA-256 of the body |
 | `GET /api/v1/spaces/:room/files/:id` | That file, as sealed bytes |
 | `PUT /api/v1/links/:id` | Leaves a sealed device link, `{ "blob" }`. Kept in memory for ten minutes |
 | `GET /api/v1/links/:id` | Takes it. It is gone after one read |
 | `GET /api/v1/people/:id` | One person's sealed record |
-| `PUT /api/v1/people/:id` | Replaces it. Needs `x-cathode-write`. The first write claims it |
+| `PUT /api/v1/people/:id` | Replaces it. Needs `x-nook-write`. The first write claims it |
 | `GET /api/v1/preview?url=U` | The title, description and picture behind a public link |
 | `GET /api/v1/gifs?q=term` | GIF search with this server's key, when one is set. No term: what is popular now. Answers `{ "gifs", "from" }` |
 | `GET /api/v1/cluster/lines`, `/rooms`, `/people`, `/files`, `/live` | Between servers in a cluster only. Needs the cluster secret |
@@ -157,12 +157,12 @@ one cluster. Every server then keeps a full copy of every space in the cluster.
 3. On every server, set:
 
    ```
-   CATHODE_PEERS=https://other-one.example.org,https://other-two.example.org
-   CATHODE_CLUSTER_SECRET=the shared secret
+   NOOK_PEERS=https://other-one.example.org,https://other-two.example.org
+   NOOK_CLUSTER_SECRET=the shared secret
    ```
 
-   Each server's own address comes from its `CATHODE_DOMAIN`; set
-   `CATHODE_PUBLIC_URL` only when it is reached some other way.
+   Each server's own address comes from its `NOOK_DOMAIN`; set
+   `NOOK_PUBLIC_URL` only when it is reached some other way.
 
 4. Restart each server. `GET /api/v1/health` lists the cluster, and `peers`
    says whether each of the others is reachable.
@@ -221,7 +221,7 @@ What a server can see, because it has to:
   code and says nothing about it.
 - How many files a space holds, and how big each one is.
 - Who connects, from which address, when, and how much they send.
-- Which links are previewed, if link cards are on. Set `CATHODE_PREVIEWS=0`
+- Which links are previewed, if link cards are on. Set `NOOK_PREVIEWS=0`
   to turn them off.
 - What is searched for, if GIF search is on.
 
@@ -234,7 +234,7 @@ servers in a cluster hold requests open while they wait for new lines. With
 Caddy on its own, that is:
 
 ```
-caddy reverse-proxy --from cathode.example.org --to localhost:8787
+caddy reverse-proxy --from nook.example.org --to localhost:8787
 ```
 
 ## TURN
@@ -242,13 +242,13 @@ caddy reverse-proxy --from cathode.example.org --to localhost:8787
 Calls and screen shares go between browsers over WebRTC. About one connection
 in eight cannot go direct, because of symmetric NAT or a strict firewall, so
 TURN relays the media instead. The server gives every space
-on it credentials that expire after a day, made from `CATHODE_TURN_SECRET` in
+on it credentials that expire after a day, made from `NOOK_TURN_SECRET` in
 the way coturn's `use-auth-secret` expects.
 
 By default every call and screen share in a space on this server goes through
 TURN, so media never goes straight between people and nobody learns anybody
 else's address. It stays encrypted end to end all the same. Set
-`CATHODE_TURN_ONLY=0` to let a call try a direct path first. Without TURN,
+`NOOK_TURN_ONLY=0` to let a call try a direct path first. Without TURN,
 calls try to go straight between browsers.
 
 ## Settings
@@ -256,24 +256,24 @@ calls try to go straight between browsers.
 | Variable | Default | Meaning |
 |---|---|---|
 | `PORT` | `8787` | Port to listen on |
-| `DATABASE_URL` | `postgres://cathode:cathode@localhost:5432/cathode` | The Postgres database |
-| `CATHODE_ORIGINS` | `*` | The pages that may use this server, comma separated. Set it, or any website can use your server and your TURN bandwidth |
-| `CATHODE_MAX_ROOM_BYTES` | `268435456` | Per space, before the oldest half is dropped |
-| `CATHODE_DOMAIN` | (empty) | The domain this server answers on. Its address and TURN addresses follow from it |
-| `CATHODE_PUBLIC_URL` | `https://` and the domain | This server's own address, as pages and other servers reach it |
-| `CATHODE_PEERS` | (empty) | The other servers in the cluster, comma separated |
-| `CATHODE_CLUSTER_SECRET` | (empty) | Shared by every server in the cluster, 16 characters or more |
-| `CATHODE_TURN_URLS` | the domain's port 3478, UDP and TCP, when there is a TURN secret | The TURN addresses to hand out, comma separated |
-| `CATHODE_TURN_SECRET` | (empty) | The secret shared with coturn. TURN is off until this and the URLs are set |
-| `CATHODE_TURN_TTL` | `86400` | How long a TURN credential lasts, in seconds |
-| `CATHODE_TURN_ONLY` | `1` | `0` lets a call try a direct path before TURN |
-| `CATHODE_PREVIEWS` | `1` | `0` turns link cards off, so this server never learns which links are shared |
-| `CATHODE_KLIPY_KEY` | (empty) | Turns on GIF search for everybody here, with Klipy. A test key comes from https://partner.klipy.com/api-keys |
-| `CATHODE_TENOR_KEY` | (empty) | The same with Tenor, when no Klipy key is set. A key comes from https://developers.google.com/tenor |
-| `CATHODE_GIPHY_KEY` | (empty) | The same with Giphy, when neither of the others is set. A key comes from https://developers.giphy.com |
-| `CATHODE_MAX_ROOM_SOCKETS` | `200` | Connections one space may hold |
-| `CATHODE_RATE`, `CATHODE_RATE_BURST` | `30`, `120` | Requests one address may make per second, and in a burst |
-| `CATHODE_FILES` | `/data/files` | Where uploaded files are kept, sealed |
-| `CATHODE_MAX_FILE_BYTES` | `104857600` | The largest one file may be, sealed |
-| `CATHODE_MAX_ROOM_FILE_BYTES` | `5368709120` | How much in files one space may keep |
-| `CATHODE_DATA` | `/data` | Where an earlier version kept its spaces, read once on upgrade |
+| `DATABASE_URL` | `postgres://nook:nook@localhost:5432/nook` | The Postgres database |
+| `NOOK_ORIGINS` | `*` | The pages that may use this server, comma separated. Set it, or any website can use your server and your TURN bandwidth |
+| `NOOK_MAX_ROOM_BYTES` | `268435456` | Per space, before the oldest half is dropped |
+| `NOOK_DOMAIN` | (empty) | The domain this server answers on. Its address and TURN addresses follow from it |
+| `NOOK_PUBLIC_URL` | `https://` and the domain | This server's own address, as pages and other servers reach it |
+| `NOOK_PEERS` | (empty) | The other servers in the cluster, comma separated |
+| `NOOK_CLUSTER_SECRET` | (empty) | Shared by every server in the cluster, 16 characters or more |
+| `NOOK_TURN_URLS` | the domain's port 3478, UDP and TCP, when there is a TURN secret | The TURN addresses to hand out, comma separated |
+| `NOOK_TURN_SECRET` | (empty) | The secret shared with coturn. TURN is off until this and the URLs are set |
+| `NOOK_TURN_TTL` | `86400` | How long a TURN credential lasts, in seconds |
+| `NOOK_TURN_ONLY` | `1` | `0` lets a call try a direct path before TURN |
+| `NOOK_PREVIEWS` | `1` | `0` turns link cards off, so this server never learns which links are shared |
+| `NOOK_KLIPY_KEY` | (empty) | Turns on GIF search for everybody here, with Klipy. A test key comes from https://partner.klipy.com/api-keys |
+| `NOOK_TENOR_KEY` | (empty) | The same with Tenor, when no Klipy key is set. A key comes from https://developers.google.com/tenor |
+| `NOOK_GIPHY_KEY` | (empty) | The same with Giphy, when neither of the others is set. A key comes from https://developers.giphy.com |
+| `NOOK_MAX_ROOM_SOCKETS` | `200` | Connections one space may hold |
+| `NOOK_RATE`, `NOOK_RATE_BURST` | `30`, `120` | Requests one address may make per second, and in a burst |
+| `NOOK_FILES` | `/data/files` | Where uploaded files are kept, sealed |
+| `NOOK_MAX_FILE_BYTES` | `104857600` | The largest one file may be, sealed |
+| `NOOK_MAX_ROOM_FILE_BYTES` | `5368709120` | How much in files one space may keep |
+| `NOOK_DATA` | `/data` | Where an earlier version kept its spaces, read once on upgrade |

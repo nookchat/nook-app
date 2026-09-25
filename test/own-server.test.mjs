@@ -9,7 +9,7 @@ const SERVER = `localhost:${PORT}`
 
 const server = await startServer(PORT)
 const vite = spawn('npx', ['vite', '--port', String(PAGE_PORT), '--strictPort'], {
-  env: { ...process.env, VITE_CATHODE_SERVER: '' },
+  env: { ...process.env, VITE_NOOK_SERVER: '' },
   stdio: ['ignore', 'pipe', 'inherit'],
 })
 await new Promise((ready) => vite.stdout.on('data', (b) => /Local:/.test(String(b)) && ready()))
@@ -19,7 +19,7 @@ const browser = await launch()
 async function person(name) {
   const page = await (await browser.newContext()).newPage()
   await page.goto(APP_URL)
-  await page.evaluate((n) => localStorage.setItem('cathode.name.v1', n), name)
+  await page.evaluate((n) => localStorage.setItem('nook.name.v1', n), name)
   await page.reload()
   await page.waitForSelector('input[aria-label="Room code"]')
   return page

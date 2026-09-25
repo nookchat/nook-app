@@ -339,7 +339,7 @@ export function withEmoji(text: string): string {
     .join('')
 }
 
-const RECENT_KEY = 'cathode.emoji.v1'
+const RECENT_KEY = 'nook.emoji.v1'
 const RECENT_MAX = 24
 
 export function recentEmoji(): string[] {
@@ -359,7 +359,7 @@ function noteEmoji(ch: string): void {
   } catch {}
 }
 
-const QUICK_KEY = 'cathode.quick.v1'
+const QUICK_KEY = 'nook.quick.v1'
 
 /** Empty means: fall back to the recent emoji. */
 export function quickReactions(): string[] {

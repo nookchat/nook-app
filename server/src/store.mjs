@@ -106,7 +106,7 @@ async function trimOldestHalf(client, room) {
      where room = $1`,
     [room],
   )
-  console.log(`[cathode] trimmed ${room}: the oldest half went`)
+  console.log(`[nook] trimmed ${room}: the oldest half went`)
 }
 
 export async function since(room, after, limit = PAGE_LINES, most = PAGE_LINES) {

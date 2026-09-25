@@ -19,7 +19,7 @@ const STUB = `(() => {
   navigator.mediaDevices.getDisplayMedia = async () => new MediaStream(s.getVideoTracks())
 })()`
 
-const GAME_SETTINGS = `localStorage.setItem('cathode.settings.v1', ${JSON.stringify(
+const GAME_SETTINGS = `localStorage.setItem('nook.settings.v1', ${JSON.stringify(
   JSON.stringify({
     presetId: 'game',
     mode: 'motion',

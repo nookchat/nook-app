@@ -18,7 +18,7 @@ server.headersTimeout = 66_000
 
 server.listen(PORT, () => {
   console.log(
-    `[cathode] ${VERSION} on :${PORT}, keeping spaces in Postgres, ` +
+    `[nook] ${VERSION} on :${PORT}, keeping spaces in Postgres, ` +
       `${HAS_TURN ? `TURN at ${TURN_URLS.join(' ')}${TURN_ONLY ? ' for every call' : ''}` : 'no TURN'}, ` +
       `${ANY_ORIGIN ? 'any page' : `pages from ${ORIGINS.join(' ')}`}, ` +
       `${CLUSTERED ? `cluster of ${PEERS.length + 1}` : 'no cluster'}`,

@@ -292,7 +292,7 @@ export class SpaceFiles {
       const xhr = new XMLHttpRequest()
       xhr.open('POST', `${base}/api/v1/spaces/${this.room}/files`)
       xhr.setRequestHeader('content-type', 'application/octet-stream')
-      xhr.setRequestHeader('x-cathode-write', this.write)
+      xhr.setRequestHeader('x-nook-write', this.write)
       xhr.upload.onprogress = (ev) => onProgress(ev.loaded, ev.total)
       xhr.onload = () => {
         let body: { id?: string; error?: { message?: string } } = {}

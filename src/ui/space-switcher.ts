@@ -6,7 +6,7 @@ import { icon } from './icons'
 import { openMenu, type MenuEntry } from './menu'
 import type { Navigation } from './shell'
 
-const ORDER_KEY = 'cathode.rail.v1'
+const ORDER_KEY = 'nook.rail.v1'
 
 function loadOrder(): string[] {
   try {

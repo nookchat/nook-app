@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as wait } from 'node:timers/promises'
 
-const CONTAINER = 'cathode-test-db'
-const BASE = process.env.CATHODE_TEST_PG ?? 'postgres://cathode:cathode@localhost:55432'
+const CONTAINER = 'nook-test-db'
+const BASE = process.env.NOOK_TEST_PG ?? 'postgres://nook:nook@localhost:55432'
 
 function docker(...args) {
   return execFileSync('docker', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
@@ -21,21 +21,21 @@ function running() {
 }
 
 async function ensure() {
-  if (process.env.CATHODE_TEST_PG) return
+  if (process.env.NOOK_TEST_PG) return
   if (!running()) {
     try {
       docker('rm', '-f', CONTAINER)
     } catch {}
     docker(
       'run', '-d', '--name', CONTAINER,
-      '-e', 'POSTGRES_USER=cathode', '-e', 'POSTGRES_PASSWORD=cathode', '-e', 'POSTGRES_DB=cathode',
+      '-e', 'POSTGRES_USER=nook', '-e', 'POSTGRES_PASSWORD=nook', '-e', 'POSTGRES_DB=nook',
       '-p', '55432:5432', 'postgres:17-alpine',
     )
   }
   for (let i = 0; i < 60; i++) {
     try {
       // Over TCP: the socket inside the container answers during first-start setup, before the restart.
-      docker('exec', CONTAINER, 'pg_isready', '-h', '127.0.0.1', '-U', 'cathode')
+      docker('exec', CONTAINER, 'pg_isready', '-h', '127.0.0.1', '-U', 'nook')
       return
     } catch {
       await wait(500)
@@ -54,7 +54,7 @@ async function connect(connectionString) {
 export async function freshDatabase(label = 'test') {
   await ensure()
   const name = `${label}_${randomBytes(4).toString('hex')}`
-  const admin = await connect(`${BASE}/cathode`)
+  const admin = await connect(`${BASE}/nook`)
   await admin.query(`create database ${name}`)
   await admin.end()
   return `${BASE}/${name}`
@@ -62,9 +62,9 @@ export async function freshDatabase(label = 'test') {
 
 export async function startServer(port, env = {}) {
   const database = env.DATABASE_URL ?? (await freshDatabase(`p${port}`))
-  const files = env.CATHODE_FILES ?? mkdtempSync(join(tmpdir(), `cathode-files-${port}-`))
+  const files = env.NOOK_FILES ?? mkdtempSync(join(tmpdir(), `nook-files-${port}-`))
   const child = spawn(process.execPath, ['server/server.mjs'], {
-    env: { ...process.env, PORT: String(port), DATABASE_URL: database, CATHODE_DATA: '/nonexistent', CATHODE_FILES: files, ...env },
+    env: { ...process.env, PORT: String(port), DATABASE_URL: database, NOOK_DATA: '/nonexistent', NOOK_FILES: files, ...env },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   child.stdout.on('data', (b) => process.env.LOUD && console.log(`  [${port}]`, String(b).trim()))

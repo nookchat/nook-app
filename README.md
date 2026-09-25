@@ -65,7 +65,7 @@ with voice does it.
   device checks each change in the log, so a button is never the rule.
 - **Emoji on their own**, in a message or a reply, are drawn large.
 - **GIFs** come from the server of the space, with its key: whoever runs it
-  sets `CATHODE_KLIPY_KEY`, `CATHODE_TENOR_KEY` or `CATHODE_GIPHY_KEY`, and
+  sets `NOOK_KLIPY_KEY`, `NOOK_TENOR_KEY` or `NOOK_GIPHY_KEY`, and
   everybody on it can search. Nobody puts a key of their own in the page.
 
 Every space you are in is connected at once, over one WebSocket per server, so
@@ -125,15 +125,15 @@ In the app, **Settings, Servers** shows your servers, whether each is up, and
 the other servers of its cluster. Under **From invites** are the servers of
 spaces you joined. **Use for new spaces** picks where new spaces go.
 
-`VITE_CATHODE_SERVER`, set when the page is built, gives every visitor a
+`VITE_NOOK_SERVER`, set when the page is built, gives every visitor a
 server. It is for development, where the tests use it. Leave it unset on a
 public page.
 
 To run your own, follow [docs/self-hosting.md](docs/self-hosting.md). It takes
 one `docker compose up`. `server/README.md` has every setting and the API.
 
-**A cluster.** Several servers that name each other in `CATHODE_PEERS` and share
-a `CATHODE_CLUSTER_SECRET` keep every space on all of them. When the one a page
+**A cluster.** Several servers that name each other in `NOOK_PEERS` and share
+a `NOOK_CLUSTER_SECRET` keep every space on all of them. When the one a page
 is talking to goes down, the page moves to the next without anybody doing
 anything, and the server that was down catches up when it comes back.
 
@@ -143,7 +143,7 @@ A space is a code, written the way Windows wrote a product key. The link names
 the space's servers after an `@`:
 
 ```
-https://cathode.video/#K7M2-9QPT-VB2W@cathode.example.org,cathode.friend.net
+https://cathode.video/#K7M2-9QPT-VB2W@nook.example.org,nook.friend.net
 ```
 
 The code uses Crockford's base32 alphabet, which leaves out I, L, O and U, so
@@ -164,8 +164,8 @@ the right. No column is spent on a list of spaces.
 
 - **Floating panes.** The canvas is near black, and the channels, the
   conversation, and the members are separate rounded panes on it.
-- **The beam.** The one accent is a flat cyan, the colour of a cathode ray
-  tube that lights up. It is on what you press most, on the channel you are
+- **The beam.** The one accent is a flat cyan, the colour of an old tube
+  screen that lights up. It is on what you press most, on the channel you are
   in, and on the space you are in. There are no gradients.
 - **Live is red.** A person who is sharing, and the strip of shares above the
   conversation, use the same red.

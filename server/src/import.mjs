@@ -26,7 +26,7 @@ export async function importFiles() {
     /* no me/ directory */
   }
   if (rooms.length === 0 && people.length === 0) return
-  console.log(`[cathode] moving ${rooms.length} spaces and ${people.length} records from ${DATA} into the database`)
+  console.log(`[nook] moving ${rooms.length} spaces and ${people.length} records from ${DATA} into the database`)
 
   for (const name of rooms) {
     const room = name.slice(0, -6)
@@ -65,5 +65,5 @@ export async function importFiles() {
 
   await pool.query(`update lines set origin = '' where origin = 'import'`)
   await writeFile(join(DATA, MARK), new Date().toISOString() + '\n')
-  console.log('[cathode] moved')
+  console.log('[nook] moved')
 }

@@ -2,94 +2,94 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/nookchat/nook-app/main/server/install.sh | sh
 #
-# By hand: set CATHODE_DOMAIN=your.domain in a .env next to this file, then run
+# By hand: set NOOK_DOMAIN=your.domain in a .env next to this file, then run
 #   docker compose up -d
 #
-#   cathode   the server
+#   nook   the server
 #   db        Postgres, which holds the spaces as ciphertext
 #   caddy     HTTPS with a Let's Encrypt certificate (profile tls)
 #   turn      coturn, for calls on networks that block them (profile turn)
 #
-# Local try-out: docker compose up -d cathode, then use http://localhost:8787 in Nook.
+# Local try-out: docker compose up -d nook, then use http://localhost:8787 in Nook.
 # Update: run the installer again, or docker compose pull && docker compose up -d
 # A line in .env overrides any default below. See server/README.md.
 
-name: cathode
+name: nook
 
 services:
-  cathode:
-    image: ${CATHODE_IMAGE:-ghcr.io/nookchat/cathode-server:latest}
+  nook:
+    image: ${NOOK_IMAGE:-ghcr.io/nookchat/nook-server:latest}
     build: .
-    container_name: cathode
+    container_name: nook
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
     ports:
-      # Plain HTTP, local only. Set CATHODE_BIND=0.0.0.0 for your own proxy.
-      - '${CATHODE_BIND:-127.0.0.1}:8787:8787'
+      # Plain HTTP, local only. Set NOOK_BIND=0.0.0.0 for your own proxy.
+      - '${NOOK_BIND:-127.0.0.1}:8787:8787'
     volumes:
       # Sealed uploads in /data/files. Back this up with the database.
-      - cathode-data:/data
+      - nook-data:/data
     environment:
-      DATABASE_URL: postgres://cathode:${POSTGRES_PASSWORD:-cathode}@db:5432/cathode
+      DATABASE_URL: postgres://nook:${POSTGRES_PASSWORD:-nook}@db:5432/nook
       # The server's domain. Its public and TURN addresses default from it.
-      CATHODE_DOMAIN: ${CATHODE_DOMAIN:-}
-      CATHODE_PUBLIC_URL: ${CATHODE_PUBLIC_URL:-}
+      NOOK_DOMAIN: ${NOOK_DOMAIN:-}
+      NOOK_PUBLIC_URL: ${NOOK_PUBLIC_URL:-}
       # Pages that may use this server, comma separated. * is any page.
-      CATHODE_ORIGINS: ${CATHODE_ORIGINS:-*}
+      NOOK_ORIGINS: ${NOOK_ORIGINS:-*}
       # TURN for calls: on when a secret is set.
-      CATHODE_TURN_SECRET: ${CATHODE_TURN_SECRET:-}
-      CATHODE_TURN_URLS: ${CATHODE_TURN_URLS:-}
-      CATHODE_TURN_ONLY: ${CATHODE_TURN_ONLY:-1}
+      NOOK_TURN_SECRET: ${NOOK_TURN_SECRET:-}
+      NOOK_TURN_URLS: ${NOOK_TURN_URLS:-}
+      NOOK_TURN_ONLY: ${NOOK_TURN_ONLY:-1}
       # A cluster with friends. Empty runs alone.
-      CATHODE_PEERS: ${CATHODE_PEERS:-}
-      CATHODE_CLUSTER_SECRET: ${CATHODE_CLUSTER_SECRET:-}
+      NOOK_PEERS: ${NOOK_PEERS:-}
+      NOOK_CLUSTER_SECRET: ${NOOK_CLUSTER_SECRET:-}
       # Byte limits: one file, files per space, lines per space.
-      CATHODE_MAX_FILE_BYTES: ${CATHODE_MAX_FILE_BYTES:-104857600}
-      CATHODE_MAX_ROOM_FILE_BYTES: ${CATHODE_MAX_ROOM_FILE_BYTES:-5368709120}
-      CATHODE_MAX_ROOM_BYTES: ${CATHODE_MAX_ROOM_BYTES:-268435456}
+      NOOK_MAX_FILE_BYTES: ${NOOK_MAX_FILE_BYTES:-104857600}
+      NOOK_MAX_ROOM_FILE_BYTES: ${NOOK_MAX_ROOM_FILE_BYTES:-5368709120}
+      NOOK_MAX_ROOM_BYTES: ${NOOK_MAX_ROOM_BYTES:-268435456}
       # Link cards. 0 stops the server from seeing which links are previewed.
-      CATHODE_PREVIEWS: ${CATHODE_PREVIEWS:-1}
+      NOOK_PREVIEWS: ${NOOK_PREVIEWS:-1}
       # GIF search, off until one key is set.
-      CATHODE_KLIPY_KEY: ${CATHODE_KLIPY_KEY:-}
-      CATHODE_TENOR_KEY: ${CATHODE_TENOR_KEY:-}
-      CATHODE_GIPHY_KEY: ${CATHODE_GIPHY_KEY:-}
+      NOOK_KLIPY_KEY: ${NOOK_KLIPY_KEY:-}
+      NOOK_TENOR_KEY: ${NOOK_TENOR_KEY:-}
+      NOOK_GIPHY_KEY: ${NOOK_GIPHY_KEY:-}
 
   db:
     image: postgres:17-alpine
-    container_name: cathode-db
+    container_name: nook-db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: cathode
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cathode}
-      POSTGRES_DB: cathode
+      POSTGRES_USER: nook
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nook}
+      POSTGRES_DB: nook
     volumes:
       - db-data:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U cathode -d cathode']
+      test: ['CMD-SHELL', 'pg_isready -U nook -d nook']
       interval: 5s
       timeout: 3s
       retries: 20
 
   caddy:
     image: caddy:2
-    container_name: cathode-caddy
+    container_name: nook-caddy
     restart: unless-stopped
     ports:
       - '80:80'
       - '443:443'
     # HTTPS for the domain, proxied to the server with WebSockets. No Caddyfile needed.
-    command: caddy reverse-proxy --from ${CATHODE_DOMAIN:-localhost} --to cathode:8787
+    command: caddy reverse-proxy --from ${NOOK_DOMAIN:-localhost} --to nook:8787
     volumes:
       - caddy-data:/data
     depends_on:
-      - cathode
+      - nook
     profiles: ['tls']
 
   turn:
     image: coturn/coturn:4.6
-    container_name: cathode-turn
+    container_name: nook-turn
     restart: unless-stopped
     # Host networking gives TURN its wide UDP port range.
     network_mode: host
@@ -99,11 +99,11 @@ services:
       - --listening-port=3478
       - --fingerprint
       - --use-auth-secret
-      - --static-auth-secret=${CATHODE_TURN_SECRET:-}
-      - --realm=${CATHODE_DOMAIN:-cathode}
+      - --static-auth-secret=${NOOK_TURN_SECRET:-}
+      - --realm=${NOOK_DOMAIN:-nook}
       - --external-ip=$$(detect-external-ip)
-      - --min-port=${CATHODE_TURN_MIN_PORT:-49160}
-      - --max-port=${CATHODE_TURN_MAX_PORT:-49260}
+      - --min-port=${NOOK_TURN_MIN_PORT:-49160}
+      - --max-port=${NOOK_TURN_MAX_PORT:-49260}
       - --no-cli
       - --no-tls
       - --no-dtls
@@ -119,6 +119,6 @@ services:
     profiles: ['turn']
 
 volumes:
-  cathode-data:
+  nook-data:
   db-data:
   caddy-data:

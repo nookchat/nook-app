@@ -77,7 +77,7 @@ export async function migrate() {
         await client.query(MIGRATIONS[v])
         await client.query('insert into schema_version (version) values ($1)', [v + 1])
         await client.query('commit')
-        console.log(`[cathode] database schema at version ${v + 1}`)
+        console.log(`[nook] database schema at version ${v + 1}`)
       } catch (err) {
         await client.query('rollback')
         throw err

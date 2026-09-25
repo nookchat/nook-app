@@ -12,7 +12,7 @@ const BOX = '[aria-label="Write a message"]'
 async function person(name) {
   const page = await (await browser.newContext()).newPage()
   await page.goto(APP_URL)
-  await page.evaluate((n) => localStorage.setItem('cathode.name.v1', n), name)
+  await page.evaluate((n) => localStorage.setItem('nook.name.v1', n), name)
   await page.reload()
   await page.waitForSelector('input[aria-label="Space name"]')
   return page
@@ -274,7 +274,7 @@ try {
   await alice.fill('input[aria-label="Search this space"]', '')
 
   await alice.evaluate(() =>
-    localStorage.setItem('cathode.quick.v1', JSON.stringify(['🎉', '🚀'])),
+    localStorage.setItem('nook.quick.v1', JSON.stringify(['🎉', '🚀'])),
   )
   await pressAction(alice, 'React to this message', 0)
   await alice.waitForSelector('.emoji-pop.quick')

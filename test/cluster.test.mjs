@@ -6,7 +6,7 @@ const until = (test, ms = 15_000) => poll(test, ms, 150)
 const SECRET = 'a-cluster-secret-for-tests'
 const A = 'http://localhost:8801'
 const B = 'http://localhost:8802'
-const cluster = (self, peer) => ({ CATHODE_PUBLIC_URL: self, CATHODE_PEERS: peer, CATHODE_CLUSTER_SECRET: SECRET })
+const cluster = (self, peer) => ({ NOOK_PUBLIC_URL: self, NOOK_PEERS: peer, NOOK_CLUSTER_SECRET: SECRET })
 
 let a = await startServer(8801, cluster(A, B))
 const b = await startServer(8802, cluster(B, A))
@@ -39,7 +39,7 @@ try {
   const claimed = await until(async () => {
     const res = await fetch(`${B}/api/v1/spaces/${room}/events`, {
       method: 'POST',
-      headers: { 'x-cathode-write': 'not the token' },
+      headers: { 'x-nook-write': 'not the token' },
       body: JSON.stringify({ events: ['junk'] }),
     })
     return res.status === 403
@@ -52,7 +52,7 @@ try {
   const me = 'f'.repeat(64)
   await fetch(`${A}/api/v1/people/${me}`, {
     method: 'PUT',
-    headers: { 'x-cathode-write': 'mine' },
+    headers: { 'x-nook-write': 'mine' },
     body: JSON.stringify({ blob: 'my sealed spaces' }),
   })
   check(

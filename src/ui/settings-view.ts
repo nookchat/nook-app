@@ -193,7 +193,7 @@ export function settingsView(actions: SettingsActions): HTMLElement {
   }
   drawServers()
 
-  const addInput = h('input', { type: 'text', placeholder: 'cathode.example.org', ariaLabel: 'Add a server' })
+  const addInput = h('input', { type: 'text', placeholder: 'nook.example.org', ariaLabel: 'Add a server' })
   const addRow = h('div', { class: 'row hidden' })
   const addOpen = h('button', { class: 'ghost small start' }, [icon('plus', 14), 'Add server'])
   addOpen.addEventListener('click', () => {

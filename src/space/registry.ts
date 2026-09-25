@@ -74,7 +74,7 @@ class Registry {
       roomsChanged()
     })
     space.on('changed', () => this.roomsChangedSoon())
-    void space.ready.catch((err) => console.error('[cathode] a space did not start', err))
+    void space.ready.catch((err) => console.error('[nook] a space did not start', err))
     return space
   }
 

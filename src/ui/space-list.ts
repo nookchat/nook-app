@@ -169,7 +169,7 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
 }
 
 function addServerCard(actions: SpaceListActions): HTMLElement {
-  const input = h('input', { type: 'text', placeholder: 'cathode.example.org', ariaLabel: 'Your server' })
+  const input = h('input', { type: 'text', placeholder: 'nook.example.org', ariaLabel: 'Your server' })
   const add = h('button', { class: 'primary', text: 'Add' })
   const submit = async (): Promise<void> => {
     const url = serverUrl(input.value)

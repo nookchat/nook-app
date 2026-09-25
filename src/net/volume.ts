@@ -1,5 +1,5 @@
-const KEY = 'cathode.volume.v1'
-export const VOLUMES_CHANGED = 'cathode:volumes'
+const KEY = 'nook.volume.v1'
+export const VOLUMES_CHANGED = 'nook:volumes'
 
 interface Saved {
   level: Record<string, number>

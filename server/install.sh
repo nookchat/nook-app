@@ -8,19 +8,19 @@
 #
 # Optional settings:
 #
-#   CATHODE_DOMAIN=cathode.example.org   the domain, without asking
-#   CATHODE_DIR=./cathode                where it goes
-#   CATHODE_TLS=0                        no Caddy: you have your own proxy
-#   CATHODE_TURN=0                       no TURN relay
-#   CATHODE_KLIPY_KEY=...                GIF search for everybody here (or
-#                                        CATHODE_TENOR_KEY, CATHODE_GIPHY_KEY)
+#   NOOK_DOMAIN=nook.example.org   the domain, without asking
+#   NOOK_DIR=./nook                where it goes
+#   NOOK_TLS=0                        no Caddy: you have your own proxy
+#   NOOK_TURN=0                       no TURN relay
+#   NOOK_KLIPY_KEY=...                GIF search for everybody here (or
+#                                        NOOK_TENOR_KEY, NOOK_GIPHY_KEY)
 #
 # Needs Docker with its compose plugin, and a domain whose DNS points here.
 
 set -eu
 
-REPO="${CATHODE_REPO:-https://raw.githubusercontent.com/nookchat/nook-app/main/server}"
-DIR="${CATHODE_DIR:-cathode}"
+REPO="${NOOK_REPO:-https://raw.githubusercontent.com/nookchat/nook-app/main/server}"
+DIR="${NOOK_DIR:-nook}"
 
 say() { printf '%s\n' "$*"; }
 fail() { printf 'Nook: %s\n' "$*" >&2; exit 1; }
@@ -41,31 +41,31 @@ secret() {
 if [ -f .env ]; then
   say "Updating the Nook server in $(pwd). Your settings in .env are kept."
 else
-  domain="${CATHODE_DOMAIN:-}"
+  domain="${NOOK_DOMAIN:-}"
   if [ -z "$domain" ]; then
     # Read from the terminal, not the pipe the script arrived on.
     if [ -r /dev/tty ]; then
-      printf "The domain this server answers on (for example cathode.example.org): " >/dev/tty
+      printf "The domain this server answers on (for example nook.example.org): " >/dev/tty
       read -r domain </dev/tty
     fi
   fi
   domain=$(printf '%s' "$domain" | sed -e 's#^https://##' -e 's#^http://##' -e 's#/*$##')
-  [ -n "$domain" ] || fail "A domain is needed. Run it again with CATHODE_DOMAIN=your.domain"
+  [ -n "$domain" ] || fail "A domain is needed. Run it again with NOOK_DOMAIN=your.domain"
 
   profiles=""
-  [ "${CATHODE_TLS:-1}" = "0" ] || profiles="tls"
-  [ "${CATHODE_TURN:-1}" = "0" ] || profiles="${profiles:+$profiles,}turn"
+  [ "${NOOK_TLS:-1}" = "0" ] || profiles="tls"
+  [ "${NOOK_TURN:-1}" = "0" ] || profiles="${profiles:+$profiles,}turn"
 
   umask 077
   cat > .env <<EOF
 # Nook server settings. Change any of them and run: docker compose up -d
 # Every other setting has a default; see server/README.md to override one.
-CATHODE_DOMAIN=$domain
+NOOK_DOMAIN=$domain
 POSTGRES_PASSWORD=$(secret 24)
-CATHODE_TURN_SECRET=$(secret 32)
+NOOK_TURN_SECRET=$(secret 32)
 COMPOSE_PROFILES=$profiles
 EOF
-  for name in CATHODE_KLIPY_KEY CATHODE_TENOR_KEY CATHODE_GIPHY_KEY; do
+  for name in NOOK_KLIPY_KEY NOOK_TENOR_KEY NOOK_GIPHY_KEY; do
     value=$(printenv "$name" || true)
     [ -z "$value" ] || printf '%s=%s\n' "$name" "$value" >> .env
   done
@@ -78,7 +78,7 @@ say "Starting Nook..."
 docker compose pull --quiet
 docker compose up -d --remove-orphans
 
-domain=$(sed -n 's/^CATHODE_DOMAIN=//p' .env | head -n 1)
+domain=$(sed -n 's/^NOOK_DOMAIN=//p' .env | head -n 1)
 if grep -q '^COMPOSE_PROFILES=.*tls' .env; then tls=1; else tls=0; fi
 if [ "$tls" = 1 ]; then
   url="https://$domain"
@@ -103,11 +103,11 @@ done
 
 say ""
 say "Nook is running at https://$domain"
-[ "$tls" = 1 ] || say "  (behind your own proxy: send https://$domain to port 8787 here, with CATHODE_BIND=0.0.0.0 if it runs elsewhere)"
+[ "$tls" = 1 ] || say "  (behind your own proxy: send https://$domain to port 8787 here, with NOOK_BIND=0.0.0.0 if it runs elsewhere)"
 say ""
 say "  Use it:     open Nook, choose Add server, and type $domain"
 say "  Update:     run this command again"
 say "  Settings:   $(pwd)/.env, then: docker compose up -d"
 say "  Logs:       cd $(pwd) && docker compose logs -f"
-grep -q '^CATHODE_\(KLIPY\|TENOR\|GIPHY\)_KEY=.' .env ||
-  say "  GIFs:       add CATHODE_KLIPY_KEY=your-key to .env for GIF search (a key: partner.klipy.com)"
+grep -q '^NOOK_\(KLIPY\|TENOR\|GIPHY\)_KEY=.' .env ||
+  say "  GIFs:       add NOOK_KLIPY_KEY=your-key to .env for GIF search (a key: partner.klipy.com)"

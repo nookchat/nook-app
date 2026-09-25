@@ -6,7 +6,7 @@ const BUCKET_IDLE_MS = 60_000
 
 const CORS = {
   vary: 'origin',
-  'access-control-allow-headers': 'content-type,x-cathode-write,authorization',
+  'access-control-allow-headers': 'content-type,x-nook-write,authorization',
   'access-control-allow-methods': 'GET,POST,PUT,OPTIONS',
   'access-control-max-age': '86400',
 }
@@ -42,7 +42,7 @@ export function fail(res, err) {
   if (err instanceof ApiError) {
     return reply(res, err.status, { error: { code: err.code, message: err.message } })
   }
-  console.error('[cathode]', err)
+  console.error('[nook]', err)
   return reply(res, 500, { error: { code: 'internal', message: 'Something went wrong on the server.' } })
 }
 

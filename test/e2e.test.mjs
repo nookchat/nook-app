@@ -17,7 +17,7 @@ const DISPLAY_STUB = `(() => {
     ctx.fillRect((frame * 9) % 1180, 260, 100, 100)
     ctx.fillStyle = '#e8ecf1'
     ctx.font = '40px monospace'
-    ctx.fillText('CATHODE TEST FRAME ' + frame, 40, 90)
+    ctx.fillText('NOOK TEST FRAME ' + frame, 40, 90)
     ctx.font = '20px monospace'
     ctx.fillText('the quick brown fox jumps over the lazy dog 0123456789', 40, 620)
   }, 33)

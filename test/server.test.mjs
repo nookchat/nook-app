@@ -6,8 +6,8 @@ const SERVER = `localhost:${PORT}`
 
 const { child: server } = await startServer(PORT, {
   // A TURN address nobody has to answer: this checks it is handed out.
-  CATHODE_TURN_URLS: 'turn:turn.invalid:3478',
-  CATHODE_TURN_SECRET: 'test-secret',
+  NOOK_TURN_URLS: 'turn:turn.invalid:3478',
+  NOOK_TURN_SECRET: 'test-secret',
 })
 
 const DARK = ['broker.emqx.io', 'broker.hivemq.com', 'nos.lol', 'relay.snort.social', 'nostr.mom']
@@ -35,9 +35,9 @@ async function person(name) {
   await page.goto(APP_URL)
   await page.evaluate(
     ({ n, server }) => {
-      localStorage.setItem('cathode.name.v1', n)
-      localStorage.setItem('cathode.server.v1', server)
-      localStorage.setItem('cathode.servers.v1', JSON.stringify([server]))
+      localStorage.setItem('nook.name.v1', n)
+      localStorage.setItem('nook.server.v1', server)
+      localStorage.setItem('nook.servers.v1', JSON.stringify([server]))
     },
     { n: name, server: `http://${SERVER}` },
   )
@@ -167,15 +167,15 @@ try {
   check('a tab that closes is gone for everybody at once', gone, `${Date.now() - goneAt} ms`)
 
   const key = await alice.evaluate(() => ({
-    id: localStorage.getItem('cathode.identity.v1'),
-    servers: localStorage.getItem('cathode.servers.v1'),
+    id: localStorage.getItem('nook.identity.v1'),
+    servers: localStorage.getItem('nook.servers.v1'),
   }))
   await wait(800)
   const second = await person('Alice')
   await second.evaluate((k) => {
-    localStorage.setItem('cathode.identity.v1', k.id)
-    localStorage.setItem('cathode.servers.v1', k.servers)
-    localStorage.setItem('cathode.server.v1', JSON.parse(k.servers)[0])
+    localStorage.setItem('nook.identity.v1', k.id)
+    localStorage.setItem('nook.servers.v1', k.servers)
+    localStorage.setItem('nook.server.v1', JSON.parse(k.servers)[0])
   }, key)
   await second.reload()
   const listed = await second

@@ -1,4 +1,4 @@
-const KEY = 'cathode.mic.v1'
+const KEY = 'nook.mic.v1'
 
 export interface MicSettings {
   echo: boolean
@@ -78,7 +78,7 @@ export function micConstraints(): MediaTrackConstraints {
   }
 }
 
-export const DEVICES_CHANGED = 'cathode:devices'
+export const DEVICES_CHANGED = 'nook:devices'
 
 export async function openMic(): Promise<MediaStream> {
   try {

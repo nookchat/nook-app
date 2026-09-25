@@ -1,4 +1,4 @@
-const KEY = 'cathode.notify.v1'
+const KEY = 'nook.notify.v1'
 
 type NotifyState = 'off' | 'on' | 'blocked' | 'unsupported'
 

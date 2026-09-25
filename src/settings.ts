@@ -6,8 +6,7 @@ import {
   type PresetId,
 } from './rtc/quality'
 
-const SETTINGS_KEY = 'cathode.settings.v1'
-const LEGACY_SETTINGS_KEY = 'beam.settings.v1'
+const SETTINGS_KEY = 'nook.settings.v1'
 
 export interface HostSettings {
   presetId: PresetId
@@ -43,7 +42,7 @@ function defaultSettings(): HostSettings {
 export function loadSettings(): HostSettings {
   const base = defaultSettings()
   try {
-    const raw = localStorage.getItem(SETTINGS_KEY) ?? localStorage.getItem(LEGACY_SETTINGS_KEY)
+    const raw = localStorage.getItem(SETTINGS_KEY)
     if (!raw) return base
     const saved = JSON.parse(raw) as Partial<HostSettings>
     const merged: HostSettings = { ...base, ...saved }

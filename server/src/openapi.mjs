@@ -15,7 +15,7 @@ const error = {
 const room = { name: 'room', in: 'path', required: true, schema: { type: 'string', pattern: '^[0-9a-f]{32}$' } }
 const person = { name: 'id', in: 'path', required: true, schema: { type: 'string', pattern: '^[0-9a-f]{64}$' } }
 const link = { name: 'id', in: 'path', required: true, schema: { type: 'string', pattern: '^[0-9a-f]{32}$' } }
-const write = { name: 'x-cathode-write', in: 'header', required: true, schema: { type: 'string' } }
+const write = { name: 'x-nook-write', in: 'header', required: true, schema: { type: 'string' } }
 const errors = {
   400: { description: 'Bad request', content: { 'application/json': { schema: error } } },
   403: { description: 'Wrong token', content: { 'application/json': { schema: error } } },
@@ -32,7 +32,7 @@ export const openapi = {
       'Keeps spaces for Nook. Everything it holds is sealed on the device that wrote it with a key this server never sees: a space line with the key made from the space code, a person record with a key made from their identity. The server stores and relays ciphertext, and cannot read or forge any of it.',
   },
   components: {
-    securitySchemes: { bearer: { type: 'http', scheme: 'bearer', description: 'CATHODE_CLUSTER_SECRET' } },
+    securitySchemes: { bearer: { type: 'http', scheme: 'bearer', description: 'NOOK_CLUSTER_SECRET' } },
   },
   paths: {
     '/api/v1/health': {
@@ -108,8 +108,8 @@ export const openapi = {
         requestBody: { required: true, content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary' } } } },
         responses: {
           200: { description: 'Kept. `id` is the SHA-256 of the body, and names it from now on.' },
-          413: { description: 'Bigger than CATHODE_MAX_FILE_BYTES', content: { 'application/json': { schema: error } } },
-          507: { description: 'The space has used CATHODE_MAX_ROOM_FILE_BYTES', content: { 'application/json': { schema: error } } },
+          413: { description: 'Bigger than NOOK_MAX_FILE_BYTES', content: { 'application/json': { schema: error } } },
+          507: { description: 'The space has used NOOK_MAX_ROOM_FILE_BYTES', content: { 'application/json': { schema: error } } },
           ...errors,
         },
       },

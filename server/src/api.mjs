@@ -45,8 +45,8 @@ function health() {
   return {
     ok: true,
     // Pages check this to know they found a Nook server.
-    service: 'cathode-server',
-    name: 'cathode',
+    service: 'nook-server',
+    name: 'nook',
     version: VERSION,
     api: 1,
     database: 'postgres',
@@ -69,7 +69,7 @@ async function readEvents(url, room) {
 
 async function mustWrite(req, room) {
   limited(req)
-  if (!(await mayWrite(room, req.headers['x-cathode-write']))) {
+  if (!(await mayWrite(room, req.headers['x-nook-write']))) {
     throw new ApiError(403, 'wrong_token', 'That is not the write token this space was claimed with.')
   }
 }
@@ -96,7 +96,7 @@ async function writePerson(req, id) {
   if (typeof blob !== 'string' || blob.length > MAX_PERSON) {
     throw new ApiError(413, 'too_large', 'A record is a sealed string of at most 512 KiB.')
   }
-  const token = req.headers['x-cathode-write']
+  const token = req.headers['x-nook-write']
   if (typeof token !== 'string' || !token) throw new ApiError(403, 'wrong_token', 'A record needs its write token.')
   if (!(await putPerson(id, token, blob))) {
     throw new ApiError(403, 'wrong_token', 'That is not the write token this record was claimed with.')
@@ -120,7 +120,7 @@ async function gifSearch(url) {
 
 function peerOnly(req) {
   if (!fromPeer(req)) throw new ApiError(401, 'not_a_peer', 'Only a server in this cluster may ask that.')
-  return String(req.headers['x-cathode-peer'] ?? '')
+  return String(req.headers['x-nook-peer'] ?? '')
 }
 
 export async function handle(req, res) {

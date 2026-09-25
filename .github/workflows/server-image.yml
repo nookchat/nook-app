@@ -1,5 +1,5 @@
 # Build the Nook server image and publish it to the GitHub container
-# registry, as ghcr.io/<owner>/cathode-server. Runs when the server changes on
+# registry, as ghcr.io/<owner>/nook-server. Runs when the server changes on
 # main, and on a v* tag, which also tags the image with the version.
 
 name: server image
@@ -30,7 +30,7 @@ jobs:
       - id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/cathode-server
+          images: ghcr.io/${{ github.repository_owner }}/nook-server
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=semver,pattern={{version}}

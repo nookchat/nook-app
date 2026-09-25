@@ -15,11 +15,11 @@ const shot = (page, name) => page.screenshot({ path: `${SHOTS}${name}.png` })
 const waitFor = (work, ms) => poll(() => work().catch(() => null), ms, 300)
 
 const cluster = (self, peer) => ({
-  CATHODE_PUBLIC_URL: self,
-  CATHODE_PEERS: peer,
-  CATHODE_CLUSTER_SECRET: 'files-check-cluster-secret',
-  CATHODE_MAX_FILE_BYTES: String(MAX),
-  CATHODE_MAX_ROOM_FILE_BYTES: String(12 * 1024 * 1024),
+  NOOK_PUBLIC_URL: self,
+  NOOK_PEERS: peer,
+  NOOK_CLUSTER_SECRET: 'files-check-cluster-secret',
+  NOOK_MAX_FILE_BYTES: String(MAX),
+  NOOK_MAX_ROOM_FILE_BYTES: String(12 * 1024 * 1024),
 })
 const a = await startServer(8797, cluster(A, B))
 const b = await startServer(8798, cluster(B, A))
@@ -31,9 +31,9 @@ async function person(name) {
   await page.goto(APP_URL)
   await page.evaluate(
     ({ n, server }) => {
-      localStorage.setItem('cathode.name.v1', n)
-      localStorage.setItem('cathode.server.v1', server)
-      localStorage.setItem('cathode.servers.v1', JSON.stringify([server]))
+      localStorage.setItem('nook.name.v1', n)
+      localStorage.setItem('nook.server.v1', server)
+      localStorage.setItem('nook.servers.v1', JSON.stringify([server]))
     },
     { n: name, server: A },
   )

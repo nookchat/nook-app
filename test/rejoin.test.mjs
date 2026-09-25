@@ -21,7 +21,7 @@ try {
     const context = await browser.newContext({ viewport: { width: 1200, height: 820 } })
     const page = await context.newPage()
     await page.goto(APP_URL)
-    await page.evaluate((n) => localStorage.setItem('cathode.name.v1', n), name)
+    await page.evaluate((n) => localStorage.setItem('nook.name.v1', n), name)
     await page.reload()
     await page.waitForTimeout(700)
     return page

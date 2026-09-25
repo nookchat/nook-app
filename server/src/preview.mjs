@@ -26,7 +26,7 @@ function get(url, signal) {
   const client = url.protocol === 'https:' ? https : http
   return new Promise((resolve, reject) => {
     client
-      .get(url, { lookup: checkedLookup, signal, headers: { 'user-agent': 'cathode/preview', accept: 'text/html' } }, resolve)
+      .get(url, { lookup: checkedLookup, signal, headers: { 'user-agent': 'nook/preview', accept: 'text/html' } }, resolve)
       .on('error', reject)
   })
 }

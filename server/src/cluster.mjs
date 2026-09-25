@@ -145,12 +145,12 @@ async function followLines(peer) {
   for (;;) {
     try {
       await pullLines(peer, await cursor(peer))
-      if (!s.up) console.log(`[cathode] cluster: ${peer} is up`)
+      if (!s.up) console.log(`[nook] cluster: ${peer} is up`)
       s.up = true
       s.seen = Date.now()
       wait = 1000
     } catch (err) {
-      if (s.up) console.log(`[cathode] cluster: ${peer} is down (${err.message})`)
+      if (s.up) console.log(`[nook] cluster: ${peer} is down (${err.message})`)
       s.up = false
       await new Promise((r) => setTimeout(r, wait))
       wait = Math.min(wait * 2, 30_000)
@@ -205,11 +205,11 @@ async function followLive(peer) {
 
 export function startCluster() {
   if (!CLUSTERED) {
-    if (PEERS.length) console.log('[cathode] cluster: CATHODE_CLUSTER_SECRET must be at least 16 characters; not syncing')
+    if (PEERS.length) console.log('[nook] cluster: NOOK_CLUSTER_SECRET must be at least 16 characters; not syncing')
     return
   }
-  if (!PUBLIC_URL) console.log('[cathode] cluster: set CATHODE_PUBLIC_URL so the others know which server is asking')
-  console.log(`[cathode] cluster: following ${PEERS.join(', ')}`)
+  if (!PUBLIC_URL) console.log('[nook] cluster: set NOOK_PUBLIC_URL so the others know which server is asking')
+  console.log(`[nook] cluster: following ${PEERS.join(', ')}`)
   for (const peer of PEERS) {
     void followLines(peer)
     void followSide(peer)

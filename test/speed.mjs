@@ -5,7 +5,7 @@ const COUNT = Number(process.argv[2] ?? 3000)
 const browser = await launch({ headless: true })
 const page = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage()
 await page.goto(APP_URL)
-await page.evaluate(() => localStorage.setItem('cathode.name.v1', 'Speedy'))
+await page.evaluate(() => localStorage.setItem('nook.name.v1', 'Speedy'))
 await page.reload()
 await page.waitForSelector('input[aria-label="Space name"]')
 
@@ -39,7 +39,7 @@ const link = await page.evaluate(async (count) => {
   for (let i = 0; i < lines.length; i += 300) {
     const res = await fetch(`${server}/api/v1/spaces/${r.id}/events`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-cathode-write': r.write },
+      headers: { 'content-type': 'application/json', 'x-nook-write': r.write },
       body: JSON.stringify(lines.slice(i, i + 300)),
     })
     if (!res.ok) throw new Error(`the server refused the seed: ${res.status}`)

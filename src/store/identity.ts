@@ -2,9 +2,9 @@ import { schnorr, secp256k1 } from '@noble/curves/secp256k1'
 import { fromHex, toHex } from '../bytes'
 import { cleanName, sillyName } from '../chat'
 
-const PRIV_KEY = 'cathode.identity.v1'
-const NAME_KEY = 'cathode.name.v1'
-const MADE_UP_NAME_KEY = 'cathode.name.auto.v1'
+const PRIV_KEY = 'nook.identity.v1'
+const NAME_KEY = 'nook.name.v1'
+const MADE_UP_NAME_KEY = 'nook.name.auto.v1'
 
 export interface Identity {
   /** Hex x-only public key. */
