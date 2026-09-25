@@ -65,7 +65,7 @@ export class HomeView {
       h(
         'button',
         { class: 'ghost icon-only', title: 'Your name, your ID, and your servers', ariaLabel: 'Settings', on: { click: () => actions.settings() } },
-        [icon('settings', 17)],
+        [icon('settings', 19)],
       ),
     ]))
     const left = h('div', { class: 'rail rail-left', role: 'navigation', ariaLabel: 'Direct messages' }, [
@@ -188,7 +188,7 @@ export class HomeView {
     const back = h(
       'button',
       { class: 'ghost icon-only dm-back', ariaLabel: 'Back to home', title: 'Back', on: { click: () => void this.show(null) } },
-      [icon('chevron-left', 18)],
+      [icon('chevron-left', 20)],
     )
     const title = h('div', { class: 'row channel-head' }, [
       h('span', { class: 'channel-name' }, [h('span', { class: 'truncate', text: space.chat.nameOf(ref.key) || shortKey(ref.key) })]),

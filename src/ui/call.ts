@@ -40,8 +40,8 @@ export function installCalls(openDirect: (space: SpaceRuntime, key: string) => v
       drop()
       const from = space.ringing.from
       const name = nameOf(space, from)
-      const answer = h('button', { class: 'call-answer', ariaLabel: `Answer ${name}`, title: 'Answer' }, [icon('phone', 18)])
-      const decline = h('button', { class: 'call-decline', ariaLabel: `Decline ${name}`, title: 'Decline' }, [icon('phone-off', 18)])
+      const answer = h('button', { class: 'call-answer', ariaLabel: `Answer ${name}`, title: 'Answer' }, [icon('phone', 20)])
+      const decline = h('button', { class: 'call-decline', ariaLabel: `Decline ${name}`, title: 'Decline' }, [icon('phone-off', 20)])
       card = h('div', { class: 'call-card', role: 'dialog', ariaLabel: `${name} is calling` }, [
         avatarOf(from, name, space.chat.avatarOf(from), 48),
         h('div', { class: 'call-words' }, [
@@ -91,7 +91,7 @@ export function installCalls(openDirect: (space: SpaceRuntime, key: string) => v
 
 export function callControls(space: SpaceRuntime, key: string): { button: HTMLButtonElement; strip: HTMLElement; stop(): void } {
   const name = (): string => nameOf(space, key)
-  const button = h('button', { class: 'ghost icon-only', ariaLabel: 'Call', title: 'Voice call' }, [icon('phone', 17)])
+  const button = h('button', { class: 'ghost icon-only', ariaLabel: 'Call', title: 'Voice call' }, [icon('phone', 19)])
   button.addEventListener('click', async () => {
     if (space.call) return
     try {
@@ -142,7 +142,7 @@ export function callControls(space: SpaceRuntime, key: string): { button: HTMLBu
 export function voiceDock(here: SpaceRuntime | null): { root: HTMLElement; stop(): void } {
   const words = h('span', { class: 'tiny faint truncate' })
   const mute = h('button', { class: 'ghost icon-only', ariaLabel: 'Mute' })
-  const leave = h('button', { class: 'ghost icon-only', ariaLabel: 'Leave voice', title: 'Leave' }, [icon('phone-off', 17)])
+  const leave = h('button', { class: 'ghost icon-only', ariaLabel: 'Leave voice', title: 'Leave' }, [icon('phone-off', 19)])
   const root = h('div', { class: 'voice-bar voice-dock hidden' }, [
     h('div', { class: 'voice-bar-text' }, [
       h('span', { class: 'voice-bar-state' }, [h('i', { class: 'dot good' }), 'Voice connected']),
@@ -168,7 +168,7 @@ export function voiceDock(here: SpaceRuntime | null): { root: HTMLElement; stop(
       ? `Call with ${nameOf(space, space.call?.with ?? '')}`
       : `${channel} · ${place}`
     const muted = space.voice.state.muted
-    mute.replaceChildren(icon(muted ? 'mic-off' : 'mic', 17))
+    mute.replaceChildren(icon(muted ? 'mic-off' : 'mic', 19))
     mute.title = muted ? 'Unmute' : 'Mute'
   }
   const off = onNews(paint)

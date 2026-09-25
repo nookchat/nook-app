@@ -218,7 +218,7 @@ function fileCard(file: Attachment, source: SpaceFiles | null): HTMLElement {
   const extension = /\.([a-z0-9]{1,6})$/i.exec(file.name)?.[1]?.toUpperCase() ?? ''
   const label = [sizeLabel(file.size), extension].filter(Boolean).join(' · ')
   const detail = h('span', { class: 'tiny faint', text: label })
-  const save = h('button', { class: 'ghost icon-only', title: 'Save', ariaLabel: `Save ${file.name}` }, [icon('download', 17)])
+  const save = h('button', { class: 'ghost icon-only', title: 'Save', ariaLabel: `Save ${file.name}` }, [icon('download', 19)])
   const card = h('div', { class: 'att-file' }, [
     h('span', { class: `att-file-icon ${kind}` }, [icon(iconFor(kind), 20)]),
     h('span', { class: 'att-file-words' }, [h('span', { class: 'att-file-name truncate', text: file.name }), detail]),
@@ -242,7 +242,7 @@ function fileCard(file: Attachment, source: SpaceFiles | null): HTMLElement {
     if (blob) saveFile(blob, file.name)
   })
   if (kind === 'audio') {
-    const play = h('button', { class: 'ghost icon-only', title: 'Play', ariaLabel: `Play ${file.name}` }, [icon('play', 15)])
+    const play = h('button', { class: 'ghost icon-only', title: 'Play', ariaLabel: `Play ${file.name}` }, [icon('play', 17)])
     save.before(play)
     play.addEventListener('click', async () => {
       play.disabled = true
@@ -269,7 +269,7 @@ function openViewer(list: Attachment[], start: number, source: SpaceFiles): void
   const name = h('span', { class: 'viewer-name truncate' })
   const detail = h('span', { class: 'tiny faint' })
   const stage = h('div', { class: 'viewer-stage' }, [img])
-  const close = h('button', { class: 'ghost icon-only', ariaLabel: 'Close', title: 'Close (Esc)' }, [icon('close', 18)])
+  const close = h('button', { class: 'ghost icon-only', ariaLabel: 'Close', title: 'Close (Esc)' }, [icon('close', 20)])
   const save = h('button', { class: 'ghost', title: 'Save' }, [icon('download', 16), 'Save'])
   const back = h('button', { class: 'viewer-step back', ariaLabel: 'Previous picture' }, [icon('chevron-left', 22)])
   const next = h('button', { class: 'viewer-step next', ariaLabel: 'Next picture' }, [icon('chevron-right', 22)])

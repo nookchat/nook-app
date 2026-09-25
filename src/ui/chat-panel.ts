@@ -124,6 +124,7 @@ interface ChatActions {
 type Join = { at: number; text: string }
 type Row = { key: string; sig: string; make: () => HTMLElement }
 type SuggestKind = 'mention' | 'command' | 'name' | 'emoji'
+type ColourOf = (key: string) => string
 
 const WINDOW_STEP = 120
 const WINDOW_MAX = 600
@@ -133,7 +134,7 @@ export class ChatPanel {
   actions: ChatActions | null = null
   canPin = false
   canDelete = false
-  colourOf: (key: string) => string = () => ''
+  colourOf: ColourOf = () => ''
   onTyping: (() => void) | null = null
   onThread: ((rootId: string | null) => void) | null = null
   onDirect: ((key: string | null) => void) | null = null
@@ -241,7 +242,7 @@ export class ChatPanel {
     this.sendButton = h(
       'button',
       { class: 'send-button', title: 'Send (Enter)', ariaLabel: 'Send', on: { click: () => this.submit() } },
-      [icon('send', 18)],
+      [icon('send', 19)],
     )
 
     this.tray = new AttachTray(() => this.files)
@@ -263,7 +264,7 @@ export class ChatPanel {
         ariaLabel: 'Attach files',
         on: { click: () => this.fileInput.click() },
       },
-      [icon('paperclip', 19)],
+      [icon('paperclip', 20)],
     )
     this.textInput.addEventListener('paste', (ev) => {
       const files = [...(ev.clipboardData?.files ?? [])]
@@ -289,7 +290,7 @@ export class ChatPanel {
             }),
         },
       },
-      [icon('smile', 19)],
+      [icon('smile', 21)],
     )
     this.gifButton = h('button', {
       class: 'ghost gif-button',
@@ -306,7 +307,7 @@ export class ChatPanel {
         ariaLabel: 'Soundboard',
         on: { click: () => this.onSound?.() },
       },
-      [icon('volume', 19)],
+      [icon('volume', 20)],
     )
 
     this.nameRow = h('div', { class: 'row' }, [
@@ -618,14 +619,21 @@ export class ChatPanel {
     placeNear(list, this.textInput)
   }
 
-  private nameHits(fragment: string): string[] {
+  private nameHits(fragment: string): { key: string; name: string }[] {
     const wanted = fragment.toLowerCase()
-    const hits: string[] = []
+    const hits: { key: string; name: string }[] = []
     for (const [key, name] of this.names) {
       if (hits.length === 6) break
-      if (name && key !== this.me && name.toLowerCase().startsWith(wanted)) hits.push(name)
+      if (name && key !== this.me && name.toLowerCase().startsWith(wanted)) hits.push({ key, name })
     }
     return hits
+  }
+
+  private nameOption(key: string, name: string, take: () => void): HTMLButtonElement {
+    const label = h('span', { class: 'truncate', text: name })
+    const colour = key === EVERYONE ? '' : this.colourOf(key)
+    if (colour) label.style.color = colour
+    return h('button', { class: 'mention-option', on: pickOnPress(take) }, [label])
   }
 
   private suggest(): void {
@@ -642,7 +650,7 @@ export class ChatPanel {
     }
 
     const hits = this.nameHits(fragment)
-    if (fragment === '' || 'everyone'.startsWith(fragment.toLowerCase())) hits.unshift('everyone')
+    if (fragment === '' || 'everyone'.startsWith(fragment.toLowerCase())) hits.unshift({ key: EVERYONE, name: 'everyone' })
     if (hits.length === 0) {
       this.closeSuggestions()
       return
@@ -650,9 +658,7 @@ export class ChatPanel {
     this.showSuggestions(
       'mention',
       at,
-      hits.map((name) =>
-        h('button', { class: 'mention-option', text: name, on: pickOnPress(() => this.takeSuggestion(name)) }),
-      ),
+      hits.map(({ key, name }) => this.nameOption(key, name, () => this.takeSuggestion(name))),
     )
   }
 
@@ -740,9 +746,7 @@ export class ChatPanel {
     this.showSuggestions(
       'name',
       start,
-      hits.map((name) =>
-        h('button', { class: 'mention-option', text: name, on: pickOnPress(() => this.takeName(name)) }),
-      ),
+      hits.map(({ key, name }) => this.nameOption(key, name, () => this.takeName(name))),
     )
     return true
   }
@@ -979,6 +983,7 @@ export class ChatPanel {
       this.canDelete ? 'd' : '',
       this.colourOf(m.author),
       parent ? this.colourOf(parent.author) : '',
+      m.text.includes('@') ? findMentions(m.text, this.names).map((hit) => this.colourOf(hit.key)).join(',') : '',
       callsMe ? 'c' : '',
       this.threadRoot === m.id ? 'root' : '',
       parent ? `${parent.name ?? ''}:${parent.text.slice(0, 60)}` : m.replyTo ? 'gone' : '',
@@ -1098,7 +1103,7 @@ export class ChatPanel {
         line.append(
           svgEmbed(svg, () => {
             line.classList.remove('has-picture')
-            for (const node of formatText(m.text, this.names, this.me)) text.append(node)
+            for (const node of formatText(m.text, this.names, this.me, this.colourOf)) text.append(node)
             line.prepend(text)
           }),
         )
@@ -1117,7 +1122,7 @@ export class ChatPanel {
       } else if (!bare && !svg && !onlyFiles) {
         if (pictures.length > 0) text.classList.add('boxed')
         else if (!m.emote && onlyEmoji(m.text)) text.classList.add('jumbo')
-        for (const node of formatText(m.text, this.names, this.me)) text.append(node)
+        for (const node of formatText(m.text, this.names, this.me, this.colourOf)) text.append(node)
         line.append(text)
       }
       for (const src of pictures) line.append(embed(src))
@@ -1292,7 +1297,7 @@ export class ChatPanel {
             ariaLabel: m.pinned ? 'Unpin' : 'Pin',
             on: { click: () => this.actions?.pin(m.id, !m.pinned) },
           },
-          [icon('pin', 17)],
+          [icon('pin', 19)],
         ),
       )
     }
@@ -1303,7 +1308,7 @@ export class ChatPanel {
         ariaLabel: 'React to this message',
         on: { click: () => this.reactWith(m, react) },
       },
-      [icon('smile', 17)],
+      [icon('smile', 19)],
     )
     bar.append(
       react,
@@ -1314,7 +1319,7 @@ export class ChatPanel {
           ariaLabel: 'Reply',
           on: { click: () => this.startReply(m) },
         },
-        [icon('reply', 17)],
+        [icon('reply', 19)],
       ),
     )
     if (!this.threadRoot) {
@@ -1326,13 +1331,13 @@ export class ChatPanel {
             ariaLabel: 'Reply in a thread',
             on: { click: () => this.onThread?.(m.id) },
           },
-          [icon('thread', 17)],
+          [icon('thread', 19)],
         ),
       )
     }
     if (mine) {
       bar.append(
-        h('button', { title: 'Edit', ariaLabel: 'Edit', on: { click: () => this.startEdit(m) } }, [icon('edit', 17)]),
+        h('button', { title: 'Edit', ariaLabel: 'Edit', on: { click: () => this.startEdit(m) } }, [icon('edit', 18)]),
         h(
           'button',
           {
@@ -1341,7 +1346,7 @@ export class ChatPanel {
             ariaLabel: 'Delete',
             on: { click: () => this.actions?.retract(m.id) },
           },
-          [icon('trash', 17)],
+          [icon('trash', 19)],
         ),
       )
     } else if (this.canDelete) {
@@ -1359,7 +1364,7 @@ export class ChatPanel {
               },
             },
           },
-          [icon('trash', 17)],
+          [icon('trash', 19)],
         ),
       )
     }
@@ -1440,22 +1445,25 @@ export class ChatPanel {
   private startReply(m: Message): void {
     this.editing = null
     this.replyTo = m
-    this.showPending(`Replying to ${m.name || shortKey(m.author)}`)
+    const name = h('span', { class: 'chat-reply-name', text: m.name || shortKey(m.author) })
+    const colour = this.colourOf(m.author)
+    if (colour) name.style.color = colour
+    this.showPending(['Replying to ', name])
   }
 
   private startEdit(m: Message): void {
     this.replyTo = null
     this.editing = m
     this.textInput.value = m.text
-    this.showPending('Editing your message')
+    this.showPending(['Editing your message'])
     this.textInput.focus()
   }
 
-  private showPending(label: string): void {
+  private showPending(label: (string | Node)[]): void {
     clear(this.replyBar)
     this.replyBar.classList.remove('hidden')
     this.replyBar.append(
-      h('span', { class: 'grow truncate', text: label }),
+      h('span', { class: 'grow truncate' }, label),
       h('button', { class: 'ghost', text: '✕', title: 'Cancel', on: { click: () => this.cancelPending() } }),
     )
   }
@@ -1554,7 +1562,7 @@ const ESCAPABLE = '*_~`|\\'
 const INLINE_OPENERS = '`|~*_'
 
 /** Builds DOM nodes, never HTML, so nothing a person types can become markup. */
-function formatText(text: string, names: Map<string, string>, me: string): Node[] {
+function formatText(text: string, names: Map<string, string>, me: string, colourOf: ColourOf): Node[] {
   const out: Node[] = []
   const lines = text.split('\n')
   let i = 0
@@ -1578,7 +1586,7 @@ function formatText(text: string, names: Map<string, string>, me: string): Node[
     let n = 0
     while (i < lines.length && /^>\s?/.test(lines[i])) {
       if (n > 0) block.append(h('br'))
-      for (const node of formatLine(lines[i].replace(/^>\s?/, ''), names, me)) block.append(node)
+      for (const node of formatLine(lines[i].replace(/^>\s?/, ''), names, me, colourOf)) block.append(node)
       n += 1
       i += 1
     }
@@ -1589,7 +1597,7 @@ function formatText(text: string, names: Map<string, string>, me: string): Node[
     const pattern = ordered ? /^\s*\d+[.)]\s+/ : /^\s*[-*+]\s+/
     const block = h(ordered ? 'ol' : 'ul', { class: 'chat-list' })
     while (i < lines.length && pattern.test(lines[i])) {
-      block.append(h('li', {}, formatLine(lines[i].replace(pattern, ''), names, me)))
+      block.append(h('li', {}, formatLine(lines[i].replace(pattern, ''), names, me, colourOf)))
       i += 1
     }
     out.push(block)
@@ -1619,14 +1627,14 @@ function formatText(text: string, names: Map<string, string>, me: string): Node[
       continue
     }
     if (plain > 0) out.push(h('br'))
-    for (const node of formatLine(line, names, me)) out.push(node)
+    for (const node of formatLine(line, names, me, colourOf)) out.push(node)
     plain += 1
     i += 1
   }
   return out
 }
 
-function formatLine(line: string, names: Map<string, string>, me: string): Node[] {
+function formatLine(line: string, names: Map<string, string>, me: string, colourOf: ColourOf): Node[] {
   const out: Node[] = []
 
   const pushMentions = (chunk: string, plain: (s: string) => void): void => {
@@ -1639,7 +1647,10 @@ function formatLine(line: string, names: Map<string, string>, me: string): Node[
     for (const hit of hits) {
       if (hit.at > at) plain(chunk.slice(at, hit.at))
       const mine = hit.key === me || hit.key === EVERYONE
-      out.push(h('span', { class: `mention${mine ? ' me' : ''}`, text: `@${hit.label}` }))
+      const tag = h('span', { class: `mention${mine ? ' me' : ''}`, text: `@${hit.label}` })
+      const colour = hit.key === EVERYONE ? '' : colourOf(hit.key)
+      if (colour) tag.style.setProperty('--who', colour)
+      out.push(tag)
       at = hit.at + hit.length
     }
     if (at < chunk.length) plain(chunk.slice(at))

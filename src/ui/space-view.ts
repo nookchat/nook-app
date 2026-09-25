@@ -1214,7 +1214,7 @@ export class SpaceView {
     ])
     this.channelTitleSig = ''
 
-    this.shareButton = h('button', { class: 'ghost icon-only share-button' }, [icon('monitor', 17)])
+    this.shareButton = h('button', { class: 'ghost icon-only share-button' }, [icon('monitor', 19)])
     this.shareButton.addEventListener('click', () => void this.toggleShare())
     this.shareButtonSharing = null
 
@@ -1230,7 +1230,7 @@ export class SpaceView {
       title: 'Pinned in this channel',
       on: { click: () => this.openPins() },
     })
-    this.pinsButton.append(icon('pin', 15))
+    this.pinsButton.append(icon('pin', 20))
 
     this.searchWrap = this.searchBar()
 
@@ -1244,7 +1244,7 @@ export class SpaceView {
       title: 'Channels, voice, and settings',
       on: { click: () => this.showRail(this.railOpen === 'left' ? null : 'left') },
     })
-    this.channelsButton.append(icon('menu', 16))
+    this.channelsButton.append(icon('menu', 20))
     this.peopleButton = h('button', {
       class: 'ghost icon-only people-button',
       ariaLabel: 'Who is here',
@@ -1252,7 +1252,7 @@ export class SpaceView {
       on: { click: () => this.togglePeople() },
     })
     this.peopleButton.classList.add('on')
-    this.peopleButton.append(icon('people', 16))
+    this.peopleButton.append(icon('people', 21))
 
     this.shell = h('div', { class: 'space-grid loading' }, [
       scrim,
@@ -1334,7 +1334,7 @@ export class SpaceView {
           ariaLabel: 'Settings',
           on: { click: () => void this.openSettings() },
         },
-        [icon('settings', 17)],
+        [icon('settings', 19)],
       ),
     ])
 
@@ -1346,7 +1346,7 @@ export class SpaceView {
         ariaLabel: 'Make a text channel',
         on: { click: () => void this.newChannel(false) },
       },
-      [icon('plus', 15)],
+      [icon('plus', 17)],
     )
     this.newVoiceButton = h(
       'button',
@@ -1356,7 +1356,7 @@ export class SpaceView {
         ariaLabel: 'Make a voice channel',
         on: { click: () => void this.newChannel(true) },
       },
-      [icon('plus', 15)],
+      [icon('plus', 17)],
     )
 
     return h('div', { class: 'rail rail-left', role: 'navigation', ariaLabel: 'Channels, threads and conversations' }, [
@@ -1409,7 +1409,7 @@ export class SpaceView {
       },
     })
     this.searchResults = h('div', { class: 'search-results hidden' })
-    const searchBox = h('label', { class: 'search-box' }, [icon('search', 14), this.searchInput])
+    const searchBox = h('label', { class: 'search-box' }, [icon('search', 16), this.searchInput])
     const searchToggle = h(
       'button',
       {
@@ -1418,7 +1418,7 @@ export class SpaceView {
         title: 'Search this space (Ctrl K)',
         on: { click: () => this.openSearchBox() },
       },
-      [icon('search', 17)],
+      [icon('search', 20)],
     )
     return h('div', { class: 'search-wrap' }, [searchToggle, searchBox])
   }
@@ -1619,7 +1619,7 @@ export class SpaceView {
                 : 'Anyone with the link can join. It holds the key, so send it privately.',
             }),
           ]),
-          h('button', { class: 'ghost icon-only', ariaLabel: 'Close', on: { click: close } }, [icon('close', 16)]),
+          h('button', { class: 'ghost icon-only', ariaLabel: 'Close', on: { click: close } }, [icon('close', 18)]),
         ]),
         h('div', { class: 'invite-body' }, [
           h('div', { class: 'share-code', text: formatSecret(this.secret), title: 'The code for this space', data: { link } }),
@@ -1670,7 +1670,7 @@ export class SpaceView {
           data: { menu: `channel:${name}` },
         })
         onPress(button, () => openMenu(button, this.channelActions(channel)))
-        button.append(icon('more', 14))
+        button.append(icon('more', 17))
         more = button
       }
       this.channelList.append(h('div', { class: 'row rail-row' }, [open, more]))
@@ -1814,7 +1814,7 @@ export class SpaceView {
             ariaLabel: state.muted ? 'Unmute' : 'Mute',
             on: { click: () => this.voice?.setMuted(!state.muted) },
           },
-          [icon(state.muted ? 'mic-off' : 'mic', 17)],
+          [icon(state.muted ? 'mic-off' : 'mic', 19)],
         ),
         this.shareButton,
         h(
@@ -1825,7 +1825,7 @@ export class SpaceView {
             ariaLabel: 'Leave',
             on: { click: () => this.leaveVoice() },
           },
-          [icon('phone-off', 17)],
+          [icon('phone-off', 19)],
         ),
       )
     }
@@ -1974,16 +1974,6 @@ export class SpaceView {
         },
       })
     }
-    items.push({
-      label: 'Copy ID',
-      note: shortKey(key),
-      run: () => {
-        void copyText(key).then((ok) =>
-          toast(ok ? 'ID copied.' : 'Could not copy the ID.', ok ? 'info' : 'warn'),
-        )
-      },
-    })
-
     const auth = chat.authority()
     const me = chat.me
     const standing = this.voice?.state.channel
@@ -2142,7 +2132,7 @@ export class SpaceView {
         data: { menu: `person:${row.key}` },
       })
       onPress(button, () => openMenu(button, this.personMenu(row.key, role, row.you, row.here)))
-      button.append(icon('more', 14))
+      button.append(icon('more', 17))
       more = button
     }
 
@@ -2401,7 +2391,7 @@ export class SpaceView {
       clear(this.shareButton)
       this.shareButton.setAttribute('aria-label', sharing ? 'Stop sharing' : 'Share screen')
       this.shareButton.title = sharing ? 'Stop sharing your screen' : 'Share your screen with this voice channel'
-      this.shareButton.append(icon(sharing ? 'stop' : 'monitor', 17))
+      this.shareButton.append(icon(sharing ? 'stop' : 'monitor', sharing ? 16 : 19))
       this.shareButton.classList.toggle('danger', sharing)
       this.shareButton.classList.toggle('on', sharing)
     }

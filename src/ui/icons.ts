@@ -56,7 +56,7 @@ export type IconName =
 
 const PATHS: Record<IconName, string> = {
   copy: 'M9 9.5A1.5 1.5 0 0 1 10.5 8h8A1.5 1.5 0 0 1 20 9.5v8a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 9 17.5zM5.5 16A1.5 1.5 0 0 1 4 14.5v-8A1.5 1.5 0 0 1 5.5 5h8A1.5 1.5 0 0 1 15 6.5',
-  pin: 'M9 4h6M10 4.5 9 11l-2.5 2.5h11L15 11l-1-6.5M12 13.5V20',
+  pin: 'M8.5 3.5h7M10 3.5v6.8l-4 3.2a1 1 0 0 0-.4.8v1.2a1 1 0 0 0 1 1h10.8a1 1 0 0 0 1-1v-1.2a1 1 0 0 0-.4-.8l-4-3.2V3.5M12 16.5v5',
   check: 'M20 6.5 9.5 17 4.5 12',
   // The even-odd fill rule turns each eye's inner square into a hole.
   qr: 'M3.5 3.5h7v7h-7zM5.5 5.5h3v3h-3zM13.5 3.5h7v7h-7zM15.5 5.5h3v3h-3zM3.5 13.5h7v7h-7zM5.5 15.5h3v3h-3zM13.5 13.5h3v3h-3zM17.5 17.5h3v3h-3zM13.5 18.5h2v2h-2zM18.5 13.5h2v2h-2z',

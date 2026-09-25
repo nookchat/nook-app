@@ -116,6 +116,28 @@ try {
     .then(() => true, () => false)
   check('and so does Bob', bobSees)
 
+  await alice.click(BOX)
+  await alice.keyboard.type('thanks @Bo')
+  const offeredColour = await alice
+    .waitForSelector('.mention-option:has-text("Bob") span', { timeout: 5_000 })
+    .then((el) => el.evaluate((e) => getComputedStyle(e).color), () => '')
+  check('the list of names to tag shows Bob in the colour of his level', offeredColour === TEAL, offeredColour)
+  await alice.keyboard.press('Enter')
+  await alice.keyboard.press('Enter')
+  const tagColour = await alice
+    .waitForSelector('.chat-text .mention:has-text("@Bob")', { timeout: 5_000 })
+    .then((el) => el.evaluate((e) => getComputedStyle(e).color), () => '')
+  check('a tag of Bob is in the colour of his level', tagColour === TEAL, tagColour)
+
+  const toBob = alice.locator('.chat-row:has(.chat-name:text-is("Bob"))').last().locator('button[aria-label="Reply"]')
+  await toBob.evaluate((el) => el.focus())
+  await toBob.click()
+  const replyColour = await alice
+    .waitForSelector('.chat-replying .chat-reply-name', { timeout: 5_000 })
+    .then((el) => el.evaluate((e) => getComputedStyle(e).color), () => '')
+  check('the name above the box, when you reply to Bob, is in the colour of his level', replyColour === TEAL, replyColour)
+  await alice.keyboard.press('Escape')
+
   const pin = await bob.$('.chat-row button[aria-label="Pin"], .chat-row button[aria-label="Unpin"]')
   check('Bob can pin now', pin !== null)
   await openSettings(bob)

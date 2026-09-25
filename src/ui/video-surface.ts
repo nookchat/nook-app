@@ -9,11 +9,11 @@ interface SurfaceOptions {
 }
 
 function iconButton(name: IconName, title: string, onClick: () => void): HTMLButtonElement {
-  return h('button', { class: 'icon-only', title, ariaLabel: title, on: { click: onClick } }, [icon(name)])
+  return h('button', { class: 'icon-only', title, ariaLabel: title, on: { click: onClick } }, [icon(name, 19)])
 }
 
 function setIcon(button: HTMLButtonElement, name: IconName): void {
-  button.replaceChildren(icon(name))
+  button.replaceChildren(icon(name, 19))
 }
 
 const MIN_SCALE = 0.05
