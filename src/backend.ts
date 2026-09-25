@@ -5,7 +5,7 @@ export const BUILT_IN_SERVER = serverUrl(import.meta.env.VITE_CATHODE_SERVER ?? 
 const DEFAULT_SERVER_KEY = 'cathode.server.v1'
 const HEALTH_TIMEOUT_MS = 6000
 
-export const SELF_HOSTING_URL = 'https://github.com/nebbsie/stream/blob/main/docs/self-hosting.md'
+export const SELF_HOSTING_URL = 'https://github.com/nookchat/nook-app/blob/main/docs/self-hosting.md'
 
 export function serverUrl(raw: string): string {
   const trimmed = raw.trim().replace(/\/+$/, '')

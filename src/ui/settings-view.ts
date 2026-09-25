@@ -226,7 +226,7 @@ export function settingsView(actions: SettingsActions): HTMLElement {
 
   addRow.append(addInput, addButton)
 
-  const installCommand = 'curl -fsSL https://raw.githubusercontent.com/nebbsie/stream/main/server/install.sh | sh'
+  const installCommand = 'curl -fsSL https://raw.githubusercontent.com/nookchat/nook-app/main/server/install.sh | sh'
   const copyCommand = h('button', { class: 'small' }, [icon('copy', 13), 'Copy'])
   copyCommand.addEventListener('click', async () => {
     const ok = await copyText(installCommand)

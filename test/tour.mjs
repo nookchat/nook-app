@@ -71,7 +71,7 @@ try {
   await say(grace, 'Nice. Did the flaky upload test finally behave?')
   await say(linus, 'It did after I gave it a real timeout. See `test/uplink.mjs`, line 40.')
   await say(ada, '**Release notes** are in #releases. Shout if anything is missing.')
-  await say(grace, 'One thing: the invite QR was cut off on small phones. https://github.com/nebbsie/stream/issues/12')
+  await say(grace, 'One thing: the invite QR was cut off on small phones. https://github.com/nookchat/nook-app/issues/12')
   await linus.click(BOX)
   await linus.keyboard.type('```')
   await linus.keyboard.press('Shift+Enter')

@@ -1,6 +1,6 @@
 # The Nook server. Easiest install (writes this file and a .env, then starts it):
 #
-#   curl -fsSL https://raw.githubusercontent.com/nebbsie/stream/main/server/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/nookchat/nook-app/main/server/install.sh | sh
 #
 # By hand: set CATHODE_DOMAIN=your.domain in a .env next to this file, then run
 #   docker compose up -d
@@ -18,7 +18,7 @@ name: cathode
 
 services:
   cathode:
-    image: ${CATHODE_IMAGE:-ghcr.io/nebbsie/cathode-server:latest}
+    image: ${CATHODE_IMAGE:-ghcr.io/nookchat/cathode-server:latest}
     build: .
     container_name: cathode
     restart: unless-stopped

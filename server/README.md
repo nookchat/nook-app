@@ -19,7 +19,7 @@ A step by step guide for somebody who has not done this before is in
 You need a Linux machine with Docker, and a domain that points at it. Then:
 
 ```
-curl -fsSL https://raw.githubusercontent.com/nebbsie/stream/main/server/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/nookchat/nook-app/main/server/install.sh | sh
 ```
 
 It asks for the domain, makes the secrets, starts the server, Postgres,

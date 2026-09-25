@@ -1,7 +1,7 @@
 #!/bin/sh
 # A Nook server, in one command:
 #
-#   curl -fsSL https://raw.githubusercontent.com/nebbsie/stream/main/server/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/nookchat/nook-app/main/server/install.sh | sh
 #
 # It asks for the domain, makes the secrets, starts the server, Postgres, HTTPS
 # and TURN, and waits until it answers. Run it again to update; .env is kept.
@@ -19,7 +19,7 @@
 
 set -eu
 
-REPO="${CATHODE_REPO:-https://raw.githubusercontent.com/nebbsie/stream/main/server}"
+REPO="${CATHODE_REPO:-https://raw.githubusercontent.com/nookchat/nook-app/main/server}"
 DIR="${CATHODE_DIR:-cathode}"
 
 say() { printf '%s\n' "$*"; }

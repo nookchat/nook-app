@@ -27,7 +27,7 @@ of them is down.
 One command, on the machine:
 
 ```
-curl -fsSL https://raw.githubusercontent.com/nebbsie/stream/main/server/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/nookchat/nook-app/main/server/install.sh | sh
 ```
 
 It asks for your domain, and does the rest:
@@ -61,7 +61,7 @@ folder.
 For example:
 
 ```
-curl -fsSL https://raw.githubusercontent.com/nebbsie/stream/main/server/install.sh | CATHODE_DOMAIN=cathode.example.org sh
+curl -fsSL https://raw.githubusercontent.com/nookchat/nook-app/main/server/install.sh | CATHODE_DOMAIN=cathode.example.org sh
 ```
 
 ## Keep it up to date
