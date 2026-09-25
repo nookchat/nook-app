@@ -1,4 +1,4 @@
-import { saveFile, sizeLabel, UploadRefused, type SpaceFiles } from '../net/files'
+import { saveFile, sizeLabel, unwatchStream, UploadRefused, type Progress, type SpaceFiles } from '../net/files'
 import { MAX_FILES, type Attachment } from '../store/log'
 import { h } from './dom'
 import { icon, type IconName } from './icons'
@@ -151,32 +151,32 @@ function videoTile(file: Attachment, source: SpaceFiles | null, most: { w: numbe
     if (!source || started) return
     started = true
     tile.classList.add('loading')
-    const whole = (): Promise<string> => {
-      tile.classList.remove('streaming')
-      progress.classList.remove('hidden')
-      progress.textContent = '0%'
-      return source.url(file, (done, total) => {
-        if (total) progress.textContent = `${Math.min(99, Math.floor((done / total) * 100))}%`
-      })
+    progress.classList.remove('hidden')
+    progress.textContent = '0%'
+    const shown: Progress = (done, total) => {
+      if (total) progress.textContent = `${Math.min(99, Math.floor((done / total) * 100))}%`
     }
     try {
       // Plays as it arrives when it can; the whole file first when it cannot.
-      const stream = source.streamUrl(file)
+      // The stream counts toward the first part the video needs to start, not the whole file.
+      const stream = source.streamUrl(file, shown)
       const player = videoPlayer(file.name, file.dur ?? 0)
       const video = player.video
       if (stream) {
-        // The stream gives no byte count before the video starts, so it shows a spinner, not a percentage.
-        tile.classList.add('streaming')
         video.src = stream
         await new Promise<void>((ok, fail) => {
           video.addEventListener('loadedmetadata', () => ok(), { once: true })
           video.addEventListener('error', () => fail(new Error('the stream did not play')), { once: true })
-        }).catch(async () => {
-          video.src = await whole()
         })
+          .catch(async () => {
+            progress.textContent = '0%'
+            video.src = await source.url(file, shown)
+          })
+          .finally(() => unwatchStream(file.id))
       } else {
-        video.src = await whole()
+        video.src = await source.url(file, shown)
       }
+      tile.classList.remove('loading')
       tile.classList.add('playing')
       tile.replaceChildren(player.root)
       tile.removeAttribute('role')
@@ -187,7 +187,7 @@ function videoTile(file: Attachment, source: SpaceFiles | null, most: { w: numbe
       await video.play().catch(() => undefined)
     } catch {
       started = false
-      tile.classList.remove('loading', 'streaming')
+      tile.classList.remove('loading')
       progress.classList.add('hidden')
       toast(`Could not open ${file.name}.`, 'warn')
     }

@@ -145,6 +145,21 @@ function windowOf(info) {
   return Math.max(2, Math.floor((2 * 1024 * 1024) / info.chunk))
 }
 
+const TELL_EVERY_BYTES = 64 * 1024
+
+/** Tells the pages how much of a window has arrived, so they can show a percentage before the video starts. */
+async function teller(id, from, total) {
+  const pages = await self.clients.matchAll({ type: 'window' })
+  let done = 0
+  let told = 0
+  return (bytes) => {
+    done += bytes
+    if (done - told < TELL_EVERY_BYTES && done < total) return
+    told = done
+    for (const page of pages) page.postMessage({ type: 'nook-stream-progress', id, from, done, total })
+  }
+}
+
 /** Starts fetching from piece `first`, up to a window's worth, skipping what is held. */
 function fetchWindow(info, key, first) {
   const total = pieces(info)
@@ -167,6 +182,7 @@ function fetchWindow(info, key, first) {
       const to = sealedAt(info, last) + IV_BYTES + plainOf(info, last) + TAG_BYTES - 1
       const { res, skip } = await fetchSealed(info, from, to)
       const reader = res.body.getReader()
+      const tell = await teller(info.id, from, to - from + 1)
       let held = new Uint8Array(0)
       let toSkip = skip
       for (const wait of waiting) {
@@ -181,6 +197,7 @@ function fetchWindow(info, key, first) {
             chunk = chunk.subarray(drop)
           }
           if (!chunk.length) continue
+          tell(chunk.length)
           const joined = new Uint8Array(held.length + chunk.length)
           joined.set(held)
           joined.set(chunk, held.length)

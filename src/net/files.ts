@@ -381,9 +381,10 @@ export class SpaceFiles {
    * An address the browser can play while it downloads, a piece at a time, through the
    * service worker. Null when there is no service worker, or the file was sealed whole.
    */
-  streamUrl(file: Attachment): string | null {
+  streamUrl(file: Attachment, onProgress?: Progress): string | null {
     if (!file.chunk || opened.has(file.id)) return null
     if (!streamReady()) return null
+    if (onProgress) watchStream(file.id, onProgress)
     const token = toBase64Url(crypto.getRandomValues(new Uint8Array(16)))
     streams.set(token, {
       id: file.id,
@@ -464,6 +465,31 @@ interface StreamInfo {
 
 const STREAM_PATH = './nook-stream/'
 const streams = new Map<string, StreamInfo>()
+
+/** file id -> what each window the service worker fetches has brought, by where the window starts */
+const streamWatchers = new Map<string, { onProgress: Progress; windows: Map<number, { done: number; total: number }> }>()
+
+function watchStream(id: string, onProgress: Progress): void {
+  streamWatchers.set(id, { onProgress, windows: new Map() })
+}
+
+export function unwatchStream(id: string): void {
+  streamWatchers.delete(id)
+}
+
+function streamProgress(data: { id?: unknown; from?: unknown; done?: unknown; total?: unknown }): void {
+  if (typeof data.id !== 'string' || typeof data.from !== 'number' || typeof data.done !== 'number' || typeof data.total !== 'number') return
+  const watcher = streamWatchers.get(data.id)
+  if (!watcher) return
+  watcher.windows.set(data.from, { done: data.done, total: data.total })
+  let done = 0
+  let total = 0
+  for (const w of watcher.windows.values()) {
+    done += w.done
+    total += w.total
+  }
+  watcher.onProgress(done, total)
+}
 let streaming = false
 
 function streamReady(): boolean {
@@ -478,6 +504,7 @@ export function startStreaming(): void {
   if (!('serviceWorker' in navigator) || !window.isSecureContext) return
   navigator.serviceWorker.addEventListener('message', (ev: MessageEvent) => {
     const data = ev.data as { type?: string; token?: string } | null
+    if (data?.type === 'nook-stream-progress') return streamProgress(ev.data as Parameters<typeof streamProgress>[0])
     if (data?.type !== 'nook-stream' || typeof data.token !== 'string') return
     ev.ports[0]?.postMessage(streams.get(data.token) ?? null)
   })

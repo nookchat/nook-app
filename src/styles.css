@@ -3037,12 +3037,12 @@ button.attach-remove {
   margin: 0;
 }
 
-.att-video:hover .att-play {
+.att-video:hover > .att-play {
   transform: scale(1.08);
   background: var(--media-chip-hover);
 }
 
-.att-video.loading .att-play > .icon {
+.att-video.loading > .att-play > .icon {
   display: none;
 }
 
@@ -3085,20 +3085,6 @@ button.attach-remove {
   color: var(--on-media);
   font-size: 13px;
   line-height: 1.4;
-}
-
-.att-video.streaming .att-play::after {
-  content: "";
-  width: 22px;
-  height: 22px;
-  border: 2px solid color-mix(in srgb, var(--on-media) 25%, transparent);
-  border-top-color: var(--on-media);
-  border-radius: 50%;
-  animation: vp-spin 800ms linear infinite;
-}
-
-.att-video.streaming .att-progress {
-  display: none;
 }
 
 .att-player {
