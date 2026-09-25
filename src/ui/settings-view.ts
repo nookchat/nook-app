@@ -2,7 +2,7 @@ import { cleanName } from '../chat'
 import { SELF_HOSTING_URL, checkServer, serverTag, serverUrl, setDefaultServer } from '../backend'
 import { health } from '../net/server-api'
 import { micSettings, setMicSettings } from '../net/mic'
-import { loadIdentity, saveDisplayName, shortKey } from '../store/identity'
+import { loadIdentity, saveDisplayName } from '../store/identity'
 import { spaces } from '../space/registry'
 import { addServer, knownServers, newSpaceServer, ownServers } from '../store/server-spaces'
 import { saveAvatar, squareThumb } from './avatar'
@@ -13,6 +13,7 @@ import { icon } from './icons'
 import { enterLinkCode, lastBackup, showBackup, showLinkCode } from './link-device'
 import { askNotify, notifyState, stopNotify } from './notify'
 import { setSounds, soundsOn } from './sounds'
+import { spaceFace } from './space-switcher'
 import { toast } from './toast'
 import { voiceSettings } from './voice-settings'
 
@@ -20,6 +21,7 @@ interface SettingsActions {
   rename(name: string, avatar?: string): void
   back(): void
   space?: {
+    id: string
     name: string
     admin: boolean
     rename(): Promise<void>
@@ -35,6 +37,16 @@ const card = (title: string, ...children: (Node | null)[]): HTMLElement =>
   h('section', { class: 'card stack tight' }, [h('span', { class: 'eyebrow', text: title }), ...children])
 
 const note = (text: string): HTMLElement => h('div', { class: 'tiny faint', text })
+
+function actionRow(label: string, about: string, button: HTMLButtonElement): HTMLElement {
+  return h('div', { class: 'action-row' }, [
+    h('span', { class: 'switch-words' }, [
+      h('span', { class: 'switch-label', text: label }),
+      h('span', { class: 'tiny faint switch-about', text: about }),
+    ]),
+    button,
+  ])
+}
 
 function toggle(label: string, on: () => boolean, set: (next: boolean) => void, about = ''): HTMLButtonElement {
   const button = switchRow(label, about)
@@ -126,12 +138,6 @@ export function settingsView(actions: SettingsActions): HTMLElement {
     }
   })
   drawAvatar()
-
-  const copyId = h('button', {}, [icon('copy', 14), 'Copy ID'])
-  copyId.addEventListener('click', async () => {
-    const ok = await copyText(identity.pubkey)
-    toast(ok ? 'ID copied.' : 'Could not copy the ID.', ok ? 'info' : 'warn')
-  })
 
   const serverList = h('div', { class: 'stack tight' })
   const drawServers = (): void => {
@@ -244,38 +250,60 @@ export function settingsView(actions: SettingsActions): HTMLElement {
   const spaceCard = space
     ? card(
         'This space',
-        h('div', { class: 'small', text: space.name }),
-        space.admin
-          ? h('div', { class: 'row wrap' }, [
-              h('button', { text: 'Rename', on: { click: () => void space.rename() } }),
-              h('button', { class: 'danger', text: 'Clear history', on: { click: () => void space.reset() } }),
-            ])
-          : null,
+        h('div', { class: 'space-card-head' }, [
+          spaceFace(space.id, space.name, 44),
+          h('div', { class: 'space-card-words' }, [
+            h('span', { class: 'space-card-name truncate', text: space.name }),
+            note(space.admin ? 'You can rename it, clear it and delete it' : 'You are a member here'),
+          ]),
+          space.admin
+            ? h('button', { class: 'small', on: { click: () => void space.rename() } }, [icon('edit', 14), 'Rename'])
+            : null,
+        ]),
         space.removed?.length
           ? h('div', { class: 'stack tight' }, [
               h('span', { class: 'eyebrow', text: 'Removed people' }),
-              ...space.removed.map((p) => {
-                const row = h('div', { class: 'row spread' }, [
-                  h('span', { class: 'truncate tiny', text: p.name, title: `ID ${p.key}` }),
-                  h('button', {
-                    class: 'small',
-                    text: 'Unban',
-                    on: {
-                      click: () => {
-                        p.restore()
-                        row.remove()
+              h(
+                'div',
+                { class: 'action-list' },
+                space.removed.map((p) => {
+                  const row = h('div', { class: 'action-row' }, [
+                    h('span', { class: 'switch-label truncate', text: p.name }),
+                    h('button', {
+                      class: 'small',
+                      text: 'Unban',
+                      on: {
+                        click: () => {
+                          p.restore()
+                          row.remove()
+                        },
                       },
-                    },
-                  }),
-                ])
-                return row
-              }),
+                    }),
+                  ])
+                  return row
+                }),
+              ),
             ])
           : null,
-        h('div', { class: 'row wrap' }, [
-          h('button', { text: 'Leave', on: { click: () => void space.leave() } }),
+        h('div', { class: 'action-list' }, [
+          actionRow(
+            'Leave the space',
+            'It comes off your list. The link still works if you want back in.',
+            h('button', { class: 'small', text: 'Leave', on: { click: () => void space.leave() } }),
+          ),
           space.admin
-            ? h('button', { class: 'danger', text: 'Delete space', on: { click: () => void space.remove() } })
+            ? actionRow(
+                'Clear history',
+                'Messages, polls and pins go for everybody. Names, channels and levels stay.',
+                h('button', { class: 'small danger', text: 'Clear history', on: { click: () => void space.reset() } }),
+              )
+            : null,
+          space.admin
+            ? actionRow(
+                'Delete the space',
+                'It goes for everybody, on every device. This cannot be undone.',
+                h('button', { class: 'small danger', text: 'Delete space', on: { click: () => void space.remove() } }),
+              )
             : null,
         ]),
       )
@@ -318,7 +346,8 @@ export function settingsView(actions: SettingsActions): HTMLElement {
       const ch = pinned[i] ?? ''
       const slot = h('button', {
         class: `quick-slot${ch ? '' : ' empty'}`,
-        text: ch || '+',
+        text: ch,
+        title: 'Change',
         ariaLabel: ch ? `Quick reaction ${i + 1}, ${ch}` : `Quick reaction ${i + 1}, empty`,
         on: {
           click: () =>
@@ -334,11 +363,12 @@ export function settingsView(actions: SettingsActions): HTMLElement {
             }),
         },
       })
+      if (!ch) slot.append(icon('plus', 18))
       quick.append(slot)
     }
     quick.append(
       h('button', {
-        class: 'ghost tiny-btn',
+        class: 'ghost small',
         text: 'Reset',
         on: {
           click: () => {
@@ -396,6 +426,12 @@ export function settingsView(actions: SettingsActions): HTMLElement {
         ),
 
         card(
+          'Quick reactions',
+          note('The emoji offered first when you react to a message. An empty place takes one you used lately.'),
+          quick,
+        ),
+
+        card(
           'Your account',
           note('Use Nook on your phone or another computer, with the same spaces and messages.'),
           h('div', { class: 'row wrap' }, [
@@ -409,22 +445,6 @@ export function settingsView(actions: SettingsActions): HTMLElement {
         ),
 
         card('Servers', serverList, addOpen, addRow, own),
-
-        h('section', { class: 'card stack tight' }, [
-          h('details', { class: 'adv settings-more' }, [
-            h('summary', { text: 'More' }),
-            h('div', { class: 'stack tight' }, [
-              h('span', { class: 'eyebrow', text: 'Your ID' }),
-              h('div', { class: 'row' }, [
-                h('span', { class: 'share-code id-code grow', text: shortKey(identity.pubkey), title: identity.pubkey }),
-                copyId,
-              ]),
-              note('The key that signs everything you write. It never leaves your devices.'),
-              h('span', { class: 'eyebrow', text: 'Quick reactions' }),
-              quick,
-            ]),
-          ]),
-        ]),
       ]),
     ]),
   ])

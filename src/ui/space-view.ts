@@ -1346,7 +1346,7 @@ export class SpaceView {
         ariaLabel: 'Make a text channel',
         on: { click: () => void this.newChannel(false) },
       },
-      [icon('plus', 17)],
+      [icon('plus', 18)],
     )
     this.newVoiceButton = h(
       'button',
@@ -1356,7 +1356,7 @@ export class SpaceView {
         ariaLabel: 'Make a voice channel',
         on: { click: () => void this.newChannel(true) },
       },
-      [icon('plus', 17)],
+      [icon('plus', 18)],
     )
 
     return h('div', { class: 'rail rail-left', role: 'navigation', ariaLabel: 'Channels, threads and conversations' }, [
@@ -1442,6 +1442,7 @@ export class SpaceView {
       settingsView({
         rename: (name, avatar) => this.rename(name, avatar),
         space: {
+          id: this.room?.id ?? '',
           name: this.chat?.spaceName() || 'Unnamed space',
           admin: this.chat?.can('space') === true,
           levels: this.chat?.can('levels') ? () => this.levelsEditor() : undefined,
@@ -2201,13 +2202,16 @@ export class SpaceView {
     const pop = h('div', { class: 'gif-pop', role: 'dialog', ariaLabel: 'GIFs' }, [
       h('div', { class: 'row spread' }, [
         h('span', { class: 'eyebrow', text: 'GIFs' }),
-        h('button', {
-          class: 'ghost tiny-btn',
-          text: '×',
-          title: 'Close',
-          ariaLabel: 'Close the GIF picker',
-          on: { click: () => done() },
-        }),
+        h(
+          'button',
+          {
+            class: 'ghost icon-only pop-close',
+            title: 'Close',
+            ariaLabel: 'Close the GIF picker',
+            on: { click: () => done() },
+          },
+          [icon('close', 18)],
+        ),
       ]),
       box,
       grid,

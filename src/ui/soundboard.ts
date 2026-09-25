@@ -1,4 +1,5 @@
 import { h } from './dom'
+import { icon } from './icons'
 import { placeNear } from './emoji'
 import { sharedAudio, soundsOn } from './sounds'
 
@@ -306,13 +307,16 @@ export function openSoundboard(options: BoardOptions): void {
   const pop = h('div', { class: 'sound-pop', role: 'dialog', ariaLabel: 'Soundboard' }, [
     h('div', { class: 'row spread' }, [
       h('span', { class: 'eyebrow', text: 'Soundboard' }),
-      h('button', {
-        class: 'ghost tiny-btn',
-        text: '×',
-        title: 'Close',
-        ariaLabel: 'Close the soundboard',
-        on: { click: () => close() },
-      }),
+      h(
+        'button',
+        {
+          class: 'ghost icon-only pop-close',
+          title: 'Close',
+          ariaLabel: 'Close the soundboard',
+          on: { click: () => close() },
+        },
+        [icon('close', 18)],
+      ),
     ]),
     grid,
     foot,

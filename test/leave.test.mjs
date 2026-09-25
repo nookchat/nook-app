@@ -79,7 +79,7 @@ try {
   admin.once('dialog', (d) => d.accept('staff room'))
   await admin.click('.card button:text-is("Rename")')
   await admin.waitForTimeout(800)
-  const shown = await admin.textContent('.card:has(button:text-is("Leave")) .small')
+  const shown = await admin.textContent('.space-card-name')
   check('the settings card shows the name it was just given', shown === 'staff room', shown)
   await admin.click('button[aria-label="Close settings"]')
   await admin.waitForFunction(

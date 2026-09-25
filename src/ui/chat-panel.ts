@@ -1160,21 +1160,27 @@ export class ChatPanel {
       for (const [emoji, people] of m.reactions) {
         const on = people.has(this.me)
         reacts.append(
-          h('button', {
-            class: `chat-react${on ? ' on' : ''}`,
-            text: `${emoji} ${people.size}`,
-            title: on ? 'Take yours back' : 'React with this too',
-            on: { click: () => this.actions?.react(m.id, emoji, !people.has(this.me)) },
-          }),
+          h(
+            'button',
+            {
+              class: `chat-react${on ? ' on' : ''}`,
+              title: on ? 'Take yours back' : 'React with this too',
+              on: { click: () => this.actions?.react(m.id, emoji, !people.has(this.me)) },
+            },
+            [h('span', { class: 'chat-react-face', text: emoji }), ' ', h('span', { text: String(people.size) })],
+          ),
         )
       }
-      const more = h('button', {
-        class: 'chat-react add',
-        text: '+',
-        title: 'React with something else',
-        ariaLabel: 'React with something else',
-        on: { click: () => this.reactWith(m, more) },
-      })
+      const more = h(
+        'button',
+        {
+          class: 'chat-react add',
+          title: 'React with something else',
+          ariaLabel: 'React with something else',
+          on: { click: () => this.reactWith(m, more) },
+        },
+        [icon('plus', 18)],
+      )
       reacts.append(more)
       line.append(reacts)
     }
@@ -1464,7 +1470,11 @@ export class ChatPanel {
     this.replyBar.classList.remove('hidden')
     this.replyBar.append(
       h('span', { class: 'grow truncate' }, label),
-      h('button', { class: 'ghost', text: '✕', title: 'Cancel', on: { click: () => this.cancelPending() } }),
+      h(
+        'button',
+        { class: 'ghost icon-only pop-close', title: 'Cancel', ariaLabel: 'Cancel', on: { click: () => this.cancelPending() } },
+        [icon('close', 16)],
+      ),
     )
   }
 

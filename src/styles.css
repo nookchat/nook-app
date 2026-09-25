@@ -954,6 +954,17 @@ main.settings .sheet {
   color: var(--fg-dim);
 }
 
+button.pop-close {
+  height: var(--btn-h);
+}
+
+.chat-replying button.pop-close {
+  width: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  height: 28px;
+}
+
 .settings-title {
   font-size: 24px;
   font-weight: 800;
@@ -1351,12 +1362,12 @@ details.adv[open] > summary {
   font-size: 11px;
 }
 
-.rail-add {
-  width: 22px;
-  min-width: 22px;
-  min-height: 22px;
-  height: 22px;
-  border-radius: 6px;
+button.rail-add {
+  width: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  height: 28px;
+  border-radius: 7px;
 }
 
 .space-title {
@@ -1549,11 +1560,12 @@ details.adv[open] > summary {
   color: var(--warn);
 }
 
-.person-more {
+button.person-more {
   flex: 0 0 auto;
-  width: 26px;
-  min-width: 26px;
-  min-height: 26px;
+  width: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  height: 28px;
   padding: 0;
   opacity: 0;
 }
@@ -1564,7 +1576,7 @@ details.adv[open] > summary {
 }
 
 @media (hover: none) {
-  .person-more {
+  button.person-more {
     opacity: 0.6;
   }
 }
@@ -1934,24 +1946,50 @@ button.start {
   align-self: flex-start;
 }
 
-.share-code.id-code {
-  padding: 5px 10px;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  text-align: left;
-  color: var(--fg-dim);
+.space-card-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 4px 0 6px;
 }
 
-.settings-more > summary {
-  color: var(--fg-dim);
-  font-size: 13.5px;
-  font-weight: 600;
-  cursor: pointer;
+.space-card-words {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  gap: 2px;
+  min-width: 0;
 }
 
-.settings-more[open] > summary {
-  margin-bottom: 10px;
+.space-card-name {
+  color: var(--fg);
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.action-list {
+  display: flex;
+  flex-direction: column;
+  border-radius: 10px;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.action-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 52px;
+  padding: 8px 10px 8px 14px;
+}
+
+.action-row + .action-row {
+  border-top: 1px solid var(--line-soft);
+}
+
+.action-row > button {
+  flex: 0 0 auto;
 }
 
 .server-row {
@@ -2521,8 +2559,8 @@ input[type="text"].space-search {
 }
 
 .chat-actions button {
-  width: 34px;
-  min-width: 34px;
+  width: 32px;
+  min-width: 32px;
   min-height: 32px;
   height: 32px;
   padding: 0;
@@ -2552,13 +2590,19 @@ input[type="text"].space-search {
 }
 
 .chat-react {
-  min-height: 26px;
-  padding: 0 8px;
-  font-size: 13px;
-  border-radius: 8px;
+  min-height: 32px;
+  padding: 0 10px;
+  gap: 6px;
+  font-size: 14px;
+  border-radius: 10px;
   background: var(--surface);
   border: 1px solid transparent;
   font-variant-numeric: tabular-nums;
+}
+
+.chat-react-face {
+  font-size: 20px;
+  line-height: 1;
 }
 
 .chat-react.on {
@@ -2568,8 +2612,9 @@ input[type="text"].space-search {
 }
 
 .chat-react.add {
-  font-weight: bold;
-  padding: 0 8px;
+  width: 40px;
+  min-width: 40px;
+  padding: 0;
   color: var(--fg-faint);
 }
 
@@ -2736,12 +2781,12 @@ input[type="text"].space-search {
   font-weight: 600;
 }
 
-.attach-remove {
+button.attach-remove {
   align-self: flex-start;
-  width: 22px;
-  min-width: 22px;
-  height: 22px;
-  min-height: 22px;
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  min-height: 24px;
 }
 
 .attach-bar {
@@ -3733,20 +3778,30 @@ input[type="text"].space-search {
 }
 
 .quick-slots {
-  gap: 4px;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
-.quick-slot {
-  width: 34px;
-  min-width: 34px;
+button.quick-slot {
+  width: 48px;
+  min-width: 48px;
+  height: 48px;
+  min-height: 48px;
   padding: 0;
-  font-size: 16px;
+  font-size: 26px;
   line-height: 1;
+  border-radius: 12px;
+  background: var(--bg);
+  border-color: var(--line-soft);
 }
 
-.quick-slot.empty {
+button.quick-slot:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+button.quick-slot.empty {
   color: var(--fg-faint);
-  font-size: var(--size-small);
+  border-style: dashed;
 }
 
 .emoji-pop {
@@ -3771,6 +3826,18 @@ input[type="text"].space-search {
 .emoji-quick {
   display: flex;
   gap: 2px;
+}
+
+.emoji-quick .chat-react {
+  min-width: 38px;
+  min-height: 38px;
+  padding: 0 6px;
+  font-size: 22px;
+}
+
+.emoji-quick .chat-react.add {
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .emoji-title {
