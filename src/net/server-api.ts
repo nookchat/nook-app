@@ -68,18 +68,22 @@ export function serverHasGifs(server: string): Promise<boolean> {
   return held
 }
 
-/** GIFs matching a term, when the server holds a Tenor key. Empty when it does not. */
-export async function gifs(server: string, term: string): Promise<{ url: string; preview: string }[]> {
+/**
+ * GIFs matching a term, or what is popular for an empty one, found by the
+ * server with its own key. `from` names the service that answered.
+ */
+export async function gifs(server: string, term: string): Promise<{ gifs: { url: string; preview: string }[]; from: string }> {
   const res = await ask(server, `/api/v1/gifs?q=${encodeURIComponent(term)}`)
-  if (!res?.ok) return []
-  const body = (await res.json().catch(() => null)) as { gifs?: { url?: string; preview?: string }[] } | null
-  return (body?.gifs ?? [])
+  if (!res?.ok) return { gifs: [], from: '' }
+  const body = (await res.json().catch(() => null)) as { gifs?: { url?: string; preview?: string }[]; from?: string } | null
+  const found = (body?.gifs ?? [])
     .filter((g) => typeof g.url === 'string' && g.url.startsWith('https://'))
     .map((g) => ({
       url: g.url as string,
       preview: typeof g.preview === 'string' && g.preview.startsWith('https://') ? g.preview : (g.url as string),
     }))
     .slice(0, 24)
+  return { gifs: found, from: typeof body?.from === 'string' && body.from ? body.from : 'the server' }
 }
 
 /** What a server says about itself and its cluster. */

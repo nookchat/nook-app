@@ -7,7 +7,6 @@ import { cleanName } from '../chat'
 import { SELF_HOSTING_URL, checkServer, serverTag, serverUrl, setDefaultServer } from '../backend'
 import { health } from '../net/server-api'
 import { micSettings, setMicSettings } from '../net/mic'
-import { gifCredential, GIF_SERVICES, setGifCredential, type GifService } from '../store/gifs'
 import { loadIdentity, saveDisplayName, shortKey } from '../store/identity'
 import { addServer, knownServers, newSpaceServer, ownServers } from '../store/server-spaces'
 import { loadAvatar, saveAvatar, squareThumb } from './avatar'
@@ -15,7 +14,7 @@ import { avatarOf } from './chat-panel'
 import { clear, copyText, h } from './dom'
 import { openEmojiPicker, quickReactions, setQuickReactions } from './emoji'
 import { icon } from './icons'
-import { enterLinkCode, showBackup, showLinkCode } from './link-device'
+import { enterLinkCode, lastBackup, showBackup, showLinkCode } from './link-device'
 import { askNotify, notifyState, stopNotify } from './notify'
 import { setSounds, soundsOn } from './sounds'
 import { toast } from './toast'
@@ -35,6 +34,8 @@ export interface SettingsActions {
     leave(): Promise<void>
     remove(): Promise<void>
     removed?: { key: string; name: string; restore(): void }[]
+    /** The levels of the space, for somebody whose level may change them. */
+    levels?: () => HTMLElement
   }
 }
 
@@ -103,6 +104,17 @@ export function settingsView(actions: SettingsActions): HTMLElement {
   name.addEventListener('keydown', (ev) => {
     if ((ev as KeyboardEvent).key === 'Enter') commit()
   })
+
+  // ---- your account ----
+  // Whether this device has saved a backup, so nobody finds out the day they needed one.
+  const backupNote = note('')
+  const sayBackup = (): void => {
+    const at = lastBackup()
+    backupNote.textContent = at
+      ? `Keep a backup, in case this browser forgets you. You saved one on ${at.toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })}.`
+      : 'Keep a backup, in case this browser forgets you. You have not saved one here yet.'
+  }
+  sayBackup()
 
   // A picture travels inside the signed event that carries your name, shrunk to fit.
   const picture = h('button', { class: 'welcome-face profile-face', ariaLabel: 'Change your picture', title: 'Change your picture' })
@@ -270,7 +282,7 @@ export function settingsView(actions: SettingsActions): HTMLElement {
               h('button', { class: 'danger', text: 'Clear history', on: { click: () => void space.reset() } }),
             ])
           : null,
-        space.admin && space.removed?.length
+        space.removed?.length
           ? h('div', { class: 'stack tight' }, [
               h('span', { class: 'eyebrow', text: 'Removed people' }),
               ...space.removed.map((p) => {
@@ -370,30 +382,6 @@ export function settingsView(actions: SettingsActions): HTMLElement {
   }
   paintQuick()
 
-  const held = gifCredential()
-  const gifPick = h('select', { ariaLabel: 'GIF service' })
-  for (const service of GIF_SERVICES) {
-    const option = h('option', { text: service.label, value: service.id })
-    if (held?.service === service.id) option.selected = true
-    gifPick.append(option)
-  }
-  const gifInput = h('input', {
-    type: 'text',
-    class: 'grow',
-    ariaLabel: 'GIF search key',
-    placeholder: 'Your own key (optional)',
-    value: held?.key ?? '',
-  })
-  const gifSave = h('button', {
-    text: 'Save',
-    on: {
-      click: () => {
-        setGifCredential((gifPick.value as GifService) || 'klipy', gifInput.value)
-        toast(gifInput.value.trim() ? 'GIF key saved.' : 'GIF key cleared.', 'good')
-      },
-    },
-  })
-
   return h('main', { class: 'settings' }, [
     h('div', { class: 'center-page' }, [
       h('div', { class: 'sheet stack' }, [
@@ -416,6 +404,7 @@ export function settingsView(actions: SettingsActions): HTMLElement {
         ),
 
         spaceCard,
+        space?.levels ? card('Levels', space.levels()) : null,
 
         card(
           'Voice',
@@ -444,9 +433,9 @@ export function settingsView(actions: SettingsActions): HTMLElement {
             h('button', { text: 'Link a device', on: { click: () => showLinkCode() } }),
             h('button', { class: 'ghost', text: 'Enter a code', on: { click: () => enterLinkCode() } }),
           ]),
-          note('Keep a backup, in case this browser’s data is ever cleared.'),
+          backupNote,
           h('div', { class: 'row wrap' }, [
-            h('button', { on: { click: () => showBackup() } }, [icon('download', 15), 'Backup']),
+            h('button', { on: { click: () => showBackup(sayBackup) } }, [icon('download', 15), 'Save a backup']),
           ]),
         ),
 
@@ -465,8 +454,6 @@ export function settingsView(actions: SettingsActions): HTMLElement {
               note('The key that signs everything you write. It never leaves your devices.'),
               h('span', { class: 'eyebrow', text: 'Quick reactions' }),
               quick,
-              h('span', { class: 'eyebrow', text: 'GIF search' }),
-              h('div', { class: 'row' }, [gifPick, gifInput, gifSave]),
             ]),
           ]),
         ]),

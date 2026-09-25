@@ -285,7 +285,99 @@ main {
   color: var(--fg-dim);
 }
 
-/* Linking a device: the QR code, the link, and the code, one under the other. */
+/* Coming back: the two ways in, each a wide button that says what it needs. */
+.welcome-option {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 14px;
+  min-height: 68px;
+  padding: 12px 16px;
+  text-align: left;
+  border-radius: 14px;
+}
+
+.welcome-option-icon {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--select);
+  color: var(--accent);
+}
+
+.welcome-option-words {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.welcome-option-title {
+  font-size: var(--size);
+  font-weight: 700;
+  color: var(--fg);
+}
+
+.welcome-option-about {
+  font-size: var(--size-small);
+  font-weight: 400;
+  color: var(--fg-dim);
+  white-space: normal;
+}
+
+/* What to do on the other device, in the order it is done. */
+.welcome-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: -4px 0 0;
+  padding-left: 22px;
+  color: var(--fg-dim);
+  line-height: 1.45;
+}
+
+.welcome-steps li::marker {
+  font-weight: 700;
+  color: var(--accent);
+}
+
+/* A backup file goes here, chosen or dropped. */
+.backup-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-height: 120px;
+  padding: 18px 16px;
+  white-space: normal;
+  text-align: center;
+  border: 1.5px dashed var(--line);
+  border-radius: 14px;
+  background: transparent;
+  color: var(--fg-dim);
+}
+
+.backup-drop:hover:not(:disabled),
+.backup-drop.over {
+  border-color: var(--accent);
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.backup-drop .tiny {
+  font-weight: 400;
+}
+
+.backup-drop-title {
+  font-size: var(--size);
+  font-weight: 700;
+  color: var(--fg);
+}
+
+/* Linking a device: the QR code, then the code and server to type, one under the other. */
 .link-offer {
   display: flex;
   flex-direction: column;
@@ -294,19 +386,65 @@ main {
   padding: 4px 16px 4px;
 }
 
+.link-lead {
+  margin: 0;
+  font-weight: 600;
+  text-align: center;
+  color: var(--fg);
+}
+
 .link-offer .qr-frame {
   align-self: center;
 }
 
 .link-or {
   align-self: center;
+  text-align: center;
+}
+
+/* The code and its server, one under the other, named as the new device names them. */
+.link-pair {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.link-readout {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.link-code {
+  padding: 10px 8px;
+  font-size: 19px;
+}
+
+.link-server {
+  padding: 8px;
+  font-size: 15px;
+  letter-spacing: 0;
+}
+
+/* What to be careful of, with a shield, not hidden in the small print. */
+.link-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--fg-dim);
+}
+
+.link-warn svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--warn);
 }
 
 .backup-words {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 0 16px;
   line-height: 1.5;
 }
 
@@ -317,22 +455,19 @@ main {
 .modal:has(.backup-words) {
   max-width: 400px;
   gap: 12px;
-  padding-bottom: 16px;
 }
 
-.modal:has(.backup-words) > input,
-.modal:has(.backup-words) > button {
+.modal:has(.backup-words) > :not(.row:first-child) {
   margin: 0 16px;
 }
 
-.link-code {
-  padding: 10px 8px;
-  font-size: 19px;
+.modal:has(.backup-words) > :last-child {
+  margin-bottom: 16px;
 }
 
 .modal:has(.link-offer),
 .modal:has(input[aria-label="The link or code"]) {
-  max-width: 380px;
+  max-width: 400px;
 }
 
 .modal:has(input[aria-label="The link or code"]) > :not(.row:first-child) {
@@ -347,6 +482,7 @@ main {
 
 .modal:has(.link-offer) > .tiny {
   padding: 0 16px 14px;
+  text-align: center;
 }
 
 /* ---------- the switcher ---------- */
@@ -2754,7 +2890,8 @@ input[type="text"].space-search {
   background: transparent;
   border: 0;
   padding: 8px 0 14px;
-  font-size: var(--size);
+  /* What people wrote is what is read here, so it is a size up from the rest. */
+  font-size: calc(var(--size) + 1px);
   line-height: 1.45;
   overflow-wrap: anywhere;
   color: var(--fg-dim);
@@ -2856,7 +2993,7 @@ input[type="text"].space-search {
 
 .chat-name {
   font-weight: 650;
-  font-size: 15px;
+  font-size: 16px;
   color: var(--fg);
 }
 
@@ -2894,6 +3031,20 @@ input[type="text"].space-search {
 .chat-text {
   color: var(--fg);
   opacity: 0.92;
+}
+
+/* A message of only emoji, a reply of one thumbs up included, is drawn large. */
+.chat-text.jumbo {
+  display: inline-block;
+  font-size: 2.75em;
+  line-height: 1.2;
+  letter-spacing: 0.04em;
+  opacity: 1;
+}
+
+/* Who a reply answers, in the colour of their level. */
+.chat-reply-name {
+  font-weight: 600;
 }
 
 .chat-text code {
@@ -4965,4 +5116,131 @@ input[type="text"].gif-search {
  */
 * {
   touch-action: manipulation;
+}
+
+/* ---------- levels ---------- */
+
+/* A level's colour, as a dot beside its name. Hollow for the ordinary colour. */
+.level-dot {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--fg-faint);
+}
+
+.level-dot[style*="background"] {
+  box-shadow: none;
+}
+
+.levels {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.level {
+  border-radius: var(--radius-sm);
+  background: var(--field-bg);
+}
+
+.level.open {
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.level-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 40px;
+  padding: 6px 12px;
+  text-align: left;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  box-shadow: none;
+}
+
+.level-head.fixed {
+  cursor: default;
+}
+
+.level-name {
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--fg);
+}
+
+.level-form {
+  padding: 4px 12px 12px;
+}
+
+.level-colours {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.level-swatch {
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
+  min-height: 26px;
+  padding: 0;
+  border-radius: 50%;
+  border: 0;
+  box-shadow: none;
+}
+
+.level-swatch.plain {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--fg-faint);
+}
+
+.level-swatch.on {
+  outline: 2px solid var(--fg);
+  outline-offset: 2px;
+}
+
+.level-powers {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.level-power {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.level-power input {
+  margin-top: 3px;
+}
+
+.level-power .stack {
+  gap: 1px;
+}
+
+.level-power.off {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.level-power-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.level-form button.ghost.danger {
+  color: var(--bad);
+}
+
+.level-head svg {
+  flex: 0 0 auto;
+  color: var(--fg-faint);
 }

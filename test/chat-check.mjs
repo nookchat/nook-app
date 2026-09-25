@@ -397,8 +397,8 @@ try {
 
   const onBob = await menuFor(alice, 'Bob')
   check(
-    'one ellipsis opens everything an admin can do about somebody',
-    onBob.some((t) => t === 'Make admin') && onBob.some((t) => t.startsWith('Remove')),
+    'one ellipsis opens everything the owner can do about somebody, their level included',
+    onBob.some((t) => t === 'Admin') && onBob.some((t) => t === 'Member') && onBob.some((t) => t.startsWith('Remove')),
     onBob.join(' | '),
   )
   await alice.keyboard.press('Escape')
@@ -407,7 +407,7 @@ try {
   const onAlice = await menuFor(bob, 'Alice')
   check(
     'a member is offered nothing that changes anybody',
-    !onAlice.some((t) => t.includes('admin') || t.startsWith('Remove')),
+    !onAlice.some((t) => t === 'Admin' || t === 'Member' || t.startsWith('Remove')),
     onAlice.join(' | '),
   )
   await bob.keyboard.press('Escape')

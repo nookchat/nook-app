@@ -159,8 +159,8 @@ export const openapi = {
     },
     '/api/v1/gifs': {
       get: {
-        summary: 'GIF search, when the server has a Tenor key',
-        parameters: [{ name: 'q', in: 'query', required: true, schema: { type: 'string' } }],
+        summary: 'GIF search with the server’s Klipy, Tenor or Giphy key. No term: what is popular now',
+        parameters: [{ name: 'q', in: 'query', required: false, schema: { type: 'string' } }],
         responses: { 200: { description: 'OK' }, 404: { description: 'No key' }, ...errors },
       },
     },

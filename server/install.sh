@@ -15,6 +15,8 @@
 #   CATHODE_DIR=./cathode                where it goes
 #   CATHODE_TLS=0                        no Caddy: you have your own proxy
 #   CATHODE_TURN=0                       no TURN relay
+#   CATHODE_KLIPY_KEY=...                GIF search for everybody here (or
+#                                        CATHODE_TENOR_KEY, CATHODE_GIPHY_KEY)
 #
 # Needs Docker, with its compose plugin, and a domain whose DNS points here.
 
@@ -67,6 +69,11 @@ POSTGRES_PASSWORD=$(secret 24)
 CATHODE_TURN_SECRET=$(secret 32)
 COMPOSE_PROFILES=$profiles
 EOF
+  # A GIF key given now goes in with the rest. Only the server holds it.
+  for name in CATHODE_KLIPY_KEY CATHODE_TENOR_KEY CATHODE_GIPHY_KEY; do
+    value=$(printenv "$name" || true)
+    [ -z "$value" ] || printf '%s=%s\n' "$name" "$value" >> .env
+  done
   say "Wrote $(pwd)/.env for $domain."
 fi
 
@@ -107,3 +114,5 @@ say "  Use it:     open Nook, choose Add server, and type $domain"
 say "  Update:     run this command again"
 say "  Settings:   $(pwd)/.env, then: docker compose up -d"
 say "  Logs:       cd $(pwd) && docker compose logs -f"
+grep -q '^CATHODE_\(KLIPY\|TENOR\|GIPHY\)_KEY=.' .env ||
+  say "  GIFs:       add CATHODE_KLIPY_KEY=your-key to .env for GIF search (a key: partner.klipy.com)"

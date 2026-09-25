@@ -54,10 +54,12 @@ import { gifs as serverGifs, preview, serverHasGifs } from '../net/server-api'
 import { loadIdentity, saveDisplayName, shortKey, signClaim, verifyClaim } from '../store/identity'
 import { chirpMessage, isNews, speak } from './sounds'
 import { openSoundboard, playSound, soundById, soundByName, SOUNDS } from './soundboard'
-import { gifCredential, isClip, searchGifs, serviceLabel, type Gif } from '../store/gifs'
+import { isClip, type Gif } from '../store/gifs'
 import {
   DEFAULT_CHANNEL,
   DEFAULT_VOICE,
+  MEMBER,
+  OWNER,
   cleanChannel,
   type ChannelInfo,
   type LogEvent,
@@ -136,6 +138,13 @@ const COMMANDS = [
   { name: 'leave', note: 'Leave this space' },
   { name: 'help', note: 'List these' },
 ]
+
+/** A level's colour, as a dot beside its name in a menu. */
+function levelDot(colour: string): HTMLElement {
+  const dot = h('span', { class: 'level-dot' })
+  if (colour) dot.style.background = colour
+  return dot
+}
 
 export class SpaceView {
   private readonly root: HTMLElement
@@ -916,7 +925,7 @@ export class SpaceView {
    * anybody reads, which is what somebody fixing a typo wanted anyway.
    */
   private channelActions(channel: ChannelInfo): MenuItem[] {
-    if (!this.chat?.isAdmin) return []
+    if (!this.chat?.can('channels')) return []
     const items: MenuItem[] = [
       {
         label: 'Rename',
@@ -972,8 +981,8 @@ export class SpaceView {
     if (!chat) return false
 
     const needsAdmin = (): boolean => {
-      if (chat.isAdmin) return false
-      toast('Only an admin can do that.', 'warn')
+      if (chat.can('channels')) return false
+      toast('Your level cannot change channels.', 'warn')
       return true
     }
 
@@ -1402,7 +1411,12 @@ export class SpaceView {
       this.loaded = true
       this.shell.classList.remove('loading')
     }
-    if (this.chatPanel) this.chatPanel.canPin = this.chat.isAdmin
+    if (this.chatPanel) {
+      this.chatPanel.canPin = this.chat.can('pin')
+      this.chatPanel.canDelete = this.chat.can('delete')
+      const auth = this.chat.authority()
+      this.chatPanel.colourOf = (key) => auth.levelOf(key).colour
+    }
     this.chatPanel?.setNames(this.everybody(), this.chat.log.avatars())
     this.chatPanel?.setReadMark(this.thread ? 0 : this.openedAt)
     /*
@@ -1883,15 +1897,16 @@ export class SpaceView {
         rename: (name, avatar) => this.rename(name, avatar),
         space: {
           name: this.chat?.spaceName() || 'Unnamed space',
-          admin: this.chat?.isAdmin === true,
+          admin: this.chat?.can('space') === true,
+          levels: this.chat?.can('levels') ? () => this.levelsEditor() : undefined,
           rename: () => this.renameSpace(),
           reset: () => this.resetSpace(),
           leave: () => this.leaveSpace(),
           remove: () => this.deleteSpace(),
           // Removed people live here rather than in the rail, with the one
-          // thing an admin can still do about them.
+          // thing somebody whose level may remove people can still do about them.
           removed: [...(this.chat?.roles() ?? new Map<string, string>())]
-            .filter(([, role]) => role === 'kicked')
+            .filter(([key, role]) => role === 'kicked' && this.chat?.authority().mayRemove(this.chat.me, key))
             .map(([key]) => ({
               key,
               name: this.chat?.nameOf(key) || shortKey(key),
@@ -1909,8 +1924,8 @@ export class SpaceView {
   }
 
   private async renameSpace(): Promise<void> {
-    if (!this.chat?.isAdmin) {
-      toast('Only an admin can rename this space.', 'warn')
+    if (!this.chat?.can('space')) {
+      toast('Your level cannot rename this space.', 'warn')
       return
     }
     const raw = window.prompt('Name this space', this.chat.spaceName()) ?? ''
@@ -1973,8 +1988,8 @@ export class SpaceView {
    * anywhere.
    */
   private async deleteSpace(): Promise<void> {
-    if (!this.chat?.isAdmin) {
-      toast('Only an admin can delete this space.', 'warn')
+    if (!this.chat?.can('space')) {
+      toast('Your level cannot delete this space.', 'warn')
       return
     }
     const name = this.chat.spaceName() || 'this space'
@@ -2021,12 +2036,34 @@ export class SpaceView {
     this.onLeave()
   }
 
-  private async setRole(subject: string, role: 'admin' | 'member' | 'kicked'): Promise<void> {
-    if (!this.chat?.isAdmin) {
-      toast('Only an admin can do that.', 'warn')
+  /** Put somebody on a level, or remove them with 'kicked'. The log decides whether it counts; this says so first. */
+  private async setRole(subject: string, role: string): Promise<void> {
+    const auth = this.chat?.authority()
+    const me = this.chat?.me ?? ''
+    const allowed =
+      auth && (role === 'kicked' || auth.isKicked(subject) ? auth.mayRemove(me, subject) : auth.mayPlace(me, subject))
+    if (!allowed) {
+      toast('Your level cannot do that.', 'warn')
       return
     }
     await this.publish((c) => c.setRole(subject, role))
+  }
+
+  /** The levels of this space, for Settings. Loaded the first time it is wanted. */
+  private levelsEditor(): HTMLElement {
+    const holder = h('div', { class: 'stack tight' })
+    void import('./levels').then(({ levelsEditor }) => {
+      const chat = this.chat
+      if (!chat) return
+      holder.append(
+        levelsEditor({
+          chat,
+          publish: (write) => this.publish(write),
+          people: () => this.roster().map((r) => ({ key: r.key, name: r.name || shortKey(r.key) })),
+        }),
+      )
+    })
+    return holder
   }
 
   private rename(name: string, avatar?: string): void {
@@ -2092,7 +2129,7 @@ export class SpaceView {
 
   private renderChannels(): void {
     clear(this.channelList)
-    this.newTextButton.classList.toggle('hidden', !this.chat?.isAdmin)
+    this.newTextButton.classList.toggle('hidden', !this.chat?.can('channels'))
     // What is waiting, per channel, worked out once for the whole rail.
     const waiting = this.chat?.unread(this.read) ?? new Map()
     let mentions = 0
@@ -2133,7 +2170,7 @@ export class SpaceView {
       onPress(more, () => openMenu(more, this.channelActions(channel)))
       more.append(icon('more', 14))
       this.channelList.append(
-        h('div', { class: 'row rail-row' }, [open, this.chat?.isAdmin ? more : null]),
+        h('div', { class: 'row rail-row' }, [open, this.chat?.can('channels') ? more : null]),
       )
     }
     /*
@@ -2180,7 +2217,7 @@ export class SpaceView {
 
   private renderVoice(): void {
     clear(this.voiceList)
-    this.newVoiceButton.classList.toggle('hidden', !this.chat?.isAdmin)
+    this.newVoiceButton.classList.toggle('hidden', !this.chat?.can('channels'))
     const here = this.voice?.state.channel ?? null
     for (const name of this.chat?.channels(true) ?? [DEFAULT_VOICE]) {
       const members = this.voice?.membersOf(name) ?? []
@@ -2233,10 +2270,13 @@ export class SpaceView {
           })
           member.title = 'Right click for their volume'
         }
+        const who = h('span', { class: 'truncate grow', text: label })
+        const colour = this.chat?.levelOf(key).colour
+        if (colour) who.style.color = colour
         member.append(
           h('i', { class: `dot ${talking ? 'talking' : 'good'}` }),
           avatarOf(key, name, this.chat?.avatarOf(key) ?? '', 20),
-          h('span', { class: 'truncate grow', text: label }),
+          who,
         )
         if (live) {
           member.append(
@@ -2346,7 +2386,7 @@ export class SpaceView {
 
     const me = loadIdentity().pubkey
     if (!(await verifyClaim(['vmove', this.room.id, me, asked, at], sig, by))) return
-    if (this.chat.roleOf(by) !== 'admin') return
+    if (!this.chat.authority().can(by, 'move')) return
     if (at <= (this.vmoveSeen.get(by) ?? 0)) return
     this.vmoveSeen.set(by, at)
 
@@ -2456,10 +2496,10 @@ export class SpaceView {
     ])
   }
 
-  private actionsFor(key: string, role: string, you: boolean, here: boolean): MenuItem[] {
+  private actionsFor(key: string, role: string, you: boolean, here: boolean): MenuEntry[] {
     const chat = this.chat
     if (!chat || you) return []
-    const items: MenuItem[] = []
+    const items: MenuEntry[] = []
     const name = chat.nameOf(key) || shortKey(key)
 
     /*
@@ -2505,45 +2545,58 @@ export class SpaceView {
       },
     })
 
-    if (!chat.isAdmin) return items
-
+    const auth = chat.authority()
+    const me = chat.me
     const standing = this.voice?.state.channel
     // Move them into the voice channel we are standing in. Only when we are in
     // one, because "move them here" needs a here, and only while they are about.
-    if (here && standing) {
+    if (here && standing && auth.can(me, 'move')) {
       items.push({
         label: `Move to ${standing}`,
         note: 'Asks their device to join the voice channel you are in',
         run: () => void this.moveTo(key, standing),
       })
     }
-    if (role !== 'admin') {
-      items.push({
-        label: 'Make admin',
-        note: 'They can rename, pin, clear and remove people',
-        run: () => void this.setRole(key, 'admin'),
-      })
-    } else if (key !== chat.founder) {
-      items.push({
-        label: 'Remove admin',
-        run: () => void this.setRole(key, 'member'),
-      })
+    /*
+     * Their level, as a list with the one they are on marked. Only the levels
+     * at yours or below, because those are the only ones you may give.
+     */
+    if (role !== 'kicked' && auth.mayPlace(me, key)) {
+      const mine = auth.levelOf(me).rank
+      const current = auth.levelOf(key).id
+      const choices = auth.list().filter((l) => l.id !== OWNER && l.rank <= mine)
+      if (choices.length > 1) {
+        items.push('line', { heading: 'Level' })
+        for (const level of choices) {
+          items.push({
+            label: level.name,
+            lead: levelDot(level.colour),
+            current: level.id === current,
+            run: () => {
+              if (level.id !== current) void this.setRole(key, level.id)
+            },
+          })
+        }
+      }
     }
-    if (role === 'kicked') {
-      items.push({
-        label: 'Unban',
-        run: () => void this.setRole(key, 'member'),
-      })
-    } else if (key !== chat.founder) {
-      items.push({
-        label: 'Remove',
-        note: 'Everything they write after this is ignored by everybody',
-        danger: true,
-        run: () => {
-          if (!window.confirm(`Remove ${name} from this space?`)) return
-          void this.setRole(key, 'kicked')
-        },
-      })
+    if (auth.mayRemove(me, key)) {
+      items.push('line')
+      if (role === 'kicked') {
+        items.push({
+          label: 'Unban',
+          run: () => void this.setRole(key, MEMBER),
+        })
+      } else {
+        items.push({
+          label: 'Remove',
+          note: 'Everything they write after this is ignored by everybody',
+          danger: true,
+          run: () => {
+            if (!window.confirm(`Remove ${name} from this space?`)) return
+            void this.setRole(key, 'kicked')
+          },
+        })
+      }
     }
     return items
   }
@@ -2679,6 +2732,9 @@ export class SpaceView {
     return [...rows.values()].sort((a, b) => {
       if (a.you !== b.you) return a.you ? -1 : 1
       if (a.here !== b.here) return a.here ? -1 : 1
+      // The people who run the place first, the way their levels are ordered.
+      const rank = (this.chat?.levelOf(b.key).rank ?? 0) - (this.chat?.levelOf(a.key).rank ?? 0)
+      if (rank !== 0) return rank
       return (a.name || a.key).localeCompare(b.name || b.key)
     })
   }
@@ -2752,8 +2808,11 @@ export class SpaceView {
             ])
           : null
 
+      const level = chat?.levelOf(row.key)
+      const shown = h('span', { class: 'truncate', text: row.you ? `${label} (you)` : label })
+      if (level?.colour) shown.style.color = level.colour
       this.peopleList.append(
-        h('div', { class: `rail-person${row.here ? '' : ' away'}${row.talking ? ' talking' : ''}`, title: `ID ${row.key}` }, [
+        h('div', { class: `rail-person${row.here ? '' : ' away'}${row.talking ? ' talking' : ''}`, title: `${level?.name ?? 'Member'} · ID ${row.key}` }, [
           h('span', { class: 'person-face' }, [
             avatarOf(row.key, row.name, chat?.avatarOf(row.key) ?? '', 32),
             /*
@@ -2775,17 +2834,17 @@ export class SpaceView {
           ]),
           h('div', { class: 'person-text' }, [
           h('div', { class: 'row person-line' }, [
-            h('span', { class: 'truncate', text: row.you ? `${label} (you)` : label }),
+            shown,
             /*
-             * A crown, rather than the word admin under the name.
+             * A crown for the owner, rather than a word under the name.
              *
              * It was a second line of text per person, which made the list of
              * who is here twice as tall to say a thing about one of them. The
-             * title carries the word for anybody hovering, and for a screen
-             * reader.
+             * colour of the name says the level, and the title says its name
+             * for anybody hovering, and for a screen reader.
              */
-            role === 'admin'
-              ? h('span', { class: 'crown', title: 'Runs this space' }, [icon('crown', 12)])
+            role === OWNER
+              ? h('span', { class: 'crown', title: 'Made this space' }, [icon('crown', 12)])
               : null,
             role === 'kicked' ? h('span', { class: 'tiny faint', text: 'removed' }) : null, // your own row only
           ]),
@@ -2798,25 +2857,15 @@ export class SpaceView {
   }
 
   /**
-   * Where a search goes.
+   * Where a search goes: the server of this space, with its key.
    *
-   * Your own key first, because it is the one most people have: it is kept in
-   * this browser, and it works whatever the server offers. The server second,
-   * when it holds a key, because that keeps the key on one machine rather than
-   * on everybody's.
-   *
-   * Nothing third. A picker that opens and says what is missing beats a toast
-   * that flashes past somebody who was looking at the grid.
+   * Nobody else. A picker that opens and says what is missing beats a toast
+   * that flashes past somebody who was looking at the grid, so an empty
+   * answer comes back with no name, and the picker says why.
    */
   private async findGifs(term: string): Promise<{ gifs: Gif[]; from: string }> {
-    const held = gifCredential()
-    if (held) {
-      return { gifs: await searchGifs(term, held), from: serviceLabel(held.service) }
-    }
-    // The server answers a term, when it holds a key. It has nothing to say
-    // about an empty one, so an empty box waits rather than asking nothing.
-    if (!(await serverHasGifs(this.server))) return { gifs: [], from: '' }
-    return { gifs: term.trim() ? await serverGifs(this.server, term) : [], from: 'the server' }
+    if (!this.server || !(await serverHasGifs(this.server))) return { gifs: [], from: '' }
+    return serverGifs(this.server, term)
   }
 
   /**
@@ -2977,17 +3026,13 @@ export class SpaceView {
   private gifTrouble(wanted: string, from: string): (string | Node)[] {
     if (from === '') {
       return [
-        'GIF search needs a key. Paste one under Settings, GIFs, or ask whoever runs the server to set one.',
+        this.server
+          ? `GIF search is off on ${serverTag(this.server)}. Whoever runs it turns it on with a key; see server/README.md.`
+          : 'GIF search needs a server, and this space has none.',
       ]
     }
-    if (!wanted) {
-      return from === 'the server'
-        ? ['Type what to look for.']
-        : ['Nothing came back. Type what to look for.']
-    }
-    return from === 'the server'
-      ? [`Nothing for "${wanted}". A server with no Tenor key finds nothing; see server/README.md.`]
-      : [`Nothing for "${wanted}". Check the key under Settings, GIFs, if this keeps happening.`]
+    if (!wanted) return ['Nothing came back. Type what to look for.']
+    return [`Nothing for "${wanted}" from ${from}. Try other words.`]
   }
 
   /** The pinned messages of this channel, as a list that goes to each one. */
@@ -3087,8 +3132,8 @@ export class SpaceView {
   private async newChannel(voice: boolean): Promise<void> {
     // The button only shows for admins, but every peer would ignore the event
     // anyway, so say so here rather than let the click land as silence.
-    if (!this.chat?.isAdmin) {
-      toast('Only an admin can make a channel.', 'warn')
+    if (!this.chat?.can('channels')) {
+      toast('Your level cannot make channels.', 'warn')
       return
     }
     const raw = window.prompt(voice ? 'Name the voice channel' : 'Name the channel')

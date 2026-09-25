@@ -13,7 +13,7 @@
  *   GET  /api/v1/people/:id               a sealed record of somebody's spaces
  *   PUT  /api/v1/people/:id               replace it
  *   GET  /api/v1/preview?url=             a link card
- *   GET  /api/v1/gifs?q=                  GIF search
+ *   GET  /api/v1/gifs?q=                  GIF search with the server's key, or what is popular
  *   GET  /api/v1/openapi.json             all of the above, described
  *   GET  /api/v1/cluster/{lines,rooms,people,files,live}   between servers only
  *   WS   /api/v1/socket                 every space a device is in, on one connection
@@ -27,7 +27,8 @@ import { FILE_ID, filesFor, keep, send } from './files.mjs'
 import { ApiError, allow, fail, readJson, reply } from './http.mjs'
 import { LINK_ID, MAX_LINK, putLink, takeLink } from './links.mjs'
 import { openapi } from './openapi.mjs'
-import { gifs, hasGifs, preview } from './preview.mjs'
+import { gifService, gifs, hasGifs } from './gifs.mjs'
+import { preview } from './preview.mjs'
 import {
   append,
   MAX_LINE,
@@ -74,6 +75,7 @@ function health() {
     relayOnly: HAS_TURN && TURN_ONLY,
     previews: PREVIEWS,
     gifs: hasGifs(),
+    gifService: gifService(),
     files: { max: MAX_FILE_BYTES },
     cluster: clusterUrls(),
     peers: clusterHealth().peers,
@@ -136,10 +138,10 @@ async function linkCard(url) {
 
 async function gifSearch(url) {
   if (!hasGifs()) throw new ApiError(404, 'off', 'This server has no GIF key.')
+  // An empty term asks for what is popular now.
   const q = (url.searchParams.get('q') ?? '').trim().slice(0, 80)
-  if (!q) throw new ApiError(400, 'bad_query', 'Say what to look for.')
   const found = await gifs(q)
-  if (!found) throw new ApiError(502, 'upstream', 'Tenor did not answer.')
+  if (!found) throw new ApiError(502, 'upstream', `${gifService()} did not answer.`)
   return found
 }
 

@@ -5,6 +5,8 @@
  *                it restores it at its first screen and is Ana, with her
  *                space and what was said in it
  *   a password   a backup saved with one will not open with another
+ *   a note       Settings says when this device last saved one
+ *   a drop       the file dropped on the first screen restores it too
  *   preferences  quick reactions and a volume set on one device are on the
  *                other after it reads its record, through the server
  *
@@ -32,22 +34,27 @@ const fresh = async () => (await browser.newContext({ acceptDownloads: true, vie
 
 async function backUp(page, password = '') {
   await page.evaluate(() => document.querySelector('button[aria-label="Settings"]').click())
-  await page.click('button:text-is("Backup")')
-  if (password) await page.fill('input[aria-label="Password for the backup"]', password)
-  const [download] = await Promise.all([page.waitForEvent('download'), page.click('button:has-text("Download backup")')])
+  await page.click('button:text-is("Save a backup")')
+  if (password) {
+    await page.click('button:has-text("Add a password")')
+    await page.fill('input[aria-label="Password for the backup"]', password)
+  }
+  const [download] = await Promise.all([page.waitForEvent('download'), page.click('button:has-text("Save backup file")')])
   const path = await download.path()
+  const noted = await page.waitForFunction(() => document.body.textContent.includes('You saved one on'), null, { timeout: 5000 }).then(() => true, () => false)
   await page.click('button[aria-label="Close settings"]')
-  return { path, name: download.suggestedFilename(), text: readFileSync(path, 'utf8') }
+  return { path, name: download.suggestedFilename(), text: readFileSync(path, 'utf8'), noted }
 }
 
 async function restore(page, path, password = '') {
   await page.goto(APP_URL)
   await page.click('button:has-text("I have an account")')
+  await page.click('button:has-text("Use a backup file")')
   await page.setInputFiles('input[aria-label="Backup file"]', path)
   if (password !== null && password !== '') {
     await page.waitForSelector('input[aria-label="The backup’s password"]:visible')
     await page.fill('input[aria-label="The backup’s password"]', password)
-    await page.click('button:has-text("Restore")')
+    await page.click('button:text-is("Restore")')
   }
 }
 
@@ -89,6 +96,7 @@ try {
   const plain = await backUp(ana)
   const file = JSON.parse(plain.text)
   check('and the backup does not carry it: it is on the server', !plain.text.includes('data:image'), `${plain.text.length} bytes`)
+  check('and Settings says a backup was saved', plain.noted)
   check('a backup is one file, named for its owner, that says what it is', plain.name === 'nook-Ana.json' && file.cathode === 'backup' && /private/.test(file.keep), plain.name)
 
   // ---- a browser with nothing in it ----
@@ -110,6 +118,18 @@ try {
   check('and the same picture, from the server', face)
   await two.click('button[aria-label="Close settings"]')
 
+  // ---- dropped on the first screen ----
+  const dropped = await fresh()
+  await dropped.goto(APP_URL)
+  await dropped.waitForSelector('.welcome')
+  await dropped.evaluate((text) => {
+    const carried = new DataTransfer()
+    carried.items.add(new File([text], 'nook-Ana.json', { type: 'application/json' }))
+    document.querySelector('.welcome').dispatchEvent(new DragEvent('drop', { dataTransfer: carried, bubbles: true, cancelable: true }))
+  }, plain.text)
+  await wait(2500)
+  check('a backup dropped anywhere on the first screen restores it', (await listed(dropped)).includes('kept'))
+
   // ---- with a password ----
   const sealed = await backUp(ana, 'correct horse')
   check('a backup with a password does not have the account in it in the open', !sealed.text.includes(JSON.parse(plain.text).account.k))
@@ -120,7 +140,7 @@ try {
     .then(() => true, () => false)
   check('and will not open with another password', refused)
   await three.fill('input[aria-label="The backup’s password"]', 'correct horse')
-  await three.click('button:has-text("Restore")')
+  await three.click('button:text-is("Restore")')
   await three.waitForURL((url) => !url.hash, { timeout: 15_000 }).catch(() => undefined)
   await wait(1500)
   check('but does with the right one', (await listed(three)).includes('kept'))

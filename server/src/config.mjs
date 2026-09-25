@@ -62,8 +62,10 @@ export const TURN_TTL_S = Number(env.CATHODE_TURN_TTL ?? 24 * 60 * 60)
 export const TURN_ONLY = env.CATHODE_TURN_ONLY !== '0'
 export const HAS_TURN = TURN_URLS.length > 0 && TURN_SECRET !== ''
 
-/** GIF search for /gif. Off until a key is given. */
+/** GIF search, for everybody in the spaces here. Off until a key is given. See gifs.mjs. */
+export const KLIPY_KEY = env.CATHODE_KLIPY_KEY ?? ''
 export const TENOR_KEY = env.CATHODE_TENOR_KEY ?? ''
+export const GIPHY_KEY = env.CATHODE_GIPHY_KEY ?? ''
 
 /** Link cards. On unless turned off: the server learns which links are previewed. */
 export const PREVIEWS = env.CATHODE_PREVIEWS !== '0'
@@ -93,4 +95,4 @@ export const MAX_ROOM_SOCKETS = Number(env.CATHODE_MAX_ROOM_SOCKETS ?? 200)
 export const RATE_PER_S = Number(env.CATHODE_RATE ?? 30)
 export const RATE_BURST = Number(env.CATHODE_RATE_BURST ?? 120)
 
-export const VERSION = '1.4.0'
+export const VERSION = '1.5.0'

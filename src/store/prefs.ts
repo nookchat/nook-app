@@ -29,7 +29,6 @@ const SYNCED = [
   'cathode.emoji.v1',
   'cathode.volume.v1',
   'cathode.sounds.v1',
-  'cathode.gifkey.v1',
   'cathode.rail.v1',
   'cathode.settings.v1',
   'cathode.servers.v1',

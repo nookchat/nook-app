@@ -47,6 +47,24 @@ function authorColour(key: string): string {
 }
 
 /**
+ * A message that is only emoji, and not too many of them, is drawn large.
+ *
+ * A reply of one thumbs up reads as a reaction said out loud, and small it
+ * looks like a typo. Anything else in the message, a word or a digit, and it
+ * is text again. Past a couple of dozen it is a wall, and walls stay small.
+ */
+const EMOJI_ONLY =
+  /^(?:\p{Extended_Pictographic}|\p{Regional_Indicator}|\p{Emoji_Modifier}|[\u200d\ufe0f\u{e0020}-\u{e007f}]|[#*0-9]\ufe0f?\u20e3|\s)+$/u
+const JUMBO_MOST = 27
+
+export function onlyEmoji(text: string): boolean {
+  const trimmed = text.trim()
+  if (!trimmed || !EMOJI_ONLY.test(trimmed)) return false
+  const faces = [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(trimmed)].filter((s) => s.segment.trim())
+  return faces.length > 0 && faces.length <= JUMBO_MOST
+}
+
+/**
  * Hidden until somebody asks for it.
  *
  * The text is in the DOM either way, which is the honest thing to say about a
@@ -143,8 +161,16 @@ const WINDOW_MAX = 600
 export class ChatPanel {
   readonly root: HTMLElement
   actions: ChatActions | null = null
-  /** Only an admin may pin, so only an admin is offered the button. */
+  /** Only a level that may pin is offered the button. */
   canPin = false
+  /** And only a level that may delete anybody's message is offered that. */
+  canDelete = false
+  /**
+   * The colour a name is drawn in: its level's, in a space. Empty is the
+   * ordinary colour of text, which is what a member and a private
+   * conversation on Home get.
+   */
+  colourOf: (key: string) => string = () => ''
   /** Asking a question is a different shape from saying something. See /poll. */
   onPoll: (() => void) | null = null
   /** Somebody is writing. Throttled by the caller, which owns the wire. */
@@ -1326,6 +1352,9 @@ export class ChatPanel {
       m.replies ?? 0,
       first ? 'f' : '',
       this.canPin ? 'a' : '',
+      this.canDelete ? 'd' : '',
+      this.colourOf(m.author),
+      parent ? this.colourOf(parent.author) : '',
       mentionsMe(m.text, this.names, this.me) ? 'c' : '',
       this.threadRoot === m.id ? 'root' : '',
       parent ? `${parent.name ?? ''}:${parent.text.slice(0, 60)}` : m.replyTo ? 'gone' : '',
@@ -1408,15 +1437,21 @@ export class ChatPanel {
      */
     if (m.replyTo && m.replyTo !== this.threadRoot) {
       const parent = byId.get(m.replyTo)
+      const quoted = parent ? h('span', { class: 'chat-reply-name', text: parent.name || shortKey(parent.author) }) : null
+      const colour = parent ? this.colourOf(parent.author) : ''
+      if (quoted && colour) quoted.style.color = colour
       line.append(
-        h('button', {
-          class: 'chat-reply truncate',
-          title: parent ? 'Go to what this answers' : 'That message is no longer here',
-          text: parent
-            ? `${parent.name || shortKey(parent.author)}: ${parent.text.slice(0, 60) || (parent.files?.length ? 'a file' : '')}`
-            : 'a message that is gone',
-          on: { click: () => parent && this.jumpTo(parent.id) },
-        }),
+        h(
+          'button',
+          {
+            class: 'chat-reply truncate',
+            title: parent ? 'Go to what this answers' : 'That message is no longer here',
+            on: { click: () => parent && this.jumpTo(parent.id) },
+          },
+          parent
+            ? [quoted, `: ${parent.text.slice(0, 60) || (parent.files?.length ? 'a file' : '')}`]
+            : ['a message that is gone'],
+        ),
       )
     }
     if (this.threadRoot && m.id === this.threadRoot) line.classList.add('thread-root')
@@ -1424,14 +1459,15 @@ export class ChatPanel {
     /*
      * A run from one person shows the name once, at the top of the run.
      *
-     * The name carries a colour worked out from the key that signs the
-     * messages, so it is the same colour on every device and for everybody,
-     * your own included: every line sits on the same side and wears no
-     * bubble now, and the coloured name is what tells the runs apart.
+     * The name carries the colour of the level its writer is on, so the
+     * people who run the place stand out, the same on every device. A member
+     * wears the ordinary colour of text, and the face beside the name is what
+     * tells two members apart.
      */
     if (first) {
       const name = h('span', { class: 'chat-name', text: m.name || shortKey(m.author) })
-      name.style.color = authorColour(m.author)
+      const colour = this.colourOf(m.author)
+      if (colour) name.style.color = colour
       row.classList.add('first')
       /*
        * The face in the gutter, and the time on the line with the name, so a
@@ -1487,6 +1523,7 @@ export class ChatPanel {
       const onlyFiles = !m.text && (m.files?.length ?? 0) > 0
       if (!bare && !svg && !onlyFiles) {
         if (pictures.length > 0) text.classList.add('boxed')
+        else if (!m.emote && onlyEmoji(m.text)) text.classList.add('jumbo')
         for (const node of formatText(m.text, this.names, this.me)) text.append(node)
         line.append(text)
       }
@@ -1766,7 +1803,7 @@ export class ChatPanel {
           [icon('trash', 17)],
         ),
       )
-    } else if (this.canPin) {
+    } else if (this.canDelete) {
       /*
        * Somebody has to be able to take down what was posted in a room they
        * are responsible for. Behind a question, because it is somebody else's

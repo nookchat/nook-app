@@ -1,16 +1,15 @@
 /**
- * Link cards and GIF search: the two things a browser cannot do alone.
+ * Link cards: a thing a browser cannot do alone.
  *
  * A browser cannot read another site's page, so a chat message with a link in
- * it cannot grow a card by itself, and every keyless GIF search is gone. This
- * server does both for the spaces on it. Both are the one place it learns
- * something about what is said: which links get previewed, and which words
- * get searched. CATHODE_PREVIEWS=0 turns cards off, and GIF search is off
- * until a key is given.
+ * it cannot grow a card by itself. This server does it for the spaces on it,
+ * and it is one of the two places it learns something about what is said:
+ * which links get previewed. CATHODE_PREVIEWS=0 turns cards off. The other
+ * place is GIF search, in gifs.mjs.
  */
 
 import { lookup } from 'node:dns/promises'
-import { PREVIEW_LOCAL, TENOR_KEY } from './config.mjs'
+import { PREVIEW_LOCAL } from './config.mjs'
 
 /*
  * Link previews.
@@ -173,40 +172,4 @@ export async function preview(wanted) {
   if (previews.size >= PREVIEW_CACHE_MAX) previews.delete(previews.keys().next().value)
   previews.set(wanted, { at: Date.now(), data })
   return data
-}
-
-/*
- * GIF search. Tenor v1 is discontinued and Giphy's old public key is banned,
- * so the server holds the key, off every member's device. Free keys come from
- * https://developers.google.com/tenor.
- */
-const gifCache = new Map()
-
-export const hasGifs = () => TENOR_KEY !== ''
-
-/** GIFs for a term, or null when Tenor did not answer. */
-export async function gifs(q) {
-  const held = gifCache.get(q.toLowerCase())
-  if (held && Date.now() - held.at < PREVIEW_CACHE_MS) return held.data
-  try {
-    const upstream = await fetch(
-      `https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(q)}` +
-        `&key=${TENOR_KEY}&limit=24&media_filter=gif,tinygif&contentfilter=medium`,
-      { signal: AbortSignal.timeout(PREVIEW_TIMEOUT_MS) },
-    )
-    if (!upstream.ok) return null
-    const body = await upstream.json()
-    const list = (Array.isArray(body.results) ? body.results : [])
-      .map((g) => ({
-        url: g?.media_formats?.gif?.url ?? '',
-        preview: g?.media_formats?.tinygif?.url ?? g?.media_formats?.gif?.url ?? '',
-      }))
-      .filter((g) => g.url.startsWith('https://'))
-    const data = { gifs: list }
-    if (gifCache.size >= PREVIEW_CACHE_MAX) gifCache.delete(gifCache.keys().next().value)
-    gifCache.set(q.toLowerCase(), { at: Date.now(), data })
-    return data
-  } catch {
-    return null
-  }
 }

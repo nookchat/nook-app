@@ -183,11 +183,11 @@ try {
     return {
       nameOk: named.spaceName() === 'Book club',
       nameStaysPut: stolenName.spaceName() !== 'Mine now',
-      founderIsAdmin: named.roleOf(FOUNDER) === 'admin',
+      founderIsOwner: named.roleOf(FOUNDER) === 'owner',
       grabRefused: grabbed.roleOf(MEMBER) !== 'admin',
       promoteWorks: promoted.roleOf(MEMBER) === 'admin',
       chainWorks: chain.roleOf(THIRD) === 'admin',
-      founderSurvives: coup.roleOf(FOUNDER) === 'admin',
+      founderSurvives: coup.roleOf(FOUNDER) === 'owner',
       adminChannel: channels.includes('plans'),
       memberChannel: channels.includes('spam') === false,
       adminSaidChannel: spoken.includes('plans'),
@@ -196,7 +196,7 @@ try {
   })
   check('the founder names the space', roles.nameOk)
   check('a member cannot rename it', roles.nameStaysPut)
-  check('the founder is its admin', roles.founderIsAdmin)
+  check('the founder is its owner', roles.founderIsOwner)
   check('a member cannot promote themselves', roles.grabRefused)
   check('an admin can promote somebody else', roles.promoteWorks)
   check('and the new admin can promote a third', roles.chainWorks)
@@ -205,6 +205,106 @@ try {
   check('a member does not', roles.memberChannel)
   check('an admin talking in a channel keeps it listed', roles.adminSaidChannel)
   check('a member talking in one does not conjure it', roles.memberSaidChannel)
+
+  // --- levels ----------------------------------------------------------------
+  /*
+   * A level is a name, a colour and what its people may do, stated in the log.
+   * Every device holds each change to the same rules: you change levels below
+   * your own, you give nobody a power you lack, and nobody climbs past the
+   * person above them.
+   */
+  const levels = await page.evaluate(async () => {
+    const { RoomLog } = await import('/src/store/log.ts')
+    const key = (n) => String(n).repeat(64).slice(0, 64)
+    const OWNER = key(1)
+    const ADMIN = key(2)
+    const HELPER = key(3)
+    const MEMBER = key(4)
+    const MSG = key(7)
+
+    let n = 0
+    const ev = (author, kind, body) => ({
+      id: `${++n}`.padStart(64, '0'),
+      room: 'r',
+      author,
+      lamport: n,
+      kind,
+      at: 1,
+      body,
+      sig: 'x'.repeat(128),
+    })
+    const build = (events) => {
+      const log = new RoomLog('r')
+      log.founder = OWNER
+      for (const e of events) log.add(e)
+      return log
+    }
+    const helpers = (author, extra = {}) =>
+      ev(author, 'level', { id: 'helpers', name: 'Helpers', colour: '#2ec4b6', rank: 30, can: ['pin'], ...extra })
+
+    const start = build([])
+    const made = build([helpers(OWNER), ev(OWNER, 'role', { subject: HELPER, role: 'helpers' })])
+    const byMember = build([helpers(MEMBER)])
+    const pinned = build([
+      helpers(OWNER),
+      ev(OWNER, 'role', { subject: HELPER, role: 'helpers' }),
+      ev(HELPER, 'pin', { target: MSG, on: true }),
+    ])
+
+    // An admin, one below the owner, trying to climb.
+    const admin = ev(OWNER, 'role', { subject: ADMIN, role: 'admin' })
+    const ownLevel = build([admin, ev(ADMIN, 'level', { id: 'admin', name: 'Kings', colour: '#ffffff', rank: 100, can: [] })])
+    const above = build([admin, ev(ADMIN, 'level', { id: 'high', name: 'High', colour: '', rank: 500, can: [] })])
+    const crowned = build([admin, ev(ADMIN, 'role', { subject: MEMBER, role: 'owner' })])
+    const deposed = build([admin, ev(ADMIN, 'role', { subject: OWNER, role: 'member' })])
+
+    // Somebody with levels, but not with the space, cannot hand the space out.
+    const lent = build([
+      helpers(OWNER, { can: ['pin', 'levels'] }),
+      ev(OWNER, 'role', { subject: HELPER, role: 'helpers' }),
+      ev(HELPER, 'level', { id: 'sub', name: 'Sub', colour: '', rank: 10, can: ['pin', 'space'] }),
+    ])
+
+    const dropped = build([
+      helpers(OWNER),
+      ev(OWNER, 'role', { subject: HELPER, role: 'helpers' }),
+      ev(OWNER, 'level', { id: 'helpers', gone: true }),
+    ])
+    const badColour = build([helpers(OWNER, { colour: 'red' })])
+
+    // A moderator removes a member, and cannot remove an admin.
+    const mod = ev(OWNER, 'role', { subject: HELPER, role: 'mod' })
+    const kicks = build([admin, mod, ev(HELPER, 'role', { subject: MEMBER, role: 'kicked' }), ev(HELPER, 'role', { subject: ADMIN, role: 'kicked' })])
+
+    return {
+      starts: start.authority().list().map((l) => l.id).join(','),
+      placed: made.authority().levelOf(HELPER).colour,
+      memberMade: byMember.authority().level('helpers') === undefined,
+      canPin: pinned.pinned().has(MSG),
+      ownLevel: ownLevel.authority().level('admin')?.name,
+      above: above.authority().level('high') === undefined,
+      crowned: crowned.roleOf(MEMBER),
+      deposed: deposed.roleOf(OWNER),
+      lent: lent.authority().level('sub')?.can.join(','),
+      dropped: dropped.roleOf(HELPER),
+      badColour: badColour.authority().level('helpers')?.colour,
+      memberKicked: kicks.roleOf(MEMBER),
+      adminKicked: kicks.roleOf(ADMIN),
+    }
+  })
+  check('a space starts with owner, admin, moderator and member', levels.starts === 'owner,admin,mod,member', levels.starts)
+  check('the owner makes a level and puts somebody on it, in its colour', levels.placed === '#2ec4b6', levels.placed)
+  check('a member cannot make a level', levels.memberMade)
+  check('what a level may do counts: its people can pin', levels.canPin)
+  check('an admin cannot change their own level', levels.ownLevel === 'Admin', levels.ownLevel)
+  check('or make one above it', levels.above)
+  check('or make somebody the owner', levels.crowned === 'member', levels.crowned)
+  check('or move the owner', levels.deposed === 'owner', levels.deposed)
+  check('nobody gives a power they do not have', levels.lent === 'pin', levels.lent)
+  check('a deleted level sends its people back to member', levels.dropped === 'member', levels.dropped)
+  check('a colour has to be a colour', levels.badColour === '', JSON.stringify(levels.badColour))
+  check('a moderator can remove a member', levels.memberKicked === 'kicked', levels.memberKicked)
+  check('but not an admin, who is above them', levels.adminKicked === 'admin', levels.adminKicked)
 
   // --- the order a conversation is read in ----------------------------------
   /*

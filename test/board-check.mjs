@@ -449,113 +449,12 @@ try {
   const missing = await alice.$eval('.gif-pop', (el) => el.textContent)
   check('the picker opens from a button', missing.includes('GIFs'))
   check('a search box comes with it', await alice.$('.gif-search').then((el) => !!el))
-  check('and it says what is missing, in the box', missing.includes('Settings, GIFs'), missing.slice(0, 80))
+  check('and it says what is missing, in the box', missing.includes('GIF search is off'), missing.slice(0, 80))
 
   await alice.keyboard.press('Escape')
   check('escape closes it', await alice.$('.gif-pop').then((el) => el === null))
 
-  // ---- what comes back from each service -----------------------------------
-  // No key here, so the answer is stubbed: what is being checked is that the
-  // right address is asked, and that the tree it answers with is read down to
-  // one big picture and one small one.
-  const mapped = await alice.evaluate(async () => {
-    const { searchGifs } = await import('/src/store/gifs.ts')
-    const real = window.fetch
-    let asked = ''
-    const answer = (body) => {
-      window.fetch = async (url) => {
-        asked = String(url)
-        return new Response(JSON.stringify(body), { status: 200 })
-      }
-    }
-
-    answer({
-      result: true,
-      data: {
-        data: [
-          {
-            file: {
-              hd: {
-                gif: { url: 'https://cdn.klipy.test/hd.gif', width: 480 },
-                webm: { url: 'https://cdn.klipy.test/hd.webm', width: 480 },
-                mp4: { url: 'https://cdn.klipy.test/hd.mp4', width: 480 },
-                jpg: { url: 'https://cdn.klipy.test/hd.jpg', width: 640 },
-              },
-              sm: { gif: { url: 'https://cdn.klipy.test/sm.gif', width: 120 }, jpg: { url: 'https://cdn.klipy.test/sm.jpg', width: 60 } },
-            },
-          },
-        ],
-      },
-    })
-    const klipy = await searchGifs('cat', { service: 'klipy', key: 'KEY123' })
-    const klipyAsked = asked
-
-    answer({ results: [{ media_formats: { gif: { url: 'https://media.tenor.test/big.gif' }, tinygif: { url: 'https://media.tenor.test/small.gif' } } }] })
-    const tenor = await searchGifs('cat', { service: 'tenor', key: 'AIzaKey' })
-    const tenorAsked = asked
-
-    window.fetch = real
-    return { klipy, klipyAsked, tenor, tenorAsked }
-  })
-  check(
-    'a Klipy key is asked in the path, not the query',
-    mapped.klipyAsked.includes('/api/v1/KEY123/gifs/search?q=cat'),
-    mapped.klipyAsked,
-  )
-  check(
-    'the webm is what gets said',
-    mapped.klipy[0]?.url === 'https://cdn.klipy.test/hd.webm',
-    mapped.klipy[0]?.url ?? 'nothing',
-  )
-  check(
-    'and the narrowest picture is drawn in the grid',
-    mapped.klipy[0]?.preview === 'https://cdn.klipy.test/sm.gif',
-    mapped.klipy[0]?.preview ?? 'nothing',
-  )
-  check(
-    'and an mp4 loses to the webm',
-    !JSON.stringify(mapped.klipy).includes('.mp4'),
-  )
-  check(
-    'a still frame loses to the gif, even a wider one',
-    !JSON.stringify(mapped.klipy).includes('.jpg'),
-  )
-  check(
-    'Tenor still answers the way it did',
-    mapped.tenor[0]?.url === 'https://media.tenor.test/big.gif' &&
-      mapped.tenor[0]?.preview === 'https://media.tenor.test/small.gif' &&
-      mapped.tenorAsked.includes('tenor.googleapis.com'),
-  )
-
-  // A key saved before the menu existed is a bare string, and still opens.
-  const legacy = await alice.evaluate(async () => {
-    localStorage.setItem('cathode.gifkey.v1', 'AIzaSomethingOld')
-    const { gifCredential } = await import('/src/store/gifs.ts')
-    return gifCredential()
-  })
-  check('a key saved before the menu is read as a Tenor key', legacy?.service === 'tenor', JSON.stringify(legacy))
-
-  // A key in this browser is what the picker looks for first.
-  await alice.evaluate(() =>
-    localStorage.setItem('cathode.gifkey.v1', JSON.stringify({ s: 'klipy', k: 'not-a-real-key' })),
-  )
-  await alice.click('button[aria-label="Find a GIF"]')
-  await alice.waitForSelector('.gif-pop')
-  await alice.fill('.gif-search', 'dancing cat')
-  const answered = await alice
-    .waitForFunction(
-      () => {
-        const said = document.querySelector('.gif-pop')?.textContent ?? ''
-        return said.includes('Nothing for') || said.includes('Results for')
-      },
-      null,
-      { timeout: 15_000 },
-    )
-    .then(() => true)
-    .catch(() => false)
-  check('a key in this browser is what it searches with', answered, 'a fake key, so: nothing found')
-  const stillOpen = await alice.$('.gif-pop').then((el) => el !== null)
-  check('and a search that found nothing leaves the box open', stillOpen)
+  // What each service answers is read on the server now: see gifs-check.mjs.
 } catch (err) {
   check('the run finished', false, err instanceof Error ? err.message : String(err))
 }

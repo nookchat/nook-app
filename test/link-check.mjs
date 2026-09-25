@@ -2,9 +2,12 @@
  * The same person, with the same spaces and messages, on a second device.
  *
  *   by the code   Ana makes a link; a new device, at its first screen, says
- *                 it already uses Nook and types the code and its server
+ *                 it has an account, from another device, and types the code
+ *                 and the server shown under it
  *   once only     a third device opens the same link after, and is refused
  *   by the link   Ana makes another; the third device opens it, and is her
+ *   pasted        a fourth device pastes a link where the code goes, and
+ *                 needs nothing else
  *
  * Each new device ends up as Ana: her name, her ID, her space on its list,
  * and what was said in it, all read from the server.
@@ -35,7 +38,11 @@ async function makeLink(page) {
   await page.click('button:text-is("Link a device")')
   const code = page.locator('.link-code')
   await code.waitFor({ timeout: 15_000 })
-  const offer = { code: (await code.textContent()).trim(), link: await code.getAttribute('data-link') }
+  const offer = {
+    code: (await code.textContent()).trim(),
+    link: await code.getAttribute('data-link'),
+    server: (await page.locator('.link-server').textContent()).trim(),
+  }
   await page.keyboard.press('Escape')
   await page.click('button[aria-label="Close settings"]')
   return offer
@@ -86,10 +93,14 @@ try {
   const two = await fresh()
   await two.goto(APP_URL)
   await two.click('button:has-text("I have an account")')
+  await two.click('button:has-text("Use my other device")')
   check('linking asks for no name: the name comes with the account', (await two.$('input[aria-label="Your name"]:visible')) === null)
-  await two.fill('input[aria-label="The link or code"]', first.code.toLowerCase())
-  await two.fill('input[aria-label="The server"]', 'localhost:8787')
-  await two.click('button:text-is("Link")')
+  check('the code shows the server it waits on, to type beside it', first.server === 'localhost:8787', first.server)
+  await two.fill('input[aria-label="The link or code"]', first.code.toLowerCase().replace(/-/g, ''))
+  const shaped = await two.inputValue('input[aria-label="The link or code"]')
+  check('a code is shaped as it is typed', shaped === first.code, shaped)
+  await two.fill('input[aria-label="The server"]', first.server)
+  await two.click('button:text-is("Link this device")')
   await two.waitForURL((url) => !url.hash, { timeout: 15_000 }).catch(() => undefined)
   await wait(1500)
   const asTwo = await whoIs(two)
@@ -118,6 +129,18 @@ try {
   await wait(1500)
   const asThree = await whoIs(three)
   check('opening the link does it in one go', asThree.name === 'Ana' && asThree.id === her.id && asThree.spaces.includes('linked'), JSON.stringify(asThree))
+
+  // ---- a link pasted where the code goes ----
+  const third = await makeLink(ana)
+  const four = await fresh()
+  await four.goto(APP_URL)
+  await four.click('button:has-text("I have an account")')
+  await four.click('button:has-text("Use my other device")')
+  await four.fill('input[aria-label="The link or code"]', third.link)
+  await four.waitForURL((url) => !url.hash && url.href !== APP_URL + '#', { timeout: 20_000 }).catch(() => undefined)
+  await wait(2500)
+  const asFour = await whoIs(four)
+  check('a link pasted where the code goes needs nothing more', asFour.name === 'Ana' && asFour.id === her.id, JSON.stringify(asFour))
 
   const nothing = await fetch('http://localhost:8787/api/v1/links/' + '0'.repeat(32))
   check('a link nobody left is not there', nothing.status === 404, String(nothing.status))

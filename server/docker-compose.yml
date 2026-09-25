@@ -68,8 +68,10 @@ services:
       CATHODE_MAX_ROOM_BYTES: ${CATHODE_MAX_ROOM_BYTES:-268435456}
       # Link cards: 0 stops this server learning which links people preview.
       CATHODE_PREVIEWS: ${CATHODE_PREVIEWS:-1}
-      # GIF search for /gif, off until a key is given.
+      # GIF search for everybody here, off until a key is given. One is enough.
+      CATHODE_KLIPY_KEY: ${CATHODE_KLIPY_KEY:-}
       CATHODE_TENOR_KEY: ${CATHODE_TENOR_KEY:-}
+      CATHODE_GIPHY_KEY: ${CATHODE_GIPHY_KEY:-}
 
   db:
     image: postgres:17-alpine

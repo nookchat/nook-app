@@ -55,6 +55,18 @@ with voice does it.
 - **Watching** is a choice. A share is offered in the strip above the
   conversation, and nothing is on your screen until you pick it. Pick two, and
   the stage splits. Close, or `Esc`, takes them all off.
+- **Levels** say who runs a space. It starts with Owner (who made it), Admin,
+  Moderator and Member, and Settings, Levels, makes more. Each level has a
+  colour, and the names of its people are in that colour everywhere in the
+  space; and each has what its people may do: channels, pins, deleting
+  messages, removing and moving people, levels, and the space itself. Put
+  somebody on a level from their menu in the list of people. You change only
+  the levels below yours, and you give nobody a power you do not have. Every
+  device checks each change in the log, so a button is never the rule.
+- **Emoji on their own**, in a message or a reply, are drawn large.
+- **GIFs** come from the server of the space, with its key: whoever runs it
+  sets `CATHODE_KLIPY_KEY`, `CATHODE_TENOR_KEY` or `CATHODE_GIPHY_KEY`, and
+  everybody on it can search. Nobody puts a key of their own in the page.
 
 Every space you are in is connected at once, over one WebSocket per server, so
 a direct message or a mention in any of them reaches you wherever you are.
@@ -63,30 +75,32 @@ a direct message or a mention in any of them reaches you wherever you are.
 
 | What | Where |
 | --- | --- |
-| Messages, channels, roles, reactions | Postgres on the server, and on every server of its cluster |
+| Messages, channels, levels, reactions | Postgres on the server, and on every server of its cluster |
 | Files | On the server's disk, sealed, and on every server of its cluster. The key is in the message |
 | Your list of spaces and read marks | The server, in one record per person, sealed with a key made from your identity |
 | Who is here | The server holds it in memory, and says when it changes |
 | Picture and sound | Straight between browsers, or through the server's TURN relay when it has one, encrypted with DTLS-SRTP |
-| Your preferences: quick reactions, volumes, sounds, GIF key, space order | This device, and a copy in your sealed record on your servers, so they follow you to every device |
+| Your preferences: quick reactions, volumes, sounds, space order | This device, and a copy in your sealed record on your servers, so they follow you to every device |
 | Your identity key | Your devices only, and only the ones you link or restore. It signs everything you write |
 | Your microphone and speaker | This device only: they are its hardware |
 
 Nothing about a space is written to IndexedDB or local storage.
 
-**A backup.** Settings, Your account, Backup, saves your account
-as one small file, with a password if you want one. If a browser's data is
-ever cleared, open Nook, choose "I have an account", then "Restore
-backup", and you are back with every space and message. Anybody with
-the file can be you, so keep it somewhere private.
+**A backup.** Settings, Your account, Save a backup, saves your account
+as one small file, with a password if you want one, and Settings says when
+this device last saved one. If a browser's data is ever cleared, open Nook,
+choose "I have an account", then "Use a backup file", and choose the file or
+drop it on the screen. You are back with every space and message. Anybody
+with the file can be you, so keep it somewhere private.
 
-**Another device.** Settings, Link a device, shows a QR code, a link
-and a code like `K7M2-9QPT-VB2W`. Scan it with the new device's camera, open
-the link there, or type the code on its first screen under "I have an
-account". The new device becomes you: your key, your name, and which servers
-hold your spaces (your picture comes from them), so it has the same spaces, messages and direct
-messages. What travels is sealed with a key made from the code, waits on your
-server for ten minutes, and can be taken once.
+**Another device.** Settings, Link a device, shows a QR code, a link, and a
+code like `K7M2-9QPT-VB2W` with the server it waits on. Point the new
+device's camera at the QR code, open the link there, or choose "I have an
+account", then "Use my other device", and type the code and the server. The
+new device becomes you: your key, your name, and which servers hold your
+spaces (your picture comes from them), so it has the same spaces, messages
+and direct messages. What travels is sealed with a key made from the code,
+waits on your server for ten minutes, and can be taken once.
 
 Everything is sealed with AES-GCM under a key made from the space code (and its
 password, if it has one) before it leaves the browser. Every event is signed
@@ -227,7 +241,7 @@ src/
     server-spaces.ts  your sealed record of spaces on each server
     prefs.ts          the preferences that ride in that record, newest wins
     verify-pool.ts    signature checks on Web Workers
-    gifs.ts           GIF search: your own key, or the server's
+    gifs.ts           what a GIF is; the server searches, with its key
   rtc/                screen share connections, codecs, quality, stats
   media/              the screen picker, the microphone, and the mix
   ui/
@@ -240,6 +254,7 @@ src/
     chat-panel.ts     the conversation, drawn as nodes and never as HTML
     attachments.ts    files in a message, the picture viewer, and the upload tray
     settings-view.ts  profile, identity, servers, this space, preferences
+    levels.ts         the levels of a space: names, colours, what each may do
     space-switcher.ts going from one space to another, behind the space name
     video-surface.ts  fit, fill, and one to one with zoom and pan
     qr.ts             a QR encoder, byte mode, level M, versions 1 to 10
@@ -266,7 +281,9 @@ test/
   emoji-check.mjs     the picker, and what one emoji is made of
   board-check.mjs     the soundboard, GIF search, and pictures
   leave-check.mjs     leaving, deleting, and one code meaning one room
-  roles-check.mjs     who may do what, and what a member may not
+  roles-check.mjs     who may do what, levels included, and what a member may not
+  levels-check.mjs    a level made and given, names in its colour, emoji drawn large
+  gifs-check.mjs      GIF search with the server's key, and nowhere to put your own
   agree-check.mjs     three browsers typing at once, ending up identical
   converge-check.mjs  the same events shuffled two hundred ways
   rejoin-check.mjs    one row per person, however many devices they use

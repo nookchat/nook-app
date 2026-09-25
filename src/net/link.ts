@@ -149,7 +149,7 @@ export function linkInAddress(): { code: string; server: string } | null {
 export async function takeOffer(offer: { code: string; server: string }): Promise<string> {
   const { id, key } = await derive(offer.code)
   const res = await fetch(`${offer.server}/api/v1/links/${id}`, { mode: 'cors' }).catch(() => null)
-  if (!res) throw new Error(`${serverTag(offer.server)} could not be reached.`)
+  if (!res) throw new Error(`${serverTag(offer.server)} could not be reached. Check the server under the code.`)
   if (res.status === 404) throw new Error('That code has been used, or has run out. Make a new one on the other device.')
   if (!res.ok) throw new Error(`${serverTag(offer.server)} said no (${res.status}).`)
   const { blob } = (await res.json()) as { blob?: string }
@@ -192,7 +192,7 @@ interface BackupFile {
 
 const KEEP =
   'This file is your Nook account. Anybody who has it can be you, so keep it somewhere private. ' +
-  'To use it, open Nook, choose "I have an account", then "Restore backup".'
+  'To use it, open Nook, choose "I have an account", then "Use a backup file".'
 
 async function passwordKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
   const base = await crypto.subtle.importKey('raw', enc.encode(password) as BufferSource, 'PBKDF2', false, ['deriveKey'])

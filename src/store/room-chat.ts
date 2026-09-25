@@ -23,7 +23,10 @@ import {
   trimToWire,
   oneEmoji,
   RoomLog,
+  type Authority,
   type ChannelInfo,
+  type Level,
+  type Permission,
   type LogEvent,
   type ThreadInfo,
   type Message,
@@ -185,8 +188,24 @@ export class RoomChat {
     return this.log.roleOf(this.me)
   }
 
-  get isAdmin(): boolean {
-    return this.myRole === 'admin'
+  /** Who is on which level, and what each level may do. */
+  authority(): Authority {
+    return this.log.authority()
+  }
+
+  /** Whether this device's person may do a thing here. */
+  can(what: Permission): boolean {
+    return this.log.can(this.me, what)
+  }
+
+  /** The level somebody is on. */
+  levelOf(pubkey: string): Level {
+    return this.log.authority().levelOf(pubkey)
+  }
+
+  /** Every level of the space, highest first. */
+  levels(): Level[] {
+    return this.log.authority().list()
   }
 
   lastSeen(): Map<string, number> {
@@ -220,8 +239,19 @@ export class RoomChat {
     return this.write('space', { name: name.slice(0, 32).trim() })
   }
 
-  setRole(subject: string, role: 'admin' | 'member' | 'kicked'): Promise<LogEvent> {
+  /** Put somebody on a level, by its id, or remove them with 'kicked'. */
+  setRole(subject: string, role: string): Promise<LogEvent> {
     return this.write('role', { subject, role })
+  }
+
+  /** Make a level, or change one: the whole of it is stated each time. */
+  setLevel(level: Level): Promise<LogEvent> {
+    return this.write('level', { id: level.id, name: level.name, colour: level.colour, rank: level.rank, can: level.can })
+  }
+
+  /** Take a level away. Whoever was on it goes back to being a member. */
+  dropLevel(id: string): Promise<LogEvent> {
+    return this.write('level', { id, gone: true })
   }
 
   // ---- writing ----
@@ -235,6 +265,7 @@ export class RoomChat {
       | 'profile'
       | 'channel'
       | 'role'
+      | 'level'
       | 'space'
       | 'pin'
       | 'poll'

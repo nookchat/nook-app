@@ -29,11 +29,130 @@ export type EventKind =
   | 'vote'
   | 'reset'
   | 'role'
+  | 'level'
   | 'space'
   | 'close'
   | 'dm'
 
-export type Role = 'admin' | 'member' | 'kicked'
+/** A level's id, or 'kicked' for somebody removed from the space. */
+export type Role = string
+
+/**
+ * What a level lets somebody do. Each is checked by every device when it
+ * reads the log, so a button that shows is a convenience and never the rule.
+ */
+export type Permission = 'channels' | 'pin' | 'delete' | 'remove' | 'move' | 'levels' | 'space'
+
+export const PERMISSIONS: { id: Permission; label: string; about: string }[] = [
+  { id: 'channels', label: 'Channels', about: 'Make, rename and delete channels' },
+  { id: 'pin', label: 'Pin messages', about: 'Hold a message up at the top of a channel' },
+  { id: 'delete', label: 'Delete messages', about: 'Take down what anybody wrote' },
+  { id: 'remove', label: 'Remove people', about: 'Remove somebody, or let them back in' },
+  { id: 'move', label: 'Move people', about: 'Move somebody into your voice channel' },
+  { id: 'levels', label: 'Levels', about: 'Change levels below theirs, and put people on them' },
+  { id: 'space', label: 'The space', about: 'Rename it, clear its history, or delete it' },
+]
+
+const ALL: Permission[] = PERMISSIONS.map((p) => p.id)
+
+/**
+ * A step on the ladder of who runs a space.
+ *
+ * A higher rank is above a lower one. The owner is the person who made the
+ * space, alone at the top; a member is everybody nobody has put anywhere.
+ * Both always exist. Every other level is stated in the log by somebody
+ * allowed to, and can be changed or taken away the same way.
+ */
+export interface Level {
+  id: string
+  name: string
+  /** `#rrggbb`, or empty for the ordinary colour of text. */
+  colour: string
+  rank: number
+  can: Permission[]
+}
+
+export const OWNER = 'owner'
+export const MEMBER = 'member'
+const TOP = 1000
+
+/** What a space starts with, before anybody changes a thing. */
+const STARTING: Level[] = [
+  { id: OWNER, name: 'Owner', colour: '#f0b232', rank: TOP, can: ALL },
+  { id: 'admin', name: 'Admin', colour: '#f25f5c', rank: 100, can: ALL },
+  { id: 'mod', name: 'Moderator', colour: '#3ddc84', rank: 50, can: ['pin', 'delete', 'remove', 'move'] },
+  { id: MEMBER, name: 'Member', colour: '', rank: 0, can: [] },
+]
+
+/**
+ * Who is where, worked out by walking the log in order.
+ *
+ * Each change counts only if whoever signed it was allowed to at that point:
+ * a person changes levels below their own, gives nobody a power they lack,
+ * and places people at their own level or lower. So the answer is the same
+ * on every device and nobody can climb past the person above them.
+ */
+export class Authority {
+  constructor(
+    readonly founder: string,
+    private readonly levels: Map<string, Level>,
+    private readonly placed: Map<string, string>,
+    /** When somebody was removed, in log order. */
+    readonly kickedAt: Map<string, number>,
+  ) {}
+
+  /** Every level, highest first. */
+  list(): Level[] {
+    return [...this.levels.values()].sort((a, b) => b.rank - a.rank || a.name.localeCompare(b.name))
+  }
+
+  level(id: string): Level | undefined {
+    return this.levels.get(id)
+  }
+
+  levelOf(key: string): Level {
+    if (key && key === this.founder) return this.levels.get(OWNER) as Level
+    return this.levels.get(this.placed.get(key) ?? MEMBER) ?? (this.levels.get(MEMBER) as Level)
+  }
+
+  /** A level's id, or 'kicked'. */
+  roleOf(key: string): Role {
+    return this.kickedAt.has(key) ? 'kicked' : this.levelOf(key).id
+  }
+
+  isKicked(key: string): boolean {
+    return this.kickedAt.has(key)
+  }
+
+  can(key: string, what: Permission): boolean {
+    return !this.kickedAt.has(key) && this.levelOf(key).can.includes(what)
+  }
+
+  /** Whether `who` may change the level of `subject`: somebody at their own level or lower, never the owner. */
+  mayPlace(who: string, subject: string): boolean {
+    return (
+      subject !== this.founder && this.can(who, 'levels') && this.levelOf(subject).rank <= this.levelOf(who).rank
+    )
+  }
+
+  /** Whether `who` may remove `subject`, or let them back in. */
+  mayRemove(who: string, subject: string): boolean {
+    return (
+      subject !== this.founder && who !== subject && this.can(who, 'remove') && this.levelOf(subject).rank <= this.levelOf(who).rank
+    )
+  }
+
+  /** Whether `who` may change or take away a level: only one below their own. */
+  mayEdit(who: string, level: Level): boolean {
+    return level.id !== OWNER && this.can(who, 'levels') && level.rank < this.levelOf(who).rank
+  }
+}
+
+/** A colour as a level states it, or empty when it is not one. */
+export function cleanColour(raw: unknown): string {
+  const text = typeof raw === 'string' ? raw.trim().toLowerCase() : ''
+  return /^#[0-9a-f]{6}$/.test(text) ? text : ''
+}
 
 /** Every space has these, and they cannot be removed. */
 export const DEFAULT_CHANNEL = 'general'
@@ -183,6 +302,7 @@ export async function openEvent(raw: unknown, room: string): Promise<LogEvent | 
       'profile',
       'channel',
       'role',
+      'level',
       'space',
       'pin',
       'poll',
@@ -400,25 +520,90 @@ export class RoomLog {
    * granted by anyone.
    *
    * Every peer runs this over the same events and reaches the same answer, so
-   * there is no authority to disagree with. A change of role only counts if the
-   * person who signed it was an admin at that point, which is why this walks
-   * the log in order rather than reading the last word on each person.
+   * there is no authority to disagree with. A change only counts if the
+   * person who signed it was allowed to make it at that point, which is why
+   * this walks the log in order rather than reading the last word on each
+   * person. It is worked out once for each state of the log.
    */
-  roles(): Map<string, Role> {
-    const roles = new Map<string, Role>()
-    if (this.founder) roles.set(this.founder, 'admin')
+  authority(): Authority {
+    const all = this.all()
+    if (this.folded && this.folded.from === all && this.folded.founder === this.founder) return this.folded.auth
+    const levels = new Map<string, Level>(STARTING.map((l) => [l.id, { ...l, can: [...l.can] }]))
+    const placed = new Map<string, string>()
+    const kickedAt = new Map<string, number>()
+    const founder = this.founder
+    const auth = new Authority(founder, levels, placed, kickedAt)
 
+    for (const e of all) {
+      if (e.kind === 'level') {
+        const id = String(e.body.id ?? '')
+        if (!/^[a-z0-9]{1,16}$/.test(id) || id === OWNER) continue
+        const was = levels.get(id)
+        if (was && !auth.mayEdit(e.author, was)) continue
+        if (!was && !auth.can(e.author, 'levels')) continue
+        const mine = auth.levelOf(e.author)
+        if (e.body.gone === true) {
+          // The level everybody starts on cannot go: there would be nowhere to stand.
+          if (id === MEMBER || !was) continue
+          levels.delete(id)
+          for (const [key, at] of placed) if (at === id) placed.delete(key)
+          continue
+        }
+        const name = String(e.body.name ?? '').slice(0, 24).trim()
+        if (!name) continue
+        const rank = id === MEMBER ? 0 : Number(e.body.rank)
+        if (!Number.isFinite(rank) || (id !== MEMBER && (rank <= 0 || rank >= mine.rank))) continue
+        // Nobody hands out a power they do not have.
+        const asked = Array.isArray(e.body.can) ? e.body.can.map(String) : []
+        const can = ALL.filter((p) => asked.includes(p) && mine.can.includes(p))
+        levels.set(id, { id, name, colour: cleanColour(e.body.colour), rank, can })
+        continue
+      }
+      if (e.kind !== 'role') continue
+      const subject = String(e.body.subject ?? '')
+      if (!/^[0-9a-f]{64}$/.test(subject) || subject === founder) continue
+      const role = String(e.body.role ?? '')
+      if (role === 'kicked') {
+        if (auth.mayRemove(e.author, subject)) kickedAt.set(subject, e.lamport)
+        continue
+      }
+      const level = levels.get(role)
+      if (!level || level.id === OWNER) continue
+      if (kickedAt.has(subject)) {
+        // Letting somebody back in is the same power as removing them.
+        if (!auth.mayRemove(e.author, subject) && !auth.mayPlace(e.author, subject)) continue
+        kickedAt.delete(subject)
+        if (level.id === MEMBER) {
+          placed.delete(subject)
+          continue
+        }
+      }
+      if (!auth.mayPlace(e.author, subject) || level.rank > auth.levelOf(e.author).rank) continue
+      if (level.id === MEMBER) placed.delete(subject)
+      else placed.set(subject, level.id)
+    }
+    this.folded = { from: all, founder, auth }
+    return auth
+  }
+
+  private folded: { from: LogEvent[]; founder: string; auth: Authority } | null = null
+
+  /** Who stands where, as a map of key to level id or 'kicked'. The owner is included. */
+  roles(): Map<string, Role> {
+    const auth = this.authority()
+    const out = new Map<string, Role>()
+    if (this.founder) out.set(this.founder, OWNER)
     for (const e of this.all()) {
       if (e.kind !== 'role') continue
-      if (roles.get(e.author) !== 'admin') continue // only an admin may change roles
       const subject = String(e.body.subject ?? '')
-      const role = String(e.body.role ?? '')
-      if (!/^[0-9a-f]{64}$/.test(subject)) continue
-      if (subject === this.founder) continue // the founder cannot be demoted
-      if (role !== 'admin' && role !== 'member' && role !== 'kicked') continue
-      roles.set(subject, role)
+      if (/^[0-9a-f]{64}$/.test(subject)) out.set(subject, auth.roleOf(subject))
     }
-    return roles
+    return out
+  }
+
+  /** Whether the person behind a key may do a thing, by the level they are on now. */
+  can(key: string, what: Permission): boolean {
+    return this.authority().can(key, what)
   }
 
   /**
@@ -440,11 +625,11 @@ export class RoomLog {
    * reset would take the room apart rather than empty it.
    */
   resetAt(): number {
-    const roles = this.roles()
+    const auth = this.authority()
     let mark = 0
     for (const e of this.all()) {
       if (e.kind !== 'reset') continue
-      if (roles.get(e.author) !== 'admin') continue
+      if (!auth.can(e.author, 'space')) continue
       const before = Number(e.body.before ?? 0)
       if (Number.isFinite(before) && before > mark) mark = before
     }
@@ -465,10 +650,10 @@ export class RoomLog {
    * walked in could take the room away from everybody else.
    */
   closed(): boolean {
-    const roles = this.roles()
+    const auth = this.authority()
     for (const e of this.all()) {
       if (e.kind !== 'close') continue
-      if (roles.get(e.author) === 'admin') return true
+      if (auth.can(e.author, 'space')) return true
     }
     return false
   }
@@ -496,12 +681,12 @@ export class RoomLog {
    * anybody who is not an admin has pressed the button.
    */
   private pinnedIds(): { on: Set<string>; by: Map<string, string> } {
-    const roles = this.roles()
+    const auth = this.authority()
     const on = new Set<string>()
     const by = new Map<string, string>()
     for (const e of this.all()) {
       if (e.kind !== 'pin') continue
-      if (roles.get(e.author) !== 'admin') continue
+      if (!auth.can(e.author, 'pin')) continue
       const target = String(e.body.target ?? '')
       if (!/^[0-9a-f]{64}$/.test(target)) continue
       if (e.body.on === false) on.delete(target)
@@ -512,16 +697,16 @@ export class RoomLog {
   }
 
   roleOf(pubkey: string): Role {
-    return this.roles().get(pubkey) ?? 'member'
+    return this.authority().roleOf(pubkey)
   }
 
   /** The name the space goes by, set by an admin. */
   spaceName(): string {
     let name = ''
-    const roles = this.roles()
+    const auth = this.authority()
     for (const e of this.all()) {
       if (e.kind !== 'space') continue
-      if (roles.get(e.author) !== 'admin') continue
+      if (!auth.can(e.author, 'space')) continue
       const claimed = String(e.body.name ?? '').slice(0, 32).trim()
       if (claimed) name = claimed
     }
@@ -533,22 +718,7 @@ export class RoomLog {
    * point is ignored by everybody, because everybody computes the same instant.
    */
   private kickedAt(): Map<string, number> {
-    const out = new Map<string, number>()
-    const roles = new Map<string, Role>()
-    if (this.founder) roles.set(this.founder, 'admin')
-    for (const e of this.all()) {
-      if (e.kind !== 'role') continue
-      if (roles.get(e.author) !== 'admin') continue
-      const subject = String(e.body.subject ?? '')
-      const role = String(e.body.role ?? '')
-      if (subject === this.founder) continue
-      if (role === 'kicked') out.set(subject, e.lamport)
-      else if (role === 'admin' || role === 'member') {
-        out.delete(subject)
-        roles.set(subject, role)
-      }
-    }
-    return out
+    return this.authority().kickedAt
   }
 
   /** Swap the contents for a compacted set, keeping the clock where it is. */
@@ -613,13 +783,14 @@ export class RoomLog {
     const label = new Map<string, string>()
     const topic = new Map<string, string>()
     const gone = new Set<string>()
-    const roles = this.roles()
+    const auth = this.authority()
 
     for (const e of this.all()) {
       if (e.kind === 'channel') {
-        // Only an admin makes or changes channels, so nobody can fill the rail
-        // from afar, and nobody but the people who run the place can empty it.
-        if (roles.get(e.author) !== 'admin') continue
+        // Only somebody on a level with channels makes or changes them, so
+        // nobody can fill the rail from afar, and nobody but the people who
+        // run the place can empty it.
+        if (!auth.can(e.author, 'channels')) continue
         const isVoice = e.body.voice === true
         if (isVoice !== voice) continue
         const name = cleanChannel(String(e.body.name ?? ''))
@@ -632,7 +803,7 @@ export class RoomLog {
         if (typeof e.body.topic === 'string') topic.set(name, e.body.topic.slice(0, 140).trim())
         if (e.body.gone === true) gone.add(name)
         else gone.delete(name)
-      } else if (!voice && e.kind === 'said' && roles.get(e.author) === 'admin') {
+      } else if (!voice && e.kind === 'said' && auth.can(e.author, 'channels')) {
         // An admin writing in a channel is as good as making it, which is what
         // keeps a channel alive after its channel event is tidied away. Only an
         // admin, though: anybody's message used to count, and that let any
@@ -656,9 +827,9 @@ export class RoomLog {
   private deletedChannels(voice = false): Set<string> {
     const live = new Set(this.channelList(voice).map((c) => c.name))
     const gone = new Set<string>()
-    const roles = this.roles()
+    const auth = this.authority()
     for (const e of this.all()) {
-      if (e.kind !== 'channel' || roles.get(e.author) !== 'admin') continue
+      if (e.kind !== 'channel' || !auth.can(e.author, 'channels')) continue
       if ((e.body.voice === true) !== voice) continue
       const name = cleanChannel(String(e.body.name ?? ''))
       if (name && !live.has(name)) gone.add(name)
@@ -689,7 +860,7 @@ export class RoomLog {
       // The room itself, as opposed to what was said in it. Every one of these
       // is kept: who runs the place is worked out by walking them in order, so
       // dropping any of them changes the answer.
-      if (e.kind === 'role' || e.kind === 'space' || e.kind === 'reset') live.add(e.id)
+      if (e.kind === 'role' || e.kind === 'level' || e.kind === 'space' || e.kind === 'reset') live.add(e.id)
       // And the line that closes the space, which has to outlive everything it
       // closes: a peer that never heard it would hand the room straight back.
       if (e.kind === 'close') live.add(e.id)
@@ -711,11 +882,11 @@ export class RoomLog {
 
   /** The newest word on each channel, by event id. Admins only, as ever. */
   private latestChannels(): Map<string, string> {
-    const roles = this.roles()
+    const auth = this.authority()
     const out = new Map<string, string>()
     for (const e of this.all()) {
       if (e.kind !== 'channel') continue
-      if (roles.get(e.author) !== 'admin') continue
+      if (!auth.can(e.author, 'channels')) continue
       out.set(`${e.body.voice === true ? 'v' : 't'}:${String(e.body.name ?? '')}`, e.id)
     }
     return out
@@ -727,7 +898,7 @@ export class RoomLog {
     const names = new Map<string, string>()
     const kicked = this.kickedAt()
     const cleared = this.resetAt()
-    const roles = this.roles()
+    const auth = this.authority()
     // What was said in a channel that has been taken away goes with it.
     const removed = this.deletedChannels()
     // The newest word from each person on each thing, so the ones it replaced
@@ -742,7 +913,7 @@ export class RoomLog {
       // Somebody removed keeps what they already said and loses what came after.
       const removedAt = kicked.get(e.author)
       if (removedAt !== undefined && e.lamport > removedAt) continue
-      if (e.kind === 'role' || e.kind === 'space' || e.kind === 'close') continue
+      if (e.kind === 'role' || e.kind === 'level' || e.kind === 'space' || e.kind === 'close') continue
       /*
        * A private message is kept and never drawn here. Everybody holds the
        * sealed copy, because that is how it reaches the person it is for; only
@@ -848,7 +1019,7 @@ export class RoomLog {
          * counts from the moment they were an admin, which is the same rule
          * every other thing an admin may do is held to.
          */
-        if (e.author !== target.author && roles.get(e.author) !== 'admin') continue
+        if (e.author !== target.author && !auth.can(e.author, 'delete')) continue
         target.retracted = true
         target.text = ''
         target.files = []

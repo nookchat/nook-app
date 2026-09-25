@@ -115,7 +115,7 @@ Version 1, under `/api/v1`. A running server describes it at
 | `GET /api/v1/people/:id` | One person's sealed record |
 | `PUT /api/v1/people/:id` | Replaces it. Needs `x-cathode-write`. The first write claims it |
 | `GET /api/v1/preview?url=U` | The title, description and picture behind a public link |
-| `GET /api/v1/gifs?q=term` | GIF search, when `CATHODE_TENOR_KEY` is set |
+| `GET /api/v1/gifs?q=term` | GIF search with this server's key, when one is set. No term: what is popular now. Answers `{ "gifs", "from" }` |
 | `GET /api/v1/cluster/lines`, `/rooms`, `/people`, `/files`, `/live` | Between servers in a cluster only. Needs the cluster secret |
 
 The socket speaks JSON, one message per frame. Every message carries the
@@ -268,7 +268,9 @@ calls try to go straight between browsers.
 | `CATHODE_TURN_TTL` | `86400` | How long a TURN credential lasts, in seconds |
 | `CATHODE_TURN_ONLY` | `1` | `0` lets a call try a direct path before TURN |
 | `CATHODE_PREVIEWS` | `1` | `0` turns link cards off, so this server never learns which links are shared |
-| `CATHODE_TENOR_KEY` | (empty) | Turns on GIF search. A free key comes from https://developers.google.com/tenor |
+| `CATHODE_KLIPY_KEY` | (empty) | Turns on GIF search for everybody here, with Klipy. A test key comes from https://partner.klipy.com/api-keys |
+| `CATHODE_TENOR_KEY` | (empty) | The same with Tenor, when no Klipy key is set. A key comes from https://developers.google.com/tenor |
+| `CATHODE_GIPHY_KEY` | (empty) | The same with Giphy, when neither of the others is set. A key comes from https://developers.giphy.com |
 | `CATHODE_MAX_ROOM_SOCKETS` | `200` | Connections one space may hold |
 | `CATHODE_RATE`, `CATHODE_RATE_BURST` | `30`, `120` | Requests one address may make per second, and in a burst |
 | `CATHODE_FILES` | `/data/files` | Where uploaded files are kept, sealed |
