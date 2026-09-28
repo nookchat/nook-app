@@ -2,114 +2,276 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; img-src data:; font-src file:; style-src 'unsafe-inline'; script-src 'unsafe-inline'"
+    />
     <title>Share your screen</title>
     <style>
+      /* The fonts come with the app, so the picker looks the same with no network. */
+      @font-face { font-family: 'DM Sans'; font-weight: 400; src: url(fonts/dm-sans-latin-400-normal.woff2) format('woff2'); }
+      @font-face { font-family: 'DM Sans'; font-weight: 500; src: url(fonts/dm-sans-latin-500-normal.woff2) format('woff2'); }
+      @font-face { font-family: 'DM Sans'; font-weight: 600; src: url(fonts/dm-sans-latin-600-normal.woff2) format('woff2'); }
+      @font-face { font-family: 'Bricolage Grotesque'; font-weight: 700; src: url(fonts/bricolage-grotesque-latin-700-normal.woff2) format('woff2'); }
+
       /* The Nook brand tokens (nook-brand/tokens/tokens.css): cream in light, deep night in dark. */
-      :root { color-scheme: light; --bg: #FBF7EF; --panel: #FFFFFF; --line: #E8E1D3; --strong: #8C8499; --text: #1E1B2E; --faint: #5B5670; --brand: #1E1B2E; --on-brand: #FBF7EF; --ring: #B83E10; }
-      @media (prefers-color-scheme: dark) {
-        :root { color-scheme: dark; --bg: #15131F; --panel: #1E1B2E; --line: #332E47; --strong: #6E6886; --text: #F4EFE6; --faint: #B3ADC6; --brand: #FBF7EF; --on-brand: #1E1B2E; --ring: #FF9E78; }
+      :root {
+        color-scheme: light;
+        --surface-0: #FBF7EF; --surface-1: #FFFFFF; --surface-2: #F3EDE2; --border: #E8E1D3; --border-strong: #8C8499;
+        --text: #1E1B2E; --text-2: #5B5670; --brand: #1E1B2E; --on-brand: #FBF7EF;
+        --accent: #FF8A5B; --on-accent: #1E1B2E; --focus: #B83E10;
+        --shadow-1: 0 1px 2px rgba(30, 27, 46, 0.06), 0 2px 8px rgba(30, 27, 46, 0.06);
       }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          color-scheme: dark;
+          --surface-0: #15131F; --surface-1: #1E1B2E; --surface-2: #282439; --border: #332E47; --border-strong: #6E6886;
+          --text: #F4EFE6; --text-2: #B3ADC6; --brand: #FBF7EF; --on-brand: #1E1B2E;
+          --accent: #FF8A5B; --on-accent: #1E1B2E; --focus: #FF9E78;
+          --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.45);
+        }
+      }
+
       * { box-sizing: border-box; }
-      body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 "DM Sans", system-ui, sans-serif; display: flex; flex-direction: column; height: 100vh; }
-      header { padding: 14px 18px 0; }
-      h1 { font-size: 16px; margin: 0 0 10px; }
-      .tabs { display: flex; gap: 6px; }
-      .tabs button { background: none; border: 1.5px solid var(--strong); color: var(--faint); min-height: 36px; padding: 0 16px; border-radius: 999px; cursor: pointer; font: inherit; }
-      .tabs button[aria-selected='true'] { color: var(--on-brand); background: var(--brand); border-color: var(--brand); }
-      main { flex: 1; overflow: auto; padding: 14px 18px; display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; align-content: start; }
-      .item { background: var(--panel); border: 2px solid var(--line); border-radius: 14px; padding: 8px; cursor: pointer; text-align: left; color: inherit; font: inherit; }
-      .item:hover { border-color: var(--strong); }
-      .item[aria-pressed='true'] { border-color: var(--brand); }
-      .item img.thumb { width: 100%; aspect-ratio: 16 / 9; object-fit: contain; background: #000; border-radius: 10px; display: block; }
-      .name { display: flex; align-items: center; gap: 6px; margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .name img { width: 16px; height: 16px; flex: none; }
-      .name span { overflow: hidden; text-overflow: ellipsis; }
-      footer { display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-top: 1px solid var(--line); }
-      footer label { color: var(--faint); display: flex; gap: 6px; align-items: center; }
+      /* The window is clear: the page draws it, rounded, with a shadow in the margin round it. */
+      html { height: 100%; background: transparent; }
+      body {
+        height: 100%; margin: 0; padding: 24px; background: transparent;
+        font: 400 14px/20px 'DM Sans', system-ui, sans-serif; -webkit-font-smoothing: antialiased; user-select: none;
+      }
+      .window {
+        height: 100%; display: flex; flex-direction: column; overflow: hidden;
+        border-radius: 28px; background: var(--surface-0); color: var(--text);
+        box-shadow: 0 0 0 1px var(--border), 0 12px 28px rgba(0, 0, 0, 0.28);
+      }
+      button { font: inherit; color: inherit; cursor: pointer; }
+      button:focus-visible, input:focus-visible + .switch { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+      header {
+        display: flex; align-items: flex-end; gap: 16px; padding: 22px 24px 16px;
+        -webkit-app-region: drag;
+      }
+      header button, header [role='tablist'] { -webkit-app-region: no-drag; }
+      .words { flex: 1; min-width: 0; }
+      h1 {
+        margin: 0; font: 700 24px/30px 'Bricolage Grotesque', 'DM Sans', system-ui, sans-serif; letter-spacing: -0.015em;
+      }
+      .lead { margin: 2px 0 0; color: var(--text-2); }
+
+      /* Screens or windows: a pill with the choice in brand. */
+      [role='tablist'] { display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--surface-2); }
+      [role='tab'] {
+        display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 16px;
+        border: 0; border-radius: 999px; background: transparent; color: var(--text-2); font-weight: 500;
+      }
+      [role='tab']:hover { color: var(--text); }
+      [role='tab'][aria-selected='true'] { background: var(--brand); color: var(--on-brand); }
+      .count { font-size: 12px; opacity: 0.7; font-variant-numeric: tabular-nums; }
+
+      main {
+        flex: 1; min-height: 0; overflow-y: auto; padding: 4px 24px 24px;
+        display: grid; grid-template-columns: repeat(auto-fill, minmax(236px, 1fr)); gap: 16px; align-content: start;
+      }
+      .item {
+        position: relative; display: flex; flex-direction: column; gap: 10px; padding: 8px 8px 12px;
+        border: 0; border-radius: 20px; background: var(--surface-1); text-align: left;
+        box-shadow: var(--shadow-1), inset 0 0 0 1px var(--border);
+        transition: box-shadow 140ms linear;
+      }
+      .item:hover { box-shadow: var(--shadow-1), inset 0 0 0 1.5px var(--border-strong); }
+      .item[aria-checked='true'] { box-shadow: var(--shadow-1), inset 0 0 0 2px var(--brand); }
+      .frame {
+        position: relative; display: grid; place-items: center; aspect-ratio: 16 / 9; overflow: hidden;
+        border-radius: 14px; background: #000;
+      }
+      .frame img { width: 100%; height: 100%; object-fit: contain; display: block; }
+      /* The one you picked has a tick in its corner. */
+      .tick {
+        position: absolute; top: 8px; right: 8px; display: none; place-items: center; width: 26px; height: 26px;
+        border-radius: 999px; background: var(--brand); color: var(--on-brand); box-shadow: 0 0 0 2px var(--surface-1);
+      }
+      .item[aria-checked='true'] .tick { display: grid; }
+      .name { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 0 4px; font-weight: 500; }
+      .name img { width: 18px; height: 18px; flex: none; }
+      .name span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+      .item.waiting { pointer-events: none; box-shadow: inset 0 0 0 1px var(--border); }
+      .item.waiting .frame { background: var(--surface-2); }
+      .item.waiting .name span { display: block; width: 60%; height: 12px; border-radius: 999px; background: var(--surface-2); }
+      .none { grid-column: 1 / -1; padding: 48px 0; text-align: center; color: var(--text-2); }
+
+      footer {
+        display: flex; align-items: center; gap: 12px; padding: 14px 24px;
+        background: var(--surface-1); border-top: 1px solid var(--border);
+      }
+      .sound { display: flex; align-items: center; gap: 10px; color: var(--text); cursor: pointer; }
+      .sound[hidden] { display: none; }
+      .sound input { position: absolute; opacity: 0; pointer-events: none; }
+      .switch {
+        position: relative; width: 38px; height: 22px; flex: none; border-radius: 999px;
+        background: var(--surface-2); box-shadow: inset 0 0 0 1.5px var(--border-strong); transition: background 160ms;
+      }
+      .switch::after {
+        content: ''; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 999px;
+        background: var(--border-strong); transition: transform 160ms, background 160ms;
+      }
+      .sound input:checked + .switch { background: var(--brand); box-shadow: none; }
+      .sound input:checked + .switch::after { transform: translateX(16px); background: var(--on-brand); }
       .spacer { flex: 1; }
-      footer button { font: inherit; min-height: 44px; padding: 0 24px; border-radius: 999px; border: 0; box-shadow: inset 0 0 0 1.5px var(--strong); background: transparent; color: var(--text); cursor: pointer; }
-      button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
-      footer button.go { background: var(--brand); color: var(--on-brand); box-shadow: none; }
-      footer button:disabled { opacity: 0.5; cursor: default; }
+      footer button { min-height: 44px; padding: 0 24px; border: 0; border-radius: 999px; font-weight: 500; }
+      #cancel { background: transparent; box-shadow: inset 0 0 0 1.5px var(--border-strong); }
+      #cancel:hover { background: var(--surface-2); }
+      /* The one ember button: text on ember is ink, never white. */
+      #go { background: var(--accent); color: var(--on-accent); font-weight: 600; }
+      #go:hover:not(:disabled) { filter: brightness(1.05); }
+      #go:disabled { opacity: 0.45; cursor: default; }
+      footer button:active:not(:disabled) { transform: scale(0.97); }
+
+      @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
     </style>
   </head>
   <body>
+    <div class="window">
     <header>
-      <h1>Share your screen</h1>
-      <div class="tabs" role="tablist">
-        <button role="tab" data-kind="screen" aria-selected="true">Screens</button>
-        <button role="tab" data-kind="window" aria-selected="false">Windows</button>
+      <div class="words">
+        <h1>Share your screen</h1>
+        <p class="lead">Pick what the others will see.</p>
+      </div>
+      <div role="tablist" aria-label="What to share">
+        <button role="tab" data-kind="screen" aria-selected="true">Screens <span class="count" data-count="screen"></span></button>
+        <button role="tab" data-kind="window" aria-selected="false">Windows <span class="count" data-count="window"></span></button>
       </div>
     </header>
-    <main id="grid"></main>
+    <main id="grid" role="radiogroup" aria-label="Screens"></main>
     <footer>
-      <label id="audio-wrap" hidden><input type="checkbox" id="audio" checked /> Share the sound</label>
+      <label class="sound" id="audio-wrap" hidden>
+        <input type="checkbox" id="audio" checked />
+        <span class="switch" aria-hidden="true"></span>
+        Share the sound
+      </label>
       <div class="spacer"></div>
       <button id="cancel">Cancel</button>
-      <button id="go" class="go" disabled>Share</button>
+      <button id="go" disabled>Share</button>
     </footer>
+    </div>
     <script>
       const grid = document.getElementById('grid')
       const go = document.getElementById('go')
       const audio = document.getElementById('audio')
+      const tabs = [...document.querySelectorAll('[role=tab]')]
+      const TICK =
+        '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>'
       let sources = []
       let kind = 'screen'
       let chosen = null
 
-      function render() {
-        grid.replaceChildren()
-        for (const s of sources.filter((s) => s.kind === kind)) {
-          const b = document.createElement('button')
-          b.className = 'item'
-          b.setAttribute('aria-pressed', String(s.id === chosen))
-          const thumb = document.createElement('img')
-          thumb.className = 'thumb'
-          thumb.src = s.thumb
-          thumb.alt = ''
-          const name = document.createElement('div')
-          name.className = 'name'
-          if (s.icon) {
-            const icon = document.createElement('img')
-            icon.src = s.icon
-            icon.alt = ''
-            name.append(icon)
-          }
-          const label = document.createElement('span')
-          label.textContent = s.name
-          name.append(label)
-          b.append(thumb, name)
-          b.onclick = () => {
-            chosen = s.id
-            go.disabled = false
-            render()
-          }
-          b.ondblclick = () => window.picker.choose(s.id, audio.checked)
-          grid.append(b)
-        }
+      const choose = (id) => window.picker.choose(id, audio.checked)
+
+      // Cards the size of the real ones while the list comes, so nothing jumps.
+      function waiting() {
+        grid.replaceChildren(
+          ...Array.from({ length: 6 }, () => {
+            const card = document.createElement('div')
+            card.className = 'item waiting'
+            card.innerHTML = '<div class="frame"></div><div class="name"><span></span></div>'
+            return card
+          }),
+        )
       }
 
-      for (const tab of document.querySelectorAll('[role=tab]')) {
-        tab.onclick = () => {
-          kind = tab.dataset.kind
-          for (const t of document.querySelectorAll('[role=tab]')) t.setAttribute('aria-selected', String(t === tab))
-          render()
+      function render() {
+        const shown = sources.filter((s) => s.kind === kind)
+        grid.setAttribute('aria-label', kind === 'screen' ? 'Screens' : 'Windows')
+        if (shown.length === 0) {
+          const none = document.createElement('p')
+          none.className = 'none'
+          none.textContent = kind === 'screen' ? 'No screens to share.' : 'No windows to share. Open the one you want, then try again.'
+          grid.replaceChildren(none)
+          return
         }
+        grid.replaceChildren(
+          ...shown.map((s) => {
+            const card = document.createElement('button')
+            card.className = 'item'
+            card.setAttribute('role', 'radio')
+            card.setAttribute('aria-checked', String(s.id === chosen))
+            card.tabIndex = s.id === chosen || (!chosen && s === shown[0]) ? 0 : -1
+            card.dataset.id = s.id
+            const frame = document.createElement('div')
+            frame.className = 'frame'
+            const thumb = document.createElement('img')
+            thumb.src = s.thumb
+            thumb.alt = ''
+            const tick = document.createElement('span')
+            tick.className = 'tick'
+            tick.innerHTML = TICK
+            frame.append(thumb, tick)
+            const name = document.createElement('div')
+            name.className = 'name'
+            if (s.icon) {
+              const icon = document.createElement('img')
+              icon.src = s.icon
+              icon.alt = ''
+              name.append(icon)
+            }
+            const label = document.createElement('span')
+            label.textContent = s.name
+            label.title = s.name
+            name.append(label)
+            card.append(frame, name)
+            card.onclick = () => pick(s.id)
+            card.ondblclick = () => choose(s.id)
+            return card
+          }),
+        )
       }
-      go.onclick = () => chosen && window.picker.choose(chosen, audio.checked)
+
+      function pick(id, focus = false) {
+        chosen = id
+        go.disabled = !chosen
+        render()
+        if (focus) grid.querySelector(`[data-id="${CSS.escape(id)}"]`)?.focus()
+      }
+
+      function show(next) {
+        kind = next
+        for (const t of tabs) t.setAttribute('aria-selected', String(t.dataset.kind === kind))
+        const here = sources.filter((s) => s.kind === kind)
+        if (!here.some((s) => s.id === chosen)) chosen = here[0]?.id ?? null
+        go.disabled = !chosen
+        render()
+      }
+
+      for (const tab of tabs) tab.onclick = () => show(tab.dataset.kind)
+
+      // The arrow keys move the choice through the cards, as in a list of radio buttons.
+      grid.addEventListener('keydown', (e) => {
+        const cards = [...grid.querySelectorAll('.item[data-id]')]
+        const at = cards.indexOf(document.activeElement)
+        if (at < 0) return
+        const across = Math.max(1, Math.round(grid.clientWidth / cards[0].offsetWidth))
+        const step = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: across, ArrowUp: -across }[e.key]
+        if (!step) return
+        e.preventDefault()
+        const next = cards[Math.min(cards.length - 1, Math.max(0, at + step))]
+        pick(next.dataset.id, true)
+      })
+
+      go.onclick = () => chosen && choose(chosen)
       document.getElementById('cancel').onclick = () => window.picker.choose(null)
       document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') window.picker.choose(null)
-        if (e.key === 'Enter' && chosen) window.picker.choose(chosen, audio.checked)
+        if (e.key === 'Enter' && chosen && !(e.target instanceof HTMLButtonElement && e.target !== go)) choose(chosen)
       })
 
+      waiting()
       window.picker.list().then(({ sources: list, canShareAudio }) => {
         sources = list
         document.getElementById('audio-wrap').hidden = !canShareAudio
-        const firstScreen = sources.find((s) => s.kind === 'screen')
-        chosen = firstScreen ? firstScreen.id : null
-        go.disabled = !chosen
-        render()
+        for (const k of ['screen', 'window']) {
+          document.querySelector(`[data-count="${k}"]`).textContent = String(sources.filter((s) => s.kind === k).length)
+        }
+        show(sources.some((s) => s.kind === 'screen') ? 'screen' : 'window')
       })
     </script>
   </body>

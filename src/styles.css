@@ -69,6 +69,9 @@
   --pill-radius: var(--radius-pill);
   --panel-radius: var(--radius-lg);
   --pane-radius: var(--radius-lg);
+  /* A shape inside a rounded one takes its radius less the gap between them, so the curves run side by side. */
+  --in-pane-radius: calc(var(--pane-radius) - var(--space-2));
+  --in-menu-radius: calc(var(--radius-md) - 6px);
   --gap: var(--space-2);
   --shadow: var(--shadow-2);
   --shadow-small: var(--shadow-2);
@@ -554,7 +557,7 @@ main {
   max-height: min(72vh, 560px);
   overflow-y: auto;
   padding: 6px;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
 }
 
 .status-bar {
@@ -1422,8 +1425,6 @@ button.rail-add {
   gap: 8px;
   min-height: 52px;
   padding: 0 14px 0 16px;
-  border-bottom: 1px solid var(--line-soft);
-  box-shadow: var(--head-shadow);
 }
 
 .space-name,
@@ -1467,7 +1468,7 @@ button.rail-add {
   color: var(--fg-faint);
   padding: 4px 8px;
   min-height: 36px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--in-pane-radius);
   font-size: 14.5px;
   font-weight: 500;
 }
@@ -1558,7 +1559,7 @@ button.rail-add {
   align-items: center;
   gap: 10px;
   padding: 5px 6px 5px 8px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--in-pane-radius);
   font-size: 14px;
   color: var(--fg-dim);
   min-height: 44px;
@@ -1808,7 +1809,7 @@ button.voice-bar-state:hover:not(:disabled) {
   margin: 0 -8px;
   padding: 0 8px;
   background: transparent;
-  border-radius: var(--radius-pill);
+  border-radius: var(--in-pane-radius);
   color: var(--fg);
 }
 
@@ -4081,7 +4082,7 @@ input[type="range"].vp-volume {
   border-color: transparent;
   background: transparent;
   box-shadow: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--in-menu-radius);
   font-weight: 400;
 }
 
@@ -4117,7 +4118,7 @@ input[type="range"].vp-volume {
   align-items: center;
   gap: 10px;
   padding: 6px 8px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--in-menu-radius);
 }
 
 .menu-item.current {
@@ -4196,7 +4197,7 @@ input[type="range"].vp-volume {
 .menu-switch {
   min-height: 36px;
   padding: 4px 2px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--in-menu-radius);
 }
 
 .mention-pop {
@@ -4415,7 +4416,7 @@ input[type="text"].emoji-search {
   border-color: transparent;
   background: transparent;
   box-shadow: none;
-  border-radius: var(--radius-sm);
+  border-radius: calc(var(--radius-sm) - 2px);
 }
 
 .emoji-cell:hover:not(:disabled),
@@ -5539,7 +5540,7 @@ input[type="text"].note-title:focus {
   position: relative;
   padding: 10px 12px 12px 56px;
   border: 1px solid var(--line-soft);
-  border-radius: var(--radius-md);
+  border-radius: var(--in-menu-radius);
   background: var(--bg);
   cursor: pointer;
 }
@@ -5684,7 +5685,7 @@ button.settings-tab {
   min-height: 40px;
   padding: 0 12px;
   border: 0;
-  border-radius: var(--radius-pill);
+  border-radius: calc(var(--pane-radius) - 12px);
   background: transparent;
   box-shadow: none;
   color: var(--fg-dim);
@@ -6081,4 +6082,18 @@ input.invalid:focus {
 .why-mark:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
+}
+
+/* The signal leads the voice bar, in the colour of the link. */
+.voice-bar-top > .voice-signal {
+  margin-left: -6px;
+}
+
+.voice-dock-signal {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  margin-left: -6px;
+  color: var(--good);
 }

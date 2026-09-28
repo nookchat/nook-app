@@ -61,6 +61,7 @@ All three are Google Fonts. In Next.js load them with `next/font/google` and map
 
 - 4px grid: `space-1` 4 through `space-8` 64. Mobile gutter `space-4`, desktop `space-6`. Messages from the same sender stack with 4px between them; a new sender or a 5-minute gap starts a new group (`space-4` above). Panes sit `space-2` apart.
 - Shapes are soft and round, echoing the ghost: panes and cards `radius-lg` 20. Buttons, composer, avatars and badges are pills. Sheets and dialogs `radius-xl` 28. Inline code and mention chips `radius-xs` 6.
+- **Nested corners:** a shape inside a rounded one takes the parent's radius less the gap between them, so the two curves run side by side. A row 8px inside a 20px pane is 12px; a menu item 6px inside a 14px menu is 8px. Only when the gap is as big as the parent's radius can the inner shape be anything, such as a pill button in a padded card.
 - Depth is quiet: `shadow-1` for the composer, `shadow-2` for sheets, menus and the message actions bar. No other shadows, no glassmorphism, no gradients.
 
 ## Iconography

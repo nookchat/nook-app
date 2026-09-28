@@ -2324,7 +2324,6 @@ export class SpaceView {
     const state = this.voiceBar.querySelector('.voice-bar-state')
     if (!state) return
     const grade = this.linkGrade()
-    state.querySelector('.dot')?.setAttribute('class', `dot ${grade}`)
     state.classList.remove('good', 'warn', 'bad')
     state.classList.add(grade)
     const signal = this.voiceBar.querySelector('.voice-signal')
@@ -2385,11 +2384,10 @@ export class SpaceView {
       })
       this.voiceBar.append(
         h('div', { class: 'voice-bar-top' }, [
+          // The signal shows how good the link is, in place of a dot, and opens the details.
+          signal,
           h('div', { class: 'voice-bar-text' }, [
-            h('span', { class: `voice-bar-state ${grade}` }, [
-              h('i', { class: `dot ${grade}` }),
-              h('span', { class: 'truncate', text: 'Voice connected' }),
-            ]),
+            h('span', { class: `voice-bar-state ${grade}` }, [h('span', { class: 'truncate', text: 'Connected' })]),
             h('span', {
               class: 'tiny faint truncate',
               text: call
@@ -2397,7 +2395,6 @@ export class SpaceView {
                 : `${state.channel} / ${this.chat?.spaceName() || 'this space'}`,
             }),
           ]),
-          signal,
           h(
             'button',
             {

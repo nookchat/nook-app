@@ -111,11 +111,15 @@ function createWindow() {
   main.loadURL(start || HOME)
 }
 
+/** The clear space round the picker for its shadow, the same as the margin in picker.html. */
+const PICKER_MARGIN = 24
+
 /** Shows the picker window and resolves with the chosen source, or null. */
 async function pickSource(parent) {
   const sources = await desktopCapturer.getSources({
     types: ['screen', 'window'],
-    thumbnailSize: { width: 320, height: 180 },
+    // Twice the size a card shows them at, so they are sharp on a high density screen.
+    thumbnailSize: { width: 640, height: 360 },
     fetchWindowIcons: true,
   })
   if (sources.length === 0) return null
@@ -124,12 +128,16 @@ async function pickSource(parent) {
   const picker = new BrowserWindow({
     parent,
     modal: true,
-    width: 760,
-    height: 560,
+    // The page draws the window: rounded like a Nook dialog, with its own shadow in a clear margin.
+    width: 880 + PICKER_MARGIN * 2,
+    height: 640 + PICKER_MARGIN * 2,
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    hasShadow: false,
     resizable: false,
     minimizable: false,
     maximizable: false,
-    backgroundColor: pageColour(),
     title: 'Share your screen',
     autoHideMenuBar: true,
     show: false,

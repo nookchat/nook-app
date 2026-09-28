@@ -144,10 +144,8 @@ export function voiceDock(here: SpaceRuntime | null): { root: HTMLElement; stop(
   const mute = h('button', { class: 'ghost icon-only', ariaLabel: 'Mute' })
   const leave = h('button', { class: 'ghost icon-only', ariaLabel: 'Leave voice', title: 'Leave' }, [icon('phone-off', 19)])
   const root = h('div', { class: 'voice-bar voice-dock hidden' }, [
-    h('div', { class: 'voice-bar-text' }, [
-      h('span', { class: 'voice-bar-state' }, [h('i', { class: 'dot good' }), 'Voice connected']),
-      words,
-    ]),
+    h('span', { class: 'voice-dock-signal' }, [icon('signal', 18)]),
+    h('div', { class: 'voice-bar-text' }, [h('span', { class: 'voice-bar-state' }, ['Connected']), words]),
     mute,
     leave,
   ])

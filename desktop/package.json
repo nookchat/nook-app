@@ -25,7 +25,8 @@
       "main.cjs",
       "preload.cjs",
       "picker.html",
-      "picker-preload.cjs"
+      "picker-preload.cjs",
+      "fonts/**"
     ],
     "directories": {
       "buildResources": "build",
