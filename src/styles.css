@@ -2317,6 +2317,55 @@ button.start {
   align-self: center;
 }
 
+.modal.shortcuts-modal {
+  max-width: 460px;
+  outline: none;
+}
+
+.shortcut-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 38px;
+  border-bottom: 1px solid var(--border);
+}
+
+.shortcut-row:last-child {
+  border-bottom: 0;
+}
+
+.shortcut-does {
+  font-size: 14px;
+  color: var(--fg-dim);
+}
+
+.shortcut-keys {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
+.shortcut-keys kbd {
+  min-width: 26px;
+  padding: 2px 7px;
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+  color: var(--fg);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-xs);
+}
+
 .space-main {
   min-height: 0;
   min-width: 0;
@@ -2896,15 +2945,15 @@ input[type="text"].space-search {
   gap: 6px;
 }
 
-/* The composer: a pill on surface-1. Attach and emoji are quiet; send is an ember circle. */
+/* The composer: a rounded box on surface-1. Attach and emoji are quiet; send is an ember square. */
 .compose-box {
   align-items: flex-end;
   gap: 2px;
   min-height: 56px;
-  padding: 6px 6px 6px 18px;
+  padding: 6px 6px 6px 16px;
   background: var(--surface-1);
   border: 1px solid var(--border);
-  border-radius: 28px;
+  border-radius: var(--radius-md);
   box-shadow: var(--shadow-1);
   transition: border-color var(--dur-fast) linear;
 }
@@ -2996,6 +3045,7 @@ input[type="text"].space-search {
   color: var(--fg-dim);
   min-height: 44px;
   height: 44px;
+  border-radius: var(--radius-sm);
 }
 
 .compose-box button.icon-only {
@@ -3022,7 +3072,7 @@ input[type="text"].space-search {
   height: 44px;
   padding: 0;
   margin-left: 2px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-sm);
   background: var(--accent);
   color: var(--on-accent);
 }
@@ -5732,10 +5782,6 @@ input[type="text"].note-title:focus {
 /* Screen shares in the left rail: one click swaps the stage to that screen. */
 button.rail-add.danger {
   color: var(--bad);
-}
-
-.share-empty {
-  padding: 2px 10px 6px;
 }
 
 .rail-item.share-item {

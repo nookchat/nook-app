@@ -58,6 +58,7 @@ export type IconName =
   | 'chevron-right'
   | 'phone'
   | 'device'
+  | 'keyboard'
   | 'ghost'
   | 'vanish'
   | 'sun'
@@ -172,6 +173,7 @@ const ICONS: Record<IconName, string | Drawing> = {
   file: 'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5',
   music: 'M9 18V6l10-2v12M9 18a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0zM19 16a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z',
   device: `${rect(7, 3, 10, 18, 2)}M11 18h2`,
+  keyboard: `${rect(3, 6, 18, 12, 2)}M7 10h.01M11 10h.01M15 10h.01M17 10h.01M7 14h.01M17 14h.01M10 14h4`,
 }
 
 const drawn = new Map<string, SVGSVGElement>()

@@ -68,6 +68,7 @@ import { forHowLong, gameCard } from './game-card'
 import { ghost } from './ghost'
 import { icon } from './icons'
 import { closeMenu, onContextMenu, openMenu, type MenuItem, type MenuEntry } from './menu'
+import { showShortcuts } from './shortcuts'
 import { NoteEditor } from './notes-view'
 import { placeNear } from './emoji'
 import { loadAvatar, squareThumb } from './avatar'
@@ -492,12 +493,36 @@ export class SpaceView {
         return
       }
     }
-    if ((ev.metaKey || ev.ctrlKey) && ev.shiftKey && ev.key.toLowerCase() === 'm') {
+    if (ev.altKey && !ev.metaKey && !ev.ctrlKey && !ev.shiftKey && (ev.key === 'ArrowUp' || ev.key === 'ArrowDown')) {
+      const names = this.chat?.channels() ?? []
+      const at = names.indexOf(this.channel)
+      const wanted = names[at + (ev.key === 'ArrowUp' ? -1 : 1)]
+      if (!wanted) return
       ev.preventDefault()
-      this.toggleMute()
+      this.openChannel(wanted)
+      this.chatPanel.focus()
       return
     }
     if (!(ev.metaKey || ev.ctrlKey)) return
+    if (ev.shiftKey) {
+      const key = ev.key.toLowerCase()
+      if (key === 'm') {
+        ev.preventDefault()
+        this.toggleMute()
+      } else if (key === 'd') {
+        ev.preventDefault()
+        this.toggleDeafen()
+      } else if (key === 's') {
+        ev.preventDefault()
+        void this.toggleShare()
+      }
+      return
+    }
+    if (ev.key === '/') {
+      ev.preventDefault()
+      showShortcuts()
+      return
+    }
     if (ev.key.toLowerCase() === 'k') {
       ev.preventDefault()
       this.openSearchBox()
@@ -520,6 +545,17 @@ export class SpaceView {
     }
     this.voice?.setMuted(!state.muted)
     toast(state.muted ? 'Microphone on.' : 'Microphone muted.', 'info', 2000)
+    this.draw()
+  }
+
+  private toggleDeafen(): void {
+    const state = this.voice?.state
+    if (!state?.channel) {
+      toast('You are not in a voice channel.', 'warn', 2500)
+      return
+    }
+    this.voice?.setDeafened(!state.deafened)
+    toast(state.deafened ? 'You can hear again.' : 'Deafened.', 'info', 2000)
     this.draw()
   }
 
@@ -1764,6 +1800,7 @@ export class SpaceView {
         ...(this.spaceRights().any
           ? [{ label: 'Settings', lead: h('span', { class: 'menu-icon' }, [icon('settings', 16)]), run: () => void this.openSpaceSettings() }]
           : []),
+        { label: 'Keyboard shortcuts', lead: h('span', { class: 'menu-icon' }, [icon('keyboard', 16)]), run: () => showShortcuts() },
         { label: 'Leave', danger: true, lead: h('span', { class: 'menu-icon' }, [icon('leave', 16)]), run: () => void this.leaveSpace() },
       ],
     })
@@ -1809,19 +1846,19 @@ export class SpaceView {
     return h('div', { class: 'rail rail-left', role: 'navigation', ariaLabel: 'Channels, threads and conversations' }, [
       h('div', { class: 'space-title' }, [spaceMenu]),
       h('div', { class: 'rail-scroll' }, [
-        h('div', { class: 'rail-head' }, [h('span', { class: 'eyebrow', text: 'Text channels' }), this.newTextButton]),
+        h('div', { class: 'rail-head' }, [h('span', { class: 'eyebrow', text: 'Text' }), this.newTextButton]),
         this.channelList,
         h('div', { class: 'rail-head' }, [
           h('span', {
             class: 'eyebrow',
-            text: 'Voice channels',
+            text: 'Voice',
             title: 'Everybody standing in one hears everybody else.',
           }),
           this.newVoiceButton,
         ]),
         this.voiceList,
         h('div', { class: 'rail-head' }, [
-          h('span', { class: 'eyebrow', text: 'Screen shares', title: 'Anybody here can share, in voice or not.' }),
+          h('span', { class: 'eyebrow', text: 'Screen', title: 'Anybody here can share, in voice or not.' }),
           this.railShareButton,
         ]),
         this.shareList,
@@ -3361,10 +3398,7 @@ export class SpaceView {
     this.railShareButton.append(icon(sharing ? 'stop' : 'monitor', sharing ? 14 : 17))
 
     clear(this.shareList)
-    if (live.length === 0) {
-      this.shareList.append(h('div', { class: 'share-empty tiny faint', text: 'Nobody is sharing.' }))
-      return
-    }
+    if (live.length === 0) return
     for (const one of live) {
       const eyes = one.you ? this.watchers.size : this.watcherNames(one.id, peers).length
       const channel = this.sharers.get(one.id)

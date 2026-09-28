@@ -95,7 +95,14 @@ export function openMenu(anchor: HTMLElement, items: MenuEntry[], options: MenuO
   }
   const onDown = (ev: Event): void => {
     const target = ev.target as Node
-    if (menu.contains(target) || anchor.contains(target)) return
+    if (menu.contains(target)) return
+    // A right click menu closes on any click outside it, the thing it opened on too.
+    if (options.at) {
+      if (ev instanceof MouseEvent && ev.button === 2 && anchor.contains(target)) return
+      close()
+      return
+    }
+    if (anchor.contains(target)) return
     const button = (target as Element).closest?.('[data-menu]')
     if (button instanceof HTMLElement && sameButton(anchor, button)) return
     close()
