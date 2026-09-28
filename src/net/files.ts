@@ -1,6 +1,7 @@
 import { fromBase64Url, toBase64Url } from '../bytes'
 import type { Attachment } from '../store/log'
 import { endpoints } from './cluster'
+import { convertQuickly } from './convert'
 import { faststart } from './faststart'
 import { health } from './server-api'
 
@@ -75,6 +76,12 @@ async function openBytes(keyText: string, sealed: ArrayBuffer): Promise<ArrayBuf
 }
 
 export type Progress = (done: number, total: number) => void
+
+/** What a file is going through before it goes up, and why, for a hover. */
+export type Stage = (words: string, why?: string, part?: number) => void
+
+const WHY_CONVERT =
+  'Files are encrypted on your device, so the server cannot see them to convert them. Your device converts this video so everyone can play it.'
 
 interface Look {
   w?: number
@@ -290,10 +297,16 @@ export class SpaceFiles {
     return now && all.includes(now) ? [now, ...all.filter((b) => b !== now)] : all
   }
 
-  async send(file: File, onProgress: Progress, signal: AbortSignal, onStage?: (words: string) => void): Promise<Attachment> {
+  async send(file: File, onProgress: Progress, signal: AbortSignal, onStage?: Stage): Promise<Attachment> {
     if (file.type.startsWith('video/') && (await isHevc(file))) {
-      onStage?.('Converting so everyone can watch it')
-      const converted = await reencode(file, (part) => onStage?.(`Converting so everyone can watch it · ${Math.floor(part * 100)}%`))
+      const say = (part: number): void => onStage?.(`Converting · ${Math.floor(part * 100)}%`, WHY_CONVERT, part)
+      say(0)
+      // The browser's own encoder first, which is quick; playing it through and recording it if that cannot.
+      const quick = await convertQuickly(file, say, signal).catch((err: unknown) => {
+        if (signal.aborted) throw err
+        return null
+      })
+      const converted = quick ?? (await reencode(file, say))
       if (signal.aborted) throw new DOMException('Stopped', 'AbortError')
       if (converted) file = converted
     }

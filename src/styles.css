@@ -6062,3 +6062,23 @@ input.invalid:focus {
 .space-card-words .row {
   margin-top: 6px;
 }
+
+/* A ? beside a line, whose reason shows on hover. */
+.why-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  vertical-align: -2px;
+  border: 1.25px solid currentColor;
+  border-radius: var(--radius-pill);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: help;
+}
+
+.why-mark:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}

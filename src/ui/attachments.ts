@@ -359,6 +359,11 @@ interface Pending {
   preview?: string
 }
 
+/** A small ? that says why, on hover or when it has the keyboard. */
+function whyMark(why: string): HTMLElement {
+  return h('span', { class: 'why-mark', text: '?', title: why, ariaLabel: why, role: 'img', tabIndex: 0 })
+}
+
 export class AttachTray {
   readonly root = h('div', { class: 'attach-tray hidden' })
   private items: Pending[] = []
@@ -455,7 +460,12 @@ export class AttachTray {
           detail.textContent = `${Math.floor(part * 100)}% · ${sizeLabel(Math.round(part * file.size))} of ${sizeLabel(file.size)}${speed}`
         },
         item.stop.signal,
-        (words) => (detail.textContent = words),
+        (words, why, part) => {
+          detail.replaceChildren(words)
+          if (why) detail.append(' ', whyMark(why))
+          // The same bar shows the converting, then starts again from nothing for the sending.
+          if (part !== undefined) fill.style.transform = `scaleX(${Math.min(1, part)})`
+        },
       )
       .then(
         (attachment) => {
