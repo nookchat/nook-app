@@ -353,11 +353,15 @@ export class ChatPanel {
     this.typingLine = h('div', { class: 'chat-typing nook-typing hidden', role: 'status' })
     this.typingLine.setAttribute('aria-live', 'polite')
     this.roomLeft = h('span', { class: 'chat-room-left tiny hidden', ariaLabel: 'Room left in this message' })
-    this.toBottom = h('button', {
-      class: 'to-bottom hidden',
-      text: 'Jump to the newest',
-      title: 'Go to the end of the conversation',
-    })
+    this.toBottom = h(
+      'button',
+      {
+        class: 'to-bottom icon-only hidden',
+        ariaLabel: 'Jump to the newest',
+        title: 'Jump to the newest',
+      },
+      [icon('arrow-down', 20)],
+    )
     let pressedAt = 0
     this.toBottom.addEventListener('pointerdown', (ev) => {
       if (ev.button !== 0) return

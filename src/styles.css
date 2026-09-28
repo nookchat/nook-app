@@ -2313,8 +2313,6 @@ button.start {
   gap: 4px;
   min-height: 52px;
   padding: 0 10px 0 16px;
-  border-bottom: 1px solid var(--line-soft);
-  box-shadow: var(--head-shadow);
 }
 
 .space-head button.icon-only {
@@ -2839,9 +2837,10 @@ input[type="text"].space-search {
   color: var(--fg-faint);
 }
 
+/* The box ends level with the bottom of the panes beside it. */
 .chat-compose {
   flex: 0 0 auto;
-  padding: 0 16px 16px;
+  padding: 0 16px;
 }
 
 .chat-compose.stack.tight {
@@ -3869,17 +3868,17 @@ input[type="range"].vp-volume {
   flex-direction: column;
 }
 
+/* Back to the newest message: a round arrow at the bottom right of the conversation. */
 .to-bottom {
   position: absolute;
-  /* Centred by margins, because button:active sets transform. */
-  left: 0;
-  right: 0;
-  width: max-content;
-  margin: 0 auto;
-  bottom: 8px;
+  right: 20px;
+  bottom: 12px;
   z-index: 5;
-  min-height: 36px;
-  padding: 0 16px;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
   border-radius: var(--pill-radius);
   background: var(--beam);
   color: var(--beam-fg);

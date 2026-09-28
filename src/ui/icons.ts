@@ -67,6 +67,7 @@ export type IconName =
   | 'camera'
   | 'video'
   | 'check-double'
+  | 'arrow-down'
 
 // The Nook set: a 24px grid, a 1.75px stroke, round caps and joins, and currentColor. The shared
 // icons come from nook-brand/react/icons.tsx. The rest are drawn here on the same grid and stroke.
@@ -118,6 +119,7 @@ const ICONS: Record<IconName, string | Drawing> = {
   more: { line: '', solid: `${circle(5, 12, 1.2)}${circle(12, 12, 1.2)}${circle(19, 12, 1.2)}` },
   check: 'm5 12.5 4.5 4.5L19 7.5',
   'check-double': 'm2.5 12.5 4.5 4.5 9.5-9.5M11.5 16l1 1L22 7.5',
+  'arrow-down': 'M12 5v14M6 13l6 6 6-6',
   bell: 'M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20.5a2 2 0 0 0 4 0',
   lock: `${rect(5, 11, 14, 10, 2)}M8 11V8a4 4 0 0 1 8 0v3`,
   user: `${circle(12, 8, 4)}M4 20a8 8 0 0 1 16 0`,
