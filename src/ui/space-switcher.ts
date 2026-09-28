@@ -58,8 +58,14 @@ export function spaceHue(room: string): number {
   return sum % 360
 }
 
-export function spaceFace(room: string, title: string, size = 28): HTMLElement {
-  const face = h('span', { class: 'space-face', text: initials(title || 'Unnamed space') })
+export function spaceFace(room: string, title: string, size = 28, picture = ''): HTMLElement {
+  const face = h('span', { class: 'space-face', text: picture ? '' : initials(title || 'Unnamed space') })
+  if (picture) {
+    const img = h('img', { class: 'space-face-img' })
+    img.alt = ''
+    img.src = picture
+    face.append(img)
+  }
   face.style.setProperty('--hue', String(spaceHue(room)))
   face.style.setProperty('--size', `${size}px`)
   return face
@@ -147,7 +153,7 @@ async function openSwitcher(
       const news = spaces.get(room.room)?.unread() ?? { count: 0, mentions: 0, direct: 0 }
       return {
         label: room.title || 'Unnamed space',
-        lead: spaceFace(room.room, room.title),
+        lead: spaceFace(room.room, room.title, 28, room.picture),
         trail: news.mentions ? count(news.mentions) : news.count && !here ? h('span', { class: 'switch-dot' }) : null,
         current: here,
         run: () => (here ? undefined : options.nav.open(room)),

@@ -4,6 +4,8 @@ export interface RoomNote {
   server?: string
   lastSeen: number
   title: string
+  /** The space's picture, as the last visit saw it. */
+  picture?: string
   locked?: boolean
   password?: string
   founder?: string

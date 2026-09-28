@@ -8,7 +8,7 @@ import { forgetSpace, listSpaces } from '../store/spaces'
 import { h } from './dom'
 import { ghost, lockup } from './ghost'
 import { icon } from './icons'
-import { hideShadows, initials, spaceHue } from './space-switcher'
+import { hideShadows, initials } from './space-switcher'
 import { toast } from './toast'
 
 interface SpaceListActions {
@@ -90,8 +90,13 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
   const paint = async (): Promise<void> => {
     const rooms = hideShadows((await listSpaces()).filter((r) => !r.closed))
     const rows = rooms.slice(0, 24).map((room) => {
-      const face = h('span', { class: 'space-tile', text: initials(room.title || 'Unnamed space') })
-      face.style.setProperty('--hue', String(spaceHue(room.room)))
+      const face = h('span', { class: 'space-tile', text: room.picture ? '' : initials(room.title || 'Unnamed space') })
+      if (room.picture) {
+        const img = h('img', { class: 'space-face-img' })
+        img.alt = ''
+        img.src = room.picture
+        face.append(img)
+      }
       return h('div', { class: 'row space-row' }, [
         h(
           'button',

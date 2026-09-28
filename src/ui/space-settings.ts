@@ -6,9 +6,12 @@ import { spaceFace } from './space-switcher'
 export interface SpaceSettingsActions {
   id: string
   name: string
+  picture: string
   /** What your level lets you change here. */
   can: { space: boolean; levels: boolean; remove: boolean }
   rename(): Promise<void>
+  /** null takes the picture away. */
+  setPicture(file: File | null): Promise<void>
   reset(): Promise<void>
   remove(): Promise<void>
   removed: { key: string; name: string; restore(): void }[]
@@ -26,20 +29,48 @@ export function spaceTabs(actions: SpaceSettingsActions): SettingsTab[] {
       id: 'overview',
       label: 'Overview',
       icon: 'settings',
-      build: () =>
-        h('div', { class: 'stack settings-stack' }, [
+      build: () => {
+        const picker = h('input', { type: 'file', class: 'hidden', ariaLabel: 'Choose a picture for the space' })
+        picker.accept = 'image/png,image/jpeg,image/webp,image/gif'
+        picker.addEventListener('change', () => {
+          const chosen = picker.files?.[0]
+          picker.value = ''
+          if (chosen) void actions.setPicture(chosen)
+        })
+        const face = h(
+          'button',
+          {
+            class: 'space-face-button',
+            title: 'Change the picture',
+            ariaLabel: 'Change the picture of the space',
+            on: { click: () => picker.click() },
+          },
+          [spaceFace(actions.id, actions.name, 64, actions.picture), h('span', { class: 'welcome-face-edit' }, [icon('edit', 12)])],
+        )
+        return h('div', { class: 'stack settings-stack' }, [
           card(
-            'Name',
+            'Name and picture',
+            note('Everybody in the space sees these, next to the space in their list.'),
             h('div', { class: 'space-card-head' }, [
-              spaceFace(actions.id, actions.name, 44),
+              face,
               h('div', { class: 'space-card-words' }, [
                 h('span', { class: 'space-card-name truncate', text: actions.name }),
-                note('Everybody in the space sees this name.'),
+                h('div', { class: 'row wrap' }, [
+                  h('button', { class: 'small', on: { click: () => void actions.rename() } }, [icon('edit', 14), 'Rename']),
+                  h('button', { class: 'small', on: { click: () => picker.click() } }, [
+                    icon('image', 14),
+                    actions.picture ? 'Change picture' : 'Add a picture',
+                  ]),
+                  actions.picture
+                    ? h('button', { class: 'ghost small', text: 'Remove picture', on: { click: () => void actions.setPicture(null) } })
+                    : null,
+                ]),
               ]),
-              h('button', { class: 'small', on: { click: () => void actions.rename() } }, [icon('edit', 14), 'Rename']),
             ]),
+            picker,
           ),
-        ]),
+        ])
+      },
     })
   }
   if (actions.can.levels) {

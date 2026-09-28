@@ -26,12 +26,12 @@ export function adoptAvatar(picture: string, at: number): void {
   adoptMemoryPref(KEY, picture || null, at)
 }
 
-export async function squareThumb(file: File): Promise<string> {
+export async function squareThumb(file: File, side = THUMB_SIDE, most = MAX_AVATAR): Promise<string> {
   if (!file.type.startsWith('image/')) throw new Error('That is not a picture.')
   const bitmap = await loadBitmap(file)
   const canvas = document.createElement('canvas')
-  canvas.width = THUMB_SIDE
-  canvas.height = THUMB_SIDE
+  canvas.width = side
+  canvas.height = side
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('This browser will not draw the picture.')
 
@@ -44,8 +44,8 @@ export async function squareThumb(file: File): Promise<string> {
     crop,
     0,
     0,
-    THUMB_SIDE,
-    THUMB_SIDE,
+    side,
+    side,
   )
   if ('close' in bitmap) bitmap.close()
 
@@ -54,7 +54,7 @@ export async function squareThumb(file: File): Promise<string> {
       const url = canvas.toDataURL(type, quality)
       // A browser without WebP hands back a PNG, which is far too big here.
       if (!url.startsWith(`data:${type}`)) break
-      if (url.length <= MAX_AVATAR) return url
+      if (url.length <= most) return url
     }
   }
   throw new Error('That picture will not shrink small enough. Try a simpler one.')

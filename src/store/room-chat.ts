@@ -4,6 +4,7 @@ import { loadIdentity, sharedKey } from './identity'
 import { openEvents } from './verify-pool'
 import {
   cleanAvatar,
+  cleanSpacePicture,
   cleanChannel,
   cleanNoteTitle,
   cleanFiles,
@@ -190,6 +191,15 @@ export class RoomChat {
   async claimFounder(): Promise<LogEvent> {
     this.log.founder = this.me
     return this.write('role', { subject: this.me, role: 'admin' })
+  }
+
+  spacePicture(): string {
+    return this.log.spacePicture()
+  }
+
+  /** '' takes the picture away, and the space shows its initials again. */
+  setSpacePicture(picture: string): Promise<LogEvent> {
+    return this.write('space', { picture: cleanSpacePicture(picture) })
   }
 
   setSpaceName(name: string): Promise<LogEvent> {

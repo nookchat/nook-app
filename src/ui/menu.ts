@@ -134,7 +134,8 @@ export function onContextMenu(target: HTMLElement, items: (ev: MouseEvent) => Me
   target.addEventListener('contextmenu', (ev) => {
     if (ev.shiftKey || ev.defaultPrevented) return
     const hit = ev.target as Element
-    if (hit.closest?.('a[href], input, textarea, [contenteditable="true"]')) return
+    // Fields keep the browser's menu, for paste and spelling. Links and pictures get this one.
+    if (hit.closest?.('input, textarea, [contenteditable="true"]')) return
     const picked = window.getSelection()?.toString() ?? ''
     if (picked.trim() && target.contains(window.getSelection()?.anchorNode ?? null)) return
     const entries = items(ev)

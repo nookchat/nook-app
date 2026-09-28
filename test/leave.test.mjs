@@ -85,7 +85,7 @@ try {
   )
 
   const memberMenu = await spaceMenu(member)
-  check('a member is not offered the space settings, so not the delete button', !memberMenu.includes('Space settings'), memberMenu.join(', '))
+  check('a member is not offered the space settings, so not the delete button', !memberMenu.some((t) => t.trim() === 'Settings'), memberMenu.join(', '))
 
   member.once('dialog', (d) => d.accept())
   await member.click('.menu-item:has-text("Leave")')

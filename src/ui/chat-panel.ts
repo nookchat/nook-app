@@ -4,7 +4,7 @@ import type { LinkPreview } from '../net/server-api'
 import { cleanName, EVERYONE, findMentions, mentionsMe } from '../chat'
 import { shortKey } from '../store/identity'
 import { AttachTray, attachmentBlock } from './attachments'
-import { clear, h, roleInk } from './dom'
+import { clear, copyText, h, roleInk } from './dom'
 import {
   closeEmojiPicker,
   emojiFor,
@@ -95,6 +95,28 @@ export function avatarOf(key: string, name: string, picture: string, size = 20):
   box.style.fontSize = `${Math.round(size * 0.44)}px`
   box.append(h('span', { text: letters || '?' }))
   return box
+}
+
+/** What a right click on a picture or a link adds over the message's own menu. */
+function mediaMenu(hit: Element): MenuEntry[] {
+  const lead = (name: Parameters<typeof icon>[0]): HTMLElement => h('span', { class: 'menu-icon' }, [icon(name, 16)])
+  const out: MenuEntry[] = []
+  const picture = hit.closest<HTMLElement>('.chat-image-wrap, .att-tile:not(.att-video)')
+  if (picture) out.push({ label: 'Open picture', lead: lead('expand'), run: () => picture.click() })
+  const link = hit.closest<HTMLAnchorElement>('a[href]')
+  const href = link && /^https?:/i.test(link.href) ? link.href : ''
+  if (href) {
+    out.push(
+      { label: 'Open link', lead: lead('link'), run: () => void window.open(href, '_blank', 'noopener,noreferrer') },
+      {
+        label: 'Copy link',
+        lead: lead('copy'),
+        run: () => void copyText(href).then((ok) => toast(ok ? 'Link copied.' : 'Could not copy it.', ok ? 'info' : 'warn')),
+      },
+    )
+  }
+  if (out.length) out.push('line')
+  return out
 }
 
 /** A new message fades in and rises, once. */
@@ -1117,7 +1139,7 @@ export class ChatPanel {
       const person = (ev.target as Element).closest('.chat-name, .avatar')
       const about = person && this.personMenu ? this.personMenu(m.author) : []
       if (about.length) return about
-      return this.messageMenu(m, mine, who, line)
+      return [...mediaMenu(ev.target as Element), ...this.messageMenu(m, mine, who, line)]
     })
     line.addEventListener('click', (ev) => {
       if (window.matchMedia('(hover: hover)').matches) return

@@ -31,6 +31,7 @@ import { gifLink, isClip, type Gif } from '../store/gifs'
 import {
   DEFAULT_CHANNEL,
   DEFAULT_VOICE,
+  MAX_SPACE_PICTURE,
   MEMBER,
   OWNER,
   cleanChannel,
@@ -65,7 +66,7 @@ import { icon } from './icons'
 import { closeMenu, onContextMenu, openMenu, type MenuItem, type MenuEntry } from './menu'
 import { NoteEditor } from './notes-view'
 import { placeNear } from './emoji'
-import { loadAvatar } from './avatar'
+import { loadAvatar, squareThumb } from './avatar'
 import type { WindowChrome } from './shell'
 import { toast } from './toast'
 import { notify } from './notify'
@@ -1452,10 +1453,12 @@ export class SpaceView {
       this.spaceTitle.textContent = label
       if (named) void this.remember({ name: named })
     }
-    const faceKey = `${this.room?.id ?? ''}|${named}`
+    const picture = chat.spacePicture()
+    const faceKey = `${this.room?.id ?? ''}|${named}|${picture.length}|${picture.slice(-24)}`
     if (this.room && this.spaceFace.dataset.key !== faceKey) {
       this.spaceFace.dataset.key = faceKey
-      this.spaceFace.replaceChildren(spaceFace(this.room.id, named, 24))
+      this.spaceFace.replaceChildren(spaceFace(this.room.id, named, 24, picture))
+      void this.remember({})
     }
   }
 
@@ -1676,7 +1679,7 @@ export class SpaceView {
       more: () => [
         { label: 'Invite', lead: h('span', { class: 'menu-icon' }, [icon('user-plus', 16)]), run: () => void this.showInvite() },
         ...(this.spaceRights().any
-          ? [{ label: 'Space settings', lead: h('span', { class: 'menu-icon' }, [icon('settings', 16)]), run: () => void this.openSpaceSettings() }]
+          ? [{ label: 'Settings', lead: h('span', { class: 'menu-icon' }, [icon('settings', 16)]), run: () => void this.openSpaceSettings() }]
           : []),
         { label: 'Leave', danger: true, lead: h('span', { class: 'menu-icon' }, [icon('leave', 16)]), run: () => void this.leaveSpace() },
       ],
@@ -1856,9 +1859,11 @@ export class SpaceView {
       spaceSettingsView({
         id: this.room?.id ?? '',
         name: this.chat?.spaceName() || 'Unnamed space',
+        picture: this.chat?.spacePicture() ?? '',
         can: rights,
         levels: () => this.levelsEditor(),
         rename: () => this.renameSpace(),
+        setPicture: (file) => this.setSpacePicture(file),
         reset: () => this.resetSpace(),
         remove: () => this.deleteSpace(),
         removed: [...(this.chat?.roles() ?? new Map<string, string>())]
@@ -1872,6 +1877,26 @@ export class SpaceView {
         back: () => this.closeSettings(),
       }),
     )
+  }
+
+  /** A picture for the space, or null to take it away. */
+  private async setSpacePicture(file: File | null): Promise<void> {
+    if (!this.chat?.can('space')) {
+      toast('Your level cannot change this space.', 'warn')
+      return
+    }
+    let picture = ''
+    if (file) {
+      try {
+        picture = await squareThumb(file, 96, MAX_SPACE_PICTURE)
+      } catch (err) {
+        toast(err instanceof Error ? err.message : 'That picture would not do.', 'warn')
+        return
+      }
+    }
+    await this.publish((c) => c.setSpacePicture(picture))
+    await this.remember({})
+    if (this.settingsOpen === 'space') void this.openSpaceSettings('overview')
   }
 
   private async renameSpace(): Promise<void> {

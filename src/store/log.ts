@@ -218,6 +218,15 @@ const CLEARABLE = new Set<EventKind>(['said', 'edit', 'react', 'retract', 'pin',
 // A 48 px WebP thumbnail is about 1500 characters.
 export const MAX_AVATAR = 2600
 
+// A space's picture is drawn larger than a person's, so it may be bigger: 96 px of WebP.
+export const MAX_SPACE_PICTURE = 9000
+
+export function cleanSpacePicture(raw: unknown): string {
+  const text = typeof raw === 'string' ? raw : ''
+  if (!text || text.length > MAX_SPACE_PICTURE) return ''
+  return /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(text) ? text : ''
+}
+
 export function cleanAvatar(raw: unknown): string {
   const text = typeof raw === 'string' ? raw : ''
   if (!text || text.length > MAX_AVATAR) return ''
@@ -413,6 +422,20 @@ export class RoomLog {
 
   spaceName(): string {
     return this.cached('spaceName', () => this.foldSpaceName())
+  }
+
+  /** The space's picture, or '' for its initials. The newest one from a level that may change the space wins. */
+  spacePicture(): string {
+    return this.cached('spacePicture', () => {
+      let picture = ''
+      const auth = this.authority()
+      for (const e of this.all()) {
+        if (e.kind !== 'space' || !('picture' in e.body)) continue
+        if (!auth.can(e.author, 'space')) continue
+        picture = cleanSpacePicture(e.body.picture)
+      }
+      return picture
+    })
   }
 
   private foldSpaceName(): string {

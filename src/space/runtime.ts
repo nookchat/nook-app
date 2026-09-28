@@ -304,6 +304,8 @@ export class SpaceRuntime {
       lastSeen: Date.now(),
       // An empty name means not heard yet, and must not overwrite a known one.
       title: patch.name || this.chat?.spaceName() || existing?.title || '',
+      // Until the log has the space's name it has not been heard, so the last known picture stays.
+      picture: (this.chat?.spaceName() ? this.chat.spacePicture() : existing?.picture) || undefined,
       locked: this.locked,
       password: this.password || existing?.password || undefined,
       closed: patch.closed || existing?.closed || undefined,

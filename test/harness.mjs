@@ -87,6 +87,6 @@ export async function openSettingsTab(page, tab) {
 /** Opens the space settings from the space menu, on one tab if one is named. */
 export async function openSpaceSettings(page, tab = '') {
   await page.click('.space-title-button')
-  await page.click('.menu-item:has-text("Space settings")')
+  await page.click('.menu-item:has-text("Settings")')
   if (tab) await page.click(`.settings-tab[data-tab="${tab}"]`)
 }
