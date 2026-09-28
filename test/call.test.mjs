@@ -1,5 +1,5 @@
 import { mkdirSync } from 'node:fs'
-import { APP_URL, AUTOPLAY, FAKE_MEDIA, check, finish, launch, poll, stoppedEarly, wait } from './harness.mjs'
+import { APP_URL, AUTOPLAY, FAKE_MEDIA, check, finish, launch, poll, stoppedEarly, wait, openSettingsTab } from './harness.mjs'
 
 const BOX = '[aria-label="Write a message"]'
 const SHOTS = new URL('../test-output/calls/', import.meta.url).pathname
@@ -166,7 +166,7 @@ try {
   // Cat stands in the lounge first, so there is a call for a new microphone to move.
   await cat.evaluate(() => [...document.querySelectorAll('.voice-channel .rail-item')].find((b) => b.textContent.includes('lounge'))?.click())
   await cat.waitForSelector('.voice-bar:not(.voice-dock):not(.hidden)', { timeout: 15_000 })
-  await cat.click('button[aria-label="Settings"]')
+  await openSettingsTab(cat, 'voice')
   await cat.waitForSelector('button:has-text("Test mic")')
   await cat.click('button:has-text("Test mic")')
   const moved = await waitFor(
@@ -193,7 +193,6 @@ try {
     10_000,
   )
   check('and choosing another during a call moves the call to it', !!inCall, inCall ?? 'still the old one')
-  await cat.click('summary:text-is("More")')
   await cat.click('button:has-text("Test connection")')
   const relay = await waitFor(() => cat.evaluate(() => document.querySelector('.relay-result')?.textContent ?? null), 15_000)
   check('and the connection test says what the relay is doing', !!relay, relay ?? 'nothing')

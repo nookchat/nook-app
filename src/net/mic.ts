@@ -1,4 +1,10 @@
 const KEY = 'nook.mic.v1'
+/** Sent when a mic setting changes, so a running call picks it up at once. */
+export const MIC_CHANGED = 'nook:mic'
+
+/** The quietest and loudest a threshold can be, in dBFS. The level meters use the same scale. */
+export const QUIET_DB = -60
+export const LOUD_DB = -10
 
 export interface MicSettings {
   echo: boolean
@@ -10,9 +16,30 @@ export interface MicSettings {
   input?: string
   /** A device id. Empty is the system's own choice. */
   output?: string
+  /** What your voice is sent at, from 0 to 2. */
+  inputVolume: number
+  /** Everybody you hear, from 0 to 1, on top of each person's own level. */
+  outputVolume: number
+  /** On: the mic is always open. Off: it opens above `threshold`. */
+  autoSensitivity: boolean
+  /** In dBFS, from QUIET_DB to LOUD_DB. */
+  threshold: number
 }
 
-const DEFAULTS: MicSettings = { echo: true, denoise: true, gain: true, smart: true }
+const DEFAULTS: MicSettings = {
+  echo: true,
+  denoise: true,
+  gain: true,
+  smart: true,
+  inputVolume: 1,
+  outputVolume: 1,
+  autoSensitivity: true,
+  threshold: -45,
+}
+
+function within(value: unknown, min: number, max: number, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback
+}
 
 export function micSettings(): MicSettings {
   try {
@@ -26,6 +53,10 @@ export function micSettings(): MicSettings {
       smart: saved.smart !== false,
       input: typeof saved.input === 'string' ? saved.input : '',
       output: typeof saved.output === 'string' ? saved.output : '',
+      inputVolume: within(saved.inputVolume, 0, 2, DEFAULTS.inputVolume),
+      outputVolume: within(saved.outputVolume, 0, 1, DEFAULTS.outputVolume),
+      autoSensitivity: saved.autoSensitivity !== false,
+      threshold: within(saved.threshold, QUIET_DB, LOUD_DB, DEFAULTS.threshold),
     }
   } catch {
     return { ...DEFAULTS }
@@ -38,6 +69,12 @@ export function setMicSettings(next: MicSettings): void {
   } catch {
     /* the choice lasts for this session only */
   }
+  window.dispatchEvent(new Event(MIC_CHANGED))
+}
+
+/** Changes some settings and keeps the rest. */
+export function changeMic(change: Partial<MicSettings>): void {
+  setMicSettings({ ...micSettings(), ...change })
 }
 
 export async function explainMicRefusal(err: unknown): Promise<string> {

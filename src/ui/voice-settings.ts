@@ -1,6 +1,18 @@
 import { fetchIce, serverTag } from '../backend'
 import { denoise, type Denoiser } from '../net/denoise'
-import { audioDevices, DEVICES_CHANGED, explainMicRefusal, micSettings, openMic, playOn, setMicSettings } from '../net/mic'
+import {
+  audioDevices,
+  changeMic,
+  DEVICES_CHANGED,
+  explainMicRefusal,
+  LOUD_DB,
+  micSettings,
+  openMic,
+  playOn,
+  QUIET_DB,
+  setMicSettings,
+} from '../net/mic'
+import { shape, type Shaped } from '../net/shaper'
 import { knownServers } from '../store/server-spaces'
 import { h } from './dom'
 import { icon } from './icons'
@@ -10,7 +22,12 @@ interface Test {
   hear(on: boolean): void
 }
 
-async function startTest(onLevel: (level: number, label: string) => void): Promise<Test> {
+/** Where a level in dBFS sits on the meter, from 0 to 1. */
+function onMeter(db: number): number {
+  return Math.min(1, Math.max(0, (db - QUIET_DB) / (LOUD_DB - QUIET_DB)))
+}
+
+async function startTest(onLevel: (level: number, open: boolean, label: string) => void): Promise<Test> {
   let raw: MediaStream
   try {
     raw = await openMic()
@@ -23,28 +40,19 @@ async function startTest(onLevel: (level: number, label: string) => void): Promi
     cleaner = await denoise(raw)
     if (cleaner) stream = cleaner.stream
   }
+  // The same last step a call uses, so the test sounds like what others hear.
+  const shaper: Shaped = shape(stream)
   const label = raw.getAudioTracks()[0]?.label || 'Microphone'
-  const ctx = new AudioContext()
-  await ctx.resume().catch(() => undefined)
-  const analyser = ctx.createAnalyser()
-  analyser.fftSize = 1024
-  ctx.createMediaStreamSource(stream).connect(analyser)
-  const data = new Float32Array(analyser.fftSize)
   let running = true
   const tick = (): void => {
     if (!running) return
-    analyser.getFloatTimeDomainData(data)
-    let sum = 0
-    for (const v of data) sum += v * v
-    // Maps -60 dBFS to -10 dBFS onto 0 to 1.
-    const rms = Math.sqrt(sum / data.length)
-    onLevel(Math.min(1, Math.max(0, (20 * Math.log10(rms + 1e-8) + 60) / 50)), label)
+    onLevel(onMeter(shaper.level()), shaper.open(), label)
     requestAnimationFrame(tick)
   }
   tick()
   const back = document.createElement('audio')
   back.muted = true
-  back.srcObject = stream
+  back.srcObject = shaper.stream
   playOn(back)
   document.body.append(back)
   void back.play().catch(() => undefined)
@@ -57,10 +65,10 @@ async function startTest(onLevel: (level: number, label: string) => void): Promi
       running = false
       back.srcObject = null
       back.remove()
+      shaper.close()
       cleaner?.close()
       raw.getTracks().forEach((t) => t.stop())
       stream.getTracks().forEach((t) => t.stop())
-      void ctx.close().catch(() => undefined)
     },
   }
 }
@@ -106,7 +114,29 @@ async function testRelay(server: string): Promise<{ ok: boolean; text: string }>
   }
 }
 
-export function voiceSettings(more: HTMLElement[] = []): HTMLElement {
+function slider(label: string, min: number, max: number, value: number, say: (v: number) => string, set: (v: number) => void): HTMLElement {
+  const input = h('input', { type: 'range', ariaLabel: label }) as HTMLInputElement
+  input.min = String(min)
+  input.max = String(max)
+  input.step = '1'
+  input.value = String(value)
+  const shown = h('span', { class: 'slider-value', text: say(value) })
+  input.addEventListener('input', () => {
+    const v = Number(input.value)
+    shown.textContent = say(v)
+    set(v)
+  })
+  return h('label', { class: 'slider-row' }, [
+    h('span', { class: 'row spread' }, [h('span', { class: 'field-label', text: label }), shown]),
+    input,
+  ])
+}
+
+const section = (title: string, ...children: (Node | null)[]): HTMLElement =>
+  h('section', { class: 'settings-section stack tight' }, [h('span', { class: 'eyebrow', text: title }), ...children])
+
+/** The Voice and audio tab. `processing` holds the switches for the filters. */
+export function voiceSettings(processing: HTMLElement | null = null): HTMLElement {
   const input = h('select', { ariaLabel: 'Microphone' })
   const output = h('select', { ariaLabel: 'Speaker' })
   const fill = async (): Promise<void> => {
@@ -153,8 +183,41 @@ export function voiceSettings(more: HTMLElement[] = []): HTMLElement {
   navigator.mediaDevices?.addEventListener?.('devicechange', onDeviceChange)
   void fill()
 
+  const start0 = micSettings()
+  const volumes = h('div', { class: 'slider-pair' }, [
+    slider('Input volume', 0, 200, Math.round(start0.inputVolume * 100), (v) => `${v}%`, (v) => changeMic({ inputVolume: v / 100 })),
+    slider('Output volume', 0, 100, Math.round(start0.outputVolume * 100), (v) => `${v}%`, (v) => changeMic({ outputVolume: v / 100 })),
+  ])
+
+  // The level, with the threshold drawn on top of it: the voice goes through when the bar passes the line.
   const bar = h('i')
-  const meter = h('div', { class: 'meter', role: 'meter', ariaLabel: 'Microphone level' }, [bar])
+  const meter = h('div', { class: 'meter sensitivity-meter', role: 'meter', ariaLabel: 'Microphone level' }, [bar])
+  const threshold = h('input', { type: 'range', class: 'threshold', ariaLabel: 'Input sensitivity' }) as HTMLInputElement
+  threshold.min = String(QUIET_DB)
+  threshold.max = String(LOUD_DB)
+  threshold.step = '1'
+  threshold.value = String(start0.threshold)
+  threshold.addEventListener('input', () => changeMic({ threshold: Number(threshold.value) }))
+  const autoSwitch = h('button', { class: 'switch-row', role: 'switch' }, [
+    h('span', { class: 'switch-words' }, [
+      h('span', { class: 'switch-label', text: 'Set the sensitivity for me' }),
+      h('span', { class: 'tiny faint switch-about', text: 'Off: your mic opens only above the line' }),
+    ]),
+    h('span', { class: 'switch' }, [h('i')]),
+  ])
+  const gauge = h('div', { class: 'sensitivity' }, [meter, threshold])
+  const paintAuto = (): void => {
+    const auto = micSettings().autoSensitivity
+    autoSwitch.setAttribute('aria-checked', String(auto))
+    gauge.classList.toggle('auto', auto)
+    threshold.disabled = auto
+  }
+  autoSwitch.addEventListener('click', () => {
+    changeMic({ autoSensitivity: !micSettings().autoSensitivity })
+    paintAuto()
+  })
+  paintAuto()
+
   const which = h('span', { class: 'tiny faint truncate' })
   const testButton = h('button', {}, [icon('mic', 15), 'Test mic'])
   const hearButton = h('button', { class: 'ghost hidden' }, [icon('volume', 15), 'Hear yourself'])
@@ -170,7 +233,8 @@ export function voiceSettings(more: HTMLElement[] = []): HTMLElement {
     test = null
     hearing = false
     bar.style.width = '0%'
-    testButton.replaceChildren(icon('mic', 15), 'Test microphone')
+    meter.classList.remove('open')
+    testButton.replaceChildren(icon('mic', 15), 'Test mic')
     hearButton.classList.add('hidden')
     hearButton.classList.remove('on')
     which.textContent = ''
@@ -178,8 +242,9 @@ export function voiceSettings(more: HTMLElement[] = []): HTMLElement {
   const start = async (): Promise<void> => {
     testButton.disabled = true
     try {
-      test = await startTest((level, label) => {
+      test = await startTest((level, open, label) => {
         bar.style.width = `${Math.round(level * 100)}%`
+        meter.classList.toggle('open', open && level > 0.02)
         if (which.textContent !== label) which.textContent = label
       })
       watch.observe(document.body, { childList: true, subtree: true })
@@ -229,15 +294,29 @@ export function voiceSettings(more: HTMLElement[] = []): HTMLElement {
     relayButton.disabled = false
   })
 
-  const root = h('div', { class: 'stack tight' }, [
-    h('label', { class: 'field-row' }, [h('span', { class: 'field-label', text: 'Microphone' }), input]),
-    named,
-    h('label', { class: 'field-row' }, [h('span', { class: 'field-label', text: 'Speaker' }), output]),
-    h('div', { class: 'mic-test' }, [h('div', { class: 'row wrap' }, [testButton, hearButton]), meter, which]),
-    h('details', { class: 'adv' }, [
-      h('summary', { text: 'More' }),
-      h('div', { class: 'stack tight' }, [...more, h('div', { class: 'row wrap' }, [relayButton]), results]),
-    ]),
+  const root = h('div', { class: 'stack settings-stack' }, [
+    section(
+      'Devices',
+      h('div', { class: 'field-pair' }, [
+        h('label', { class: 'field-row' }, [h('span', { class: 'field-label', text: 'Microphone' }), input]),
+        h('label', { class: 'field-row' }, [h('span', { class: 'field-label', text: 'Speaker' }), output]),
+      ]),
+      named,
+      volumes,
+    ),
+    section(
+      'Mic test',
+      h('div', { class: 'tiny faint', text: 'Talk, and watch the bar. Hear yourself plays back what others would hear.' }),
+      h('div', { class: 'mic-test' }, [h('div', { class: 'row wrap' }, [testButton, hearButton]), which]),
+    ),
+    section(
+      'Input sensitivity',
+      autoSwitch,
+      gauge,
+      h('div', { class: 'tiny faint', text: 'Start the mic test to see your level. Green means the others hear you.' }),
+    ),
+    processing ? section('Voice processing', processing) : null,
+    section('Connection', h('div', { class: 'row wrap' }, [relayButton]), results),
   ])
   return root
 }

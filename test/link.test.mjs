@@ -1,4 +1,4 @@
-import { APP_URL, check, finish, launch, stoppedEarly, wait } from './harness.mjs'
+import { APP_URL, check, finish, launch, stoppedEarly, wait, openSettingsTab } from './harness.mjs'
 
 const BOX = '[aria-label="Write a message"]'
 const SAID = 'said on the first device'
@@ -7,7 +7,7 @@ const browser = await launch({ named: false })
 const fresh = async () => (await browser.newContext({ viewport: { width: 1280, height: 860 } })).newPage()
 
 async function makeLink(page) {
-  await page.click('button[aria-label="Settings"]')
+  await openSettingsTab(page, 'devices')
   await page.click('button:text-is("Link a device")')
   const code = page.locator('.link-code')
   await code.waitFor({ timeout: 15_000 })

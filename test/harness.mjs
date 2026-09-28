@@ -76,3 +76,16 @@ export async function joinAndWatch(viewer, link, timeoutMs = 30_000) {
   await viewer.waitForSelector('.stream-tab[data-watch="peer"]', { timeout: timeoutMs })
   await viewer.click('.stream-tab[data-watch="peer"]')
 }
+
+/** Opens your own settings on one tab: profile, voice, notifications, reactions, devices or servers. */
+export async function openSettingsTab(page, tab) {
+  await page.evaluate(() => document.querySelector('button[aria-label="Settings"]').click())
+  await page.click(`.settings-tab[data-tab="${tab}"]`)
+}
+
+/** Opens the space settings from the space menu, on one tab if one is named. */
+export async function openSpaceSettings(page, tab = '') {
+  await page.click('.space-title-button')
+  await page.click('.menu-item:has-text("Space settings")')
+  if (tab) await page.click(`.settings-tab[data-tab="${tab}"]`)
+}

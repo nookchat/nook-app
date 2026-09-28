@@ -14,6 +14,8 @@ export type IconName =
   | 'close'
   | 'refresh'
   | 'monitor'
+  | 'user'
+  | 'bell'
   | 'signal'
   | 'mic'
   | 'mic-off'
@@ -74,6 +76,8 @@ const PATHS: Record<IconName, string> = {
   fit: 'M4 7.5A1.5 1.5 0 0 1 5.5 6h13A1.5 1.5 0 0 1 20 7.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 16.5zM8 9.5h8v5H8z',
   close: 'M18 6 6 18M6 6l12 12',
   refresh: 'M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5',
+  user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4.5 20a7.5 7.5 0 0 1 15 0',
+  bell: 'M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20.5a2 2 0 0 0 4 0',
   signal: 'M5 19v-3M10 19v-6.5M15 19V9M20 19V5.5',
   monitor: 'M4 6.5A1.5 1.5 0 0 1 5.5 5h13A1.5 1.5 0 0 1 20 6.5v8a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 14.5zM9 20h6M12 16v4',
   mic: 'M12 3.5a2.5 2.5 0 0 1 2.5 2.5v5a2.5 2.5 0 0 1-5 0V6A2.5 2.5 0 0 1 12 3.5zM18 11a6 6 0 0 1-12 0M12 17v3.5',

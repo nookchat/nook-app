@@ -1,4 +1,4 @@
-import { APP_URL, FAKE_MEDIA, check, finish, launch, stoppedEarly } from './harness.mjs'
+import { APP_URL, FAKE_MEDIA, check, finish, launch, stoppedEarly, openSpaceSettings } from './harness.mjs'
 
 const browser = await launch({ args: FAKE_MEDIA })
 
@@ -26,9 +26,9 @@ async function makeSpace(page, name, password = '') {
   )
 }
 
-async function openSettings(page) {
-  await page.click('button[aria-label="Settings"]')
-  await page.waitForSelector('button:text-is("Leave")')
+async function spaceMenu(page) {
+  await page.click('.space-title-button')
+  return page.$$eval('.menu-item', (els) => els.map((e) => e.textContent?.trim() ?? ''))
 }
 
 async function atList(page, ms = 30_000) {
@@ -75,9 +75,9 @@ try {
   )
   check('a member sees the name the admin gave it', true)
 
-  await openSettings(admin)
+  await openSpaceSettings(admin, 'overview')
   admin.once('dialog', (d) => d.accept('staff room'))
-  await admin.click('.card button:text-is("Rename")')
+  await admin.click('.settings-page button:text-is("Rename")')
   await admin.waitForTimeout(800)
   const shown = await admin.textContent('.space-card-name')
   check('the settings card shows the name it was just given', shown === 'staff room', shown)
@@ -88,12 +88,11 @@ try {
     { timeout: 10_000 },
   )
 
-  await openSettings(member)
-  const memberCanDelete = await member.$('button:text-is("Delete space")')
-  check('a member is not offered the delete button', memberCanDelete === null)
+  const memberMenu = await spaceMenu(member)
+  check('a member is not offered the space settings, so not the delete button', !memberMenu.includes('Space settings'), memberMenu.join(', '))
 
   member.once('dialog', (d) => d.accept())
-  await member.click('button:text-is("Leave")')
+  await member.click('.menu-item:has-text("Leave")')
   await atList(member)
   check('leaving lands back on the list', (await rows(member)).length === 0)
 
@@ -108,7 +107,7 @@ try {
     { timeout: 60_000 },
   )
 
-  await openSettings(admin)
+  await openSpaceSettings(admin, 'danger')
   admin.once('dialog', (d) => d.accept())
   await admin.click('button:text-is("Delete space")')
   await atList(admin)

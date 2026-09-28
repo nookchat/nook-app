@@ -1,4 +1,4 @@
-import { APP_URL, check, finish, launch, stoppedEarly } from './harness.mjs'
+import { APP_URL, check, finish, launch, stoppedEarly, openSpaceSettings } from './harness.mjs'
 
 const BOX = '[aria-label="Write a message"]'
 const TEAL = 'rgb(46, 196, 182)'
@@ -72,7 +72,7 @@ try {
   check('a reply of one emoji to a picture is drawn large', media[0]?.reply === true && media[0].jumbo === true, JSON.stringify(media[0]))
   check('and so is an emoji beside a picture, without the address', media[1]?.jumbo === true && media[1].text === '🎉', JSON.stringify(media[1]))
 
-  await openSettings(alice)
+  await openSpaceSettings(alice, 'levels')
   await alice.waitForSelector('.levels')
   const names = await alice.$$eval('.levels .level-name', (els) => els.map((e) => e.textContent))
   check('the owner sees the levels of the space', names.join(',') === 'Owner,Admin,Moderator,Member', names.join(','))

@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync } from 'node:fs'
-import { APP_URL, check, finish, launch, stoppedEarly, wait } from './harness.mjs'
+import { APP_URL, check, finish, launch, stoppedEarly, wait, openSettingsTab } from './harness.mjs'
 
 const BOX = '[aria-label="Write a message"]'
 const SAID = 'said before the browser forgot'
@@ -8,7 +8,7 @@ const browser = await launch({ named: false })
 const fresh = async () => (await browser.newContext({ acceptDownloads: true, viewport: { width: 1280, height: 900 } })).newPage()
 
 async function backUp(page, password = '') {
-  await page.evaluate(() => document.querySelector('button[aria-label="Settings"]').click())
+  await openSettingsTab(page, 'devices')
   await page.click('button:text-is("Save a backup")')
   if (password) {
     await page.click('button:has-text("Add a password")')

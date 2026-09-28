@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { check, finish, launch, stoppedEarly } from './harness.mjs'
+import { check, finish, launch, stoppedEarly, openSettingsTab } from './harness.mjs'
 import { startServer } from './pg.mjs'
 
 const PORT = 8796
@@ -75,7 +75,7 @@ try {
   check('her server is not where his own spaces go', await has(bob, 'input[aria-label="Your server"]'))
   check('and the space he joined is on his list', (await bob.$$('.space-row .rail-item')).length === 1)
 
-  await bob.click('button[aria-label="Settings"]')
+  await openSettingsTab(bob, 'servers')
   await bob.waitForSelector('.server-row')
   const listed = await bob.evaluate(() => ({
     note: document.body.innerText.includes('You have no server yet'),

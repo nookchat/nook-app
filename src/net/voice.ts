@@ -1,7 +1,8 @@
 import type { SignalBus } from '../signal/bus'
 import type { Envelope } from '../signal/envelope'
 import { denoise, type Denoiser } from './denoise'
-import { DEVICES_CHANGED, explainMicRefusal, micSettings, openMic, playOn } from './mic'
+import { DEVICES_CHANGED, MIC_CHANGED, explainMicRefusal, micSettings, openMic, playOn } from './mic'
+import { shape, type Shaped } from './shaper'
 import { Talking } from './talking'
 import { VOLUMES_CHANGED } from './volume'
 
@@ -43,6 +44,7 @@ export class Voice {
   private mic: MediaStream | null = null
   private rawMic: MediaStream | null = null
   private cleaner: Denoiser | null = null
+  private shaper: Shaped | null = null
   private channel: string | null = null
   private muted = false
   private deafened = false
@@ -69,6 +71,7 @@ export class Voice {
     this.config = config
     window.addEventListener(DEVICES_CHANGED, this.onDevices)
     window.addEventListener(VOLUMES_CHANGED, this.onVolumes)
+    window.addEventListener(MIC_CHANGED, this.onVolumes)
     navigator.mediaDevices?.addEventListener?.('devicechange', this.onDevices)
     this.talking.onChange = () => this.onChange?.()
     this.timer = window.setInterval(() => this.retry(), RETRY_MS)
@@ -77,6 +80,7 @@ export class Voice {
   dispose(): void {
     window.removeEventListener(DEVICES_CHANGED, this.onDevices)
     window.removeEventListener(VOLUMES_CHANGED, this.onVolumes)
+    window.removeEventListener(MIC_CHANGED, this.onVolumes)
     navigator.mediaDevices?.removeEventListener?.('devicechange', this.onDevices)
     if (this.timer !== null) window.clearInterval(this.timer)
     this.timer = null
@@ -119,6 +123,8 @@ export class Voice {
       this.cleaner = await denoise(this.rawMic)
       if (this.cleaner) this.mic = this.cleaner.stream
     }
+    this.shaper = shape(this.mic)
+    this.mic = this.shaper.stream
     this.channel = channel
     this.since = Date.now()
     this.muted = false
@@ -140,17 +146,22 @@ export class Voice {
         cleaner = await denoise(raw)
         if (cleaner) mic = cleaner.stream
       }
+      const shaper = shape(mic)
+      mic = shaper.stream
       if (!this.channel) {
+        shaper.close()
         cleaner?.close()
         raw.getTracks().forEach((t) => t.stop())
         return
       }
       for (const t of [...raw.getAudioTracks(), ...mic.getAudioTracks()]) t.enabled = !this.muted
       for (const call of this.calls.values()) await call.useMic(mic)
-      const old = { raw: this.rawMic, mic: this.mic, cleaner: this.cleaner }
+      const old = { raw: this.rawMic, mic: this.mic, cleaner: this.cleaner, shaper: this.shaper }
       this.rawMic = raw
       this.mic = mic
       this.cleaner = cleaner
+      this.shaper = shaper
+      old.shaper?.close()
       old.cleaner?.close()
       old.raw?.getTracks().forEach((t) => t.stop())
       old.mic?.getTracks().forEach((t) => t.stop())
@@ -169,6 +180,8 @@ export class Voice {
     this.talking.remove(this.selfId)
     for (const call of this.calls.values()) call.close()
     this.calls.clear()
+    this.shaper?.close()
+    this.shaper = null
     this.cleaner?.close()
     this.cleaner = null
     this.rawMic?.getTracks().forEach((t) => t.stop())
@@ -436,7 +449,7 @@ class Call {
   }
 
   setVolume(level: number): void {
-    this.sink.volume = Math.min(1, Math.max(0, level))
+    this.sink.volume = Math.min(1, Math.max(0, level * micSettings().outputVolume))
   }
 
   async dial(): Promise<void> {

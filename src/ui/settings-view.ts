@@ -13,73 +13,19 @@ import { icon } from './icons'
 import { enterLinkCode, lastBackup, showBackup, showLinkCode } from './link-device'
 import { askNotify, notifyState, stopNotify } from './notify'
 import { setSounds, soundsOn } from './sounds'
-import { spaceFace } from './space-switcher'
+import { card, note, settingsShell, switchRow, toggle, type SettingsTab } from './settings-shell'
 import { toast } from './toast'
 import { voiceSettings } from './voice-settings'
 
 interface SettingsActions {
   rename(name: string, avatar?: string): void
   back(): void
-  space?: {
-    id: string
-    name: string
-    admin: boolean
-    rename(): Promise<void>
-    reset(): Promise<void>
-    leave(): Promise<void>
-    remove(): Promise<void>
-    removed?: { key: string; name: string; restore(): void }[]
-    levels?: () => HTMLElement
-  }
+  /** The tab to open on. */
+  start?: string
 }
 
-const card = (title: string, ...children: (Node | null)[]): HTMLElement =>
-  h('section', { class: 'card stack tight' }, [h('span', { class: 'eyebrow', text: title }), ...children])
-
-const note = (text: string): HTMLElement => h('div', { class: 'tiny faint', text })
-
-function actionRow(label: string, about: string, button: HTMLButtonElement): HTMLElement {
-  return h('div', { class: 'action-row' }, [
-    h('span', { class: 'switch-words' }, [
-      h('span', { class: 'switch-label', text: label }),
-      h('span', { class: 'tiny faint switch-about', text: about }),
-    ]),
-    button,
-  ])
-}
-
-function toggle(label: string, on: () => boolean, set: (next: boolean) => void, about = ''): HTMLButtonElement {
-  const button = switchRow(label, about)
-  const paint = (): void => button.setAttribute('aria-checked', String(on()))
-  button.addEventListener('click', () => {
-    set(!on())
-    paint()
-  })
-  paint()
-  return button
-}
-
-function switchRow(label: string, about = ''): HTMLButtonElement {
-  return h('button', { class: 'switch-row', role: 'switch' }, [
-    h('span', { class: 'switch-words' }, [
-      h('span', { class: 'switch-label', text: label }),
-      about ? h('span', { class: 'tiny faint switch-about', text: about }) : null,
-    ]),
-    h('span', { class: 'switch' }, [h('i')]),
-  ])
-}
-
+/** Your own settings. What a space's admins can change is in space-settings.ts. */
 export function settingsView(actions: SettingsActions): HTMLElement {
-  const close = (): void => {
-    window.removeEventListener('keydown', onEscape, true)
-    actions.back()
-  }
-  const onEscape = (ev: KeyboardEvent): void => {
-    if (ev.key !== 'Escape' || ev.defaultPrevented) return
-    if (document.querySelector('.scrim, .menu, .emoji-picker, .emoji-pop, .viewer, .gif-pop')) return
-    close()
-  }
-  window.addEventListener('keydown', onEscape, true)
   const identity = loadIdentity()
 
   const name = h('input', { type: 'text', value: identity.name, ariaLabel: 'Your name', placeholder: 'Your name' })
@@ -246,69 +192,6 @@ export function settingsView(actions: SettingsActions): HTMLElement {
     ]),
   ])
 
-  const space = actions.space
-  const spaceCard = space
-    ? card(
-        'This space',
-        h('div', { class: 'space-card-head' }, [
-          spaceFace(space.id, space.name, 44),
-          h('div', { class: 'space-card-words' }, [
-            h('span', { class: 'space-card-name truncate', text: space.name }),
-            note(space.admin ? 'You can rename it, clear it and delete it' : 'You are a member here'),
-          ]),
-          space.admin
-            ? h('button', { class: 'small', on: { click: () => void space.rename() } }, [icon('edit', 14), 'Rename'])
-            : null,
-        ]),
-        space.removed?.length
-          ? h('div', { class: 'stack tight' }, [
-              h('span', { class: 'eyebrow', text: 'Removed people' }),
-              h(
-                'div',
-                { class: 'action-list' },
-                space.removed.map((p) => {
-                  const row = h('div', { class: 'action-row' }, [
-                    h('span', { class: 'switch-label truncate', text: p.name }),
-                    h('button', {
-                      class: 'small',
-                      text: 'Unban',
-                      on: {
-                        click: () => {
-                          p.restore()
-                          row.remove()
-                        },
-                      },
-                    }),
-                  ])
-                  return row
-                }),
-              ),
-            ])
-          : null,
-        h('div', { class: 'action-list' }, [
-          actionRow(
-            'Leave the space',
-            'It comes off your list. The link still works if you want back in.',
-            h('button', { class: 'small', text: 'Leave', on: { click: () => void space.leave() } }),
-          ),
-          space.admin
-            ? actionRow(
-                'Clear history',
-                'Messages, polls and pins go for everybody. Names, channels and levels stay.',
-                h('button', { class: 'small danger', text: 'Clear history', on: { click: () => void space.reset() } }),
-              )
-            : null,
-          space.admin
-            ? actionRow(
-                'Delete the space',
-                'It goes for everybody, on every device. This cannot be undone.',
-                h('button', { class: 'small danger', text: 'Delete space', on: { click: () => void space.remove() } }),
-              )
-            : null,
-        ]),
-      )
-    : null
-
   const notifyAbout = 'For mentions and direct messages, when the tab is behind'
   const notifyButton = switchRow('Notifications', notifyAbout)
   const paintNotify = (): void => {
@@ -381,71 +264,99 @@ export function settingsView(actions: SettingsActions): HTMLElement {
   }
   paintQuick()
 
-  return h('main', { class: 'settings' }, [
-    h('div', { class: 'center-page' }, [
-      h('div', { class: 'sheet stack' }, [
-        h('div', { class: 'row settings-head' }, [
-          h('h1', { class: 'settings-title grow', text: 'Settings' }),
-          h(
-            'button',
-            { class: 'ghost icon-only settings-close', ariaLabel: 'Close settings', title: 'Close (Esc)', on: { click: close } },
-            [icon('close', 20)],
+  const tabs: SettingsTab[] = [
+    {
+      id: 'profile',
+      label: 'Profile',
+      icon: 'user',
+      group: 'User settings',
+      build: () =>
+        h('div', { class: 'stack settings-stack' }, [
+          card(
+            'Name and picture',
+            note('What people see next to what you say, in every space.'),
+            h('div', { class: 'profile-row' }, [
+              picture,
+              h('div', { class: 'stack tight grow' }, [h('div', { class: 'row' }, [name, save]), removePicture]),
+            ]),
+            pickPicture,
           ),
         ]),
-
-        card(
-          'You',
-          h('div', { class: 'profile-row' }, [
-            picture,
-            h('div', { class: 'stack tight grow' }, [h('div', { class: 'row' }, [name, save]), removePicture]),
-          ]),
-          pickPicture,
-        ),
-
-        spaceCard,
-        space?.levels ? card('Levels', space.levels()) : null,
-
-        card(
-          'Voice',
-          voiceSettings([
-            h('div', { class: 'switch-list' }, [
-              mic('smart', 'Noise removal', 'Takes out keyboards, fans and dogs'),
-              mic('denoise', 'Noise suppression', "The browser's own, lighter filter"),
-              mic('echo', 'Echo cancellation', 'Stops others hearing themselves through your speakers'),
-              mic('gain', 'Auto volume', 'Keeps your voice at a steady level'),
-            ]),
-          ]),
-        ),
-
-        card(
-          'Notifications',
+    },
+    {
+      id: 'voice',
+      label: 'Voice & audio',
+      icon: 'mic',
+      build: () =>
+        voiceSettings(
           h('div', { class: 'switch-list' }, [
-            notifyButton,
-            toggle('Sounds', soundsOn, setSounds, 'A chirp for new messages'),
+            mic('smart', 'Noise removal', 'Takes out keyboards, fans and dogs'),
+            mic('denoise', 'Noise suppression', "The browser's own, lighter filter"),
+            mic('echo', 'Echo cancellation', 'Stops others hearing themselves through your speakers'),
+            mic('gain', 'Auto volume', 'Keeps your voice at a steady level'),
           ]),
         ),
+    },
+    {
+      id: 'notifications',
+      label: 'Notifications',
+      icon: 'bell',
+      build: () => {
+        paintNotify()
+        return h('div', { class: 'stack settings-stack' }, [
+          card(
+            'Alerts',
+            h('div', { class: 'switch-list' }, [notifyButton, toggle('Sounds', soundsOn, setSounds, 'A chirp for new messages')]),
+          ),
+        ])
+      },
+    },
+    {
+      id: 'reactions',
+      label: 'Reactions',
+      icon: 'smile',
+      build: () =>
+        h('div', { class: 'stack settings-stack' }, [
+          card(
+            'Quick reactions',
+            note('The emoji offered first when you react to a message. An empty place takes one you used lately.'),
+            quick,
+          ),
+        ]),
+    },
+    {
+      id: 'devices',
+      label: 'Devices & backup',
+      icon: 'device',
+      build: () =>
+        h('div', { class: 'stack settings-stack' }, [
+          card(
+            'Other devices',
+            note('Use Nook on your phone or another computer, with the same spaces and messages.'),
+            h('div', { class: 'row wrap' }, [
+              h('button', { text: 'Link a device', on: { click: () => showLinkCode() } }),
+              h('button', { class: 'ghost', text: 'Enter a code', on: { click: () => enterLinkCode() } }),
+            ]),
+          ),
+          card(
+            'Backup',
+            backupNote,
+            h('div', { class: 'row wrap' }, [
+              h('button', { on: { click: () => showBackup(sayBackup) } }, [icon('download', 15), 'Save a backup']),
+            ]),
+          ),
+        ]),
+    },
+    {
+      id: 'servers',
+      label: 'Servers',
+      icon: 'server',
+      build: () => {
+        drawServers()
+        return h('div', { class: 'stack settings-stack' }, [card('Your servers', serverList, addOpen, addRow, own)])
+      },
+    },
+  ]
 
-        card(
-          'Quick reactions',
-          note('The emoji offered first when you react to a message. An empty place takes one you used lately.'),
-          quick,
-        ),
-
-        card(
-          'Your account',
-          note('Use Nook on your phone or another computer, with the same spaces and messages.'),
-          h('div', { class: 'row wrap' }, [
-            h('button', { text: 'Link a device', on: { click: () => showLinkCode() } }),
-            h('button', { class: 'ghost', text: 'Enter a code', on: { click: () => enterLinkCode() } }),
-          ]),
-          backupNote,
-          h('div', { class: 'row wrap' }, [
-            h('button', { on: { click: () => showBackup(sayBackup) } }, [icon('download', 15), 'Save a backup']),
-          ]),
-        ),
-
-        card('Servers', serverList, addOpen, addRow, own),
-      ]),
-    ]),
-  ])
+  return settingsShell({ title: 'Settings', tabs, start: actions.start, close: actions.back })
 }

@@ -255,7 +255,7 @@ export class SpaceView {
   private forgotten = false
   private closing = false
   private loaded = false
-  private settingsOpen = false
+  private settingsOpen: 'user' | 'space' | null = null
 
   private capture: ScreenCapture | null = null
   private mixer: AudioMixer | null = null
@@ -1658,7 +1658,9 @@ export class SpaceView {
       nav: this.chrome?.nav ?? { home: () => this.goHome(), add: () => this.goHome(), open: () => undefined },
       more: () => [
         { label: 'Invite', lead: h('span', { class: 'menu-icon' }, [icon('user-plus', 16)]), run: () => void this.showInvite() },
-        { label: 'Settings', lead: h('span', { class: 'menu-icon' }, [icon('settings', 16)]), run: () => void this.openSettings() },
+        ...(this.spaceRights().any
+          ? [{ label: 'Space settings', lead: h('span', { class: 'menu-icon' }, [icon('settings', 16)]), run: () => void this.openSpaceSettings() }]
+          : []),
         { label: 'Leave', danger: true, lead: h('span', { class: 'menu-icon' }, [icon('leave', 16)]), run: () => void this.leaveSpace() },
       ],
     })
@@ -1794,37 +1796,63 @@ export class SpaceView {
     this.peopleButton.classList.toggle('on', !this.membersHidden)
   }
 
-  private async openSettings(): Promise<void> {
+  private closeSettings(): void {
+    this.settingsOpen = null
+    clear(this.root)
+    this.root.append(h('main', {}, [this.shell]))
+    this.drawNow()
+  }
+
+  private async openSettings(start?: string): Promise<void> {
     const { settingsView } = await import('./settings-view')
     if (this.stopped) return
     clear(this.root)
-    this.settingsOpen = true
+    this.settingsOpen = 'user'
     this.root.append(
       settingsView({
         rename: (name, avatar) => this.rename(name, avatar),
-        space: {
-          id: this.room?.id ?? '',
-          name: this.chat?.spaceName() || 'Unnamed space',
-          admin: this.chat?.can('space') === true,
-          levels: this.chat?.can('levels') ? () => this.levelsEditor() : undefined,
-          rename: () => this.renameSpace(),
-          reset: () => this.resetSpace(),
-          leave: () => this.leaveSpace(),
-          remove: () => this.deleteSpace(),
-          removed: [...(this.chat?.roles() ?? new Map<string, string>())]
-            .filter(([key, role]) => role === 'kicked' && this.chat?.authority().mayRemove(this.chat.me, key))
-            .map(([key]) => ({
-              key,
-              name: this.chat?.nameOf(key) || shortKey(key),
-              restore: () => void this.setRole(key, 'member'),
-            })),
-        },
-        back: () => {
-          this.settingsOpen = false
-          clear(this.root)
-          this.root.append(h('main', {}, [this.shell]))
-          this.drawNow()
-        },
+        start,
+        back: () => this.closeSettings(),
+      }),
+    )
+  }
+
+  /** What your level lets you change in this space's settings. */
+  private spaceRights(): { space: boolean; levels: boolean; remove: boolean; any: boolean } {
+    const space = this.chat?.can('space') === true
+    const levels = this.chat?.can('levels') === true
+    const remove = this.chat?.can('remove') === true
+    return { space, levels, remove, any: space || levels || remove }
+  }
+
+  private async openSpaceSettings(start?: string): Promise<void> {
+    const rights = this.spaceRights()
+    if (!rights.any) {
+      toast('Your level cannot change this space.', 'warn')
+      return
+    }
+    const { spaceSettingsView } = await import('./space-settings')
+    if (this.stopped) return
+    clear(this.root)
+    this.settingsOpen = 'space'
+    this.root.append(
+      spaceSettingsView({
+        id: this.room?.id ?? '',
+        name: this.chat?.spaceName() || 'Unnamed space',
+        can: rights,
+        levels: () => this.levelsEditor(),
+        rename: () => this.renameSpace(),
+        reset: () => this.resetSpace(),
+        remove: () => this.deleteSpace(),
+        removed: [...(this.chat?.roles() ?? new Map<string, string>())]
+          .filter(([key, role]) => role === 'kicked' && this.chat?.authority().mayRemove(this.chat.me, key))
+          .map(([key]) => ({
+            key,
+            name: this.chat?.nameOf(key) || shortKey(key),
+            restore: () => void this.setRole(key, 'member'),
+          })),
+        start,
+        back: () => this.closeSettings(),
       }),
     )
   }
@@ -1839,7 +1867,7 @@ export class SpaceView {
     if (!name) return
     await this.publish((c) => c.setSpaceName(name))
     await this.remember({ name })
-    if (this.settingsOpen) void this.openSettings()
+    if (this.settingsOpen === 'space') void this.openSpaceSettings('overview')
   }
 
   private showRail(which: 'left' | 'right' | null): void {
