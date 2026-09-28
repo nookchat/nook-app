@@ -64,6 +64,24 @@ with voice does it.
   the levels below yours, and you give nobody a power you do not have. Every
   device checks each change in the log, so a button is never the rule.
 - **Emoji on their own**, in a message or a reply, are drawn large.
+- **Emoji look the same on every device**: Nook draws each one with
+  [Twemoji](https://github.com/jdecked/twemoji), the set Discord uses, in
+  place of the device's own. The emoji stays in the page as text under the
+  picture, so copy and find see it. What you type, and code, keep the
+  device's own.
+- **The soundboard** is in the voice bar. A sound plays for the people in your
+  voice channel, and the green talking ring shows round the face of whoever
+  played it, with no toast. Every sound, the board's own and the ones people
+  add, is brought to the same loudness (-23 LUFS, by ITU-R BS.1770), so none
+  is much louder than another.
+- **Each person's volume** is in their menu, or a right click on them in voice.
+  It goes from 0 to 200%, and starts at 100%. A double click puts it back.
+- **Playing**: the desktop app sees the game you have open and shows it under
+  your name, the way Discord does, in the list of people and in voice. It
+  finds a game in a Steam, Epic, GOG, Riot, Ubisoft, EA, Xbox or Rockstar
+  library folder, or by the name of a well known game. Only the name goes
+  out. Settings, Activity turns it off. A browser cannot see other programs,
+  so the web page never shows a game of its own.
 - **GIFs** come from the server of the space, with its key: whoever runs it
   sets `NOOK_KLIPY_KEY`, `NOOK_TENOR_KEY` or `NOOK_GIPHY_KEY`, and
   everybody on it can search. Nobody puts a key of their own in the page.
@@ -80,7 +98,7 @@ a direct message or a mention in any of them reaches you wherever you are.
 | Your list of spaces and read marks | The server, in one record per person, sealed with a key made from your identity |
 | Who is here | The server holds it in memory, and says when it changes |
 | Picture and sound | Straight between browsers, or through the server's TURN relay when it has one, encrypted with DTLS-SRTP |
-| Your preferences: quick reactions, volumes, sounds, space order | This device, and a copy in your sealed record on your servers, so they follow you to every device |
+| Your preferences: quick reactions, volumes, sounds, showing your game, space order | This device, and a copy in your sealed record on your servers, so they follow you to every device |
 | Your identity key | Your devices only, and only the ones you link or restore. It signs everything you write |
 | Your microphone and speaker | This device only: they are its hardware |
 
@@ -319,7 +337,9 @@ trackpad pinch, zooms anywhere.
   work. A phone cannot share its screen from a browser.
 - **Desktop:** `desktop/` is an Electron shell around the site. It loads
   `https://cathode.video`, so invite links stay the same, and it adds a picker
-  for a screen or a window. On Windows it can share the system sound too.
+  for a screen or a window. On Windows it can share the system sound too. It
+  also tells the page what game you are playing: `desktop/games.cjs` looks at
+  the running programs every 15 seconds, while Settings lets it.
 
 ```sh
 cd desktop && npm install
@@ -329,3 +349,9 @@ npm run dist:mac       # or dist:win, dist:linux; the builds go in desktop/relea
 ```
 
 Set `NOOK_URL` to point the shell at another home.
+
+## Credits
+
+The emoji pictures are [Twemoji](https://github.com/jdecked/twemoji), by
+Twitter and its contributors, under [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+They come from the `@twemoji/svg` package.

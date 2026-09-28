@@ -1,9 +1,14 @@
 import { createHash } from 'node:crypto'
 import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
-import { join, relative, sep } from 'node:path'
+import { createRequire } from 'node:module'
+import { dirname, join, relative, sep } from 'node:path'
 import { defineConfig } from 'vite'
 
 const WORKER = 'stream-sw.js'
+/** Fetched when a page shows them, not kept by the worker: there are thousands. */
+const EMOJI_DIR = 'emoji'
+const EMOJI_ART = dirname(createRequire(import.meta.url).resolve('@twemoji/svg/package.json'))
+const EMOJI_NAMES = 'virtual:twemoji'
 
 /** @param {string} dir @returns {string[]} */
 function filesIn(dir) {
@@ -30,6 +35,7 @@ function keepTheApp() {
       const files = filesIn(outDir)
         .map((path) => relative(outDir, path).split(sep).join('/'))
         .filter((file) => file !== WORKER && file !== 'index.html' && !file.endsWith('.map'))
+        .filter((file) => !file.startsWith(`${EMOJI_DIR}/`))
         .sort()
       const hash = createHash('sha256')
       for (const file of ['index.html', ...files]) hash.update(file).update(readFileSync(join(outDir, file)))
@@ -43,10 +49,49 @@ function keepTheApp() {
   }
 }
 
+/**
+ * The Twemoji pictures, so an emoji looks the same on every device. The page gets
+ * the list of names, and asks only for a picture that exists.
+ */
+/** @returns {import('vite').Plugin} */
+function emojiArt() {
+  const names = readdirSync(EMOJI_ART)
+    .filter((file) => file.endsWith('.svg'))
+    .map((file) => file.slice(0, -4))
+    .sort()
+  const known = new Set(names)
+  return {
+    name: 'nook-emoji-art',
+    resolveId(id) {
+      return id === EMOJI_NAMES ? `\0${EMOJI_NAMES}` : null
+    },
+    load(id) {
+      return id === `\0${EMOJI_NAMES}` ? `export default ${JSON.stringify(names.join(','))}` : null
+    },
+    configureServer(server) {
+      server.middlewares.use(`/${EMOJI_DIR}/`, (req, res, next) => {
+        const name = decodeURIComponent((req.url ?? '').split('?')[0].replace(/^\//, '').replace(/\.svg$/, ''))
+        if (!known.has(name)) return next()
+        res.setHeader('Content-Type', 'image/svg+xml')
+        res.end(readFileSync(join(EMOJI_ART, `${name}.svg`)))
+      })
+    },
+    generateBundle() {
+      for (const name of names) {
+        this.emitFile({
+          type: 'asset',
+          fileName: `${EMOJI_DIR}/${name}.svg`,
+          source: readFileSync(join(EMOJI_ART, `${name}.svg`)),
+        })
+      }
+    },
+  }
+}
+
 export default defineConfig({
   // Relative, so the build works from any sub path on a static host.
   base: './',
-  plugins: [keepTheApp()],
+  plugins: [emojiArt(), keepTheApp()],
   server: {
     host: true,
     port: 5173,

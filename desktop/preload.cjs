@@ -1,12 +1,23 @@
-// Tells the web app it runs in the desktop shell, and draws the title bar in
-// place of the system one: a plain strip to drag the window by, in the page
-// colour, and on Windows and Linux the window buttons on the right. On macOS the
-// system keeps its own three buttons, over the left end of the bar. The app
-// already shows its name and the space you are in, so the bar does not.
+// Tells the web app it runs in the desktop shell, and what game is running.
+// It also draws the title bar in place of the system one: a plain strip to drag
+// the window by, in the page colour, and on Windows and Linux the window buttons
+// on the right. On macOS the system keeps its own three buttons, over the left
+// end of the bar. The app already shows its name and the space you are in, so
+// the bar does not.
 
 const { contextBridge, ipcRenderer } = require('electron')
 
-contextBridge.exposeInMainWorld('nookDesktop', { platform: process.platform })
+contextBridge.exposeInMainWorld('nookDesktop', {
+  platform: process.platform,
+  /** On: the shell looks for a running game and tells `onPlaying`. Off: it stops looking. */
+  watchGames: (on) => ipcRenderer.send('games:watch', !!on),
+  /** Called with { name, since } or null. Returns a function that stops it. */
+  onPlaying: (fn) => {
+    const heard = (_ev, now) => fn(now && typeof now.name === 'string' ? { name: now.name, since: now.since } : null)
+    ipcRenderer.on('games:playing', heard)
+    return () => ipcRenderer.removeListener('games:playing', heard)
+  },
+})
 
 const BAR_HEIGHT = 32
 const MAC = process.platform === 'darwin'

@@ -23,6 +23,7 @@
     "productName": "Nook",
     "files": [
       "main.cjs",
+      "games.cjs",
       "preload.cjs",
       "picker.html",
       "picker-preload.cjs",

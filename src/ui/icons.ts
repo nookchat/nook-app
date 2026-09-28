@@ -68,6 +68,7 @@ export type IconName =
   | 'video'
   | 'check-double'
   | 'arrow-down'
+  | 'game'
 
 // The Nook set: a 24px grid, a 1.75px stroke, round caps and joins, and currentColor. The shared
 // icons come from nook-brand/react/icons.tsx. The rest are drawn here on the same grid and stroke.
@@ -92,6 +93,10 @@ const MIC = `${rect(9, 3, 6, 11, 3)}M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21`
 const LENS = `${circle(11, 11, 7)}M16.2 16.2 21 21`
 
 const ICONS: Record<IconName, string | Drawing> = {
+  game: {
+    line: 'M6.5 7h11a4 4 0 0 1 3.9 3.1l1 4.6a2.8 2.8 0 0 1-4.9 2.4L15.5 15h-7l-2 2.1a2.8 2.8 0 0 1-4.9-2.4l1-4.6A4 4 0 0 1 6.5 7zM8 9.5v3M6.5 11h3',
+    solid: `${circle(15.5, 10.2, 0.95)}${circle(17.4, 12.1, 0.95)}`,
+  },
   ghost: {
     line: 'M4.8 10.6A7.2 7.2 0 0 1 19.2 10.6L19.2 17.8Q18 19.4 16.8 18Q15.6 16.6 14.4 18Q13.2 19.4 12 18Q10.8 16.6 9.6 18Q8.4 19.4 7.2 18L3.4 20.6Q4.8 18.6 4.8 15.8Z',
     solid: `${ellipse(9.8, 11, 0.9, 1.3)}${ellipse(14.2, 11, 0.9, 1.3)}`,

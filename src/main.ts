@@ -12,6 +12,7 @@ import './styles.css'
 import { mentionsMe } from './chat'
 import { checkSupport } from './diagnostics'
 import { startStreaming } from './net/files'
+import { watchPlaying } from './net/playing'
 import { watchForUpdates } from './net/updates'
 import { warmEmoji } from './ui/emoji'
 import { clearLink, readLink, setLinkSecret } from './room'
@@ -30,6 +31,7 @@ import { spaceList } from './ui/space-list'
 import { SpaceView } from './ui/space-view'
 import { watchTheme } from './ui/theme'
 import { toast } from './ui/toast'
+import { drawEmojiAsArt } from './ui/twemoji'
 
 const DEVICE_LINK_PREFIX = '#link='
 
@@ -192,6 +194,9 @@ spaces.fresh.add((space, events) => {
 const linked = window.location.hash.startsWith(DEVICE_LINK_PREFIX) ? null : readLink()
 
 installCalls((space, key) => void showHome({ room: space.room.id, key }))
+
+drawEmojiAsArt()
+watchPlaying()
 
 async function start(): Promise<void> {
   if (window.location.hash.startsWith(DEVICE_LINK_PREFIX)) {

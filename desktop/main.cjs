@@ -1,10 +1,11 @@
 // Nook for the desktop. The window loads the web app from its home, so invite
 // links point at the same place as on the web and the service worker works.
 // The shell adds what a browser tab cannot: a picker for a screen or a window,
-// and the system sound on Windows.
+// the system sound on Windows, and the game you are playing.
 
 const { app, BrowserWindow, desktopCapturer, ipcMain, nativeTheme, session, shell } = require('electron')
 const path = require('node:path')
+const { watchGames } = require('./games.cjs')
 
 app.setName('Nook')
 
@@ -177,6 +178,25 @@ async function pickSource(parent) {
   })
 }
 
+// The page asks for the game while you let it show what you are playing.
+let games = null
+
+function tellGame(now) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (isHome(win.webContents.getURL())) win.webContents.send('games:playing', now)
+  }
+}
+
+ipcMain.on('games:watch', (ev, on) => {
+  if (!isHome(ev.sender.getURL())) return
+  if (on && !games) games = watchGames(tellGame)
+  else if (on) ev.sender.send('games:playing', games.now())
+  else if (games) {
+    games.stop()
+    games = null
+  }
+})
+
 ipcMain.on('window:control', (ev, action) => {
   const win = BrowserWindow.fromWebContents(ev.sender)
   if (!win) return
@@ -235,6 +255,8 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   app.on('window-all-closed', () => {
+    games?.stop()
+    games = null
     if (process.platform !== 'darwin') app.quit()
   })
 }

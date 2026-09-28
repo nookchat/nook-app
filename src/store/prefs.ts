@@ -8,6 +8,7 @@ const SYNCED = [
   'nook.emoji.v1',
   'nook.volume.v1',
   'nook.sounds.v1',
+  'nook.activity.v1',
   'nook.rail.v1',
   'nook.settings.v1',
   'nook.servers.v1',

@@ -33,7 +33,7 @@ export class Voice {
   onFailed: ((peerId: string) => void) | null = null
   /** Null admits anybody standing in the channel. */
   admit: ((peerId: string, channel: string) => boolean) | null = null
-  /** From 0 to 1. */
+  /** From 0 to LOUDEST. */
   volumeOf: ((peerId: string) => number) | null = null
 
   private readonly failed = new Set<string>()
@@ -332,6 +332,24 @@ export class Voice {
   }
 }
 
+/** One for every call: browsers cap the AudioContexts a page may open. */
+let boostContext: AudioContext | null = null
+
+function boostAudio(): AudioContext | null {
+  try {
+    boostContext ??= new AudioContext({ latencyHint: 'interactive' })
+  } catch {
+    return null
+  }
+  return boostContext
+}
+
+interface Boost {
+  source: MediaStreamAudioSourceNode
+  gain: GainNode
+  out: HTMLAudioElement
+}
+
 interface CallHooks {
   send: (type: 'voffer' | 'vanswer' | 'vice', data: unknown) => void
   onChange: () => void
@@ -350,6 +368,10 @@ class Call {
   private readonly pending: RTCIceCandidateInit[] = []
   private hasRemote = false
   private closed = false
+  private stream: MediaStream | null = null
+  private level = 1
+  private deaf = false
+  private boost: Boost | null = null
 
   constructor(mic: MediaStream, weOffer: boolean, config: RTCConfiguration, hooks: CallHooks) {
     this.hooks = hooks
@@ -372,8 +394,11 @@ class Call {
 
     this.pc.ontrack = (ev) => {
       const stream = ev.streams[0] ?? new MediaStream([ev.track])
+      this.unboost()
+      this.stream = stream
       this.sink.srcObject = stream
       void this.sink.play().catch(() => undefined)
+      this.hear()
       hooks.onAudio(stream)
     }
     this.pc.onicecandidate = (ev) => {
@@ -442,14 +467,72 @@ class Call {
 
   speakers(): void {
     playOn(this.sink)
+    if (this.boost) playOn(this.boost.out)
   }
 
   setDeaf(deaf: boolean): void {
-    this.sink.muted = deaf
+    this.deaf = deaf
+    this.hear()
   }
 
   setVolume(level: number): void {
-    this.sink.volume = Math.min(1, Math.max(0, level * micSettings().outputVolume))
+    this.level = Math.max(0, level * micSettings().outputVolume)
+    this.hear()
+  }
+
+  // Up to full volume the audio element plays them. Louder goes through a gain,
+  // and the element stays on, muted: Chrome sends a remote stream to Web Audio
+  // only while an element plays it.
+  private hear(): void {
+    const ctx = this.level > 1 && this.stream && !this.closed ? this.boosted() : null
+    if (ctx && ctx.state !== 'running') void ctx.resume().then(() => this.hear(), () => undefined)
+    if (ctx?.state === 'running' && this.boost) {
+      this.boost.gain.gain.value = this.level
+      this.boost.out.muted = this.deaf
+      this.sink.muted = true
+      return
+    }
+    if (!ctx) this.unboost()
+    this.sink.muted = this.deaf
+    this.sink.volume = Math.min(1, this.level)
+  }
+
+  private boosted(): AudioContext | null {
+    const ctx = boostAudio()
+    if (!ctx || !this.stream) return null
+    if (this.boost) return ctx
+    try {
+      const source = ctx.createMediaStreamSource(this.stream)
+      const gain = ctx.createGain()
+      const into = ctx.createMediaStreamDestination()
+      source.connect(gain).connect(into)
+      // An element, not ctx.destination, so the chosen speakers play it.
+      const out = document.createElement('audio')
+      out.autoplay = true
+      out.className = 'voice-sink'
+      out.srcObject = into.stream
+      document.body.append(out)
+      playOn(out)
+      void out.play().catch(() => undefined)
+      this.boost = { source, gain, out }
+      return ctx
+    } catch {
+      return null
+    }
+  }
+
+  private unboost(): void {
+    const boost = this.boost
+    if (!boost) return
+    this.boost = null
+    try {
+      boost.source.disconnect()
+      boost.gain.disconnect()
+    } catch {
+      /* already gone */
+    }
+    boost.out.srcObject = null
+    boost.out.remove()
   }
 
   async dial(): Promise<void> {
@@ -510,6 +593,8 @@ class Call {
     this.pc.ontrack = null
     this.pc.onicecandidate = null
     this.pc.onconnectionstatechange = null
+    this.unboost()
+    this.stream = null
     this.sink.srcObject = null
     this.sink.remove()
     try {

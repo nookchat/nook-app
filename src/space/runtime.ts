@@ -2,6 +2,7 @@ import { fetchIce, serverTag } from '../backend'
 import { Channel, connectionTo } from '../net/connection'
 import { SpaceFiles } from '../net/files'
 import { Mesh } from '../net/mesh'
+import { PLAYING_CHANGED, playingNow } from '../net/playing'
 import { Voice } from '../net/voice'
 import { heardAt } from '../net/volume'
 import { deriveRoom, newPeerId, type Room } from '../room'
@@ -148,6 +149,8 @@ export class SpaceRuntime {
       deafened: this.voice?.state.channel && this.voice.state.deafened ? true : undefined,
       // How long, not since when: the clocks of two devices differ.
       voiceFor: this.voice?.state.channel ? Math.max(0, Date.now() - this.voice.state.since) : undefined,
+      playing: playingNow()?.name,
+      playingFor: playingNow() ? Math.max(0, Date.now() - playingNow()!.since) : undefined,
       ...this.extras(),
     })
     mesh.onData = (from, raw) => this.emit('data', from, raw)
@@ -199,7 +202,8 @@ export class SpaceRuntime {
     this.voice = voice
     bus.start()
     mesh.start()
-    document.addEventListener('visibilitychange', this.onVisible)
+    document.addEventListener('visibilitychange', this.announceAgain)
+    window.addEventListener(PLAYING_CHANGED, this.announceAgain)
 
     await Promise.race([channel.loaded, new Promise((r) => window.setTimeout(r, HISTORY_WAIT_MS))])
     if (this.stopped) return
@@ -233,7 +237,7 @@ export class SpaceRuntime {
     return undefined
   }
 
-  private readonly onVisible = (): void => {
+  private readonly announceAgain = (): void => {
     this.mesh.announce()
   }
 
@@ -488,7 +492,8 @@ export class SpaceRuntime {
     window.removeEventListener(PREFS_CHANGED, this.onPrefs)
     this.endCall()
     this.voice?.dispose()
-    document.removeEventListener('visibilitychange', this.onVisible)
+    document.removeEventListener('visibilitychange', this.announceAgain)
+    window.removeEventListener(PLAYING_CHANGED, this.announceAgain)
     this.mesh?.stop()
     const bus = this.bus
     if (bus) window.setTimeout(() => bus.stop(), 200)

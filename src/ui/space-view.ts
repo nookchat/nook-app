@@ -4,7 +4,8 @@ import { AudioMixer } from '../media/mixer'
 import type { Mesh, MeshPeer } from '../net/mesh'
 import type { Voice } from '../net/voice'
 import { UplinkMeter } from '../net/uplink'
-import { mutedFor, setMutedFor, setVolumeFor, volumeFor } from '../net/volume'
+import { PLAYING_CHANGED, cleanGameName, playingNow, type Playing } from '../net/playing'
+import { LOUDEST, mutedFor, setMutedFor, setVolumeFor, volumeFor } from '../net/volume'
 import { gifs as serverGifs, preview, serverHasGifs } from '../net/server-api'
 import { formatSecret, roomLink, setLinkSecret, type Room } from '../room'
 import { HostPeer } from '../rtc/host-peer'
@@ -58,6 +59,7 @@ import {
   soundByName,
   SOUNDS,
   type Sound,
+  warmSounds,
 } from './soundboard'
 import { avatarOf, ChatPanel, imageLinks } from './chat-panel'
 import { clear, copyText, fmtKbps, h, onPress, roleInk } from './dom'
@@ -75,7 +77,17 @@ import { VideoSurface } from './video-surface'
 const RECENT_MS = 14 * 24 * 60 * 60 * 1000
 const STATS_MS = 2000
 const SOUND_EVERY_MS = 120
+/** How long the ring shows when the length of the sound is not known here. */
+const SOUND_RING_S = 1.5
 const LINK_EVERY_MS = 3000
+
+/** "for 5 minutes", or "for 2 hours". */
+function forHowLong(ms: number): string {
+  const minutes = Math.max(1, Math.round(ms / 60_000))
+  if (minutes < 60) return `for ${minutes} minute${minutes === 1 ? '' : 's'}`
+  const hours = Math.round(minutes / 60)
+  return `for ${hours} hour${hours === 1 ? '' : 's'}`
+}
 
 /** 4:05, or 1:04:05 past the hour. */
 function clockFor(ms: number): string {
@@ -93,6 +105,8 @@ const TYPING_FOR_MS = 5000
 const SEARCH_LIMIT = 40
 const WATCHING_MAX = 12
 const SERVER_SILENCE_MS = 10_000
+/** A volume this close to 100% is 100%. */
+const SNAP_PERCENT = 4
 
 interface PersonRow {
   key: string
@@ -103,6 +117,7 @@ interface PersonRow {
   voice: string | null
   you: boolean
   away: boolean
+  playing: Playing | null
 }
 
 interface StageTile {
@@ -276,7 +291,8 @@ export class SpaceView {
   private soundSentAt = 0
   private readonly clips = new Map<string, Promise<AudioBuffer | null>>()
   private readonly soundHeard = new Map<string, number>()
-  private readonly soundSaid = new Map<string, number>()
+  /** Sessions whose soundboard sound is playing now, for the ring round their face. */
+  private readonly sounding = new Map<string, { until: number; label: string }>()
   private ttsSentAt = 0
   private readonly ttsHeard = new Map<string, number>()
   private serverWarned = false
@@ -330,6 +346,8 @@ export class SpaceView {
   private linkBusy = false
   /** When each session in voice came into its channel, by our clock. */
   private readonly voiceSince = new Map<string, number>()
+  /** The game each session says it plays, and since when by our clock. */
+  private readonly playingBy = new Map<string, Playing>()
   private readonly boardButton = h(
     'button',
     {
@@ -432,6 +450,7 @@ export class SpaceView {
     this.timers.push(window.setInterval(() => void this.sampleLink(), LINK_EVERY_MS))
     this.boardButton.addEventListener('click', () => this.openBoard(this.boardButton))
     document.addEventListener('visibilitychange', this.onVisible)
+    window.addEventListener(PLAYING_CHANGED, this.onPlaying)
     window.addEventListener('keydown', this.onShortcut)
     this.draw()
     this.status()
@@ -441,6 +460,8 @@ export class SpaceView {
     this.announceMe()
     this.draw()
   }
+
+  private readonly onPlaying = (): void => this.draw()
 
   private readonly onShortcut = (ev: KeyboardEvent): void => {
     if (ev.key === 'Escape' && this.railOpen) {
@@ -492,6 +513,7 @@ export class SpaceView {
     if (this.stopped) return
     this.stopped = true
     document.removeEventListener('visibilitychange', this.onVisible)
+    window.removeEventListener(PLAYING_CHANGED, this.onPlaying)
     window.removeEventListener('keydown', this.onShortcut)
     for (const t of this.timers) window.clearInterval(t)
     this.timers = []
@@ -517,6 +539,8 @@ export class SpaceView {
       ...this.quiet.keys(),
       ...this.typing.keys(),
       ...this.watchingBy.keys(),
+      ...this.playingBy.keys(),
+      ...this.sounding.keys(),
     ])
     for (const id of known) if (!alive.has(id)) this.forgetSession(id)
   }
@@ -528,6 +552,8 @@ export class SpaceView {
     this.voiceSince.delete(id)
     this.typing.delete(id)
     this.watchingBy.delete(id)
+    this.playingBy.delete(id)
+    this.sounding.delete(id)
   }
 
   private peersById(): Map<string, MeshPeer> {
@@ -618,12 +644,22 @@ export class SpaceView {
     if (sharing) this.sharers.set(from, sharing)
     else this.sharers.delete(from)
 
+    const game = cleanGameName(data.playing)
+    const hadGame = this.playingBy.get(from)
+    if (game) {
+      const lasted = typeof data.playingFor === 'number' && Number.isFinite(data.playingFor) ? Math.max(0, data.playingFor) : 0
+      // Announces repeat; keep the first start unless the game changed.
+      this.playingBy.set(from, hadGame?.name === game ? hadGame : { name: game, since: Date.now() - lasted })
+    } else {
+      this.playingBy.delete(from)
+    }
+
     const eyes = watchedSessions(data.watching)
     const hadEyes = (this.watchingBy.get(from) ?? []).join()
     if (eyes.length) this.watchingBy.set(from, eyes)
     else this.watchingBy.delete(from)
 
-    if (wasQuiet !== this.quiet.get(from)) this.draw()
+    if (wasQuiet !== this.quiet.get(from) || (hadGame?.name ?? '') !== game) this.draw()
     if (wasAway !== this.away.has(from) || (wasSharing ?? '') !== sharing || hadEyes !== eyes.join()) this.draw()
     if (!sharing && this.watched.has(from)) {
       this.dropTile(from)
@@ -719,10 +755,29 @@ export class SpaceView {
     for (const b of this.chat?.boardSounds() ?? []) void this.clip(CUSTOM + b.id)
   }
 
-  private async play(id: string): Promise<boolean> {
+  /** Resolves with how long it plays, or 0 when it does not play here. */
+  private async play(id: string): Promise<number> {
     if (!id.startsWith(CUSTOM)) return playSound(id)
     const buffer = await this.clip(id)
-    return buffer ? playClip(id, buffer) : false
+    return buffer ? playClip(id, buffer) : 0
+  }
+
+  /** The talking ring round whoever played a sound, while it plays. No toast: the ring says who. */
+  private ringFor(session: string, label: string, seconds: number): void {
+    const ms = (seconds > 0 ? seconds : SOUND_RING_S) * 1000
+    const until = Date.now() + ms
+    this.sounding.set(session, { until, label })
+    this.renderVoice()
+    window.setTimeout(() => {
+      if (this.stopped || this.sounding.get(session)?.until !== until) return
+      this.sounding.delete(session)
+      this.renderVoice()
+    }, ms + 50)
+  }
+
+  private soundingNow(session: string): { until: number; label: string } | null {
+    const on = this.sounding.get(session)
+    return on && on.until > Date.now() ? on : null
   }
 
   private sendSound(id: string): void {
@@ -738,9 +793,13 @@ export class SpaceView {
     if (now - this.soundSentAt < SOUND_EVERY_MS) return
     this.soundSentAt = now
     this.mesh?.broadcast(JSON.stringify({ t: 'sound', s: sound.id, v: here }))
-    if (this.voice?.state.deafened) return
-    void this.play(sound.id).then((played) => {
-      if (!played) toast(`${sound.label} went out. Your own sounds are off in Settings.`, 'info', 4000)
+    if (this.voice?.state.deafened) {
+      this.ringFor(this.selfId, sound.label, 0)
+      return
+    }
+    void this.play(sound.id).then((seconds) => {
+      if (!seconds) toast(`${sound.label} went out. Your own sounds are off in Settings.`, 'info', 4000)
+      this.ringFor(this.selfId, sound.label, seconds)
     })
   }
 
@@ -752,18 +811,12 @@ export class SpaceView {
     // Only for the people standing in the same voice channel as the one who played it.
     const here = this.voice?.state.channel
     if (!here || note.v !== here || this.voice?.whereIs(from) !== here) return true
-    if (this.voice?.state.deafened) return true
-    const key = this.keyOf(from)
-    if (!allowNow(this.soundHeard, key, SOUND_EVERY_MS)) return true
-    void this.play(sound.id).then((played) => {
-      if (!played) return
-      // One word per person and sound while it is being played again and again.
-      const said = `${key}:${sound.id}`
-      if (Date.now() - (this.soundSaid.get(said) ?? 0) < 4000) return
-      this.soundSaid.set(said, Date.now())
-      const who = (key && this.chat?.nameOf(key)) || 'Somebody'
-      toast(`${who} played ${sound.label} ${sound.emoji}`, 'info', 3000)
-    })
+    if (!allowNow(this.soundHeard, this.keyOf(from), SOUND_EVERY_MS)) return true
+    if (this.voice?.state.deafened) {
+      this.ringFor(from, sound.label, 0)
+      return true
+    }
+    void this.play(sound.id).then((seconds) => this.ringFor(from, sound.label, seconds))
     return true
   }
 
@@ -774,6 +827,7 @@ export class SpaceView {
       return
     }
     this.warmClips()
+    warmSounds()
     const chat = this.chat
     openSoundboard({
       anchor: button,
@@ -2200,7 +2254,8 @@ export class SpaceView {
     avatar: string,
   ): HTMLElement {
     const mine = ids.includes(this.selfId)
-    const talking = ids.some((id) => this.voice?.isTalking(id))
+    const sounding = ids.map((id) => this.soundingNow(id)).find(Boolean)
+    const talking = !!sounding || ids.some((id) => this.voice?.isTalking(id))
     const peer = mine ? null : [...peers.values()].find((p) => ids.includes(p.id) && p.name)
     const name = mine ? this.chat?.displayName ?? 'You' : peer?.name || logName || shortKey(key)
     const label = mine ? `${name} (you)` : name
@@ -2209,7 +2264,8 @@ export class SpaceView {
       : (ids.find((id) => this.sharers.has(id)) ?? null)
     const id = sharing ?? ids[0]
     const watching = this.watched.has(id)
-    const member = h('div', { class: `voice-member${talking ? ' talking' : ''}` })
+    const member = h('div', { class: `voice-member${talking ? ' talking' : ''}${sounding ? ' sounding' : ''}` })
+    if (sounding) member.dataset.sound = sounding.label
     if (!mine) {
       onContextMenu(member, () => [{ custom: this.volumeBlock(key, name) }])
       member.title = 'Right click for their volume'
@@ -2237,6 +2293,8 @@ export class SpaceView {
         ]),
       )
     }
+    const game = mine ? playingNow() : (ids.map((i) => this.playingBy.get(i)).find(Boolean) ?? null)
+    if (game) member.append(h('span', { class: 'voice-game', title: `Playing ${game.name}` }, [icon('game', 14)]))
     if (sharing !== null) {
       member.append(
         h('button', {
@@ -2517,7 +2575,14 @@ export class SpaceView {
 
   private volumeBlock(key: string, name: string): HTMLElement {
     const value = h('span', { class: 'tiny faint' })
-    const range = h('input', { type: 'range', min: '0', max: '100', step: '1', ariaLabel: `Volume for ${name}` })
+    const range = h('input', {
+      type: 'range',
+      min: '0',
+      max: String(LOUDEST * 100),
+      step: '1',
+      ariaLabel: `Volume for ${name}`,
+      title: 'Double click for 100%',
+    })
     range.value = String(Math.round(volumeFor(key) * 100))
     const mute = h('button', { class: 'switch-row menu-switch', role: 'switch' }, [
       h('span', { class: 'switch-words' }, [h('span', { class: 'switch-label', text: 'Mute' })]),
@@ -2529,11 +2594,15 @@ export class SpaceView {
       mute.setAttribute('aria-checked', String(muted))
       range.classList.toggle('muted', muted)
     }
-    range.addEventListener('input', () => {
+    const set = (percent: number): void => {
+      // Held a little at 100, where the slider is hard to land by hand.
+      range.value = String(Math.abs(percent - 100) <= SNAP_PERCENT ? 100 : percent)
       setVolumeFor(key, Number(range.value) / 100)
       if (mutedFor(key)) setMutedFor(key, false)
       paint()
-    })
+    }
+    range.addEventListener('input', () => set(Number(range.value)))
+    range.addEventListener('dblclick', () => set(100))
     mute.addEventListener('click', () => {
       setMutedFor(key, !mutedFor(key))
       paint()
@@ -2644,6 +2713,7 @@ export class SpaceView {
         voice: null,
         you: false,
         away: false,
+        playing: null,
         ...was,
         ...patch,
       })
@@ -2661,6 +2731,7 @@ export class SpaceView {
       here: true,
       you: true,
       away: document.hidden,
+      playing: playingNow(),
       sharing: this.capture !== null,
       voice: this.voice?.state.channel ?? null,
       talking: this.voice?.isTalking(this.selfId) ?? false,
@@ -2673,6 +2744,7 @@ export class SpaceView {
         name: peer.name || was?.name || '',
         here: true,
         away: this.away.has(peer.id) && !(was?.here && !was.away),
+        playing: this.playingBy.get(peer.id) ?? was?.playing ?? null,
         sharing: this.sharers.has(peer.id) || was?.sharing === true,
         voice: this.voice?.whereIs(peer.id) ?? was?.voice ?? null,
         talking: this.voice?.isTalking(peer.id) === true || was?.talking === true,
@@ -2768,6 +2840,13 @@ export class SpaceView {
   private personDoing(row: PersonRow): HTMLElement | null {
     if (row.sharing) {
       return h('span', { class: 'person-doing live' }, [h('i', { class: 'live-dot' }), 'Sharing their screen'])
+    }
+    if (row.playing) {
+      const { name, since } = row.playing
+      return h('span', { class: 'person-doing game', title: `Playing ${name} ${forHowLong(Date.now() - since)}` }, [
+        icon('game', 12),
+        h('span', { class: 'truncate', text: `Playing ${name}` }),
+      ])
     }
     if (!row.voice) return null
     return h('span', { class: 'person-doing' }, [

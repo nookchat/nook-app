@@ -336,9 +336,10 @@ try {
   check('the board opens with something on it', cells >= 12, `${cells} sounds`)
 
   await alice.click('button[aria-label="Play Airhorn for everybody"]')
+  // No toast: the ring round the face of whoever played it says who.
   const outside = await bob
     .waitForFunction(
-      () => [...document.querySelectorAll('.toast')].some((t) => t.textContent.includes('Alice played Airhorn')),
+      () => [...document.querySelectorAll('.voice-member.talking.sounding')].some((m) => m.dataset.sound === 'Airhorn' && m.textContent.includes('Alice')),
       null,
       { timeout: 3000 },
     )
@@ -352,13 +353,22 @@ try {
   await alice.click('button[aria-label="Play Airhorn for everybody"]')
   const heard = await bob
     .waitForFunction(
-      () => [...document.querySelectorAll('.toast')].some((t) => t.textContent.includes('Alice played Airhorn')),
+      () => [...document.querySelectorAll('.voice-member.talking.sounding')].some((m) => m.dataset.sound === 'Airhorn' && m.textContent.includes('Alice')),
       null,
       { timeout: 15_000 },
     )
     .then(() => true)
     .catch(() => false)
-  check('somebody in the voice channel hears it', heard)
+  check('somebody in the voice channel hears it, with the ring round Alice', heard)
+  check(
+    'and no toast says so',
+    !(await bob.$$eval('.toast', (els) => els.some((t) => t.textContent.includes('played Airhorn')))),
+  )
+  const ringGoes = await bob
+    .waitForFunction(() => !document.querySelector('.voice-member.sounding'), null, { timeout: 5000 })
+    .then(() => true)
+    .catch(() => false)
+  check('the ring goes when the sound ends', ringGoes)
 
   const wrote = await bob.$$eval('.chat-text', (els) =>
     els.some((e) => e.textContent.includes('Airhorn')),
@@ -375,7 +385,7 @@ try {
   await say(alice, '/sound rimshot')
   const byName = await bob
     .waitForFunction(
-      () => [...document.querySelectorAll('.toast')].some((t) => t.textContent.includes('Rimshot')),
+      () => [...document.querySelectorAll('.voice-member.talking.sounding')].some((m) => m.dataset.sound === 'Rimshot' && m.textContent.includes('Alice')),
       null,
       { timeout: 15_000 },
     )

@@ -1628,6 +1628,14 @@ button.rail-add {
   color: var(--bad);
 }
 
+.person-doing.game {
+  color: var(--fg-dim);
+}
+
+.person-doing .icon {
+  flex: 0 0 auto;
+}
+
 .crown {
   flex: 0 0 auto;
   display: inline-flex;
@@ -1680,6 +1688,12 @@ button.person-more {
   display: inline-flex;
   gap: 2px;
   color: var(--bad);
+}
+
+.voice-game {
+  flex: 0 0 auto;
+  display: inline-flex;
+  color: var(--fg-faint);
 }
 
 .voice-member > .dot {
@@ -2719,6 +2733,36 @@ input[type="text"].space-search {
 
 .chat-text {
   color: var(--fg);
+}
+
+/* Twemoji over the device's own emoji, which stays as text for copy and find. */
+.twemoji {
+  position: relative;
+  display: inline-block;
+  width: 1.25em;
+  height: 1.25em;
+  margin: 0 0.05em;
+  overflow: hidden;
+  vertical-align: -0.3em;
+  line-height: 1.25em;
+  text-align: center;
+  white-space: nowrap;
+  letter-spacing: 0;
+}
+
+.twemoji > img {
+  position: absolute;
+  inset: 0.05em;
+  width: calc(100% - 0.1em);
+  height: calc(100% - 0.1em);
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.twemoji.drawn {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
 }
 
 .chat-text.jumbo {

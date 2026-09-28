@@ -2,6 +2,7 @@ import { cleanName } from '../chat'
 import { SELF_HOSTING_URL, checkServer, serverTag, serverUrl, setDefaultServer } from '../backend'
 import { health } from '../net/server-api'
 import { micSettings, setMicSettings } from '../net/mic'
+import { PLAYING_CHANGED, playingNow, seesGames, setShowsPlaying, showsPlaying } from '../net/playing'
 import { loadIdentity, saveDisplayName } from '../store/identity'
 import { spaces } from '../space/registry'
 import { addServer, knownServers, newSpaceServer, ownServers } from '../store/server-spaces'
@@ -356,6 +357,40 @@ export function settingsView(actions: SettingsActions): HTMLElement {
           card(
             'Alerts',
             h('div', { class: 'switch-list' }, [notifyButton, toggle('Sounds', soundsOn, setSounds, 'A chirp for new messages')]),
+          ),
+        ])
+      },
+    },
+    {
+      id: 'activity',
+      label: 'Activity',
+      icon: 'game',
+      build: () => {
+        const now = h('div', { class: 'tiny faint' })
+        const paintNow = (): void => {
+          const game = playingNow()
+          now.textContent = !seesGames()
+            ? 'Nook finds the game in the desktop app. A browser cannot see your other programs.'
+            : !showsPlaying()
+              ? 'Nobody sees what you play.'
+              : game
+                ? `Now: Playing ${game.name}`
+                : 'No game is running now.'
+        }
+        const onPlaying = (): void => {
+          if (now.isConnected) paintNow()
+          else window.removeEventListener(PLAYING_CHANGED, onPlaying)
+        }
+        window.addEventListener(PLAYING_CHANGED, onPlaying)
+        paintNow()
+        return h('div', { class: 'stack settings-stack' }, [
+          card(
+            'What you are playing',
+            note('The desktop app sees the game you have open and puts it under your name, the way Discord does.'),
+            h('div', { class: 'switch-list' }, [
+              toggle('Show what you are playing', showsPlaying, setShowsPlaying, 'Everybody in your spaces sees it'),
+            ]),
+            now,
           ),
         ])
       },

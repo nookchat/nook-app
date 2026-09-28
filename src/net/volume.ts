@@ -1,5 +1,7 @@
 const KEY = 'nook.volume.v1'
 export const VOLUMES_CHANGED = 'nook:volumes'
+/** Twice as loud as they send it: past 1 the voice goes through a gain. */
+export const LOUDEST = 2
 
 interface Saved {
   level: Record<string, number>
@@ -26,7 +28,7 @@ function save(next: Saved): void {
 
 function levelIn(saved: Saved, key: string): number {
   const level = saved.level[key]
-  return typeof level === 'number' && level >= 0 && level <= 1 ? level : 1
+  return typeof level === 'number' && level >= 0 && level <= LOUDEST ? level : 1
 }
 
 export function volumeFor(key: string): number {
@@ -44,7 +46,7 @@ export function heardAt(key: string): number {
 
 export function setVolumeFor(key: string, level: number): void {
   const saved = load()
-  saved.level[key] = Math.min(1, Math.max(0, level))
+  saved.level[key] = Math.min(LOUDEST, Math.max(0, level))
   save(saved)
 }
 

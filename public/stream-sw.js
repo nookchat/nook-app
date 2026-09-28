@@ -20,6 +20,9 @@ const APP = null
 const APP_CACHE = APP ? `nook-app-${APP.version}` : ''
 const APP_FILES = new Set(APP ? APP.files.map((f) => new URL(f, self.registration.scope).href) : [])
 const APP_HOME = new URL('./', self.registration.scope).href
+// The emoji pictures are too many to keep up front, so each is kept the first time a page shows it.
+const EMOJI_CACHE = 'nook-emoji-15.0.0'
+const EMOJI_HOME = new URL('./emoji/', self.registration.scope).href
 
 self.addEventListener('install', (ev) => {
   ev.waitUntil(
@@ -45,6 +48,7 @@ self.addEventListener('activate', (ev) => {
     (async () => {
       for (const name of await caches.keys()) {
         if (name.startsWith('nook-app-') && name !== APP_CACHE) await caches.delete(name)
+        if (name.startsWith('nook-emoji-') && name !== EMOJI_CACHE) await caches.delete(name)
       }
       await self.clients.claim()
     })(),
@@ -68,7 +72,17 @@ self.addEventListener('fetch', (ev) => {
   url.hash = ''
   url.search = ''
   if (APP_FILES.has(url.href)) ev.respondWith(fromApp(url.href, ev.request))
+  else if (url.href.startsWith(EMOJI_HOME)) ev.respondWith(emojiArt(url.href, ev.request))
 })
+
+async function emojiArt(href, request) {
+  const cache = await caches.open(EMOJI_CACHE)
+  const kept = await cache.match(href)
+  if (kept) return kept
+  const res = await fetch(request)
+  if (res.ok) void cache.put(href, res.clone()).catch(() => undefined)
+  return res
+}
 
 async function fromApp(href, request) {
   const kept = await caches.match(href, { cacheName: APP_CACHE })

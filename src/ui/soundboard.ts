@@ -1,6 +1,7 @@
 import { h } from './dom'
 import { icon } from './icons'
 import { placeNear } from './emoji'
+import { lengthOf, loudnessOf, peakOf } from './loudness'
 import { onContextMenu } from './menu'
 import { sharedAudio, soundsOn } from './sounds'
 
@@ -69,14 +70,14 @@ export function setBoardVolume(level: number): void {
 }
 
 const LOUDNESS = 1.6
-const levels = new WeakMap<AudioContext, GainNode>()
+const levels = new WeakMap<BaseAudioContext, GainNode>()
 
 /** Each sound playing now, by id, so playing it again starts it over. */
 const playing = new Map<string, GainNode>()
 /** Where the voice being built right now sends its sound. */
 let target: AudioNode | null = null
 
-function into(ctx: AudioContext): AudioNode {
+function into(ctx: BaseAudioContext): AudioNode {
   return target ?? out(ctx)
 }
 
@@ -85,9 +86,9 @@ function into(ctx: AudioContext): AudioNode {
  * compressor, so the synthesised ones sound less like a test tone and a loud
  * sound somebody added cannot blow anybody's ears out.
  */
-const chains = new WeakMap<AudioContext, AudioNode>()
+const chains = new WeakMap<BaseAudioContext, AudioNode>()
 
-function room(ctx: AudioContext, seconds: number): AudioBuffer {
+function room(ctx: BaseAudioContext, seconds: number): AudioBuffer {
   const frames = Math.floor(ctx.sampleRate * seconds)
   const buffer = ctx.createBuffer(2, frames, ctx.sampleRate)
   for (let c = 0; c < 2; c++) {
@@ -97,7 +98,7 @@ function room(ctx: AudioContext, seconds: number): AudioBuffer {
   return buffer
 }
 
-function out(ctx: AudioContext): AudioNode {
+function out(ctx: BaseAudioContext): AudioNode {
   const had = chains.get(ctx)
   if (had) return had
   const input = ctx.createGain()
@@ -160,50 +161,127 @@ function freshPlay(ctx: AudioContext, id: string, seconds: number): GainNode {
   return bus
 }
 
-export function playSound(id: string): boolean {
+/**
+ * Every sound is brought to this loudness, in LUFS, before the chain: the
+ * broadcast level of EBU R128. A quiet clip somebody added is as loud as the
+ * airhorn, and a loud one is no louder.
+ */
+const TARGET_LUFS = -23
+/** A quiet recording is turned up this much at most (12 dB), so its hiss does not come up with it. */
+const CLIP_MOST_GAIN = 4
+/** A built-in sound is rendered this long, off the speakers, to measure it. */
+const RENDER_S = 3
+const RENDER_RATE = 48_000
+
+/** What one play needs: how far to turn it up or down, and how long it lasts. */
+interface Level {
+  gain: number
+  seconds: number
+}
+
+const voiceLevels = new Map<string, Promise<Level>>()
+const clipLevels = new WeakMap<AudioBuffer, Level>()
+
+function channelsOf(buffer: AudioBuffer, seconds: number): Float32Array[] {
+  const frames = Math.min(buffer.length, Math.floor(seconds * buffer.sampleRate))
+  return Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c).subarray(0, frames))
+}
+
+/** `seconds` is how much of it to measure, `most` how far it may be turned up. */
+function levelOf(buffer: AudioBuffer, seconds: number, most = Infinity): Level {
+  const channels = channelsOf(buffer, seconds)
+  const loudness = loudnessOf(channels, buffer.sampleRate)
+  const peak = peakOf(channels)
+  const lasts = lengthOf(channels, buffer.sampleRate)
+  if (!Number.isFinite(loudness) || peak === 0) return { gain: 1, seconds: lasts }
+  // Never so far up that the loudest moment goes past full scale.
+  return { gain: Math.min(most, 10 ** ((TARGET_LUFS - loudness) / 20), 1 / peak), seconds: lasts }
+}
+
+/** Measured once, the first time it is wanted. */
+function voiceLevel(id: string): Promise<Level> {
+  const had = voiceLevels.get(id)
+  if (had) return had
   const voice = VOICES[id]
-  if (!voice) return false
+  const Offline =
+    window.OfflineAudioContext ??
+    (window as unknown as { webkitOfflineAudioContext?: typeof OfflineAudioContext }).webkitOfflineAudioContext
+  const work = (async (): Promise<Level> => {
+    if (!voice || !Offline) return { gain: 1, seconds: RENDER_S }
+    const ctx = new Offline(1, RENDER_S * RENDER_RATE, RENDER_RATE)
+    target = ctx.destination
+    try {
+      voice(ctx, 0.01)
+    } finally {
+      target = null
+    }
+    return levelOf(await ctx.startRendering(), RENDER_S)
+  })().catch(() => ({ gain: 1, seconds: RENDER_S }))
+  voiceLevels.set(id, work)
+  return work
+}
+
+/** Measures the built-in sounds ahead, so the first play of each is not late. */
+export function warmSounds(): void {
+  for (const id of Object.keys(VOICES)) void voiceLevel(id)
+}
+
+/** One of the board's own sounds. Resolves with how long it plays, or 0 when it does not. */
+export async function playSound(id: string): Promise<number> {
+  const voice = VOICES[id]
+  if (!voice || !ready()) return 0
+  const level = await voiceLevel(id)
   const ctx = ready()
-  if (!ctx) return false
-  target = freshPlay(ctx, id, 3)
+  if (!ctx) return 0
+  const bus = freshPlay(ctx, id, RENDER_S)
+  bus.gain.value = level.gain
+  target = bus
   try {
     voice(ctx, ctx.currentTime + 0.01)
   } catch {
-    return false
+    return 0
   } finally {
     target = null
   }
-  return true
+  return level.seconds
 }
 
-/** A sound somebody added, already decoded. */
-export function playClip(id: string, buffer: AudioBuffer): boolean {
+/** A sound somebody added, already decoded. Returns how long it plays, or 0 when it does not. */
+export function playClip(id: string, buffer: AudioBuffer): number {
   const ctx = ready()
-  if (!ctx) return false
+  if (!ctx) return 0
+  let level = clipLevels.get(buffer)
+  if (!level) {
+    level = levelOf(buffer, CUSTOM_MAX_S, CLIP_MOST_GAIN)
+    clipLevels.set(buffer, level)
+  }
   const src = ctx.createBufferSource()
   src.buffer = buffer
   const vol = ctx.createGain()
-  vol.gain.value = 0.8
+  vol.gain.value = level.gain
   src.connect(vol)
   vol.connect(freshPlay(ctx, id, Math.min(buffer.duration, CUSTOM_MAX_S)))
   const at = ctx.currentTime + 0.02
   src.start(at)
   if (buffer.duration > CUSTOM_MAX_S) {
-    vol.gain.setValueAtTime(0.8, at + CUSTOM_MAX_S - 0.3)
+    vol.gain.setValueAtTime(level.gain, at + CUSTOM_MAX_S - 0.3)
     vol.gain.linearRampToValueAtTime(0.0001, at + CUSTOM_MAX_S)
     src.stop(at + CUSTOM_MAX_S)
   }
-  return true
+  return level.seconds
 }
 
+/** Decoded and measured, so a play has nothing left to do. */
 export async function decodeClip(bytes: ArrayBuffer): Promise<AudioBuffer> {
   const ctx = sharedAudio()
   if (!ctx) throw new Error('This browser cannot play sounds.')
-  return ctx.decodeAudioData(bytes)
+  const buffer = await ctx.decodeAudioData(bytes)
+  clipLevels.set(buffer, levelOf(buffer, CUSTOM_MAX_S, CLIP_MOST_GAIN))
+  return buffer
 }
 
 function tone(
-  ctx: AudioContext,
+  ctx: BaseAudioContext,
   at: number,
   opts: {
     shape?: OscillatorType
@@ -260,7 +338,7 @@ function tone(
 }
 
 function hiss(
-  ctx: AudioContext,
+  ctx: BaseAudioContext,
   at: number,
   opts: {
     len: number
@@ -296,9 +374,9 @@ function hiss(
   src.stop(at + opts.len + 0.02)
 }
 
-type Voice = (ctx: AudioContext, at: number) => void
+type Voice = (ctx: BaseAudioContext, at: number) => void
 
-function blast(ctx: AudioContext, at: number, len: number): void {
+function blast(ctx: BaseAudioContext, at: number, len: number): void {
   const base = 233
   for (const [mult, gain] of [
     [1, 0.11],
@@ -320,7 +398,7 @@ function blast(ctx: AudioContext, at: number, len: number): void {
   }
 }
 
-function hit(ctx: AudioContext, at: number, gain = 0.12): void {
+function hit(ctx: BaseAudioContext, at: number, gain = 0.12): void {
   tone(ctx, at, { shape: 'triangle', from: 220, to: 90, len: 0.13, gain })
   hiss(ctx, at, { len: 0.11, gain: gain * 0.8, freq: 1400 })
 }
