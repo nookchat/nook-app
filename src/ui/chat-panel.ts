@@ -119,6 +119,18 @@ function vanish(el: HTMLElement): void {
   window.setTimeout(gone, 700)
 }
 
+/** What came with a pinned message, in words: "a video", "2 pictures", "report.pdf". */
+function pinnedFiles(m: Message): string {
+  const files = m.files ?? []
+  if (files.length === 1 && !/^(image|video|audio)\//.test(files[0].type)) return files[0].name
+  const kinds = new Map<string, number>()
+  for (const f of files) {
+    const kind = f.type.startsWith('image/') ? 'picture' : f.type.startsWith('video/') ? 'video' : f.type.startsWith('audio/') ? 'sound' : 'file'
+    kinds.set(kind, (kinds.get(kind) ?? 0) + 1)
+  }
+  return [...kinds].map(([kind, n]) => (n === 1 ? `a ${kind}` : `${n} ${kind}s`)).join(', ')
+}
+
 function pinMark(): HTMLElement {
   return h('span', { class: 'chat-pinned-mark', title: 'Pinned in this channel' }, [icon('pin', 13), 'Pinned'])
 }
@@ -952,7 +964,7 @@ export class ChatPanel {
         })
       }
 
-      // A new person, or five quiet minutes, starts a new group of bubbles.
+      // A new person, or five quiet minutes, starts a new group under a face and a name.
       const first = m.author !== lastAuthor || m.at - lastAt > GROUP_GAP
       lastAuthor = m.replyTo ? '' : m.author
       lastAt = m.at
@@ -1114,8 +1126,6 @@ export class ChatPanel {
       row.classList.toggle('acting', !open)
     })
 
-    // The words sit in a bubble; pictures, files and reactions sit under it.
-    const bubble = h('div', { class: 'chat-bubble' })
     if (m.replyTo && m.replyTo !== this.threadRoot) {
       let quoted: HTMLElement | null = null
       if (parent) {
@@ -1123,7 +1133,7 @@ export class ChatPanel {
         const colour = this.colourOf(parent.author)
         if (colour) quoted.style.color = roleInk(colour)
       }
-      bubble.append(
+      line.append(
         h(
           'button',
           {
@@ -1148,6 +1158,7 @@ export class ChatPanel {
         h('div', { class: 'chat-who' }, [
           avatarOf(m.author, m.name ?? '', this.avatars.get(m.author) ?? '', 40),
           name,
+          at,
           m.pinned ? pinMark() : null,
         ]),
       )
@@ -1157,21 +1168,7 @@ export class ChatPanel {
       line.classList.add('runs-on')
     }
 
-    line.append(bubble)
-    this.drawBody(m, line, who, true, bubble)
-
-    // The time, and whether it was edited, in the bubble when it has words, or under the pictures when not.
-    const meta = h('span', { class: 'chat-meta' }, [
-      m.edited ? h('span', { class: 'chat-edited', text: 'edited' }) : null,
-      at,
-    ])
-    if (bubble.querySelector(':scope > .chat-text, :scope > .poll')) {
-      bubble.append(meta)
-    } else {
-      if (!bubble.firstChild) bubble.remove()
-      meta.classList.add('loose')
-      line.append(meta)
-    }
+    this.drawBody(m, line, who, true)
 
     if (live) {
       line.append(
@@ -1184,6 +1181,8 @@ export class ChatPanel {
       )
     }
 
+    if (m.edited) line.append(h('span', { class: 'chat-edited', text: '(edited)' }))
+    if (!first) line.append(at)
 
     if (!this.threadRoot && m.replies) {
       line.append(
@@ -1231,12 +1230,12 @@ export class ChatPanel {
   }
 
   /** The words, the pictures and the files of a message, as the log and the pinned list show them. */
-  private drawBody(m: Message, line: HTMLElement, who: string, withCard: boolean, words: HTMLElement = line): void {
+  private drawBody(m: Message, line: HTMLElement, who: string, withCard: boolean): void {
     const text = h('span', { class: `chat-text${m.emote ? ' emote' : ''}` })
     if (m.emote) text.append(document.createTextNode(`${who} `))
     if (m.poll) {
       text.append(h('strong', { text: m.poll.question }))
-      words.append(text, this.pollBox(m))
+      line.append(text, this.pollBox(m))
     } else {
       const svg = m.emote ? null : svgSource(m.text)
       if (svg) {
@@ -1245,7 +1244,7 @@ export class ChatPanel {
           svgEmbed(svg, () => {
             line.classList.remove('has-picture')
             for (const node of formatText(m.text, this.names, this.me, this.colourOf)) text.append(node)
-            words.prepend(text)
+            line.prepend(text)
           }),
         )
       }
@@ -1259,12 +1258,12 @@ export class ChatPanel {
       if (onlyEmoji(beside)) {
         text.classList.add('jumbo')
         text.append(beside)
-        words.append(text)
+        line.append(text)
       } else if (!bare && !svg && !onlyFiles) {
         if (pictures.length > 0) text.classList.add('boxed')
         else if (!m.emote && onlyEmoji(m.text)) text.classList.add('jumbo')
         for (const node of formatText(m.text, this.names, this.me, this.colourOf)) text.append(node)
-        words.append(text)
+        line.append(text)
       }
       for (const src of pictures) line.append(embed(src))
       if (m.files?.length) line.append(attachmentBlock(m.files, this.files))
@@ -1278,8 +1277,12 @@ export class ChatPanel {
     const name = h('span', { class: 'chat-name', text: who })
     const colour = this.colourOf(m.author)
     if (colour) name.style.color = roleInk(colour)
+    // Only what was said, and what came with it: nothing plays here, and a click goes to the message.
     const line = h('div', { class: 'chat-line pin-card-body' })
-    this.drawBody(m, line, who, false)
+    const words = m.poll ? m.poll.question : m.text.trim()
+    if (words) line.append(h('div', { class: 'chat-text pin-card-text', text: words }))
+    const came = pinnedFiles(m)
+    if (came) line.append(h('div', { class: 'pin-card-files' }, [icon('paperclip', 14), came]))
     const card = h('div', { class: 'pin-card', role: 'button', tabIndex: 0, title: 'Go to this message' }, [
       h('div', { class: 'chat-who' }, [
         avatarOf(m.author, m.name ?? '', this.avatars.get(m.author) ?? '', 32),
@@ -1288,10 +1291,7 @@ export class ChatPanel {
       ]),
       line,
     ])
-    card.addEventListener('click', (ev) => {
-      if ((ev.target as HTMLElement).closest('a, button, video, .spoiler')) return
-      open()
-    })
+    card.addEventListener('click', open)
     card.addEventListener('keydown', (ev) => {
       if (ev.key === 'Enter') open()
     })

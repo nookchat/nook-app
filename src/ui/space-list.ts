@@ -146,12 +146,7 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
 
   return h('main', { class: 'home' }, [
     h('div', { class: 'home-page' }, [
-      h('header', { class: 'home-hero' }, [
-        h('div', { class: 'stack tight' }, [
-          h('h1', { class: 'home-title' }, [lockup(48)]),
-          h('div', { class: 'home-tag', text: 'Chat, voice and screen sharing. End to end encrypted.' }),
-        ]),
-      ]),
+      h('header', { class: 'home-hero' }, [h('h1', { class: 'home-title' }, [lockup(40)])]),
       h('div', { class: 'home-grid' }, [
         h('section', { class: 'card stack tight home-spaces' }, [h('span', { class: 'eyebrow', text: 'Your spaces' }), recent]),
         h('div', { class: 'stack home-side' }, [

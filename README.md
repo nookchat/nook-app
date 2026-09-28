@@ -168,9 +168,9 @@ middle, and who is here is on the right.
   first paint, so the page never flashes the wrong colours.
 - **One ember spot.** Ember is the send button, the unread count, a mention of
   you, and the first button on the welcome card. Text on ember is always ink.
-- **Bubbles.** Messages are grouped by sender. A new sender, or five quiet
-  minutes, starts a new group. Only the last bubble of a group has the tail
-  and the time.
+- **Messages as Discord lays them out.** Every message is on the left, with
+  no bubbles. A new sender, or five quiet minutes, starts a new group under a
+  face and a name. A message that names you has an ember wash and bar.
 - **The ghost.** It floats in empty places, types along when somebody types,
   sleeps when no server answers, peeks in with a message and wiggles when you
   are mentioned. Only one ghost moves on a screen at a time, and none move with

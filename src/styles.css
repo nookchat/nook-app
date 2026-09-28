@@ -973,9 +973,8 @@ hr {
 }
 
 main.settings {
-  margin: var(--gap);
-  background: var(--face);
-  border-radius: var(--pane-radius);
+  padding: var(--gap);
+  background: var(--bg);
 }
 
 .settings-head {
@@ -1008,8 +1007,7 @@ button.pop-close {
 
 @media (max-width: 780px) {
   main.settings {
-    margin: 0;
-    border-radius: 0;
+    padding: 0;
   }
 }
 
@@ -1023,16 +1021,16 @@ main.home {
   width: 100%;
   max-width: 1040px;
   margin: 0 auto;
-  padding: 44px 28px 40px;
+  padding: 0 28px 40px;
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 16px;
 }
 
+/* The lockup sits level with the title row of the rail beside it. */
 .home-hero {
   display: flex;
   align-items: center;
-  gap: 18px;
 }
 
 .home-title {
@@ -1042,12 +1040,6 @@ main.home {
 
 .home-title .nook-lockup {
   display: block;
-}
-
-.home-tag {
-  color: var(--fg-dim);
-  font-size: 15px;
-  max-width: 560px;
 }
 
 .home-grid {
@@ -1152,8 +1144,8 @@ main.home {
   }
 
   .home-page {
-    padding: 24px 16px 32px;
-    gap: 20px;
+    padding: 8px 16px 32px;
+    gap: 16px;
   }
 
   .home-title .nook-lockup {
@@ -2626,17 +2618,22 @@ input[type="text"].space-search {
   background: var(--line-soft);
 }
 
-/* Messages as bubbles, grouped by sender. A new sender, or five quiet minutes, starts a new group.
-   Theirs sit on the left under a face and a name; yours sit on the right. */
+/* Messages as Discord lays them out: every one on the left, a face and a name over the first of a
+   group, and the rest under it. A new sender, or five quiet minutes, starts a new group. */
 .chat-row {
   position: relative;
   display: flex;
-  padding: 1.5px 16px 1.5px 68px;
+  padding: 2px 16px 2px 72px;
   margin-top: 0;
 }
 
 .chat-row.first {
   margin-top: 16px;
+  padding-top: 4px;
+}
+
+.chat-row:hover {
+  background: var(--hover);
 }
 
 .chat-log > .chat-row:first-child {
@@ -2648,15 +2645,8 @@ input[type="text"].space-search {
   min-width: 0;
   width: 100%;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
+  line-height: 22px;
   color: var(--fg);
-}
-
-.chat-row.mine .chat-line {
-  align-items: flex-end;
 }
 
 .chat-who {
@@ -2664,153 +2654,72 @@ input[type="text"].space-search {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  margin: 0 0 -1px 12px;
+  margin-bottom: 2px;
 }
 
 .chat-who > .avatar {
   position: absolute;
-  left: -64px;
-  top: 0;
+  left: -56px;
+  top: 2px;
   cursor: default;
-}
-
-.chat-row.mine .chat-who {
-  margin: 0 12px -1px 0;
-}
-
-/* Yours need no face or name, only the pin when there is one. */
-.chat-row.mine .chat-who > .avatar,
-.chat-row.mine .chat-who > .chat-name {
-  display: none;
-}
-
-.chat-row.mine .chat-who:not(:has(.chat-pinned-mark)) {
-  display: none;
 }
 
 .chat-name {
   font-weight: 600;
-  font-size: 14px;
+  font-size: 15px;
   line-height: 20px;
   color: var(--fg);
 }
 
-.chat-bubble {
-  position: relative;
-  min-width: 0;
-  max-width: min(100%, 560px);
-  padding: 9px 12px 7px;
-  border-radius: var(--radius-lg);
-  background: var(--bubble-in);
-  color: var(--on-bubble-in);
-  box-shadow: var(--shadow-1);
-  font: 400 15px/22px var(--font-sans);
-  overflow-wrap: anywhere;
+/* A message that names you: a soft ember wash and an ember bar at the left. */
+.chat-row:has(.calls-me) {
+  background: color-mix(in srgb, var(--accent-soft) 70%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 
-.chat-row.mine .chat-bubble {
-  background: var(--bubble-out);
-  color: var(--on-bubble-out);
-  box-shadow: none;
-}
-
-/* The tail: the last bubble of a group has the corner nearest the sender cut. */
-.chat-row:not(.mine):not(:has(+ .chat-row:not(.first))) .chat-bubble {
-  border-bottom-left-radius: var(--radius-xs);
-}
-
-.chat-row.mine:not(:has(+ .chat-row:not(.first))) .chat-bubble {
-  border-bottom-right-radius: var(--radius-xs);
-}
-
-/* Emoji on their own are big and need no bubble. */
-.chat-bubble:has(> .chat-text.jumbo) {
-  padding: 0;
-  background: transparent;
-  box-shadow: none;
-  color: var(--fg);
-}
-
-.chat-row.mine .chat-bubble:has(> .chat-text.jumbo) {
-  background: transparent;
-  color: var(--fg);
-}
-
-.chat-line.calls-me .chat-bubble {
-  box-shadow: var(--shadow-1), inset 0 0 0 2px var(--accent);
-}
-
-/* The time, and edited, at 72% of the bubble's own colour. */
-.chat-meta {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 4px;
-  margin-top: 1px;
-  font: 500 11px/14px var(--font-sans);
-  font-variant-numeric: tabular-nums;
-  opacity: 0.72;
-}
-
-.chat-meta.loose {
-  margin: 0 12px;
-  color: var(--fg-faint);
-  opacity: 1;
-}
-
-.chat-bubble:has(> .chat-text.jumbo) > .chat-meta {
-  color: var(--fg-faint);
-  opacity: 1;
-}
-
-/* Only the last bubble of a group shows its time. The others show it beside the bubble on hover. */
-.chat-row:has(+ .chat-row:not(.first)) .chat-bubble > .chat-meta:not(:has(.chat-edited)) {
-  position: absolute;
-  bottom: 4px;
-  left: calc(100% + 8px);
-  margin: 0;
-  color: var(--fg-faint);
-  white-space: nowrap;
-  opacity: 0;
-}
-
-.chat-row.mine:has(+ .chat-row:not(.first)) .chat-bubble > .chat-meta:not(:has(.chat-edited)) {
-  left: auto;
-  right: calc(100% + 8px);
-}
-
-.chat-row:hover .chat-bubble > .chat-meta,
-.chat-row:focus-within .chat-bubble > .chat-meta {
-  opacity: 0.72;
-}
-
-.chat-row:has(+ .chat-row:not(.first)):hover .chat-bubble > .chat-meta:not(:has(.chat-edited)),
-.chat-row:has(+ .chat-row:not(.first)):focus-within .chat-bubble > .chat-meta:not(:has(.chat-edited)) {
-  opacity: 1;
+.chat-row:has(.calls-me):hover {
+  background: var(--accent-soft);
 }
 
 .chat-line.system {
-  display: block;
-  padding: 6px 16px;
+  padding: 4px 16px 4px 72px;
   color: var(--fg-faint);
-  text-align: center;
   font-size: var(--size-small);
   line-height: 18px;
 }
 
 .chat-at {
-  color: inherit;
-  font-size: 11px;
+  color: var(--fg-faint);
+  font-size: 12px;
+  line-height: 16px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
 
+/* The rest of a group shows its time in the gutter, on hover. */
+.chat-line > .chat-at.on-hover {
+  position: absolute;
+  left: -64px;
+  width: 52px;
+  top: 3px;
+  text-align: right;
+  font-size: 11px;
+  opacity: 0;
+}
+
+.chat-row:hover .chat-at.on-hover,
+.chat-row:focus-within .chat-at.on-hover {
+  opacity: 1;
+}
+
 .chat-edited {
-  color: inherit;
+  margin-left: 4px;
+  color: var(--fg-faint);
+  font-size: 12px;
 }
 
 .chat-text {
-  color: inherit;
+  color: var(--fg);
 }
 
 .chat-text.jumbo {
@@ -2827,7 +2736,7 @@ input[type="text"].space-search {
 .chat-text code {
   font-family: var(--mono);
   font-size: 0.88em;
-  background: color-mix(in srgb, currentColor 12%, transparent);
+  background: var(--surface-2);
   border-radius: var(--radius-xs);
   padding: 1px 5px;
 }
@@ -2835,11 +2744,6 @@ input[type="text"].space-search {
 .chat-text a {
   color: var(--accent-text);
   text-decoration: none;
-}
-
-.chat-row.mine .chat-text a {
-  color: inherit;
-  text-decoration: underline;
 }
 
 .chat-text a:hover {
@@ -2862,11 +2766,6 @@ input[type="text"].space-search {
   opacity: 0;
   pointer-events: none;
   transition: opacity var(--dur-fast) linear;
-}
-
-.chat-row.mine .chat-actions {
-  right: auto;
-  left: 0;
 }
 
 .chat-row:not(.first) .chat-actions {
@@ -2908,11 +2807,7 @@ input[type="text"].space-search {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  margin: 0 0 2px;
-}
-
-.chat-row.mine .chat-reacts {
-  justify-content: flex-end;
+  margin: 4px 0 2px;
 }
 
 .chat-react {
@@ -3916,8 +3811,8 @@ input[type="range"].vp-volume {
 .chat-code {
   margin: 4px 0;
   padding: 8px 10px;
-  background: color-mix(in srgb, currentColor 7%, transparent);
-  border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
+  background: var(--field-bg);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   overflow-x: auto;
   font-family: var(--mono);
@@ -3934,8 +3829,8 @@ input[type="range"].vp-volume {
 .chat-quote {
   margin: 3px 0;
   padding-left: 8px;
-  border-left: 2px solid color-mix(in srgb, currentColor 35%, transparent);
-  opacity: 0.85;
+  border-left: 2px solid var(--border-strong);
+  color: var(--fg-dim);
 }
 
 .chat-list {
@@ -4096,30 +3991,28 @@ input[type="range"].vp-volume {
   border-radius: var(--radius-pill);
 }
 
-/* What a reply answers, at the top of its bubble. */
+/* What a reply answers, over the reply. */
 .chat-reply {
   display: block;
   width: 100%;
-  max-width: 100%;
   text-align: left;
   min-height: 0;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
   padding: 0 0 0 8px;
   background: transparent;
   border: 0;
-  border-left: 2px solid color-mix(in srgb, currentColor 35%, transparent);
+  border-left: 2px solid var(--border-strong);
   border-radius: 0;
   box-shadow: none;
-  color: inherit;
-  opacity: 0.78;
+  color: var(--fg-dim);
   font-size: 13px;
   line-height: 18px;
   font-weight: 400;
 }
 
 .chat-reply:hover:not(:disabled) {
-  opacity: 1;
-  border-left-color: currentColor;
+  color: var(--fg);
+  border-left-color: var(--accent);
   background: transparent;
 }
 
@@ -5031,9 +4924,6 @@ input[type="text"].gif-search {
 
 /* A message found by search or a jump: a soft ember wash behind it that fades. */
 .chat-line.found {
-  margin: -4px -8px;
-  padding: 4px 8px;
-  border-radius: var(--radius-lg);
   animation: found 5s ease-out forwards;
 }
 
@@ -5662,7 +5552,25 @@ input[type="text"].note-title:focus {
 
 .pin-card-body {
   font-size: 14px;
+  line-height: 20px;
   overflow-wrap: anywhere;
+}
+
+.pin-card-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-line;
+}
+
+.pin-card-files {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  color: var(--fg-dim);
+  font-size: 13px;
 }
 
 .pin-empty {
@@ -5721,7 +5629,8 @@ main.settings {
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(200px, 1fr) minmax(0, 3fr);
+  grid-template-columns: 264px minmax(0, 1fr);
+  gap: var(--gap);
 }
 
 .settings-nav {
@@ -5731,9 +5640,10 @@ main.settings {
   gap: 2px;
   min-height: 0;
   overflow-y: auto;
-  padding: 36px 10px 24px max(10px, calc(100% - 230px));
+  padding: 24px 12px;
   background: var(--pane);
-  border-right: 1px solid var(--line-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--pane-radius);
 }
 
 .settings-nav-title {
@@ -5795,24 +5705,44 @@ button.settings-tab.on {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: 30px 28px 0 40px;
-  background: var(--face);
+  padding: 20px 24px 0 32px;
+  background: transparent;
 }
 
 .settings-main > .settings-head {
-  max-width: 720px;
+  max-width: 760px;
+  min-height: 44px;
 }
 
 .settings-page {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  max-width: 720px;
-  padding: 10px 2px 48px 0;
+  max-width: 760px;
+  padding: 12px 2px 48px 0;
 }
 
 .settings-stack {
-  gap: 14px;
+  gap: 16px;
+}
+
+/* Each section has a real heading, not a small label. */
+.settings-section > .eyebrow:first-child {
+  font-size: 17px;
+  line-height: 24px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--fg);
+}
+
+/* Groups inside a section: a thin line round them, not a second fill. */
+.settings-section .switch-list,
+.settings-section .action-list,
+.settings-section .mic-test,
+.settings-section .server-row,
+.settings-section .level {
+  background: transparent;
+  border: 1px solid var(--border);
 }
 
 .settings-section {
@@ -5954,6 +5884,7 @@ input[type="range"].threshold::-moz-range-thumb {
   .settings-frame {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
+    gap: 0;
   }
 
   .settings-nav {
@@ -5962,8 +5893,9 @@ input[type="range"].threshold::-moz-range-thumb {
     overflow-x: auto;
     overflow-y: hidden;
     padding: 10px 12px;
-    border-right: 0;
-    border-bottom: 1px solid var(--line-soft);
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    border-radius: 0;
   }
 
   .settings-nav-title,
@@ -6083,11 +6015,6 @@ input.invalid:focus {
   min-width: 28px;
   padding: 0;
   color: var(--fg-dim);
-}
-
-/* Your pictures and files line up under your bubbles, on the right. */
-.chat-row.mine .att-block {
-  align-items: flex-end;
 }
 
 .space-face.home .nook-ghost {

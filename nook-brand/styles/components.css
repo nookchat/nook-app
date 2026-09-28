@@ -25,25 +25,25 @@
 .nook-send { background: var(--accent); color: var(--on-accent); }
 .nook-send:hover { background: var(--accent); color: var(--on-accent); filter: brightness(1.05); }
 
-.nook-thread { display: flex; flex-direction: column; gap: var(--space-1); }
-.nook-group { display: flex; flex-direction: column; gap: 3px; margin-top: var(--space-4); }
-.nook-group--out { align-items: flex-end; }
-.nook-group--in { align-items: flex-start; }
-
-.nook-bubble {
-  max-width: min(72%, 520px); padding: 9px var(--space-3) 7px; border-radius: var(--radius-lg);
-  font: 400 15px/22px var(--font-sans); overflow-wrap: anywhere;
-}
-.nook-bubble--in { background: var(--bubble-in); color: var(--on-bubble-in); box-shadow: var(--shadow-1); }
-.nook-bubble--out { background: var(--bubble-out); color: var(--on-bubble-out); }
-/* Tail: only the LAST bubble in a group gets the sharp corner nearest the sender. */
-.nook-group--in  .nook-bubble:last-child { border-bottom-left-radius: var(--radius-xs); }
-.nook-group--out .nook-bubble:last-child { border-bottom-right-radius: var(--radius-xs); }
-.nook-bubble__meta {
-  display: flex; justify-content: flex-end; align-items: center; gap: var(--space-1);
-  margin-top: 2px; font: 500 11px/14px var(--font-sans); opacity: 0.72;
-}
-.nook-bubble__meta svg { width: 15px; height: 15px; }
+/* Messages, as Discord lays them out: every message on the left. The first of a group has a 40px
+   face in the gutter and a head (name, time); the rest sit under it and show their time in the
+   gutter on hover. A new sender or a 5-minute gap starts a new group. No bubbles. */
+.nook-thread { display: flex; flex-direction: column; }
+.nook-message { position: relative; padding: 2px var(--space-4) 2px 72px; font: 400 15px/22px var(--font-sans); color: var(--text-primary); overflow-wrap: anywhere; }
+.nook-message:hover { background: color-mix(in srgb, var(--text-primary) 6%, transparent); }
+.nook-message--first { margin-top: var(--space-4); padding-top: var(--space-1); }
+.nook-message__avatar { position: absolute; left: var(--space-4); top: 6px; width: 40px; height: 40px; }
+.nook-message__head { display: flex; align-items: baseline; gap: var(--space-2); margin-bottom: 2px; }
+.nook-message__name { font: 600 15px/20px var(--font-sans); color: var(--text-primary); }
+.nook-message__time { font: 500 12px/16px var(--font-sans); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.nook-message__gutter-time { position: absolute; left: 0; width: 64px; top: 5px; text-align: right; font: 500 11px/16px var(--font-sans); color: var(--text-muted); opacity: 0; }
+.nook-message:hover .nook-message__gutter-time, .nook-message:focus-within .nook-message__gutter-time { opacity: 1; }
+.nook-message code { font: 400 0.88em var(--font-mono); background: var(--surface-2); border-radius: var(--radius-xs); padding: 1px 5px; }
+.nook-message a { color: var(--accent-text); }
+/* A message that names you: a soft ember wash with a 2px ember bar on the left. */
+.nook-message--mention { background: color-mix(in srgb, var(--accent-soft) 70%, transparent); box-shadow: inset 2px 0 0 var(--accent); }
+.nook-mention { color: var(--accent-text); background: var(--accent-soft); border-radius: var(--radius-xs); padding: 1px 5px; font-weight: 600; }
+.nook-mention--me { background: var(--accent); color: var(--on-accent); }
 
 .nook-typing { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--text-secondary); font: 500 13px/16px var(--font-sans); }
 .nook-typing .nook-ghost { width: 32px; height: 32px; }
