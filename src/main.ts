@@ -1,3 +1,13 @@
+import '@fontsource/bricolage-grotesque/700.css'
+import '@fontsource/bricolage-grotesque/800.css'
+import '@fontsource/dm-sans/400.css'
+import '@fontsource/dm-sans/500.css'
+import '@fontsource/dm-sans/600.css'
+import '@fontsource/jetbrains-mono/400.css'
+import '@fontsource/jetbrains-mono/500.css'
+import './brand/tokens.css'
+import './brand/motion.css'
+import './brand/components.css'
 import './styles.css'
 import { mentionsMe } from './chat'
 import { checkSupport } from './diagnostics'
@@ -18,6 +28,7 @@ import { createWindow, type WindowChrome } from './ui/shell'
 import { chirpMessage, isNews } from './ui/sounds'
 import { spaceList } from './ui/space-list'
 import { SpaceView } from './ui/space-view'
+import { watchTheme } from './ui/theme'
 import { toast } from './ui/toast'
 
 const DEVICE_LINK_PREFIX = '#link='
@@ -38,6 +49,7 @@ if (boot) {
   done.observe(mount, { childList: true })
 }
 
+watchTheme()
 startStreaming()
 watchForUpdates()
 warmEmoji()
@@ -160,7 +172,7 @@ spaces.fresh.add((space, events) => {
       const open = (): void => void showHome({ room: space.room.id, key: e.author })
       if (reading?.room === space.room.id && reading.key === e.author && !document.hidden) continue
       chirpMessage()
-      toast(`${who} sent you a message`, 'info', 8000, { label: 'Read', run: open })
+      toast(`${who} sent you a message`, 'info', 8000, { label: 'Read', run: open }, 'peek')
       // Say who, not what: a private message is not for a lock screen.
       notify(who, 'Sent you a private message', open)
       continue
@@ -172,7 +184,7 @@ spaces.fresh.add((space, events) => {
     const where = chat.spaceName() || 'a space'
     const open = (): void => openSpace(space)
     chirpMessage()
-    toast(`${who} mentioned you in ${where}`, 'info', 8000, { label: 'Go', run: open })
+    toast(`${who} mentioned you in ${where}`, 'info', 8000, { label: 'Go', run: open }, 'wiggle')
     notify(`${who} in ${where}`, text, open)
   }
 })

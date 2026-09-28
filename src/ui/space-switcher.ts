@@ -2,6 +2,7 @@ import { spaces } from '../space/registry'
 import { ROOMS_CHANGED, type RoomNote } from '../store/notes'
 import { listSpaces } from '../store/spaces'
 import { h } from './dom'
+import { ghost } from './ghost'
 import { icon } from './icons'
 import { openMenu, type MenuEntry } from './menu'
 import type { Navigation } from './shell'
@@ -64,8 +65,9 @@ export function spaceFace(room: string, title: string, size = 28): HTMLElement {
   return face
 }
 
+/** Home is where Nook itself lives, so its face is the ghost. */
 export function homeFace(size = 28): HTMLElement {
-  const face = h('span', { class: 'space-face home' }, [icon('home', Math.round(size * 0.6))])
+  const face = h('span', { class: 'space-face home' }, [ghost({ size })])
   face.style.setProperty('--size', `${size}px`)
   return face
 }

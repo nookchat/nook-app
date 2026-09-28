@@ -1,0 +1,36 @@
+/* Tailwind v4: @import "tailwindcss"; @import "./tokens.css"; @import "./tailwind-theme.css"; */
+@theme inline {
+  --color-surface-0: var(--surface-0);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-brand: var(--brand);
+  --color-on-brand: var(--on-brand);
+  --color-accent: var(--accent);
+  --color-on-accent: var(--on-accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-text: var(--accent-text);
+  --color-bubble-out: var(--bubble-out);
+  --color-on-bubble-out: var(--on-bubble-out);
+  --color-bubble-in: var(--bubble-in);
+  --color-on-bubble-in: var(--on-bubble-in);
+  --color-focus-ring: var(--focus-ring);
+  --color-online: var(--online);
+  --color-danger: var(--danger);
+  --color-warning: var(--warning);
+  --font-display: var(--font-display);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --radius-xs: var(--radius-xs);
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+  --radius-pill: var(--radius-pill);
+  --shadow-1: var(--shadow-1);
+  --shadow-2: var(--shadow-2);
+}

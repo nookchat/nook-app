@@ -14,6 +14,7 @@ import { enterLinkCode, lastBackup, showBackup, showLinkCode } from './link-devi
 import { askNotify, notifyState, stopNotify } from './notify'
 import { setSounds, soundsOn } from './sounds'
 import { card, note, settingsShell, switchRow, toggle, type SettingsTab } from './settings-shell'
+import { setTheme, theme, type Theme } from './theme'
 import { toast } from './toast'
 import { voiceSettings } from './voice-settings'
 
@@ -264,6 +265,45 @@ export function settingsView(actions: SettingsActions): HTMLElement {
   }
   paintQuick()
 
+  // System, light or dark. System follows the device.
+  const themeChoice = (): HTMLElement => {
+    const group = h('div', { class: 'theme-choice', role: 'radiogroup', ariaLabel: 'Theme' })
+    const choices: [Theme, string, 'monitor' | 'sun' | 'moon'][] = [
+      ['system', 'System', 'monitor'],
+      ['light', 'Light', 'sun'],
+      ['dark', 'Dark', 'moon'],
+    ]
+    const buttons = choices.map(([value, label, glyph]) => {
+      const button = h('button', { role: 'radio', on: { click: () => pick(value) } }, [icon(glyph, 18), label])
+      button.dataset.theme = value
+      return button
+    })
+    const paint = (): void => {
+      const now = theme()
+      for (const button of buttons) {
+        const on = button.dataset.theme === now
+        button.setAttribute('aria-checked', String(on))
+        button.tabIndex = on ? 0 : -1
+      }
+    }
+    const pick = (value: Theme): void => {
+      setTheme(value)
+      paint()
+    }
+    group.addEventListener('keydown', (ev) => {
+      const step = ev.key === 'ArrowRight' || ev.key === 'ArrowDown' ? 1 : ev.key === 'ArrowLeft' || ev.key === 'ArrowUp' ? -1 : 0
+      if (!step) return
+      ev.preventDefault()
+      const at = choices.findIndex(([value]) => value === theme())
+      const next = (at + step + choices.length) % choices.length
+      pick(choices[next][0])
+      buttons[next].focus()
+    })
+    group.append(...buttons)
+    paint()
+    return group
+  }
+
   const tabs: SettingsTab[] = [
     {
       id: 'profile',
@@ -281,6 +321,15 @@ export function settingsView(actions: SettingsActions): HTMLElement {
             ]),
             pickPicture,
           ),
+        ]),
+    },
+    {
+      id: 'appearance',
+      label: 'Appearance',
+      icon: 'sun',
+      build: () =>
+        h('div', { class: 'stack settings-stack' }, [
+          card('Theme', note('Cream by day, deep night after dark. System follows your device.'), themeChoice()),
         ]),
     },
     {

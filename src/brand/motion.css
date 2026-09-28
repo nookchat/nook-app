@@ -1,0 +1,47 @@
+/* Nook ghost motion. Works on any inline ghost SVG that uses the class hooks:
+   svg.nook-ghost > .nook-ghost__body, .nook-ghost__eyes, .nook-ghost__cheeks, .nook-ghost__dot */
+
+.nook-ghost { display: inline-block; overflow: visible; }
+.nook-ghost__body { fill: var(--brand); }
+.nook-ghost__eyes, .nook-ghost__dot { fill: var(--on-brand); }
+.nook-ghost__lids { stroke: var(--on-brand); }
+.nook-ghost__cheeks { fill: var(--accent); }
+.nook-ghost__eyes, .nook-ghost__dot, .nook-ghost__cheeks { transform-box: fill-box; transform-origin: center; }
+
+/* Idle: slow float + an occasional blink. Use on empty states, onboarding, the logo on splash. */
+.nook-ghost--idle { animation: nook-float 2.8s var(--ease-float, ease-in-out) infinite; }
+.nook-ghost--idle .nook-ghost__eyes { animation: nook-blink 5.2s ease-in-out infinite; }
+
+/* Typing: small bob, face dots hop in sequence. Replaces "is typing..." */
+.nook-ghost--typing { animation: nook-float 1.6s var(--ease-float, ease-in-out) infinite; }
+.nook-ghost--typing .nook-ghost__dot { animation: nook-dot 1.2s ease-in-out infinite; }
+.nook-ghost--typing .nook-ghost__dot:nth-of-type(2) { animation-delay: 0.15s; }
+.nook-ghost--typing .nook-ghost__dot:nth-of-type(3) { animation-delay: 0.3s; }
+.nook-ghost--typing .nook-ghost__cheeks { animation: nook-glow 1.2s ease-in-out infinite; }
+
+/* Peek: enters from below with a little overshoot. New chat, first message, notification toast. */
+.nook-ghost--peek { animation: nook-peek var(--dur-slow, 420ms) var(--ease-pop, ease-out) both; }
+
+/* Wiggle: one-shot attention (mention, unread tap). Re-add the class to replay. */
+.nook-ghost--wiggle { animation: nook-wiggle 520ms ease-in-out 1; transform-origin: 50% 90%; }
+
+/* Vanish: deleted or disappearing message. Apply to the bubble, not only the ghost. */
+.nook-vanish { animation: nook-vanish 600ms ease-in forwards; pointer-events: none; }
+
+/* Sleeping: offline / quiet hours / no connection. Breathes instead of floats. */
+.nook-ghost--sleeping { animation: nook-breathe 3.6s ease-in-out infinite; transform-origin: 50% 100%; }
+
+@keyframes nook-float  { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5%); } }
+@keyframes nook-blink  { 0%, 90%, 100% { transform: scaleY(1); } 93% { transform: scaleY(0.12); } 96% { transform: scaleY(1); } }
+@keyframes nook-dot    { 0%, 60%, 100% { transform: translateY(0); opacity: 0.45; } 30% { transform: translateY(-45%); opacity: 1; } }
+@keyframes nook-glow   { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+@keyframes nook-peek   { from { transform: translateY(45%) scale(0.9); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes nook-wiggle { 0%, 100% { transform: rotate(0); } 20% { transform: rotate(-9deg); } 45% { transform: rotate(7deg); } 70% { transform: rotate(-4deg); } }
+@keyframes nook-vanish { 0% { opacity: 1; transform: none; filter: blur(0); } 100% { opacity: 0; transform: translateY(-24px) scale(0.94); filter: blur(6px); } }
+@keyframes nook-breathe { 0%, 100% { transform: scale(1, 1); } 50% { transform: scale(1.03, 0.97); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .nook-ghost, .nook-ghost *, .nook-vanish { animation: none !important; }
+  .nook-ghost--typing .nook-ghost__dot { opacity: 0.8; }
+  .nook-vanish { opacity: 0; transition: opacity 200ms linear; }
+}

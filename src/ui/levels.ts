@@ -1,6 +1,6 @@
 import { MEMBER, OWNER, PERMISSIONS, type Level, type Permission } from '../store/log'
 import type { RoomChat } from '../store/room-chat'
-import { h } from './dom'
+import { h, roleInk } from './dom'
 import { icon } from './icons'
 import { toast } from './toast'
 
@@ -69,7 +69,7 @@ export function levelsEditor(options: LevelsOptions): HTMLElement {
       const dot = h('span', { class: 'level-dot' })
       if (level.colour) dot.style.background = level.colour
       const title = h('span', { class: 'level-name grow truncate', text: level.name })
-      if (level.colour) title.style.color = level.colour
+      if (level.colour) title.style.color = roleInk(level.colour)
       const facts = h('span', {
         class: 'tiny faint',
         text: level.id === OWNER ? 'Made the space' : `${count} ${count === 1 ? 'person' : 'people'}`,

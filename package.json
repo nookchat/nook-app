@@ -19,6 +19,9 @@
     "desktop:dist": "npm --prefix desktop run dist"
   },
   "dependencies": {
+    "@fontsource/bricolage-grotesque": "^5.3.0",
+    "@fontsource/dm-sans": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
     "@jitsi/rnnoise-wasm": "^0.2.1",
     "@noble/curves": "^1.9.0"
   },

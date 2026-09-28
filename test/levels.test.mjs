@@ -1,7 +1,17 @@
 import { APP_URL, check, finish, launch, stoppedEarly, openSpaceSettings } from './harness.mjs'
 
 const BOX = '[aria-label="Write a message"]'
-const TEAL = 'rgb(46, 196, 182)'
+// A level's colour as text: on a light page it takes some of the text colour (roleInk in src/ui/dom.ts).
+let TEAL = 'rgb(46, 196, 182)'
+const inkOf = (page, colour) =>
+  page.evaluate((c) => {
+    const probe = document.createElement('span')
+    probe.style.color = `color-mix(in srgb, ${c} var(--who-keep), var(--text-primary))`
+    document.body.append(probe)
+    const seen = getComputedStyle(probe).color
+    probe.remove()
+    return seen
+  }, colour)
 
 const browser = await launch()
 
@@ -38,6 +48,7 @@ const openSettings = (page) => page.evaluate(() => document.querySelector('butto
 
 try {
   const alice = await person('Alice')
+  TEAL = await inkOf(alice, '#2ec4b6')
   await alice.fill('input[aria-label="Space name"]', 'levels')
   await alice.click('button:has-text("New space")')
   await alice.waitForSelector('.space-name')
@@ -51,7 +62,7 @@ try {
   const said = await lines(alice)
   check('a message of one emoji is drawn large', said[0]?.jumbo === true, JSON.stringify(said[0]))
   check('a word beside it keeps it text', said[1]?.jumbo === false, JSON.stringify(said[1]))
-  check('what people write is 16 pixels', said[1]?.size === '16px', said[1]?.size)
+  check('what people write is 15 pixels, as the brand sets it', said[1]?.size === '15px', said[1]?.size)
 
   await bob.waitForFunction(() => document.querySelectorAll('.chat-line').length >= 2, null, { timeout: 20_000 })
   const first = bob.locator('.chat-row').first().locator('button[aria-label="Reply"]')

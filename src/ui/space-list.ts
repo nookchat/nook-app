@@ -6,6 +6,7 @@ import { ROOMS_CHANGED, type RoomNote } from '../store/notes'
 import { addServer, newSpaceServer, ownServers } from '../store/server-spaces'
 import { forgetSpace, listSpaces } from '../store/spaces'
 import { h } from './dom'
+import { ghost, lockup } from './ghost'
 import { icon } from './icons'
 import { hideShadows, initials, spaceHue } from './space-switcher'
 import { toast } from './toast'
@@ -107,7 +108,7 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
               h('span', { class: 'truncate space-row-name', text: room.title || 'Unnamed space' }),
               h('span', { class: 'tiny faint truncate', text: whenLabel(room.lastSeen) }),
             ]),
-            room.locked ? h('span', { class: 'tiny faint', title: 'Needs a password' }, [icon('shield', 13)]) : null,
+            room.locked ? h('span', { class: 'tiny faint', title: 'Needs a password' }, [icon('lock', 13)]) : null,
           ],
         ),
         h('button', {
@@ -121,8 +122,9 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
     if (rows.length === 0) {
       rows.push(
         h('div', { class: 'empty home-empty' }, [
-          h('div', { class: 'small', text: 'No spaces yet.' }),
-          h('div', { class: 'tiny faint', text: 'Make one, or paste an invite.' }),
+          ghost({ mood: 'idle', size: 96 }),
+          h('div', { class: 'empty-title', text: 'No spaces yet' }),
+          h('div', { class: 'small faint', text: 'Make one for your friends, or paste an invite.' }),
         ]),
       )
     }
@@ -146,7 +148,7 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
     h('div', { class: 'home-page' }, [
       h('header', { class: 'home-hero' }, [
         h('div', { class: 'stack tight' }, [
-          h('h1', { class: 'home-title', text: 'Nook' }),
+          h('h1', { class: 'home-title' }, [lockup(48)]),
           h('div', { class: 'home-tag', text: 'Chat, voice and screen sharing. End to end encrypted.' }),
         ]),
       ]),

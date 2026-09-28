@@ -4,7 +4,7 @@ import type { LinkPreview } from '../net/server-api'
 import { cleanName, EVERYONE, findMentions, mentionsMe } from '../chat'
 import { shortKey } from '../store/identity'
 import { AttachTray, attachmentBlock } from './attachments'
-import { clear, h } from './dom'
+import { clear, h, roleInk } from './dom'
 import {
   closeEmojiPicker,
   emojiFor,
@@ -15,20 +15,15 @@ import {
   recentEmoji,
   withEmoji,
 } from './emoji'
+import { ghost, typingWords } from './ghost'
 import { icon } from './icons'
 import { closeMenu, onContextMenu, type MenuEntry } from './menu'
 import { toast } from './toast'
 
 const FALLBACK_REACTIONS = ['👍', '😂', '🔥', '❤️', '👀']
 const QUICK_ROW_LENGTH = 5
+const GROUP_GAP = 5 * 60_000
 
-const NAME_HUES = [205, 340, 145, 32, 265, 190, 95, 15]
-
-function authorColour(key: string): string {
-  let sum = 0
-  for (let i = 0; i < key.length; i++) sum = (sum * 31 + key.charCodeAt(i)) % 100_000
-  return `hsl(${NAME_HUES[sum % NAME_HUES.length]} 62% 70%)`
-}
 
 const EMOJI_ONLY =
   /^(?:\p{Extended_Pictographic}|\p{Regional_Indicator}|\p{Emoji_Modifier}|[‍️\u{e0020}-\u{e007f}]|[#*0-9]️?⃣|\s)+$/u
@@ -97,14 +92,35 @@ export function avatarOf(key: string, name: string, picture: string, size = 20):
     .map((word) => word[0] ?? '')
     .join('')
     .toUpperCase()
-  box.style.background = authorColour(key)
   box.style.fontSize = `${Math.round(size * 0.44)}px`
   box.append(h('span', { text: letters || '?' }))
   return box
 }
 
+/** A new message fades in and rises, once. */
+function arrive(el: HTMLElement): void {
+  el.classList.add('arriving')
+  el.addEventListener('animationend', function done(ev) {
+    if (ev.target !== el) return
+    el.classList.remove('arriving')
+    el.removeEventListener('animationend', done)
+  })
+}
+
+/** A deleted message drifts up and fades, then leaves the log. */
+function vanish(el: HTMLElement): void {
+  el.classList.add('nook-vanish')
+  el.setAttribute('aria-hidden', 'true')
+  const gone = (): void => el.remove()
+  el.addEventListener('animationend', (ev) => {
+    if (ev.target === el) gone()
+  })
+  // With reduced motion there is no animation to end.
+  window.setTimeout(gone, 700)
+}
+
 function pinMark(): HTMLElement {
-  return h('span', { class: 'chat-pinned-mark', title: 'Pinned in this channel', text: 'pinned' })
+  return h('span', { class: 'chat-pinned-mark', title: 'Pinned in this channel' }, [icon('pin', 13), 'Pinned'])
 }
 
 function quickRow(): string[] {
@@ -264,6 +280,7 @@ export class ChatPanel {
     this.tray = new AttachTray(() => this.files)
     this.tray.onChange = () => {
       this.sendButton.classList.toggle('waiting', this.sendWaiting && this.tray.busy)
+      this.showSend()
     }
     this.fileInput = h('input', { type: 'file', class: 'hidden', ariaLabel: 'Choose files' })
     this.fileInput.multiple = true
@@ -321,7 +338,8 @@ export class ChatPanel {
       this.nameInput,
     ])
 
-    this.typingLine = h('div', { class: 'chat-typing hidden' })
+    this.typingLine = h('div', { class: 'chat-typing nook-typing hidden', role: 'status' })
+    this.typingLine.setAttribute('aria-live', 'polite')
     this.roomLeft = h('span', { class: 'chat-room-left tiny hidden', ariaLabel: 'Room left in this message' })
     this.toBottom = h('button', {
       class: 'to-bottom hidden',
@@ -478,14 +496,19 @@ export class ChatPanel {
 
   setTyping(who: string[]): void {
     const names = who.filter(Boolean)
+    const was = !this.typingLine.classList.contains('hidden')
     this.typingLine.classList.toggle('hidden', names.length === 0)
-    if (names.length === 0) return
-    this.typingLine.textContent =
-      names.length === 1
-        ? `${names[0]} is typing...`
-        : names.length === 2
-          ? `${names[0]} and ${names[1]} are typing...`
-          : 'Several people are typing...'
+    if (names.length === 0) {
+      this.typingLine.replaceChildren()
+      return
+    }
+    const words = typingWords(names)
+    // The ghost peeks in once, then keeps typing while the names change.
+    if (!was || !this.typingLine.firstChild) {
+      this.typingLine.replaceChildren(ghost({ mood: 'typing', entrance: 'peek', size: 32 }), h('span', { text: words }))
+    } else if (this.typingLine.lastChild) {
+      this.typingLine.lastChild.textContent = words
+    }
   }
 
   setEnabled(enabled: boolean, why = ''): void {
@@ -600,6 +623,12 @@ export class ChatPanel {
     this.roomLeft.classList.toggle('over', left < 0)
     this.roomLeft.textContent = left < 0 ? `${-left} too many` : `${left} left`
     this.sendButton.disabled = !this.enabled || left < 0
+    this.showSend()
+  }
+
+  /** The send button shows only when there is something to send. */
+  private showSend(): void {
+    this.sendButton.classList.toggle('empty', !this.textInput.value.trim() && this.tray.count === 0)
   }
 
   private showSuggestions(kind: SuggestKind, at: number, options: HTMLElement[]): void {
@@ -629,7 +658,7 @@ export class ChatPanel {
   private nameOption(key: string, name: string, take: () => void): HTMLButtonElement {
     const label = h('span', { class: 'truncate', text: name })
     const colour = key === EVERYONE ? '' : this.colourOf(key)
-    if (colour) label.style.color = colour
+    if (colour) label.style.color = roleInk(colour)
     return h('button', { class: 'mention-option', on: pickOnPress(take) }, [label])
   }
 
@@ -838,6 +867,7 @@ export class ChatPanel {
     const parentOf = (m: Message): Message | undefined =>
       m.replyTo ? (byId ??= new Map(all.map((x) => [x.id, x]))).get(m.replyTo) : undefined
 
+    const sameView = this.windowKey === this.draftKey
     if (this.windowKey !== this.draftKey) {
       this.windowKey = this.draftKey
       this.windowSize = WINDOW_STEP
@@ -886,6 +916,7 @@ export class ChatPanel {
     }
     let lastDay = ''
     let lastAuthor = ''
+    let lastAt = 0
     let drawnUnread = false
 
     for (const item of feed) {
@@ -921,8 +952,10 @@ export class ChatPanel {
         })
       }
 
-      const first = m.author !== lastAuthor
+      // A new person, or five quiet minutes, starts a new group of bubbles.
+      const first = m.author !== lastAuthor || m.at - lastAt > GROUP_GAP
       lastAuthor = m.replyTo ? '' : m.author
+      lastAt = m.at
       const parent = parentOf(m)
       const callsMe = m.text.includes('@') && mentionsMe(m.text, this.names, this.me)
       const live = !!m.live && m.author !== this.me && !!this.streamLive?.(m.author, m.channel)
@@ -944,7 +977,7 @@ export class ChatPanel {
       }
     }
 
-    this.reconcile(items)
+    this.reconcile(items, sameView)
     if (stuck) {
       this.log.scrollTop = this.log.scrollHeight
       this.pinned = true
@@ -989,29 +1022,58 @@ export class ChatPanel {
     ].join('\u0001')
   }
 
-  private reconcile(items: Row[]): void {
+  private reconcile(items: Row[], sameView: boolean): void {
     const wanted = new Set(items.map((i) => i.key))
-    for (const [key, held] of this.rows) {
-      if (wanted.has(key)) continue
-      held.el.remove()
+    // A message that goes from the middle of the same view was deleted: it drifts away. Rows that
+    // leave from the top as the window moves, or when the view changes, just go.
+    let kept = false
+    for (const child of [...this.log.children] as HTMLElement[]) {
+      const key = child.dataset.key ?? ''
+      if (wanted.has(key)) {
+        // Only a message kept above it shows this one went from the middle; a day line stays at the top.
+        if (key.startsWith('m:')) kept = true
+        continue
+      }
+      if (child.classList.contains('nook-vanish')) continue
       this.rows.delete(key)
+      if (sameView && kept && key.startsWith('m:')) vanish(child)
+      else child.remove()
     }
 
-    let at = 0
-    for (const item of items) {
+    // Rows made after the last one already here are new messages, and they arrive.
+    let lastOld = -1
+    items.forEach((item, i) => {
+      if (this.rows.has(item.key)) lastOld = i
+    })
+
+    let cursor = this.log.firstChild
+    const pass = (): void => {
+      while (cursor instanceof HTMLElement && cursor.classList.contains('nook-vanish')) cursor = cursor.nextSibling
+    }
+    items.forEach((item, i) => {
+      pass()
       let held = this.rows.get(item.key)
       if (!held || held.sig !== item.sig) {
         const el = item.make()
         el.dataset.key = item.key
-        held?.el.remove()
+        if (!held && sameView && i > lastOld && lastOld >= 0) arrive(el)
+        if (held) {
+          // The new one goes where the old one was.
+          if (cursor === held.el) cursor = held.el.nextSibling
+          held.el.remove()
+        }
         held = { el, sig: item.sig }
         this.rows.set(item.key, held)
       }
-      const current = this.log.childNodes[at]
-      if (current !== held.el) this.log.insertBefore(held.el, current ?? null)
-      at += 1
+      pass()
+      if (cursor === held.el) cursor = cursor.nextSibling
+      else this.log.insertBefore(held.el, cursor)
+    })
+    while (cursor) {
+      const next: ChildNode | null = cursor.nextSibling
+      if (!(cursor instanceof HTMLElement && cursor.classList.contains('nook-vanish'))) cursor.remove()
+      cursor = next
     }
-    while (this.log.childNodes.length > items.length) this.log.lastChild?.remove()
   }
 
   private messageRow(
@@ -1052,14 +1114,16 @@ export class ChatPanel {
       row.classList.toggle('acting', !open)
     })
 
+    // The words sit in a bubble; pictures, files and reactions sit under it.
+    const bubble = h('div', { class: 'chat-bubble' })
     if (m.replyTo && m.replyTo !== this.threadRoot) {
       let quoted: HTMLElement | null = null
       if (parent) {
         quoted = h('span', { class: 'chat-reply-name', text: parent.name || shortKey(parent.author) })
         const colour = this.colourOf(parent.author)
-        if (colour) quoted.style.color = colour
+        if (colour) quoted.style.color = roleInk(colour)
       }
-      line.append(
+      bubble.append(
         h(
           'button',
           {
@@ -1078,13 +1142,12 @@ export class ChatPanel {
     if (first) {
       const name = h('span', { class: 'chat-name', text: who })
       const colour = this.colourOf(m.author)
-      if (colour) name.style.color = colour
+      if (colour) name.style.color = roleInk(colour)
       row.classList.add('first')
       line.append(
         h('div', { class: 'chat-who' }, [
           avatarOf(m.author, m.name ?? '', this.avatars.get(m.author) ?? '', 40),
           name,
-          at,
           m.pinned ? pinMark() : null,
         ]),
       )
@@ -1094,7 +1157,21 @@ export class ChatPanel {
       line.classList.add('runs-on')
     }
 
-    this.drawBody(m, line, who, true)
+    line.append(bubble)
+    this.drawBody(m, line, who, true, bubble)
+
+    // The time, and whether it was edited, in the bubble when it has words, or under the pictures when not.
+    const meta = h('span', { class: 'chat-meta' }, [
+      m.edited ? h('span', { class: 'chat-edited', text: 'edited' }) : null,
+      at,
+    ])
+    if (bubble.querySelector(':scope > .chat-text, :scope > .poll')) {
+      bubble.append(meta)
+    } else {
+      if (!bubble.firstChild) bubble.remove()
+      meta.classList.add('loose')
+      line.append(meta)
+    }
 
     if (live) {
       line.append(
@@ -1107,8 +1184,6 @@ export class ChatPanel {
       )
     }
 
-    if (m.edited) line.append(h('span', { class: 'chat-edited', text: '(edited)' }))
-    if (!first) line.append(at)
 
     if (!this.threadRoot && m.replies) {
       line.append(
@@ -1156,12 +1231,12 @@ export class ChatPanel {
   }
 
   /** The words, the pictures and the files of a message, as the log and the pinned list show them. */
-  private drawBody(m: Message, line: HTMLElement, who: string, withCard: boolean): void {
+  private drawBody(m: Message, line: HTMLElement, who: string, withCard: boolean, words: HTMLElement = line): void {
     const text = h('span', { class: `chat-text${m.emote ? ' emote' : ''}` })
     if (m.emote) text.append(document.createTextNode(`${who} `))
     if (m.poll) {
       text.append(h('strong', { text: m.poll.question }))
-      line.append(text, this.pollBox(m))
+      words.append(text, this.pollBox(m))
     } else {
       const svg = m.emote ? null : svgSource(m.text)
       if (svg) {
@@ -1170,7 +1245,7 @@ export class ChatPanel {
           svgEmbed(svg, () => {
             line.classList.remove('has-picture')
             for (const node of formatText(m.text, this.names, this.me, this.colourOf)) text.append(node)
-            line.prepend(text)
+            words.prepend(text)
           }),
         )
       }
@@ -1184,12 +1259,12 @@ export class ChatPanel {
       if (onlyEmoji(beside)) {
         text.classList.add('jumbo')
         text.append(beside)
-        line.append(text)
+        words.append(text)
       } else if (!bare && !svg && !onlyFiles) {
         if (pictures.length > 0) text.classList.add('boxed')
         else if (!m.emote && onlyEmoji(m.text)) text.classList.add('jumbo')
         for (const node of formatText(m.text, this.names, this.me, this.colourOf)) text.append(node)
-        line.append(text)
+        words.append(text)
       }
       for (const src of pictures) line.append(embed(src))
       if (m.files?.length) line.append(attachmentBlock(m.files, this.files))
@@ -1202,7 +1277,7 @@ export class ChatPanel {
     const who = m.name || shortKey(m.author)
     const name = h('span', { class: 'chat-name', text: who })
     const colour = this.colourOf(m.author)
-    if (colour) name.style.color = colour
+    if (colour) name.style.color = roleInk(colour)
     const line = h('div', { class: 'chat-line pin-card-body' })
     this.drawBody(m, line, who, false)
     const card = h('div', { class: 'pin-card', role: 'button', tabIndex: 0, title: 'Go to this message' }, [
@@ -1592,7 +1667,7 @@ export class ChatPanel {
     this.replyTo = m
     const name = h('span', { class: 'chat-reply-name', text: m.name || shortKey(m.author) })
     const colour = this.colourOf(m.author)
-    if (colour) name.style.color = colour
+    if (colour) name.style.color = roleInk(colour)
     this.showPending(['Replying to ', name])
   }
 

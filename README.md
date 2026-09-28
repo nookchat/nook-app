@@ -158,20 +158,30 @@ with the QR decoder built into Chrome.
 
 ## Look
 
-Dark, and built the way people already know a chat app: the channels on the
-left under the switcher, the conversation in the middle, and who is here on
-the right. No column is spent on a list of spaces.
+Nook follows the brand in `nook-brand/` (read `nook-brand/STYLE_GUIDE.md`).
+Warm cream by day, deep night after dark, and a small ghost at the heart of it.
+The channels are on the left under the switcher, the conversation is in the
+middle, and who is here is on the right.
 
-- **Floating panes.** The canvas is near black, and the channels, the
-  conversation, and the members are separate rounded panes on it.
-- **The beam.** The one accent is a flat cyan, the colour of an old tube
-  screen that lights up. It is on what you press most, on the channel you are
-  in, and on the space you are in. There are no gradients.
-- **Live is red.** A person who is sharing, and the strip of shares above the
-  conversation, use the same red.
+- **Two themes, one set of names.** Settings, Appearance picks System, Light
+  or Dark. System follows the device. The choice is set on `<html>` before the
+  first paint, so the page never flashes the wrong colours.
+- **One ember spot.** Ember is the send button, the unread count, a mention of
+  you, and the first button on the welcome card. Text on ember is always ink.
+- **Bubbles.** Messages are grouped by sender. A new sender, or five quiet
+  minutes, starts a new group. Only the last bubble of a group has the tail
+  and the time.
+- **The ghost.** It floats in empty places, types along when somebody types,
+  sleeps when no server answers, peeks in with a message and wiggles when you
+  are mentioned. Only one ghost moves on a screen at a time, and none move with
+  reduced motion.
+- **Type.** Bricolage Grotesque for titles, DM Sans for everything else, and
+  JetBrains Mono for code. The fonts are part of the build, so they work
+  offline too.
 
-**Every value the look is made of lives in one block at the top of
-`src/styles.css`,** and nothing below that block names a colour.
+**The brand tokens are in `src/brand/tokens.css`,** copied from
+`nook-brand/tokens/`. The block at the top of `src/styles.css` gives them the
+names the app uses, and nothing below that block names a colour.
 `test/polish.test.mjs` checks that every text colour clears 4.5 to 1 on every
 surface.
 
@@ -248,6 +258,7 @@ src/
     gifs.ts           what a GIF is; the server searches, with its key
   rtc/                screen share connections, codecs, quality, stats
   media/              the screen picker, the microphone, and the mix
+  brand/              the brand tokens, the ghost's motion and its components, from nook-brand/
   ui/
     home-view.ts      Home: direct messages from every space
     welcome.ts        the first visit: your name, and a picture
@@ -260,6 +271,9 @@ src/
     settings-view.ts  profile, identity, servers, this space, preferences
     levels.ts         the levels of a space: names, colours, what each may do
     space-switcher.ts going from one space to another, behind the space name
+    ghost.ts          the Nook ghost, its moods and moves, and the lockup
+    theme.ts          light, dark, or what the device uses
+    icons.ts          the icon set: a 24px grid and a 1.75px stroke
     video-surface.ts  fit, fill, and one to one with zoom and pan
     qr.ts             a QR encoder, byte mode, level M, versions 1 to 10
 server/               the server and its Docker image; see server/README.md

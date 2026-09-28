@@ -3,6 +3,7 @@ import { loadIdentity, saveDisplayName } from '../store/identity'
 import { loadAvatar, saveAvatar, squareThumb } from './avatar'
 import { avatarOf } from './chat-panel'
 import { h } from './dom'
+import { lockup } from './ghost'
 import { icon, type IconName } from './icons'
 import { backupTaker, linkTaker } from './link-device'
 import { toast } from './toast'
@@ -27,7 +28,7 @@ export function welcome(mount: HTMLElement, invited: boolean): Promise<void> {
   })
   name.maxLength = 24
   name.setAttribute('autocomplete', 'nickname')
-  const go = h('button', { class: 'primary big welcome-go', text: invited ? 'Join' : 'Continue' })
+  const go = h('button', { class: 'primary accent big welcome-go', text: invited ? 'Join' : 'Continue' })
 
   const paint = (): void => {
     const typed = cleanName(name.value)
@@ -56,9 +57,10 @@ export function welcome(mount: HTMLElement, invited: boolean): Promise<void> {
   })
   name.addEventListener('input', paint)
 
-  const fresh = h('button', { class: 'primary big welcome-go', text: 'I’m new' })
-  const known = h('button', { class: 'big welcome-go', text: 'I have an account' })
+  const fresh = h('button', { class: 'primary accent big welcome-go', text: 'I’m new' })
+  const known = h('button', { class: 'secondary big welcome-go', text: 'I have an account' })
   const choose = h('div', { class: 'welcome-step' }, [
+    h('div', { class: 'welcome-brand' }, [lockup(44)]),
     h('h1', { class: 'welcome-title', text: invited ? 'You have been invited' : 'Welcome to Nook' }),
     h('p', {
       class: 'welcome-text',

@@ -99,3 +99,11 @@ export function onPress(el: HTMLElement, fn: (ev: Event) => void): void {
     if (Date.now() - pressed > 600) fn(ev)
   })
 }
+
+/**
+ * A level's colour as text. The colours were picked for a dark page, so on a light one they take
+ * some of the text colour to stay readable (--who-keep in styles.css).
+ */
+export function roleInk(colour: string): string {
+  return `color-mix(in srgb, ${colour} var(--who-keep), var(--text-primary))`
+}

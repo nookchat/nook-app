@@ -3,7 +3,7 @@
 // The shell adds what a browser tab cannot: a picker for a screen or a window,
 // and the system sound on Windows.
 
-const { app, BrowserWindow, desktopCapturer, ipcMain, session, shell } = require('electron')
+const { app, BrowserWindow, desktopCapturer, ipcMain, nativeTheme, session, shell } = require('electron')
 const path = require('node:path')
 
 app.setName('Nook')
@@ -12,6 +12,9 @@ const HOME = process.env.NOOK_URL || 'https://cathode.video/'
 const ALLOWED = new Set(['media', 'display-capture', 'notifications', 'clipboard-sanitized-write', 'fullscreen'])
 
 let main = null
+
+/** The page colour of the Nook brand (surface-0), shown before the page paints. */
+const pageColour = () => (nativeTheme.shouldUseDarkColors ? '#15131F' : '#FBF7EF')
 /** A link the OS gave before the window was there. */
 let pendingLink = null
 
@@ -63,7 +66,7 @@ function createWindow() {
     height: 800,
     minWidth: 380,
     minHeight: 500,
-    backgroundColor: '#0a0b0e',
+    backgroundColor: pageColour(),
     title: 'Nook',
     autoHideMenuBar: true,
     // The page draws its own title bar. macOS keeps its three buttons over it.
@@ -126,7 +129,7 @@ async function pickSource(parent) {
     resizable: false,
     minimizable: false,
     maximizable: false,
-    backgroundColor: '#131519',
+    backgroundColor: pageColour(),
     title: 'Share your screen',
     autoHideMenuBar: true,
     show: false,

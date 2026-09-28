@@ -59,7 +59,8 @@ import {
   type Sound,
 } from './soundboard'
 import { avatarOf, ChatPanel, imageLinks } from './chat-panel'
-import { clear, copyText, fmtKbps, h, onPress } from './dom'
+import { clear, copyText, fmtKbps, h, onPress, roleInk } from './dom'
+import { ghost } from './ghost'
 import { icon } from './icons'
 import { closeMenu, onContextMenu, openMenu, type MenuItem, type MenuEntry } from './menu'
 import { NoteEditor } from './notes-view'
@@ -267,6 +268,7 @@ export class SpaceView {
   private readonly watched = new Map<string, StageTile>()
   private readonly sharers = new Map<string, string>()
   private streamBar!: HTMLDivElement
+  private offline: HTMLDivElement | null = null
 
   private readonly newestMoveBy = new Map<string, number>()
   private readonly watchingBy = new Map<string, string[]>()
@@ -1511,6 +1513,7 @@ export class SpaceView {
   private watchServer(): void {
     if (this.serverUp()) {
       this.serverWarned = false
+      this.offline?.classList.add('hidden')
       if (this.serverTimer !== null) {
         window.clearTimeout(this.serverTimer)
         this.serverTimer = null
@@ -1522,12 +1525,17 @@ export class SpaceView {
       this.serverTimer = null
       if (this.stopped || this.serverWarned || this.serverUp()) return
       this.serverWarned = true
-      toast(
-        `Nook cannot reach ${serverTag(this.server)} or any server in its cluster, so nothing will sync until one answers. They may be down, or this network may block them.`,
-        'bad',
-        12_000,
-      )
+      this.showOffline()
     }, SERVER_SILENCE_MS)
+  }
+
+  private showOffline(): void {
+    if (!this.offline) return
+    const words = this.offline.lastElementChild
+    if (words) {
+      words.textContent = `Cannot reach ${serverTag(this.server)} or any server in its cluster. Nothing syncs until one answers. They may be down, or this network may block them.`
+    }
+    this.offline.classList.toggle('hidden', !this.serverWarned)
   }
 
   private renderShell(): void {
@@ -1547,6 +1555,14 @@ export class SpaceView {
     this.voiceBar = h('div', { class: 'voice-bar voice-panel hidden' })
     this.stage = h('div', { class: 'stage hidden' })
     this.streamBar = h('div', { class: 'stream-bar hidden' })
+    // No server answers: the ghost sleeps until one does.
+    const offline = h('div', { class: 'offline-bar hidden', role: 'status' }, [
+      ghost({ mood: 'sleeping', size: 24 }),
+      h('span', { class: 'grow' }),
+    ])
+    offline.setAttribute('aria-live', 'polite')
+    this.offline = offline
+    this.showOffline()
     this.channelTitle = h('div', { class: 'row channel-head' }, [
       h('span', { class: 'channel-name' }, [icon('hash', 18), h('span', { class: 'truncate', text: this.channel })]),
     ])
@@ -1607,6 +1623,7 @@ export class SpaceView {
           this.searchWrap,
           this.peopleButton,
         ]),
+        offline,
         this.searchResults,
         this.streamBar,
         this.stage,
@@ -2174,7 +2191,7 @@ export class SpaceView {
     }
     const who = h('span', { class: 'truncate grow', text: label })
     const colour = this.chat?.levelOf(key).colour
-    if (colour) who.style.color = colour
+    if (colour) who.style.color = roleInk(colour)
     member.append(h('i', { class: `dot ${talking ? 'talking' : 'good'}` }), avatarOf(key, name, avatar, 20), who)
     const own = this.voice?.state
     const quiet = mine
@@ -2199,7 +2216,7 @@ export class SpaceView {
       member.append(
         h('button', {
           class: `live-badge${watching ? ' on' : ''}`,
-          text: 'LIVE',
+          text: 'Live',
           title: watching ? 'Stop watching' : `Watch ${label}`,
           ariaLabel: watching ? `Stop watching ${label}` : `Watch ${label}`,
           on: { click: () => this.watch(id) },
@@ -2683,7 +2700,7 @@ export class SpaceView {
     const label = row.name || shortKey(row.key)
     const level = this.chat?.levelOf(row.key)
     const shown = h('span', { class: 'truncate', text: row.you ? `${label} (you)` : label })
-    if (level?.colour) shown.style.color = level.colour
+    if (level?.colour) shown.style.color = roleInk(level.colour)
 
     let more: HTMLButtonElement | null = null
     if (!row.you) {
@@ -3206,7 +3223,7 @@ export class SpaceView {
                 })
               : null,
           ]),
-          h('span', { class: 'share-live', text: 'LIVE' }),
+          h('span', { class: 'share-live', text: 'Live' }),
         ],
       )
       item.dataset.share = one.you ? 'self' : 'peer'
