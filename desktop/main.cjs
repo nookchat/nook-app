@@ -81,6 +81,8 @@ function createWindow() {
       sandbox: true,
       nodeIntegration: false,
       backgroundThrottling: false,
+      // A call joined again after a web update's reload has had no click, and must still be heard.
+      autoplayPolicy: 'no-user-gesture-required',
     },
   })
 

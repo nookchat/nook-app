@@ -1,4 +1,5 @@
 import { LOUD_DB, MIC_CHANGED, QUIET_DB, micSettings } from './mic'
+import { watchContext } from './unlock'
 
 /**
  * The last step before the mic is sent: the input volume, then a gate that
@@ -18,7 +19,7 @@ const TICK_MS = 20
 const HOLD_MS = 300
 
 export function shape(input: MediaStream): Shaped {
-  const ctx = new AudioContext()
+  const ctx = watchContext(new AudioContext())
   void ctx.resume().catch(() => undefined)
   const source = ctx.createMediaStreamSource(input)
   const volume = ctx.createGain()

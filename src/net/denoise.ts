@@ -1,3 +1,5 @@
+import { watchContext } from './unlock'
+
 const WORKLET = '/denoise-worklet.js'
 const MODEL = '/rnnoise.wasm'
 const RNNOISE_RATE = 48_000
@@ -28,7 +30,7 @@ export async function denoise(mic: MediaStream): Promise<Denoiser | null> {
     if (typeof AudioWorkletNode === 'undefined') return null
 
     const bytes = await model()
-    const ctx = new AudioContext({ sampleRate: RNNOISE_RATE, latencyHint: 'interactive' })
+    const ctx = watchContext(new AudioContext({ sampleRate: RNNOISE_RATE, latencyHint: 'interactive' }))
     await ctx.audioWorklet.addModule(WORKLET)
     // A suspended context has no audio thread, so the processor would never be built.
     await ctx.resume().catch(() => undefined)

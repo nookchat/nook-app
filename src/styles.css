@@ -1690,6 +1690,10 @@ button.person-more {
   color: var(--bad);
 }
 
+.voice-member.updating {
+  opacity: 0.55;
+}
+
 .voice-game {
   flex: 0 0 auto;
   display: inline-flex;

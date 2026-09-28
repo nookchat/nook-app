@@ -1,3 +1,5 @@
+import { watchContext } from './unlock'
+
 const TALKING_FLOOR = 0.012
 /** Held after the level drops, so gaps between words do not show. */
 const HOLD_MS = 350
@@ -22,7 +24,7 @@ export class Talking {
     if (stream.getAudioTracks().length === 0) return
     this.remove(id)
     try {
-      this.ctx = this.ctx ?? new AudioContext()
+      this.ctx = this.ctx ?? watchContext(new AudioContext())
       void this.ctx.resume().catch(() => undefined)
       const analyser = this.ctx.createAnalyser()
       analyser.fftSize = 1024

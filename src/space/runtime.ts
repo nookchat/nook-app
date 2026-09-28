@@ -7,6 +7,7 @@ import { Voice } from '../net/voice'
 import { heardAt } from '../net/volume'
 import { deriveRoom, newPeerId, type Room } from '../room'
 import { rtcConfig } from '../rtc/config'
+import { BACK_WITHIN_MS, takeVoiceNote, updatingNow } from './resume'
 import { SignalBus } from '../signal/bus'
 import type { Envelope } from '../signal/envelope'
 import { loadIdentity } from '../store/identity'
@@ -102,6 +103,8 @@ export class SpaceRuntime {
   private ice: { iceServers: RTCIceServer[]; relayOnly: boolean } = { iceServers: [], relayOnly: false }
   private ringTimer = 0
   private voiceWas: string | null = null
+  /** People who said they are updating, by key: their voice comes back in a moment, with no sound. */
+  private readonly comingBack = new Map<string, number>()
   private stopped = false
   private rememberQueue: Promise<void> = Promise.resolve()
 
@@ -149,6 +152,7 @@ export class SpaceRuntime {
       deafened: this.voice?.state.channel && this.voice.state.deafened ? true : undefined,
       // How long, not since when: the clocks of two devices differ.
       voiceFor: this.voice?.state.channel ? Math.max(0, Date.now() - this.voice.state.since) : undefined,
+      updating: updatingNow() ? true : undefined,
       playing: playingNow()?.name,
       steam: playingNow()?.steam,
       playingFor: playingNow() ? Math.max(0, Date.now() - playingNow()!.since) : undefined,
@@ -165,6 +169,8 @@ export class SpaceRuntime {
         this.presence.set(env.from, env)
         const said = (env.data ?? {}) as Record<string, unknown>
         const standing = typeof said.voice === 'string' ? cleanChannel(said.voice) : ''
+        const key = this.keyOf(env.from)
+        if (said.updating === true && key) this.comingBack.set(key, Date.now() + BACK_WITHIN_MS)
         this.voice?.noteAnnounce(env.from, standing || null)
       }
       if (env.type === 'bye') {
@@ -184,8 +190,14 @@ export class SpaceRuntime {
     const voice = new Voice(bus, this.selfId, () => rtcConfig(this.ice.iceServers, this.ice.relayOnly))
     voice.admit = (peer, channel) => !isCallChannel(channel) || (!!this.call && this.keyOf(peer) === this.call.with)
     voice.onArrival = (arrived, peer) => {
-      if (arrived) chirpJoin()
-      else chirpLeave()
+      // Somebody back from an update was never gone, so neither sound plays.
+      const key = this.keyOf(peer)
+      const back = (this.comingBack.get(key) ?? 0) > Date.now()
+      if (arrived && back) this.comingBack.delete(key)
+      if (!back) {
+        if (arrived) chirpJoin()
+        else chirpLeave()
+      }
       this.callArrival(arrived, peer)
     }
     voice.onFailed = (peer) => callNews({ kind: 'failed', space: this, peer })
@@ -219,6 +231,22 @@ export class SpaceRuntime {
     await chat.announceName(chat.displayName, this.pictureToAnnounce())
     window.addEventListener(PREFS_CHANGED, this.onPrefs)
     this.emit('changed')
+    await this.resumeVoice()
+  }
+
+  /** Back in the channel this tab was in before a web update reloaded it: no click, and no sound. */
+  private async resumeVoice(): Promise<void> {
+    const note = takeVoiceNote(this.room.id)
+    if (!note || isCallChannel(note.channel) || this.stopped || this.voice.state.channel) return
+    for (const other of runningSpaces) if (other !== this && other.voice?.state.channel) return
+    try {
+      await this.voice.join(note.channel)
+    } catch {
+      // The microphone asked again and was refused: the channel is a click away, as before.
+      return
+    }
+    if (note.deafened) this.voice.setDeafened(true)
+    else if (note.muted) this.voice.setMuted(true)
   }
 
   private readonly onPrefs = (ev: Event): void => {

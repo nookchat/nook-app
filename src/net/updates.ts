@@ -6,15 +6,29 @@ const CHECK_MS = 10 * 60 * 1000
 
 /** How long a swap may take before the page reloads by itself. */
 const SWAP_WAIT_MS = 8000
+/** How often a wait for the end of a call looks again. */
+const CALL_LOOK_MS = 2000
+
+export interface UpdateHooks {
+  /** In a voice channel or a call now. */
+  inCall: () => boolean
+  /** Just before the reload: notes the call, so the new version joins it again. */
+  beforeReload: () => Promise<void>
+}
+
+let hooks: UpdateHooks = { inCall: () => false, beforeReload: async () => undefined }
 
 /**
  * A new version downloads in the background, as a new service worker. When it
  * has all of its files, this offers it; Update swaps to it and reloads.
  */
-export function watchForUpdates(): void {
+export function watchForUpdates(given: UpdateHooks): void {
+  hooks = given
   if (!('serviceWorker' in navigator) || !window.isSecureContext) return
   let asked = false
   let offered: ServiceWorker | null = null
+  /** Update when I leave the call was pressed: no more offers, the update is on its way. */
+  let waiting = false
 
   // The first worker also takes over the page, so only a swap that was asked for reloads.
   navigator.serviceWorker.addEventListener('controllerchange', () => {
@@ -26,19 +40,36 @@ export function watchForUpdates(): void {
       // With no worker in charge, this is the first visit: nothing is old yet.
       if (!navigator.serviceWorker.controller) return
       // Later hid it: the next check shows it again, but not while it is up.
-      if (offered === worker && document.querySelector('.update-pop')) return
+      if (waiting || (offered === worker && document.querySelector('.update-pop'))) return
       offered = worker
+      const update = async (): Promise<void> => {
+        asked = true
+        await swapToNewest(reg)
+      }
+      const inCall = hooks.inCall()
       showOffer(
         {
           title: 'A new version of Nook is ready',
-          about: 'It has downloaded. Update to reload into it, which takes a second.',
+          about: inCall
+            ? 'It has downloaded. Update now, and you are back in your call in a moment. Or update when you leave it.'
+            : 'It has downloaded. Update to reload into it, which takes a second.',
           button: 'Update now',
           busy: 'Updating…',
         },
-        async () => {
-          asked = true
-          await swapToNewest(reg)
-        },
+        update,
+        inCall
+          ? {
+              label: 'When I leave the call',
+              run: () => {
+                waiting = true
+                const look = (): void => {
+                  if (hooks.inCall()) window.setTimeout(look, CALL_LOOK_MS)
+                  else void update()
+                }
+                look()
+              },
+            }
+          : null,
       )
     }
 
@@ -69,6 +100,7 @@ async function swapToNewest(reg: ServiceWorkerRegistration): Promise<void> {
   const coming = reg.installing
   if (coming) await settled(coming)
   const newest = reg.waiting
+  await hooks.beforeReload()
   // If nothing waits, another tab swapped already, and a reload picks the new version up.
   if (!newest) {
     window.location.reload()
@@ -171,8 +203,15 @@ interface OfferWords {
   busy: string
 }
 
-/** The popup that offers the new version. Later puts it away until the next check finds it again. */
-function showOffer(words: OfferWords, update: () => Promise<void>): void {
+/**
+ * The popup that offers the new version. Later puts it away until the next
+ * check finds it again. `other` is a second choice, beside the first.
+ */
+function showOffer(
+  words: OfferWords,
+  update: () => Promise<void>,
+  other: { label: string; run: () => void } | null = null,
+): void {
   document.querySelector('.update-pop')?.remove()
   const now = h('button', { class: 'primary', text: words.button })
   const pop = h('div', { class: 'update-pop', role: 'alertdialog', ariaLabel: words.title }, [
@@ -180,8 +219,19 @@ function showOffer(words: OfferWords, update: () => Promise<void>): void {
     h('div', { class: 'update-words' }, [
       h('strong', { text: words.title }),
       h('span', { class: 'tiny faint', text: words.about }),
-      h('div', { class: 'row update-actions' }, [
+      h('div', { class: 'row wrap update-actions' }, [
         now,
+        other
+          ? h('button', {
+              text: other.label,
+              on: {
+                click: () => {
+                  pop.remove()
+                  other.run()
+                },
+              },
+            })
+          : null,
         h('button', { class: 'ghost', text: 'Later', on: { click: () => pop.remove() } }),
       ]),
     ]),

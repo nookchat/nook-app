@@ -5,6 +5,7 @@ import { DEVICES_CHANGED, MIC_CHANGED, explainMicRefusal, micSettings, openMic, 
 import { shape, type Shaped } from './shaper'
 import { Talking } from './talking'
 import { VOLUMES_CHANGED } from './volume'
+import { playOrHold, watchContext } from './unlock'
 
 const RETRY_MS = 5000
 const STALE_CALL_MS = 8000
@@ -337,7 +338,7 @@ let boostContext: AudioContext | null = null
 
 function boostAudio(): AudioContext | null {
   try {
-    boostContext ??= new AudioContext({ latencyHint: 'interactive' })
+    boostContext ??= watchContext(new AudioContext({ latencyHint: 'interactive' }))
   } catch {
     return null
   }
@@ -397,7 +398,7 @@ class Call {
       this.unboost()
       this.stream = stream
       this.sink.srcObject = stream
-      void this.sink.play().catch(() => undefined)
+      playOrHold(this.sink)
       this.hear()
       hooks.onAudio(stream)
     }
@@ -513,7 +514,7 @@ class Call {
       out.srcObject = into.stream
       document.body.append(out)
       playOn(out)
-      void out.play().catch(() => undefined)
+      playOrHold(out)
       this.boost = { source, gain, out }
       return ctx
     } catch {

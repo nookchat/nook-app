@@ -13,11 +13,13 @@ import { mentionsMe } from './chat'
 import { checkSupport } from './diagnostics'
 import { startStreaming } from './net/files'
 import { watchPlaying } from './net/playing'
+import { SOUND_HELD } from './net/unlock'
 import { watchForDesktopUpdates, watchForUpdates } from './net/updates'
 import { warmEmoji } from './ui/emoji'
 import { clearLink, readLink, setLinkSecret } from './room'
 import { spaces } from './space/registry'
-import type { SpaceRuntime } from './space/runtime'
+import { noteForUpdate } from './space/resume'
+import { isCallChannel, type SpaceRuntime } from './space/runtime'
 import { nameChosen, shortKey } from './store/identity'
 import { newSpaceServer } from './store/server-spaces'
 import { findSpace } from './store/spaces'
@@ -34,6 +36,8 @@ import { toast } from './ui/toast'
 import { drawEmojiAsArt } from './ui/twemoji'
 
 const DEVICE_LINK_PREFIX = '#link='
+/** How long the last word before an update's reload gets to reach the others. */
+const ANNOUNCE_OUT_MS = 300
 
 const app = document.getElementById('app')
 if (!app) throw new Error('The page could not find its mount point.')
@@ -53,13 +57,40 @@ if (boot) {
 
 watchTheme()
 startStreaming()
-watchForUpdates()
+watchForUpdates({
+  inCall: () => spaces.all().some((space) => !!space.voice?.state.channel),
+  beforeReload: async () => {
+    const inVoice = spaces.all().find((space) => {
+      const channel = space.voice?.state.channel ?? null
+      return channel !== null && !isCallChannel(channel)
+    })
+    const state = inVoice?.voice.state
+    noteForUpdate(
+      inVoice && state?.channel
+        ? { room: inVoice.room.id, channel: state.channel, muted: state.muted, deafened: state.deafened }
+        : null,
+      active?.sharingIn ?? null,
+    )
+    // Tells the others this is a reload, so they keep a place and play no sound; then gives it time to go out.
+    for (const space of spaces.all()) space.announce()
+    await new Promise((done) => window.setTimeout(done, ANNOUNCE_OUT_MS))
+  },
+})
+window.addEventListener(SOUND_HELD, () => {
+  toast('The browser holds back the sound of your call until you click. Your voice waits too.', 'warn', 0, {
+    label: 'Hear the call',
+    // The click itself lets the sound go.
+    run: () => undefined,
+  })
+})
 watchForDesktopUpdates()
 warmEmoji()
 
 interface Screen {
   destroy(): void
   readonly isLive: boolean
+  /** The room whose screen this page shares, if any. */
+  readonly sharingIn?: string | null
   readonly secret?: string
   readonly locked?: boolean
   readonly server?: string
