@@ -411,8 +411,13 @@ export class AttachTray {
   }
 
   private start(file: File, source: SpaceFiles): void {
-    const bar = h('span', { class: 'attach-bar' })
+    const fill = h('i')
+    const bar = h('span', { class: 'attach-bar', role: 'progressbar', ariaLabel: `Sending ${file.name}` }, [fill])
+    bar.setAttribute('aria-valuemin', '0')
+    bar.setAttribute('aria-valuemax', '100')
     const detail = h('span', { class: 'tiny faint truncate', text: 'Encrypting' })
+    // The speed is worked out from the first byte sent, so the time spent encrypting does not count.
+    let firstAt = 0
     const kind = kindOf(file)
     const item: Pending = {
       chip: h('div', { class: 'attach-chip' }),
@@ -431,14 +436,23 @@ export class AttachTray {
       title: 'Take it off',
       on: { click: () => this.remove(item) },
     }, [icon('close', 13)])
-    item.chip.append(face, h('span', { class: 'attach-words' }, [h('span', { class: 'attach-name truncate', text: file.name }), detail]), remove, bar)
+    item.chip.append(
+      face,
+      h('span', { class: 'attach-words' }, [h('span', { class: 'attach-name truncate', text: file.name }), bar, detail]),
+      remove,
+    )
     item.settled = source
       .send(
         file,
         (done, total) => {
-          const part = total ? done / total : 0
-          bar.style.transform = `scaleX(${part})`
-          detail.textContent = `${Math.floor(part * 100)}% of ${sizeLabel(file.size)}`
+          const part = total ? Math.min(1, done / total) : 0
+          fill.style.transform = `scaleX(${part})`
+          bar.setAttribute('aria-valuenow', String(Math.floor(part * 100)))
+          const now = performance.now()
+          if (!firstAt && done > 0) firstAt = now
+          const seconds = firstAt ? (now - firstAt) / 1000 : 0
+          const speed = seconds > 0.5 ? ` · ${sizeLabel(Math.round((done / seconds) * (file.size / (total || file.size))))}/s` : ''
+          detail.textContent = `${Math.floor(part * 100)}% · ${sizeLabel(Math.round(part * file.size))} of ${sizeLabel(file.size)}${speed}`
         },
         item.stop.signal,
         (words) => (detail.textContent = words),

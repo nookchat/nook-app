@@ -3020,21 +3020,30 @@ button.attach-remove {
   min-height: 24px;
 }
 
+/* How much of a file has gone: a track under its name, filled as it goes. */
 .attach-bar {
+  position: relative;
+  display: block;
+  height: 6px;
+  margin: 4px 0 2px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.attach-bar > i {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 3px;
-  background: var(--beam);
+  inset: 0;
+  border-radius: inherit;
+  background: var(--brand);
   transform: scaleX(0);
   transform-origin: left;
-  transition: transform 160ms var(--ease), opacity 300ms var(--ease);
+  transition: transform 160ms var(--ease);
 }
 
 .attach-chip.done .attach-bar,
 .attach-chip.failed .attach-bar {
-  opacity: 0;
+  display: none;
 }
 
 .drop-cover {
