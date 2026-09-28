@@ -19,6 +19,7 @@ import { ghost, typingWords } from './ghost'
 import { icon } from './icons'
 import { closeMenu, onContextMenu, type MenuEntry } from './menu'
 import { toast } from './toast'
+import { emojiField } from './twemoji'
 
 const FALLBACK_REACTIONS = ['👍', '😂', '🔥', '❤️', '👀']
 const QUICK_ROW_LENGTH = 5
@@ -431,7 +432,7 @@ export class ChatPanel {
         h('div', { class: 'row compose-box' }, [
           this.attachButton,
           this.fileInput,
-          this.textInput,
+          emojiField(this.textInput),
           this.roomLeft,
           this.gifButton,
           this.emojiButton,

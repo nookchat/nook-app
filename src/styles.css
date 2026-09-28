@@ -2923,6 +2923,64 @@ input[type="text"].space-search {
   line-height: 22px;
 }
 
+.emoji-field {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.emoji-field > textarea {
+  position: relative;
+  z-index: 1;
+}
+
+/* The copy behind a text box that draws its emoji. It takes the box's font, padding and wrapping. */
+.emoji-mirror {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  padding: 11px 4px;
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: var(--size);
+  line-height: 22px;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.compose-box textarea.mirrored {
+  color: transparent;
+  caret-color: var(--fg);
+}
+
+.compose-box textarea.mirrored::selection {
+  color: transparent;
+  background: color-mix(in srgb, var(--focus-ring) 28%, transparent);
+}
+
+/* A picture the width of the device's own emoji, so a copy of typed text lines up with it. */
+.twemoji-glyph {
+  position: relative;
+}
+
+.twemoji-glyph > img {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1.2em;
+  height: 1.2em;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  user-select: none;
+}
+
+.twemoji-glyph.drawn {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
 .compose-box textarea:hover,
 .compose-box textarea:focus {
   border: 0;
@@ -5202,6 +5260,7 @@ input[type="text"].gif-search {
   input,
   textarea,
   select,
+  .emoji-mirror,
   [contenteditable='true'] {
     font-size: 16px !important;
   }

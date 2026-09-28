@@ -67,8 +67,9 @@ with voice does it.
 - **Emoji look the same on every device**: Nook draws each one with
   [Twemoji](https://github.com/jdecked/twemoji), the set Discord uses, in
   place of the device's own. The emoji stays in the page as text under the
-  picture, so copy and find see it. What you type, and code, keep the
-  device's own.
+  picture, so copy and find see it. The message box draws them too: a copy
+  of its text sits behind it, with each picture over an emoji of the same
+  width. Code keeps the device's own.
 - **The soundboard** is in the voice bar. A sound plays for the people in your
   voice channel, and the green talking ring shows round the face of whoever
   played it, with no toast. Every sound, the board's own and the ones people
@@ -370,4 +371,4 @@ Set `NOOK_URL` to point the shell at another home.
 
 The emoji pictures are [Twemoji](https://github.com/jdecked/twemoji), by
 Twitter and its contributors, under [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/).
-They come from the `@twemoji/svg` package.
+They are Twemoji 17, from its GitHub release, as the `twemoji-art` package.

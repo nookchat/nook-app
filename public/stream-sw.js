@@ -21,7 +21,7 @@ const APP_CACHE = APP ? `nook-app-${APP.version}` : ''
 const APP_FILES = new Set(APP ? APP.files.map((f) => new URL(f, self.registration.scope).href) : [])
 const APP_HOME = new URL('./', self.registration.scope).href
 // The emoji pictures are too many to keep up front, so each is kept the first time a page shows it.
-const EMOJI_CACHE = 'nook-emoji-15.0.0'
+const EMOJI_CACHE = 'nook-emoji-17.0.3'
 const EMOJI_HOME = new URL('./emoji/', self.registration.scope).href
 
 self.addEventListener('install', (ev) => {

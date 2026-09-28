@@ -7,7 +7,8 @@ import { defineConfig } from 'vite'
 const WORKER = 'stream-sw.js'
 /** Fetched when a page shows them, not kept by the worker: there are thousands. */
 const EMOJI_DIR = 'emoji'
-const EMOJI_ART = dirname(createRequire(import.meta.url).resolve('@twemoji/svg/package.json'))
+// Twemoji 17 from its GitHub release (npm has no newer SVG package than 15).
+const EMOJI_ART = join(dirname(createRequire(import.meta.url).resolve('twemoji-art/package.json')), 'assets', 'svg')
 const EMOJI_NAMES = 'virtual:twemoji'
 
 /** @param {string} dir @returns {string[]} */
