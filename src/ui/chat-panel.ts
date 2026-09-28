@@ -1094,44 +1094,7 @@ export class ChatPanel {
       line.classList.add('runs-on')
     }
 
-    const text = h('span', { class: `chat-text${m.emote ? ' emote' : ''}` })
-    if (m.emote) text.append(document.createTextNode(`${who} `))
-    if (m.poll) {
-      text.append(h('strong', { text: m.poll.question }))
-      line.append(text, this.pollBox(m))
-    } else {
-      const svg = m.emote ? null : svgSource(m.text)
-      if (svg) {
-        line.classList.add('has-picture')
-        line.append(
-          svgEmbed(svg, () => {
-            line.classList.remove('has-picture')
-            for (const node of formatText(m.text, this.names, this.me, this.colourOf)) text.append(node)
-            line.prepend(text)
-          }),
-        )
-      }
-      const links = imageLinks(m.text)
-      const pictures = svg ? [] : links
-      const bare = !m.emote && pictures.length === 1 && m.text.trim() === pictures[0]
-      if (pictures.length > 0) line.classList.add('has-picture')
-      const onlyFiles = !m.text && (m.files?.length ?? 0) > 0
-      const beside =
-        !m.emote && pictures.length > 0 ? pictures.reduce((rest, src) => rest.split(src).join(' '), m.text).trim() : ''
-      if (onlyEmoji(beside)) {
-        text.classList.add('jumbo')
-        text.append(beside)
-        line.append(text)
-      } else if (!bare && !svg && !onlyFiles) {
-        if (pictures.length > 0) text.classList.add('boxed')
-        else if (!m.emote && onlyEmoji(m.text)) text.classList.add('jumbo')
-        for (const node of formatText(m.text, this.names, this.me, this.colourOf)) text.append(node)
-        line.append(text)
-      }
-      for (const src of pictures) line.append(embed(src))
-      if (m.files?.length) line.append(attachmentBlock(m.files, this.files))
-      this.attachPreview(line, m.text, links)
-    }
+    this.drawBody(m, line, who, true)
 
     if (live) {
       line.append(
@@ -1190,6 +1153,74 @@ export class ChatPanel {
 
     line.append(this.rowActions(m, mine, who))
     return row
+  }
+
+  /** The words, the pictures and the files of a message, as the log and the pinned list show them. */
+  private drawBody(m: Message, line: HTMLElement, who: string, withCard: boolean): void {
+    const text = h('span', { class: `chat-text${m.emote ? ' emote' : ''}` })
+    if (m.emote) text.append(document.createTextNode(`${who} `))
+    if (m.poll) {
+      text.append(h('strong', { text: m.poll.question }))
+      line.append(text, this.pollBox(m))
+    } else {
+      const svg = m.emote ? null : svgSource(m.text)
+      if (svg) {
+        line.classList.add('has-picture')
+        line.append(
+          svgEmbed(svg, () => {
+            line.classList.remove('has-picture')
+            for (const node of formatText(m.text, this.names, this.me, this.colourOf)) text.append(node)
+            line.prepend(text)
+          }),
+        )
+      }
+      const links = imageLinks(m.text)
+      const pictures = svg ? [] : links
+      const bare = !m.emote && pictures.length === 1 && m.text.trim() === pictures[0]
+      if (pictures.length > 0) line.classList.add('has-picture')
+      const onlyFiles = !m.text && (m.files?.length ?? 0) > 0
+      const beside =
+        !m.emote && pictures.length > 0 ? pictures.reduce((rest, src) => rest.split(src).join(' '), m.text).trim() : ''
+      if (onlyEmoji(beside)) {
+        text.classList.add('jumbo')
+        text.append(beside)
+        line.append(text)
+      } else if (!bare && !svg && !onlyFiles) {
+        if (pictures.length > 0) text.classList.add('boxed')
+        else if (!m.emote && onlyEmoji(m.text)) text.classList.add('jumbo')
+        for (const node of formatText(m.text, this.names, this.me, this.colourOf)) text.append(node)
+        line.append(text)
+      }
+      for (const src of pictures) line.append(embed(src))
+      if (m.files?.length) line.append(attachmentBlock(m.files, this.files))
+      if (withCard) this.attachPreview(line, m.text, links)
+    }
+  }
+
+  /** A pinned message as it was said, for the list behind the pin button. */
+  pinnedCard(m: Message, open: () => void): HTMLElement {
+    const who = m.name || shortKey(m.author)
+    const name = h('span', { class: 'chat-name', text: who })
+    const colour = this.colourOf(m.author)
+    if (colour) name.style.color = colour
+    const line = h('div', { class: 'chat-line pin-card-body' })
+    this.drawBody(m, line, who, false)
+    const card = h('div', { class: 'pin-card', role: 'button', tabIndex: 0, title: 'Go to this message' }, [
+      h('div', { class: 'chat-who' }, [
+        avatarOf(m.author, m.name ?? '', this.avatars.get(m.author) ?? '', 32),
+        name,
+        h('span', { class: 'chat-at', text: `${DAY.format(m.at)} ${CLOCK.format(m.at)}` }),
+      ]),
+      line,
+    ])
+    card.addEventListener('click', (ev) => {
+      if ((ev.target as HTMLElement).closest('a, button, video, .spoiler')) return
+      open()
+    })
+    card.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') open()
+    })
+    return card
   }
 
   private attachPreview(line: HTMLElement, text: string, pictures: string[]): void {
@@ -1882,10 +1913,66 @@ export function imageLinks(text: string): string[] {
   return out
 }
 
+/** A size after a #, as a GIF from the picker carries it: "#480x270". */
+const SIZE_TAG_RE = /#(\d{1,4})x(\d{1,4})$/
+const EMBED_MAX_W = 320
+const EMBED_MAX_H = 240
+const SIZES_KEY = 'nook.media-sizes.v1'
+const SIZES_MAX = 400
+
+let sizes: Record<string, [number, number]> | null = null
+
+function sizeBook(): Record<string, [number, number]> {
+  if (sizes) return sizes
+  try {
+    sizes = JSON.parse(localStorage.getItem(SIZES_KEY) ?? '{}') as Record<string, [number, number]>
+  } catch {
+    sizes = {}
+  }
+  return sizes
+}
+
+/** Keeps the size of a picture once it loads, so the next time it holds its place from the start. */
+function rememberSize(src: string, w: number, h: number): void {
+  if (!w || !h) return
+  const book = sizeBook()
+  if (book[src]?.[0] === w && book[src]?.[1] === h) return
+  book[src] = [w, h]
+  const keys = Object.keys(book)
+  for (const old of keys.slice(0, Math.max(0, keys.length - SIZES_MAX))) delete book[old]
+  try {
+    localStorage.setItem(SIZES_KEY, JSON.stringify(book))
+  } catch {}
+}
+
+function knownSize(src: string): [number, number] | null {
+  const tag = SIZE_TAG_RE.exec(src)
+  if (tag) return [Number(tag[1]), Number(tag[2])]
+  return sizeBook()[src] ?? null
+}
+
+function fitted([w, h]: [number, number]): [number, number] {
+  const scale = Math.min(1, EMBED_MAX_W / w, EMBED_MAX_H / h)
+  return [Math.max(1, Math.round(w * scale)), Math.max(1, Math.round(h * scale))]
+}
+
 function embed(src: string): HTMLElement {
-  const media = CLIP_RE.test(src) ? clip(src) : picture(src)
+  const address = src.replace(/#.*$/, '')
+  const media = CLIP_RE.test(address) ? clip(src) : picture(src)
   media.addEventListener('error', () => wrap.remove(), true)
-  const wrap = h('a', { class: 'chat-image-wrap' }, [media])
+  const wrap = h('a', { class: 'chat-image-wrap media-loading' }, [media])
+  // The box has its size before a byte arrives, so nothing below it moves when it does.
+  const size = knownSize(src)
+  const [w, hgt] = fitted(size ?? [EMBED_MAX_W, 180])
+  wrap.style.width = `${w}px`
+  wrap.style.aspectRatio = `${w} / ${hgt}`
+  if (!size) wrap.classList.add('unsized')
+  const loaded = (): void => {
+    wrap.classList.remove('media-loading')
+    if (media instanceof HTMLImageElement) rememberSize(src, media.naturalWidth, media.naturalHeight)
+    else if (media instanceof HTMLVideoElement) rememberSize(src, media.videoWidth, media.videoHeight)
+  }
+  media.addEventListener(media instanceof HTMLVideoElement ? 'loadeddata' : 'load', loaded, { once: true })
   wrap.href = src
   wrap.target = '_blank'
   wrap.rel = 'noopener noreferrer'

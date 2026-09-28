@@ -1,3 +1,4 @@
+import type { Gif } from '../store/gifs'
 import { open as unseal, seal, type Envelope } from '../signal/envelope'
 import type { LogEvent } from '../store/log'
 import { ask } from './cluster'
@@ -66,15 +67,21 @@ export function serverHasGifs(server: string): Promise<boolean> {
 }
 
 /** An empty term gets what is popular. `from` names the service that answered. */
-export async function gifs(server: string, term: string): Promise<{ gifs: { url: string; preview: string }[]; from: string }> {
+export async function gifs(server: string, term: string): Promise<{ gifs: Gif[]; from: string }> {
   const res = await ask(server, `/api/v1/gifs?q=${encodeURIComponent(term)}`)
   if (!res?.ok) return { gifs: [], from: '' }
-  const body = (await res.json().catch(() => null)) as { gifs?: { url?: string; preview?: string }[]; from?: string } | null
+  const body = (await res.json().catch(() => null)) as {
+    gifs?: { url?: string; preview?: string; width?: number; height?: number }[]
+    from?: string
+  } | null
+  const px = (n: unknown): number => (typeof n === 'number' && Number.isFinite(n) && n > 0 && n < 10_000 ? Math.round(n) : 0)
   const found = (body?.gifs ?? [])
     .filter((g) => typeof g.url === 'string' && g.url.startsWith('https://'))
     .map((g) => ({
       url: g.url as string,
       preview: typeof g.preview === 'string' && g.preview.startsWith('https://') ? g.preview : (g.url as string),
+      width: px(g.width),
+      height: px(g.height),
     }))
     .slice(0, 24)
   return { gifs: found, from: typeof body?.from === 'string' && body.from ? body.from : 'the server' }

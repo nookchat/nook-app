@@ -136,8 +136,9 @@ try {
   const serverOpen = await waitFor(
     async () =>
       host.evaluate(() => {
-        const text = document.querySelector('.status-bar')?.innerText ?? ''
-        return /\d+ here/.test(text) && !text.includes('cannot reach') ? text : null
+        const bar = document.querySelector('.status-bar')
+        const text = bar?.innerText ?? ''
+        return bar?.dataset.here && !text.includes('cannot reach') ? `${bar.dataset.here} here` : null
       }),
     30_000,
     'the server to report open',
@@ -211,9 +212,8 @@ try {
   const meshUp = await waitFor(
     async () =>
       viewer.evaluate(() => {
-        const text = document.querySelector('.status-bar')?.textContent ?? ''
-        const m = text.match(/(\d+) here/)
-        return m && Number(m[1]) >= 2 ? Number(m[1]) : null
+        const here = Number(document.querySelector('.status-bar')?.dataset.here ?? 0)
+        return here >= 2 ? here : null
       }),
     45_000,
     'the two people to see each other',

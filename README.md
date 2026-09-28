@@ -297,3 +297,21 @@ trackpad pinch, zooms anywhere.
 | `Ctrl`/`Cmd`+`Shift`+`M` | Mute or unmute your microphone in voice |
 | `Ctrl`/`Cmd`+`K` | Search this space |
 | `Ctrl`/`Cmd`+`1`-`9` | Jump to a channel, in the order of the list |
+
+## Apps
+
+- **Phone:** open the site and add it to the home screen. On an iPhone, use
+  Share, then Add to Home Screen. On Android, use Install app. Voice and chat
+  work. A phone cannot share its screen from a browser.
+- **Desktop:** `desktop/` is an Electron shell around the site. It loads
+  `https://cathode.video`, so invite links stay the same, and it adds a picker
+  for a screen or a window. On Windows it can share the system sound too.
+
+```sh
+cd desktop && npm install
+npm start              # against https://cathode.video
+npm run dev            # against the Vite server on localhost:5173
+npm run dist:mac       # or dist:win, dist:linux; the builds go in desktop/release
+```
+
+Set `NOOK_URL` to point the shell at another home.

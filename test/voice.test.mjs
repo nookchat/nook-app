@@ -24,8 +24,8 @@ try {
   await waitFor(
     async () =>
       two.evaluate(() => {
-        const m = (document.querySelector('.status-bar')?.textContent ?? '').match(/(\d+) here/)
-        return m && Number(m[1]) >= 2 ? true : null
+        const here = Number(document.querySelector('.status-bar')?.dataset.here ?? 0)
+        return here >= 2 ? true : null
       }),
     45_000,
     'the mesh to come up',

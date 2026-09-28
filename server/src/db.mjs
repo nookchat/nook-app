@@ -61,6 +61,13 @@ const MIGRATIONS = [
   create index files_change on files (change);
   alter table peers add column files_after bigint not null default 0;
   `,
+  `
+  create table gif_cache (
+    term  text primary key,
+    body  jsonb not null,
+    at    timestamptz not null default now()
+  );
+  `,
 ]
 
 export async function migrate() {

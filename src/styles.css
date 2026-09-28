@@ -1306,14 +1306,14 @@ details.adv[open] > summary {
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
-  grid-template-columns: 248px minmax(0, 1fr) 248px;
+  grid-template-columns: 284px minmax(0, 1fr) 248px;
   gap: var(--gap);
   padding: var(--gap);
   background: var(--bg);
 }
 
 .space-grid.members-hidden {
-  grid-template-columns: 248px minmax(0, 1fr);
+  grid-template-columns: 284px minmax(0, 1fr);
 }
 
 .space-grid.members-hidden .rail-right {
@@ -1322,7 +1322,7 @@ details.adv[open] > summary {
 
 @media (max-width: 1100px) {
   .space-grid {
-    grid-template-columns: 224px minmax(0, 1fr);
+    grid-template-columns: 260px minmax(0, 1fr);
   }
 
   .rail-right {
@@ -1844,9 +1844,85 @@ button.voice-bar-state:hover:not(:disabled) {
   padding: 0;
 }
 
-.voice-bar .share-button.on {
+/* The space's own voice panel: where you are and Leave on top, the tools under it. */
+.voice-panel {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  padding: 10px 10px 10px 12px;
+}
+
+.voice-bar-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.voice-bar-top > .voice-signal {
+  flex: 0 0 auto;
+  width: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  color: var(--good);
+}
+
+.voice-bar-top > .voice-signal.warn {
+  color: var(--warn);
+}
+
+.voice-bar-top > .voice-signal.bad {
   color: var(--bad);
-  background: color-mix(in srgb, var(--live) 16%, transparent);
+}
+
+.voice-bar-top > .voice-leave {
+  flex: 0 0 auto;
+  width: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  color: var(--fg-dim);
+}
+
+.voice-bar-top > .voice-leave:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--live) 18%, transparent);
+  color: var(--bad);
+}
+
+.voice-tools {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.voice-tools.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+button.voice-tool {
+  min-width: 0;
+  min-height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: var(--surface-2);
+  box-shadow: none;
+  color: var(--fg-dim);
+}
+
+button.voice-tool:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--fg) 12%, var(--surface-2));
+  color: var(--fg);
+}
+
+button.voice-tool.danger.on,
+button.voice-tool.share-button.on {
+  background: color-mix(in srgb, var(--live) 18%, var(--surface-2));
+  color: var(--bad);
+}
+
+button.voice-tool.danger.on:hover:not(:disabled),
+button.voice-tool.share-button.on:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--live) 26%, var(--surface-2));
 }
 
 .search-wrap {
@@ -4459,6 +4535,56 @@ input[type="text"].emoji-search {
   max-width: min(320px, 100%);
   line-height: 0;
   cursor: zoom-in;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+/* The wrap has its size from the start: the picture fills it when it comes. */
+.chat-image-wrap > .chat-image {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  object-fit: cover;
+  transition: opacity 0.18s ease;
+}
+
+.chat-image-wrap.unsized > .chat-image {
+  object-fit: contain;
+  background: transparent;
+}
+
+.chat-image-wrap.media-loading > .chat-image {
+  opacity: 0;
+}
+
+.chat-image-wrap.media-loading,
+.gif-skeleton {
+  background: linear-gradient(
+      100deg,
+      transparent 30%,
+      color-mix(in srgb, var(--fg) 7%, transparent) 50%,
+      transparent 70%
+    )
+    var(--surface-2);
+  background-size: 250% 100%;
+  animation: skeleton-sweep 1.3s ease-in-out infinite;
+}
+
+@keyframes skeleton-sweep {
+  from {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: -120% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-image-wrap.media-loading,
+  .gif-skeleton {
+    animation: none;
+  }
 }
 
 .lightbox {
@@ -4533,6 +4659,7 @@ input[type="text"].gif-search {
 }
 
 .gif-choice {
+  display: block;
   width: 100%;
   height: 90px;
   object-fit: cover;
@@ -5338,4 +5465,92 @@ input[type="text"].note-title:focus {
 .md th {
   background: var(--surface);
   color: var(--fg);
+}
+
+/* Pinned messages: each one as it was said, newest first. */
+.menu.pins-menu {
+  width: min(440px, calc(100vw - 16px));
+  max-width: min(440px, calc(100vw - 16px));
+  max-height: min(70vh, 620px);
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.pin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pin-card {
+  position: relative;
+  padding: 10px 12px 12px 56px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: var(--pane);
+  cursor: pointer;
+}
+
+.pin-card:hover,
+.pin-card:focus-visible {
+  border-color: var(--line);
+  background: color-mix(in srgb, var(--fg) 3%, var(--pane));
+  outline: none;
+}
+
+.pin-card .chat-who > .avatar {
+  left: -44px;
+}
+
+.pin-card .chat-name {
+  font-size: 14px;
+}
+
+.pin-card-body {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.pin-empty {
+  padding: 18px 12px;
+  text-align: center;
+  font-size: 13px;
+}
+
+/* Screen shares in the left rail: one click swaps the stage to that screen. */
+button.rail-add.danger {
+  color: var(--bad);
+}
+
+.share-empty {
+  padding: 2px 10px 6px;
+}
+
+.rail-item.share-item {
+  min-height: 40px;
+  gap: 9px;
+}
+
+.share-words {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.share-item.on .share-words > .truncate:first-child {
+  color: var(--fg);
+}
+
+.share-live {
+  flex: 0 0 auto;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: var(--live);
+  color: var(--on-live);
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
 }

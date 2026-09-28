@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
+    <title>Share your screen</title>
+    <style>
+      :root { color-scheme: dark; --bg: #131519; --panel: #1b1e24; --line: #2a2f38; --text: #e6e8eb; --faint: #8b93a1; --accent: #2f7fd6; }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, sans-serif; display: flex; flex-direction: column; height: 100vh; }
+      header { padding: 14px 18px 0; }
+      h1 { font-size: 16px; margin: 0 0 10px; }
+      .tabs { display: flex; gap: 6px; }
+      .tabs button { background: none; border: 1px solid var(--line); color: var(--faint); padding: 6px 12px; border-radius: 6px; cursor: pointer; font: inherit; }
+      .tabs button[aria-selected='true'] { color: var(--text); border-color: var(--accent); }
+      main { flex: 1; overflow: auto; padding: 14px 18px; display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; align-content: start; }
+      .item { background: var(--panel); border: 2px solid transparent; border-radius: 8px; padding: 8px; cursor: pointer; text-align: left; color: inherit; font: inherit; }
+      .item:hover { border-color: var(--line); }
+      .item[aria-pressed='true'] { border-color: var(--accent); }
+      .item img.thumb { width: 100%; aspect-ratio: 16 / 9; object-fit: contain; background: #000; border-radius: 4px; display: block; }
+      .name { display: flex; align-items: center; gap: 6px; margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .name img { width: 16px; height: 16px; flex: none; }
+      .name span { overflow: hidden; text-overflow: ellipsis; }
+      footer { display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-top: 1px solid var(--line); }
+      footer label { color: var(--faint); display: flex; gap: 6px; align-items: center; }
+      .spacer { flex: 1; }
+      footer button { font: inherit; padding: 7px 16px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; }
+      footer button.go { background: var(--accent); border-color: var(--accent); }
+      footer button:disabled { opacity: 0.5; cursor: default; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Share your screen</h1>
+      <div class="tabs" role="tablist">
+        <button role="tab" data-kind="screen" aria-selected="true">Screens</button>
+        <button role="tab" data-kind="window" aria-selected="false">Windows</button>
+      </div>
+    </header>
+    <main id="grid"></main>
+    <footer>
+      <label id="audio-wrap" hidden><input type="checkbox" id="audio" checked /> Share the sound</label>
+      <div class="spacer"></div>
+      <button id="cancel">Cancel</button>
+      <button id="go" class="go" disabled>Share</button>
+    </footer>
+    <script>
+      const grid = document.getElementById('grid')
+      const go = document.getElementById('go')
+      const audio = document.getElementById('audio')
+      let sources = []
+      let kind = 'screen'
+      let chosen = null
+
+      function render() {
+        grid.replaceChildren()
+        for (const s of sources.filter((s) => s.kind === kind)) {
+          const b = document.createElement('button')
+          b.className = 'item'
+          b.setAttribute('aria-pressed', String(s.id === chosen))
+          const thumb = document.createElement('img')
+          thumb.className = 'thumb'
+          thumb.src = s.thumb
+          thumb.alt = ''
+          const name = document.createElement('div')
+          name.className = 'name'
+          if (s.icon) {
+            const icon = document.createElement('img')
+            icon.src = s.icon
+            icon.alt = ''
+            name.append(icon)
+          }
+          const label = document.createElement('span')
+          label.textContent = s.name
+          name.append(label)
+          b.append(thumb, name)
+          b.onclick = () => {
+            chosen = s.id
+            go.disabled = false
+            render()
+          }
+          b.ondblclick = () => window.picker.choose(s.id, audio.checked)
+          grid.append(b)
+        }
+      }
+
+      for (const tab of document.querySelectorAll('[role=tab]')) {
+        tab.onclick = () => {
+          kind = tab.dataset.kind
+          for (const t of document.querySelectorAll('[role=tab]')) t.setAttribute('aria-selected', String(t === tab))
+          render()
+        }
+      }
+      go.onclick = () => chosen && window.picker.choose(chosen, audio.checked)
+      document.getElementById('cancel').onclick = () => window.picker.choose(null)
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') window.picker.choose(null)
+        if (e.key === 'Enter' && chosen) window.picker.choose(chosen, audio.checked)
+      })
+
+      window.picker.list().then(({ sources: list, canShareAudio }) => {
+        sources = list
+        document.getElementById('audio-wrap').hidden = !canShareAudio
+        const firstScreen = sources.find((s) => s.kind === 'screen')
+        chosen = firstScreen ? firstScreen.id : null
+        go.disabled = !chosen
+        render()
+      })
+    </script>
+  </body>
+</html>

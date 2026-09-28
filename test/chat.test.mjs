@@ -411,20 +411,6 @@ try {
     .catch(() => false)
   check('a tab put away turns orange for everybody else', wentAway, JSON.stringify(await dots(alice)))
 
-  const agree = await alice.evaluate(() => {
-    const rows = [...document.querySelectorAll('.rail-person')]
-    const here = rows.filter((r) => !r.classList.contains('away')).length
-    const said = Number(
-      (document.querySelector('.status-bar')?.textContent ?? '').match(/(\d+) here/)?.[1] ?? -1,
-    )
-    return { here, said }
-  })
-  check(
-    'the count along the bottom is the list on the right',
-    agree.here === agree.said,
-    JSON.stringify(agree),
-  )
-
   await setHidden(bob, false)
   const cameBack = await alice
     .waitForFunction(

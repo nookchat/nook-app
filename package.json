@@ -14,7 +14,9 @@
     "test": "node test/run.mjs",
     "speed": "node test/speed.mjs",
     "bench": "node test/server-bench.mjs",
-    "tour": "node test/tour.mjs"
+    "tour": "node test/tour.mjs",
+    "desktop": "npm --prefix desktop run dev",
+    "desktop:dist": "npm --prefix desktop run dist"
   },
   "dependencies": {
     "@jitsi/rnnoise-wasm": "^0.2.1",

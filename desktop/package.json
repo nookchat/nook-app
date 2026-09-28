@@ -1,0 +1,78 @@
+{
+  "name": "nook-desktop",
+  "productName": "Nook",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Nook for the desktop: chat, voice and screen sharing.",
+  "main": "main.cjs",
+  "author": "Nook",
+  "scripts": {
+    "start": "electron .",
+    "dev": "NOOK_URL=http://localhost:5173 electron .",
+    "dist": "electron-builder",
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win",
+    "dist:linux": "electron-builder --linux"
+  },
+  "devDependencies": {
+    "electron": "^44.4.5",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "app.nook.desktop",
+    "productName": "Nook",
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "picker.html",
+      "picker-preload.cjs"
+    ],
+    "directories": {
+      "buildResources": "build",
+      "output": "release"
+    },
+    "mac": {
+      "category": "public.app-category.social-networking",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Nook uses the microphone for voice channels.",
+        "NSCameraUsageDescription": "Nook uses the camera when you turn it on.",
+        "NSScreenCaptureUsageDescription": "Nook shares your screen when you ask it to."
+      },
+      "identity": "-"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Network",
+      "mimeTypes": [
+        "x-scheme-handler/nook"
+      ]
+    },
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false
+    },
+    "protocols": [
+      {
+        "name": "Nook link",
+        "schemes": [
+          "nook"
+        ]
+      }
+    ]
+  }
+}

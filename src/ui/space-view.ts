@@ -27,7 +27,7 @@ import { loadSettings, saveSettings, type HostSettings } from '../settings'
 import { cleanName, mentionsMe } from '../chat'
 import { addServer, bookFor } from '../store/server-spaces'
 import { loadIdentity, saveDisplayName, shortKey, signClaim, verifyClaim } from '../store/identity'
-import { isClip, type Gif } from '../store/gifs'
+import { gifLink, isClip, type Gif } from '../store/gifs'
 import {
   DEFAULT_CHANNEL,
   DEFAULT_VOICE,
@@ -61,7 +61,7 @@ import {
 import { avatarOf, ChatPanel, imageLinks } from './chat-panel'
 import { clear, copyText, fmtKbps, h, onPress } from './dom'
 import { icon } from './icons'
-import { onContextMenu, openMenu, type MenuItem, type MenuEntry } from './menu'
+import { closeMenu, onContextMenu, openMenu, type MenuItem, type MenuEntry } from './menu'
 import { NoteEditor } from './notes-view'
 import { placeNear } from './emoji'
 import { loadAvatar } from './avatar'
@@ -200,7 +200,8 @@ function parseSearch(raw: string): SearchQuery {
 
 function gifCell(g: Gif): HTMLVideoElement | HTMLImageElement {
   if (isClip(g.preview)) {
-    const clip = h('video', { class: 'gif-choice' })
+    const clip = h('video', { class: 'gif-choice gif-skeleton' })
+    clip.addEventListener('loadeddata', () => clip.classList.remove('gif-skeleton'), { once: true })
     clip.src = g.preview
     clip.autoplay = true
     clip.loop = true
@@ -211,13 +212,17 @@ function gifCell(g: Gif): HTMLVideoElement | HTMLImageElement {
     void clip.play().catch(() => undefined)
     return clip
   }
-  const img = h('img', { class: 'gif-choice' })
+  const img = h('img', { class: 'gif-choice gif-skeleton' })
+  img.addEventListener('load', () => img.classList.remove('gif-skeleton'), { once: true })
   img.src = g.preview
   img.alt = ''
   img.loading = 'lazy'
   img.referrerPolicy = 'no-referrer'
   return img
 }
+
+/** What a share from outside voice is kept under: no channel name can be this. */
+const NO_VOICE = '*'
 
 export class SpaceView {
   private readonly root: HTMLElement
@@ -288,6 +293,8 @@ export class SpaceView {
   private shell!: HTMLElement
   private stage!: HTMLDivElement
   private shareButton!: HTMLButtonElement
+  private railShareButton!: HTMLButtonElement
+  private shareList!: HTMLDivElement
   private shareButtonSharing: boolean | null = null
   private channelTitle!: HTMLDivElement
   private channelTitleSig = ''
@@ -323,7 +330,7 @@ export class SpaceView {
   private readonly boardButton = h(
     'button',
     {
-      class: 'ghost icon-only voice-board',
+      class: 'voice-tool voice-board',
       title: 'Soundboard: only the people in your voice channel hear it',
       ariaLabel: 'Soundboard',
     },
@@ -390,7 +397,8 @@ export class SpaceView {
     this.voice = space.voice
 
     space.extras = () => ({
-      sharing: this.capture ? this.voice?.state.channel ?? undefined : undefined,
+      // The voice channel, or true for a share from outside voice.
+      sharing: this.capture ? (this.voice?.state.channel ?? true) : undefined,
       watching: this.watchingAnyone()
         ? [...this.watched.keys()].filter((id) => id !== this.selfId)
         : undefined,
@@ -601,7 +609,8 @@ export class SpaceView {
     if (quiet) this.quiet.set(from, quiet)
     else this.quiet.delete(from)
 
-    const sharing = typeof data.sharing === 'string' ? cleanChannel(data.sharing) : ''
+    const sharing =
+      data.sharing === true ? NO_VOICE : typeof data.sharing === 'string' ? cleanChannel(data.sharing) : ''
     const wasSharing = this.sharers.get(from)
     if (sharing) this.sharers.set(from, sharing)
     else this.sharers.delete(from)
@@ -1283,7 +1292,7 @@ export class SpaceView {
     this.renderPeople(people)
     this.renderMe()
     this.renderShareButton()
-    this.status(people)
+    this.status()
   }
 
   private renderConversation(chat: RoomChat, info: ChannelInfo | undefined, thread: Message[] | null): void {
@@ -1478,14 +1487,15 @@ export class SpaceView {
     return this.bus?.healthList.some((r) => r.status === 'open') ?? false
   }
 
-  private status(people?: PersonRow[]): void {
+  private status(): void {
     if (!this.chrome) return
     if (!this.loaded) {
       this.chrome.setStatus(['Opening...'])
       return
     }
     const up = this.serverUp()
-    const here = (people ?? this.roster()).filter((r) => r.here).length
+    // Nobody reads the count, so it is kept out of sight for the tests.
+    this.chrome.status.dataset.here = String(this.roster().filter((r) => r.here).length)
     const what = this.capture
       ? 'Sharing your screen'
       : this.watchingAnyone()
@@ -1494,7 +1504,7 @@ export class SpaceView {
     const name = this.capture ? 'Sharing your screen' : `#${this.channel}`
     this.chrome.setTitle(`Nook | ${this.mentions ? `(${this.mentions}) ` : ''}${name}`)
     const serving = serverTag(this.space.channel?.serving ?? this.server)
-    this.chrome.setStatus([what, `${here} here`, ...(up ? [] : [`cannot reach ${serving}`])])
+    this.chrome.setStatus([what, ...(up ? [] : [`cannot reach ${serving}`])])
     this.chrome.status.title = up ? `Connected to ${serving}` : `Cannot reach ${serving}`
   }
 
@@ -1534,7 +1544,7 @@ export class SpaceView {
       nameOf: (key) => this.chat?.nameOf(key) || shortKey(key),
     })
     this.peopleList = h('div', { class: 'rail-list' })
-    this.voiceBar = h('div', { class: 'voice-bar hidden' })
+    this.voiceBar = h('div', { class: 'voice-bar voice-panel hidden' })
     this.stage = h('div', { class: 'stage hidden' })
     this.streamBar = h('div', { class: 'stream-bar hidden' })
     this.channelTitle = h('div', { class: 'row channel-head' }, [
@@ -1542,7 +1552,11 @@ export class SpaceView {
     ])
     this.channelTitleSig = ''
 
-    this.shareButton = h('button', { class: 'ghost icon-only share-button' }, [icon('monitor', 19)])
+    this.shareList = h('div', { class: 'rail-list share-list' })
+    this.railShareButton = h('button', { class: 'ghost icon-only rail-add', on: { click: () => void this.toggleShare() } }, [
+      icon('monitor', 17),
+    ])
+    this.shareButton = h('button', { class: 'voice-tool share-button' }, [icon('monitor', 19)])
     this.shareButton.addEventListener('click', () => void this.toggleShare())
     this.shareButtonSharing = null
 
@@ -1701,6 +1715,11 @@ export class SpaceView {
           this.newVoiceButton,
         ]),
         this.voiceList,
+        h('div', { class: 'rail-head' }, [
+          h('span', { class: 'eyebrow', text: 'Screen shares', title: 'Anybody here can share, in voice or not.' }),
+          this.railShareButton,
+        ]),
+        this.shareList,
         h('div', { class: 'rail-head' }, [
           h('span', { class: 'eyebrow', text: 'Notes', title: 'Notes in markdown that everybody here can read and change.' }),
           h(
@@ -2238,8 +2257,12 @@ export class SpaceView {
     state.querySelector('.dot')?.setAttribute('class', `dot ${grade}`)
     state.classList.remove('good', 'warn', 'bad')
     state.classList.add(grade)
-    const words = state.querySelector('.voice-bar-words')
-    if (words) words.textContent = this.linkWords()
+    const signal = this.voiceBar.querySelector('.voice-signal')
+    if (signal) {
+      signal.classList.remove('good', 'warn', 'bad')
+      signal.classList.add(grade)
+      signal.setAttribute('title', this.linkWords())
+    }
   }
 
   private linkDetails(): HTMLElement {
@@ -2274,65 +2297,72 @@ export class SpaceView {
     this.voiceBar.classList.toggle('hidden', !state?.channel)
     if (state?.channel) {
       clear(this.voiceBar)
+      const call = isCallChannel(state.channel)
+      const grade = this.linkGrade()
+      const signal = h(
+        'button',
+        {
+          class: `ghost icon-only voice-signal ${grade}`,
+          title: this.linkWords(),
+          ariaLabel: 'Connection details',
+          data: { menu: 'link' },
+        },
+        [icon('signal', 18)],
+      )
+      signal.addEventListener('click', () => {
+        if (!this.link) void this.sampleLink()
+        openMenu(signal, [{ custom: this.linkDetails() }])
+      })
       this.voiceBar.append(
-        h('div', { class: 'voice-bar-text' }, [
-          (() => {
-            const grade = this.linkGrade()
-            const button = h(
-              'button',
-              {
-                class: `voice-bar-state ${grade}`,
-                title: 'Ping, jitter and packet loss',
-                ariaLabel: 'Connection details',
-                data: { menu: 'link' },
-              },
-              [h('i', { class: `dot ${grade}` }), h('span', { class: 'voice-bar-words truncate', text: this.linkWords() })],
-            )
-            button.addEventListener('click', () => {
-              if (!this.link) void this.sampleLink()
-              openMenu(button, [{ custom: this.linkDetails() }])
-            })
-            return button
-          })(),
-          h('span', {
-            class: 'tiny faint truncate',
-            text: isCallChannel(state.channel)
-              ? `Call with ${this.chat?.nameOf(this.space.call?.with ?? '') || 'somebody'}`
-              : `${state.channel} · ${(this.voice?.connected ?? 0) + 1} in`,
-          }),
+        h('div', { class: 'voice-bar-top' }, [
+          h('div', { class: 'voice-bar-text' }, [
+            h('span', { class: `voice-bar-state ${grade}` }, [
+              h('i', { class: `dot ${grade}` }),
+              h('span', { class: 'truncate', text: 'Voice connected' }),
+            ]),
+            h('span', {
+              class: 'tiny faint truncate',
+              text: call
+                ? `Call with ${this.chat?.nameOf(this.space.call?.with ?? '') || 'somebody'}`
+                : `${state.channel} / ${this.chat?.spaceName() || 'this space'}`,
+            }),
+          ]),
+          signal,
+          h(
+            'button',
+            {
+              class: 'ghost icon-only voice-leave',
+              title: 'Leave voice',
+              ariaLabel: 'Leave',
+              on: { click: () => this.leaveVoice() },
+            },
+            [icon('phone-off', 19)],
+          ),
         ]),
-        h(
-          'button',
-          {
-            class: `ghost icon-only${state.muted ? ' danger on' : ''}`,
-            title: state.muted ? 'Unmute' : 'Mute',
-            ariaLabel: state.muted ? 'Unmute' : 'Mute',
-            on: { click: () => this.voice?.setMuted(!state.muted) },
-          },
-          [icon(state.muted ? 'mic-off' : 'mic', 19)],
-        ),
-        h(
-          'button',
-          {
-            class: `ghost icon-only${state.deafened ? ' danger on' : ''}`,
-            title: state.deafened ? 'Undeafen' : 'Deafen: hear nobody, and mute yourself',
-            ariaLabel: state.deafened ? 'Undeafen' : 'Deafen',
-            on: { click: () => this.voice?.setDeafened(!state.deafened) },
-          },
-          [icon(state.deafened ? 'headphones-off' : 'headphones', 19)],
-        ),
-        ...(isCallChannel(state.channel) ? [] : [this.boardButton]),
-        this.shareButton,
-        h(
-          'button',
-          {
-            class: 'ghost icon-only danger',
-            title: 'Leave voice',
-            ariaLabel: 'Leave',
-            on: { click: () => this.leaveVoice() },
-          },
-          [icon('phone-off', 19)],
-        ),
+        h('div', { class: `voice-tools${call ? ' three' : ''}` }, [
+          h(
+            'button',
+            {
+              class: `voice-tool${state.muted ? ' danger on' : ''}`,
+              title: state.muted ? 'Unmute' : 'Mute',
+              ariaLabel: state.muted ? 'Unmute' : 'Mute',
+              on: { click: () => this.voice?.setMuted(!state.muted) },
+            },
+            [icon(state.muted ? 'mic-off' : 'mic', 19)],
+          ),
+          h(
+            'button',
+            {
+              class: `voice-tool${state.deafened ? ' danger on' : ''}`,
+              title: state.deafened ? 'Undeafen' : 'Deafen: hear nobody, and mute yourself',
+              ariaLabel: state.deafened ? 'Undeafen' : 'Deafen',
+              on: { click: () => this.voice?.setDeafened(!state.deafened) },
+            },
+            [icon(state.deafened ? 'headphones-off' : 'headphones', 19)],
+          ),
+          ...(call ? [] : [this.boardButton]),
+          this.shareButton,
+        ]),
       )
     }
   }
@@ -2391,7 +2421,6 @@ export class SpaceView {
   }
 
   private leaveVoice(): void {
-    if (this.capture) this.stopSharing()
     this.space.leaveVoice()
     this.announceMe()
     this.draw()
@@ -2756,9 +2785,9 @@ export class SpaceView {
     window.addEventListener('keydown', onKey, true)
     window.addEventListener('pointerdown', onAway, true)
 
-    const send = (url: string): void => {
+    const send = (g: Gif): void => {
       done()
-      void this.publish((c) => c.say(url, this.channel))
+      void this.publish((c) => c.say(gifLink(g), this.channel))
     }
 
     let asking = 0
@@ -2766,12 +2795,16 @@ export class SpaceView {
       const mine = ++asking
       const wanted = box.value.trim()
       status.textContent = 'Looking...'
+      // Grey tiles hold the grid's shape while the answer comes.
+      if (grid.childElementCount === 0) {
+        for (let i = 0; i < 12; i++) grid.append(h('div', { class: 'gif-choice gif-skeleton' }))
+      }
       const { gifs, from } = await this.findGifs(wanted)
       if (mine !== asking || !pop.isConnected) return
       clear(grid)
       for (const g of gifs) {
         const cell = gifCell(g)
-        cell.addEventListener('click', () => send(g.url))
+        cell.addEventListener('click', () => send(g))
         grid.append(cell)
       }
       if (gifs.length > 0) {
@@ -2816,15 +2849,21 @@ export class SpaceView {
   private openPins(): void {
     const chat = this.chat
     if (!chat) return
-    const pinned = chat.messages(this.channel).filter((m) => m.pinned)
-    openMenu(
-      this.pinsButton,
-      pinned.map((m) => ({
-        label: m.text.slice(0, 60) || 'a message with no text',
-        note: m.name || shortKey(m.author),
-        run: () => this.goTo(m),
-      })),
-    )
+    const pinned = chat
+      .messages(this.channel)
+      .filter((m) => m.pinned)
+      .sort((a, b) => b.at - a.at)
+    const list = h('div', { class: 'pin-list' })
+    for (const m of pinned) {
+      list.append(
+        this.chatPanel.pinnedCard(m, () => {
+          closeMenu()
+          this.goTo(m)
+        }),
+      )
+    }
+    if (pinned.length === 0) list.append(h('div', { class: 'pin-empty faint', text: 'Nothing is pinned here yet.' }))
+    openMenu(this.pinsButton, [{ heading: `Pinned in #${this.channel}` }, { custom: list }], { className: 'pins-menu' })
   }
 
   private openChannel(name: string): void {
@@ -2917,10 +2956,6 @@ export class SpaceView {
     if (this.capture) {
       this.stopSharing()
       this.draw()
-      return
-    }
-    if (!this.voice?.state.channel) {
-      toast('Join a voice channel to share your screen.', 'info')
       return
     }
     const blocker = hostBlocker(checkSupport())
@@ -3098,9 +3133,68 @@ export class SpaceView {
     return [...names]
   }
 
+  /** Swaps the stage to one share, as a click in the rail does. */
+  private switchTo(id: string): void {
+    for (const other of [...this.watched.keys()]) if (other !== id) this.dropTile(other)
+    if (this.watched.has(id)) {
+      this.announceMe()
+      this.draw()
+      return
+    }
+    this.watch(id)
+  }
+
+  private renderShareList(live: LiveStream[], peers: Map<string, MeshPeer>): void {
+    const sharing = this.capture !== null
+    this.railShareButton.title = sharing ? 'Stop sharing your screen' : 'Share your screen'
+    this.railShareButton.setAttribute('aria-label', this.railShareButton.title)
+    this.railShareButton.classList.toggle('danger', sharing)
+    clear(this.railShareButton)
+    this.railShareButton.append(icon(sharing ? 'stop' : 'monitor', sharing ? 14 : 17))
+
+    clear(this.shareList)
+    if (live.length === 0) {
+      this.shareList.append(h('div', { class: 'share-empty tiny faint', text: 'Nobody is sharing.' }))
+      return
+    }
+    for (const one of live) {
+      const eyes = one.you ? this.watchers.size : this.watcherNames(one.id, peers).length
+      const channel = this.sharers.get(one.id)
+      const where = one.you
+        ? this.voice?.state.channel ?? ''
+        : channel && channel !== NO_VOICE
+          ? channel
+          : ''
+      const item = h(
+        'button',
+        {
+          class: `rail-item share-item${this.watched.has(one.id) ? ' on' : ''}`,
+          title: one.you ? 'Show your own screen' : `Watch ${one.name}`,
+          on: { click: () => this.switchTo(one.id) },
+        },
+        [
+          avatarOf(one.key || one.id, one.you ? (this.chat?.displayName ?? '') : one.name, this.chat?.avatarOf(one.key) ?? '', 20),
+          h('span', { class: 'share-words' }, [
+            h('span', { class: 'truncate', text: one.you ? 'Your screen' : one.name }),
+            where || eyes
+              ? h('span', {
+                  class: 'tiny faint truncate',
+                  text: [where ? `in ${where}` : '', eyes ? `${eyes} watching` : ''].filter(Boolean).join(' · '),
+                })
+              : null,
+          ]),
+          h('span', { class: 'share-live', text: 'LIVE' }),
+        ],
+      )
+      item.dataset.share = one.you ? 'self' : 'peer'
+      this.shareList.append(item)
+    }
+  }
+
   private renderStreams(): void {
     const peers = this.peersById()
     const live = this.liveHere(peers)
+    this.renderShareList(live, peers)
     clear(this.streamBar)
     this.streamBar.classList.toggle('hidden', live.length === 0)
 

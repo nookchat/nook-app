@@ -106,7 +106,7 @@ try {
   check('nothing about the space is written down in the browser', databases.length === 0, databases.join(' '))
 
   const people = await alice
-    .waitForFunction(() => document.querySelector('.status-bar')?.textContent?.includes('2 here'), null, {
+    .waitForFunction(() => document.querySelector('.status-bar')?.dataset.here === '2', null, {
       timeout: 15_000,
     })
     .then(() => true)
@@ -141,7 +141,7 @@ try {
   const erinAt = Date.now()
   await erin.goto(link)
   const erinSees = await erin
-    .waitForFunction(() => document.querySelector('.status-bar')?.textContent?.includes('3 here'), null, { timeout: 10_000 })
+    .waitForFunction(() => document.querySelector('.status-bar')?.dataset.here === '3', null, { timeout: 10_000 })
     .then(() => true)
     .catch(() => false)
   check('somebody new sees who is already here at once', erinSees, `${Date.now() - erinAt} ms`)
@@ -161,7 +161,7 @@ try {
   const goneAt = Date.now()
   await erin.context().close()
   const gone = await alice
-    .waitForFunction(() => document.querySelector('.status-bar')?.textContent?.includes('2 here'), null, { timeout: 5000 })
+    .waitForFunction(() => document.querySelector('.status-bar')?.dataset.here === '2', null, { timeout: 5000 })
     .then(() => true)
     .catch(() => false)
   check('a tab that closes is gone for everybody at once', gone, `${Date.now() - goneAt} ms`)
