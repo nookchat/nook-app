@@ -13,15 +13,67 @@ const ASK_TIMEOUT_MS = 5000
 /** token -> { info, key } */
 const known = new Map()
 
-self.addEventListener('install', () => self.skipWaiting())
-self.addEventListener('activate', (ev) => ev.waitUntil(self.clients.claim()))
+// It also keeps the whole app, so a load needs no network. The build
+// (vite.config.ts) writes the version and every file of the app in place of the
+// null below. In development it stays null, and nothing is kept.
+const APP = null
+const APP_CACHE = APP ? `nook-app-${APP.version}` : ''
+const APP_FILES = new Set(APP ? APP.files.map((f) => new URL(f, self.registration.scope).href) : [])
+const APP_HOME = new URL('./', self.registration.scope).href
+
+self.addEventListener('install', (ev) => {
+  ev.waitUntil(
+    (async () => {
+      if (APP) {
+        const cache = await caches.open(APP_CACHE)
+        // Past the browser's own cache, so an old copy cannot go in under the new version.
+        await cache.addAll([...APP_FILES].map((href) => new Request(href, { cache: 'reload' })))
+      }
+      // The first install takes over at once. A new version waits until the page
+      // says so, so a page never runs half old and half new.
+      if (!self.registration.active) await self.skipWaiting()
+    })(),
+  )
+})
+
+self.addEventListener('message', (ev) => {
+  if (ev.data?.type === 'nook-update') void self.skipWaiting()
+})
+
+self.addEventListener('activate', (ev) => {
+  ev.waitUntil(
+    (async () => {
+      for (const name of await caches.keys()) {
+        if (name.startsWith('nook-app-') && name !== APP_CACHE) await caches.delete(name)
+      }
+      await self.clients.claim()
+    })(),
+  )
+})
 
 self.addEventListener('fetch', (ev) => {
   const url = new URL(ev.request.url)
-  if (url.origin !== self.location.origin || !url.pathname.includes(MARK) || ev.request.method !== 'GET') return
-  const token = url.pathname.slice(url.pathname.lastIndexOf(MARK) + MARK.length)
-  ev.respondWith(serve(ev, token).catch(() => new Response('That file could not be opened.', { status: 502 })))
+  if (url.origin !== self.location.origin || ev.request.method !== 'GET') return
+  if (url.pathname.includes(MARK)) {
+    const token = url.pathname.slice(url.pathname.lastIndexOf(MARK) + MARK.length)
+    ev.respondWith(serve(ev, token).catch(() => new Response('That file could not be opened.', { status: 502 })))
+    return
+  }
+  if (!APP) return
+  // Every page of the app is the same page: the room is in the #, which is never sent.
+  if (ev.request.mode === 'navigate') {
+    ev.respondWith(fromApp(APP_HOME, ev.request))
+    return
+  }
+  url.hash = ''
+  url.search = ''
+  if (APP_FILES.has(url.href)) ev.respondWith(fromApp(url.href, ev.request))
 })
+
+async function fromApp(href, request) {
+  const kept = await caches.match(href, { cacheName: APP_CACHE })
+  return kept ?? fetch(request)
+}
 
 function ask(client, token) {
   return new Promise((ok) => {

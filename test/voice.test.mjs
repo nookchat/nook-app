@@ -12,6 +12,7 @@ try {
   const one = await (await browser.newContext()).newPage()
   await one.goto(APP_URL, { waitUntil: 'domcontentloaded' })
   await one.getByRole('button', { name: 'New space' }).waitFor({ timeout: 10_000 })
+  await one.fill('input[aria-label="Space name"]', 'test space')
   await one.getByRole('button', { name: 'New space' }).click()
   await one.waitForSelector('[aria-label="Write a message"]', { timeout: 15_000 })
   await one.waitForTimeout(800)

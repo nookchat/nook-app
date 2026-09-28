@@ -34,26 +34,40 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
   })
 
   const title = h('input', { type: 'text', placeholder: 'Name your space', ariaLabel: 'Space name' })
+  title.maxLength = 60
+  const secret = h('input', { type: 'password', placeholder: 'Password (optional)', ariaLabel: 'Space password' })
+  secret.autocomplete = 'new-password'
+  const problem = h('div', { class: 'tiny field-problem hidden', role: 'alert' })
 
   const servers = ownServers()
   const where = h('select', { ariaLabel: 'Server' })
   for (const server of servers) where.append(h('option', { value: server, text: serverTag(server) }))
   where.value = newSpaceServer()
 
-  const make = (locked: boolean): void => {
+  // A password is optional: with one, people need it as well as the link.
+  const make = (): void => {
     const server = where.value || newSpaceServer()
     if (!server) return
     const name = title.value.trim().slice(0, 60)
-    if (!locked) {
-      actions.open(newSecret(), false, '', name, server)
+    if (!name) {
+      problem.textContent = 'Give the space a name.'
+      problem.classList.remove('hidden')
+      title.classList.add('invalid')
+      title.focus()
       return
     }
-    const password = window.prompt('Choose a password for this space.') ?? ''
-    if (password) actions.open(newSecret(), true, password, name, server)
+    const password = secret.value
+    actions.open(newSecret(), password !== '', password, name, server)
   }
-  title.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Enter') make(false)
+  title.addEventListener('input', () => {
+    problem.classList.add('hidden')
+    title.classList.remove('invalid')
   })
+  for (const box of [title, secret]) {
+    box.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') make()
+    })
+  }
 
   const recent = h('div', { class: 'stack tight' })
 
@@ -144,16 +158,11 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
             : h('div', { class: 'card stack tight' }, [
                 h('span', { class: 'eyebrow', text: 'New space' }),
                 title,
+                problem,
+                secret,
+                h('div', { class: 'tiny faint', text: 'With a password, people need it as well as the invite link.' }),
                 servers.length > 1 ? where : null,
-                h('div', { class: 'row' }, [
-                  h('button', { class: 'primary big grow', on: { click: () => make(false) } }, [icon('plus', 16), 'New space']),
-                  h('button', {
-                    class: 'big',
-                    title: 'People need the password as well as the link',
-                    text: 'Password',
-                    on: { click: () => make(true) },
-                  }),
-                ]),
+                h('button', { class: 'primary big', on: { click: make } }, [icon('plus', 16), 'New space']),
               ]),
           h('div', { class: 'card stack tight' }, [
             h('span', { class: 'eyebrow', text: 'Join' }),

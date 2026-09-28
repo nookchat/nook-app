@@ -1476,21 +1476,9 @@ button.rail-add {
 }
 
 .rail-item.on {
-  background: var(--select);
+  background: var(--hover);
   color: var(--select-fg);
   font-weight: 600;
-}
-
-.rail-item.on::before {
-  content: "";
-  position: absolute;
-  left: -8px;
-  top: 8px;
-  bottom: 8px;
-  width: 3px;
-  border-radius: 0 3px 3px 0;
-  background: var(--beam);
-  box-shadow: var(--glow);
 }
 
 .rail-item.unread {
@@ -1556,10 +1544,6 @@ button.rail-add {
   box-shadow: 0 0 0 3px var(--surface);
 }
 
-.rail-person.talking .person-face .avatar {
-  box-shadow: 0 0 0 2px var(--pane), 0 0 0 4px var(--good);
-}
-
 .person-text {
   flex: 1 1 auto;
   min-width: 0;
@@ -1587,10 +1571,6 @@ button.rail-add {
 
 .person-doing.live {
   color: var(--bad);
-}
-
-.person-doing.talking {
-  color: var(--good);
 }
 
 .crown {
@@ -1656,7 +1636,7 @@ button.person-more {
 }
 
 .voice-member.talking .avatar {
-  box-shadow: 0 0 0 2px var(--pane), 0 0 0 4px var(--good);
+  box-shadow: 0 0 0 1px var(--pane), 0 0 0 2.5px var(--good);
 }
 
 .voice-member.talking {
@@ -5804,5 +5784,73 @@ input[type="range"].threshold::-moz-range-thumb {
   .field-pair,
   .slider-pair {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.field-problem {
+  margin-top: -2px;
+  color: var(--bad);
+}
+
+input.invalid,
+input.invalid:focus {
+  border-color: var(--bad);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--bad) 22%, transparent);
+}
+
+/* The offer of a new version: a card in the corner, over everything but a dialog. */
+.update-pop {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 75;
+  display: flex;
+  gap: 12px;
+  width: min(360px, calc(100vw - 32px));
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--panel-radius);
+  box-shadow: var(--shadow);
+  animation: update-in 0.22s var(--ease) both;
+}
+
+.update-icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--accent-wash);
+  color: var(--accent-text);
+}
+
+.update-words {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.update-words strong {
+  color: var(--fg);
+  font-size: 14.5px;
+}
+
+.update-actions {
+  margin-top: 8px;
+}
+
+@keyframes update-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .update-pop {
+    animation: none;
   }
 }

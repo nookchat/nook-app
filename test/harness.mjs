@@ -58,6 +58,7 @@ export function nameEveryone(browser) {
 }
 
 export async function hostAndShare(host) {
+  await host.fill('input[aria-label="Space name"]', 'shared')
   await host.getByRole('button', { name: 'New space' }).click()
   await host.click('.voice-channel .rail-item:has-text("lounge")', { timeout: 15_000 })
   await host.waitForSelector('.voice-bar:not(.hidden)', { timeout: 15_000 })

@@ -13,12 +13,8 @@ const rows = (page) => page.$$eval('.space-row .rail-item', (els) => els.map((e)
 
 async function makeSpace(page, name, password = '') {
   await page.fill('input[aria-label="Space name"]', name)
-  if (password) {
-    page.once('dialog', (d) => d.accept(password))
-    await page.click('button:text-is("Password")')
-  } else {
-    await page.click('button:has-text("New space")')
-  }
+  if (password) await page.fill('input[aria-label="Space password"]', password)
+  await page.click('button:has-text("New space")')
   await page.waitForFunction(
     (wanted) => document.querySelector('.space-name')?.textContent === wanted,
     name,

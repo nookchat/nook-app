@@ -2698,7 +2698,8 @@ export class SpaceView {
       more = button
     }
 
-    const rowClass = `rail-person${row.here ? '' : ' away'}${row.talking ? ' talking' : ''}`
+    // Who is talking shows in the voice channel on the left, not here.
+    const rowClass = `rail-person${row.here ? '' : ' away'}`
     const person = h('div', { class: rowClass, title: `${level?.name ?? 'Member'} · ID ${row.key}` }, [
       h('span', { class: 'person-face' }, [
         avatarOf(row.key, row.name, avatar, 32),
@@ -2730,15 +2731,9 @@ export class SpaceView {
       return h('span', { class: 'person-doing live' }, [h('i', { class: 'live-dot' }), 'Sharing their screen'])
     }
     if (!row.voice) return null
-    return h('span', { class: `person-doing${row.talking ? ' talking' : ''}` }, [
+    return h('span', { class: 'person-doing' }, [
       icon('volume-low', 11),
-      isCallChannel(row.voice)
-        ? row.talking
-          ? 'Talking in a call'
-          : 'In a call'
-        : row.talking
-          ? `Talking in ${row.voice}`
-          : `In ${row.voice}`,
+      isCallChannel(row.voice) ? 'In a call' : `In ${row.voice}`,
     ])
   }
 

@@ -99,6 +99,7 @@ try {
   }))
   check('the app opens on your spaces', opening.list && opening.make)
 
+  await host.fill('input[aria-label="Space name"]', 'test space')
   await host.getByRole('button', { name: 'New space' }).click()
   await host.click('.space-title-button')
   await host.click('.menu-item:has-text("Invite")')

@@ -2,6 +2,7 @@ import './styles.css'
 import { mentionsMe } from './chat'
 import { checkSupport } from './diagnostics'
 import { startStreaming } from './net/files'
+import { watchForUpdates } from './net/updates'
 import { warmEmoji } from './ui/emoji'
 import { clearLink, readLink, setLinkSecret } from './room'
 import { spaces } from './space/registry'
@@ -25,7 +26,20 @@ const app = document.getElementById('app')
 if (!app) throw new Error('The page could not find its mount point.')
 const mount = app
 
+// The loading screen in index.html goes as soon as the first screen is on the page.
+const boot = document.getElementById('boot')
+if (boot) {
+  const done = new MutationObserver(() => {
+    if (mount.childElementCount === 0) return
+    done.disconnect()
+    boot.classList.add('gone')
+    window.setTimeout(() => boot.remove(), 250)
+  })
+  done.observe(mount, { childList: true })
+}
+
 startStreaming()
+watchForUpdates()
 warmEmoji()
 
 interface Screen {
