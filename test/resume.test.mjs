@@ -61,6 +61,25 @@ try {
       if (!there) window.__gaps++
     }, 50)
   })
+  // The server's relays come slowly after the reload. The rejoin must wait for them: without them
+  // a call does not get through most home routers, and a relay-only server's calls would go round it.
+  await alice.route('**/api/v1/ice', async (route) => {
+    await new Promise((r) => setTimeout(r, 3000))
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ iceServers: [{ urls: 'turn:relay.example.test:3478', username: 'u', credential: 'p' }], relayOnly: false }),
+    })
+  })
+  await alice.addInitScript(() => {
+    const Real = window.RTCPeerConnection
+    window.__configs = []
+    window.RTCPeerConnection = class extends Real {
+      constructor(config, ...rest) {
+        super(config, ...rest)
+        window.__configs.push(JSON.stringify(config?.iceServers ?? []))
+      }
+    }
+  })
   await alice.reload()
   await alice.waitForSelector('.space-name')
 
@@ -83,6 +102,12 @@ try {
   check(
     'and no longer as updating',
     await until(bob, () => ![...document.querySelectorAll('.person-doing')].some((e) => e.textContent.includes('Updating Nook'))),
+  )
+  const configs = await alice.evaluate(() => window.__configs)
+  check(
+    'the calls after the rejoin have the server\'s relays',
+    configs.length > 0 && configs.every((c) => c.includes('relay.example.test')),
+    `${configs.length} calls`,
   )
   const heard = await until(alice, () => [...document.querySelectorAll('audio.voice-sink')].some((a) => a.srcObject?.getAudioTracks().length), undefined, 20_000)
   check('the call to Bob comes up again', heard)

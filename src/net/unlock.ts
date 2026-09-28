@@ -34,11 +34,13 @@ function hold(thing: AudioContext | HTMLMediaElement): void {
 
 /** An audio context that may have started suspended. */
 export function watchContext(ctx: AudioContext): AudioContext {
-  if (ctx.state === 'suspended') {
+  // Safari says interrupted, not suspended.
+  const stopped = (): boolean => (ctx.state as string) !== 'running' && ctx.state !== 'closed'
+  if (stopped()) {
     void ctx.resume().catch(() => undefined)
     // A resume the browser allows is quick. One still waiting needs a click.
     window.setTimeout(() => {
-      if (ctx.state === 'suspended') hold(ctx)
+      if (stopped()) hold(ctx)
     }, 300)
   }
   return ctx

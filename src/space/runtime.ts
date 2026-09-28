@@ -21,6 +21,10 @@ import { chirpJoin, chirpLeave } from '../ui/sounds'
 
 const LAST_SEEN_REFRESH_MS = 60 * 60 * 1000
 const HISTORY_WAIT_MS = 6000
+/** How long a join waits for the server's relays. Past this it joins without them. */
+const ICE_WAIT_MS = 5000
+/** A voice channel joined again after an update, with nobody reached by now, is joined once more. */
+const RESUME_CHECK_MS = 12_000
 const RING_TIMEOUT_MS = 30_000
 
 type NotePatch = Partial<{
@@ -101,6 +105,8 @@ export class SpaceRuntime {
   }
 
   private ice: { iceServers: RTCIceServer[]; relayOnly: boolean } = { iceServers: [], relayOnly: false }
+  /** The server's relays have arrived, or never will. */
+  private iceReady: Promise<void> = Promise.resolve()
   private ringTimer = 0
   private voiceWas: string | null = null
   /** People who said they are updating, by key: their voice comes back in a moment, with no sound. */
@@ -186,7 +192,9 @@ export class SpaceRuntime {
     this.bus = bus
     this.mesh = mesh
 
-    void fetchIce(this.server).then((ice) => (this.ice = ice))
+    this.iceReady = fetchIce(this.server).then((ice) => {
+      this.ice = ice
+    })
     const voice = new Voice(bus, this.selfId, () => rtcConfig(this.ice.iceServers, this.ice.relayOnly))
     voice.admit = (peer, channel) => !isCallChannel(channel) || (!!this.call && this.keyOf(peer) === this.call.with)
     voice.onArrival = (arrived, peer) => {
@@ -239,14 +247,27 @@ export class SpaceRuntime {
     const note = takeVoiceNote(this.room.id)
     if (!note || isCallChannel(note.channel) || this.stopped || this.voice.state.channel) return
     for (const other of runningSpaces) if (other !== this && other.voice?.state.channel) return
-    try {
-      await this.voice.join(note.channel)
-    } catch {
-      // The microphone asked again and was refused: the channel is a click away, as before.
-      return
+    const join = async (): Promise<boolean> => {
+      await this.relays()
+      try {
+        await this.voice.join(note.channel)
+      } catch {
+        // The microphone asked again and was refused: the channel is a click away, as before.
+        return false
+      }
+      if (note.deafened) this.voice.setDeafened(true)
+      else if (note.muted) this.voice.setMuted(true)
+      return true
     }
-    if (note.deafened) this.voice.setDeafened(true)
-    else if (note.muted) this.voice.setMuted(true)
+    if (!(await join())) return
+    // Others are here but none was reached: join once more, as a click on the channel would.
+    window.setTimeout(() => {
+      if (this.stopped || this.voice.state.channel !== note.channel) return
+      const others = this.voice.membersOf(note.channel).filter((id) => id !== this.selfId)
+      if (others.length === 0 || this.voice.connected > 0) return
+      this.voice.leave()
+      void join()
+    }, RESUME_CHECK_MS)
   }
 
   private readonly onPrefs = (ev: Event): void => {
@@ -361,8 +382,18 @@ export class SpaceRuntime {
     if (this.voice.state.channel === channel) return
     for (const other of runningSpaces) if (other !== this && other.voice?.state.channel) other.leaveVoice()
     if (this.call && this.call.channel !== channel) this.endCall()
+    await this.relays()
     await this.voice.join(channel)
     chirpJoin()
+  }
+
+  /**
+   * Waits for the server's relays, which the calls need to get through most home
+   * routers, and which a relay-only server needs so no call goes round them. A
+   * click comes long after they arrive; a join right after the page loads does not.
+   */
+  private relays(): Promise<void> {
+    return Promise.race([this.iceReady, new Promise<void>((done) => window.setTimeout(done, ICE_WAIT_MS))])
   }
 
   leaveVoice(): void {
