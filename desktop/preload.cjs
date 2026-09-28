@@ -1,4 +1,5 @@
-// Tells the web app it runs in the desktop shell, and what game is running.
+// Tells the web app it runs in the desktop shell, what game is running, and
+// when a newer desktop app is out.
 // It also draws the title bar in place of the system one: a plain strip to drag
 // the window by, in the page colour, and on Windows and Linux the window buttons
 // on the right. On macOS the system keeps its own three buttons, over the left
@@ -11,12 +12,29 @@ contextBridge.exposeInMainWorld('nookDesktop', {
   platform: process.platform,
   /** On: the shell looks for a running game and tells `onPlaying`. Off: it stops looking. */
   watchGames: (on) => ipcRenderer.send('games:watch', !!on),
-  /** Called with { name, since } or null. Returns a function that stops it. */
+  /** Called with { name, steam?, since } or null. Returns a function that stops it. */
   onPlaying: (fn) => {
-    const heard = (_ev, now) => fn(now && typeof now.name === 'string' ? { name: now.name, since: now.since } : null)
+    const heard = (_ev, now) =>
+      fn(now && typeof now.name === 'string' ? { name: now.name, steam: now.steam, since: now.since } : null)
     ipcRenderer.on('games:playing', heard)
     return () => ipcRenderer.removeListener('games:playing', heard)
   },
+  /** This desktop app's version. */
+  version: () => ipcRenderer.invoke('app:version'),
+  /** Called with { version, ready } when a newer desktop app is out, now or later. Returns a function that stops it. */
+  onUpdate: (fn) => {
+    const clean = (offer) =>
+      offer && typeof offer.version === 'string' ? { version: offer.version, ready: offer.ready === true } : null
+    const heard = (_ev, offer) => {
+      const next = clean(offer)
+      if (next) fn(next)
+    }
+    ipcRenderer.on('update:offer', heard)
+    void ipcRenderer.invoke('update:now').then((offer) => heard(null, offer))
+    return () => ipcRenderer.removeListener('update:offer', heard)
+  },
+  /** Restarts into the update when it has downloaded, or opens the download page. */
+  installUpdate: () => ipcRenderer.send('update:install'),
 })
 
 const BAR_HEIGHT = 32

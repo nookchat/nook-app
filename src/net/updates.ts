@@ -28,10 +28,18 @@ export function watchForUpdates(): void {
       // Later hid it: the next check shows it again, but not while it is up.
       if (offered === worker && document.querySelector('.update-pop')) return
       offered = worker
-      showOffer(async () => {
-        asked = true
-        await swapToNewest(reg)
-      })
+      showOffer(
+        {
+          title: 'A new version of Nook is ready',
+          about: 'It has downloaded. Update to reload into it, which takes a second.',
+          button: 'Update now',
+          busy: 'Updating…',
+        },
+        async () => {
+          asked = true
+          await swapToNewest(reg)
+        },
+      )
     }
 
     if (reg.waiting) offer(reg.waiting)
@@ -85,15 +93,93 @@ function settled(worker: ServiceWorker): Promise<void> {
   })
 }
 
+const RELEASES = 'https://github.com/nookchat/nook-app/releases/latest'
+/** When an old desktop app was last offered the download: once a day is enough. */
+const OLD_SHELL_KEY = 'nook.desktop-offer.v1'
+const OLD_SHELL_EVERY_MS = 24 * 60 * 60 * 1000
+
+function offeredLately(): boolean {
+  try {
+    const at = Number(localStorage.getItem(OLD_SHELL_KEY))
+    if (Date.now() - at < OLD_SHELL_EVERY_MS) return true
+    localStorage.setItem(OLD_SHELL_KEY, String(Date.now()))
+  } catch {
+    /* storage blocked: offer it */
+  }
+  return false
+}
+
+interface DesktopShell {
+  onUpdate?: (fn: (offer: { version: string; ready: boolean }) => void) => () => void
+  installUpdate?: () => void
+}
+
+/**
+ * The desktop app updates itself from the GitHub releases, apart from the page.
+ * On Windows and Linux it downloads the new version, and this offers a restart
+ * into it. On macOS it can only say there is one, so this offers the download.
+ * A desktop app from before it could update itself is offered the download.
+ */
+export function watchForDesktopUpdates(): void {
+  const shell = (window as Window & { nookDesktop?: DesktopShell }).nookDesktop
+  if (!shell) return
+  if (!shell.onUpdate || !shell.installUpdate) {
+    if (offeredLately()) return
+    showOffer(
+      {
+        title: 'A new Nook desktop app is out',
+        about: 'This one cannot update itself. The new one can, so this is the last time you download it.',
+        button: 'Download',
+        busy: 'Opening…',
+      },
+      async () => {
+        window.open(RELEASES, '_blank', 'noopener')
+        document.querySelector('.update-pop')?.remove()
+      },
+    )
+    return
+  }
+  const install = shell.installUpdate
+  shell.onUpdate(({ version, ready }) =>
+    showOffer(
+      ready
+        ? {
+            title: `Nook ${version} for the desktop is ready`,
+            about: 'It has downloaded. Restart to use it. A call you are in ends, and you join again after.',
+            button: 'Restart',
+            busy: 'Restarting…',
+          }
+        : {
+            title: `Nook ${version} for the desktop is out`,
+            about: 'Download it and open it in place of this one. Your spaces stay as they are.',
+            button: 'Download',
+            busy: 'Opening…',
+          },
+      async () => {
+        install()
+        if (!ready) document.querySelector('.update-pop')?.remove()
+      },
+    ),
+  )
+}
+
+interface OfferWords {
+  title: string
+  about: string
+  button: string
+  /** On the button once it is pressed. */
+  busy: string
+}
+
 /** The popup that offers the new version. Later puts it away until the next check finds it again. */
-function showOffer(update: () => Promise<void>): void {
+function showOffer(words: OfferWords, update: () => Promise<void>): void {
   document.querySelector('.update-pop')?.remove()
-  const now = h('button', { class: 'primary', text: 'Update now' })
-  const pop = h('div', { class: 'update-pop', role: 'alertdialog', ariaLabel: 'A new version of Nook' }, [
+  const now = h('button', { class: 'primary', text: words.button })
+  const pop = h('div', { class: 'update-pop', role: 'alertdialog', ariaLabel: words.title }, [
     h('span', { class: 'update-icon' }, [icon('download', 20)]),
     h('div', { class: 'update-words' }, [
-      h('strong', { text: 'A new version of Nook is ready' }),
-      h('span', { class: 'tiny faint', text: 'It has downloaded. Update to reload into it, which takes a second.' }),
+      h('strong', { text: words.title }),
+      h('span', { class: 'tiny faint', text: words.about }),
       h('div', { class: 'row update-actions' }, [
         now,
         h('button', { class: 'ghost', text: 'Later', on: { click: () => pop.remove() } }),
@@ -102,7 +188,7 @@ function showOffer(update: () => Promise<void>): void {
   ])
   now.addEventListener('click', () => {
     now.disabled = true
-    now.textContent = 'Updating…'
+    now.textContent = words.busy
     void update()
   })
   document.body.append(pop)

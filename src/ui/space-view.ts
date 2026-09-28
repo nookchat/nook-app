@@ -4,7 +4,7 @@ import { AudioMixer } from '../media/mixer'
 import type { Mesh, MeshPeer } from '../net/mesh'
 import type { Voice } from '../net/voice'
 import { UplinkMeter } from '../net/uplink'
-import { PLAYING_CHANGED, cleanGameName, playingNow, type Playing } from '../net/playing'
+import { PLAYING_CHANGED, cleanGameName, cleanSteamId, playingNow, type Playing } from '../net/playing'
 import { LOUDEST, mutedFor, setMutedFor, setVolumeFor, volumeFor } from '../net/volume'
 import { gifs as serverGifs, preview, serverHasGifs } from '../net/server-api'
 import { formatSecret, roomLink, setLinkSecret, type Room } from '../room'
@@ -63,6 +63,7 @@ import {
 } from './soundboard'
 import { avatarOf, ChatPanel, imageLinks } from './chat-panel'
 import { clear, copyText, fmtKbps, h, onPress, roleInk } from './dom'
+import { forHowLong, gameCard } from './game-card'
 import { ghost } from './ghost'
 import { icon } from './icons'
 import { closeMenu, onContextMenu, openMenu, type MenuItem, type MenuEntry } from './menu'
@@ -80,14 +81,6 @@ const SOUND_EVERY_MS = 120
 /** How long the ring shows when the length of the sound is not known here. */
 const SOUND_RING_S = 1.5
 const LINK_EVERY_MS = 3000
-
-/** "for 5 minutes", or "for 2 hours". */
-function forHowLong(ms: number): string {
-  const minutes = Math.max(1, Math.round(ms / 60_000))
-  if (minutes < 60) return `for ${minutes} minute${minutes === 1 ? '' : 's'}`
-  const hours = Math.round(minutes / 60)
-  return `for ${hours} hour${hours === 1 ? '' : 's'}`
-}
 
 /** 4:05, or 1:04:05 past the hour. */
 function clockFor(ms: number): string {
@@ -649,7 +642,8 @@ export class SpaceView {
     if (game) {
       const lasted = typeof data.playingFor === 'number' && Number.isFinite(data.playingFor) ? Math.max(0, data.playingFor) : 0
       // Announces repeat; keep the first start unless the game changed.
-      this.playingBy.set(from, hadGame?.name === game ? hadGame : { name: game, since: Date.now() - lasted })
+      const steam = cleanSteamId(data.steam)
+      this.playingBy.set(from, hadGame?.name === game ? hadGame : { name: game, steam, since: Date.now() - lasted })
     } else {
       this.playingBy.delete(from)
     }
@@ -2567,10 +2561,24 @@ export class SpaceView {
 
   private personMenu(key: string, role: string, you: boolean, here: boolean): MenuEntry[] {
     const actions = this.actionsFor(key, role, you, here)
+    const game = you ? null : this.gameOf(key)
     const talks = !you && (this.mesh?.peers() ?? []).some((p) => p.key === key && this.voice?.whereIs(p.id))
-    if (!talks) return actions
     const name = this.chat?.nameOf(key) || shortKey(key)
-    return actions.length ? [{ custom: this.volumeBlock(key, name) }, 'line', ...actions] : [{ custom: this.volumeBlock(key, name) }]
+    const blocks: MenuEntry[][] = [
+      game ? [{ custom: gameCard(game) }] : [],
+      talks ? [{ custom: this.volumeBlock(key, name) }] : [],
+      actions,
+    ].filter((b) => b.length)
+    return blocks.flatMap((b, i) => (i ? ['line' as const, ...b] : b))
+  }
+
+  /** What the person plays now, on any of their devices. */
+  private gameOf(key: string): Playing | null {
+    for (const peer of this.mesh?.peers() ?? []) {
+      const game = peer.key === key ? this.playingBy.get(peer.id) : undefined
+      if (game) return game
+    }
+    return null
   }
 
   private volumeBlock(key: string, name: string): HTMLElement {

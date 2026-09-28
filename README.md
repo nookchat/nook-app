@@ -79,8 +79,10 @@ with voice does it.
 - **Playing**: the desktop app sees the game you have open and shows it under
   your name, the way Discord does, in the list of people and in voice. It
   finds a game in a Steam, Epic, GOG, Riot, Ubisoft, EA, Xbox or Rockstar
-  library folder, or by the name of a well known game. Only the name goes
-  out. Settings, Activity turns it off. A browser cannot see other programs,
+  library folder, or by the name of a well known game. Only the name, and a
+  Steam game's app id, go out. A Steam game has Steam's own picture in the
+  person's menu, fetched from Steam by whoever opens it. Settings, Activity
+  turns it off. A browser cannot see other programs,
   so the web page never shows a game of its own.
 - **GIFs** come from the server of the space, with its key: whoever runs it
   sets `NOOK_KLIPY_KEY`, `NOOK_TENOR_KEY` or `NOOK_GIPHY_KEY`, and
@@ -340,6 +342,20 @@ trackpad pinch, zooms anywhere.
   for a screen or a window. On Windows it can share the system sound too. It
   also tells the page what game you are playing: `desktop/games.cjs` looks at
   the running programs every 15 seconds, while Settings lets it.
+- **Desktop updates:** the desktop app looks for a newer version in the
+  [GitHub releases](https://github.com/nookchat/nook-app/releases) at start
+  and every 4 hours (`desktop/updates.cjs`). On Windows and Linux it
+  downloads it, and the page offers Restart; if nobody restarts, it installs
+  on the next quit. macOS installs only an update signed by a known
+  developer, which this build is not, so there the page offers the download.
+
+To release, raise `version` in `package.json` and `desktop/package.json`, then
+build and publish from `desktop/` with a GitHub token:
+
+```sh
+GH_TOKEN=$(gh auth token) npx electron-builder --win --linux --x64 --publish always
+GH_TOKEN=$(gh auth token) npx electron-builder --mac dmg --x64 --arm64 --publish always
+```
 
 ```sh
 cd desktop && npm install

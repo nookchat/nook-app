@@ -4223,6 +4223,40 @@ input[type="range"].vp-volume {
   padding: 8px 8px 4px;
 }
 
+.menu-game {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 240px;
+  padding: 8px 8px 4px;
+}
+
+.settings-game .menu-game {
+  padding: 0;
+}
+
+.menu-game-art {
+  display: block;
+  width: 100%;
+  aspect-ratio: 460 / 215;
+  object-fit: cover;
+  border-radius: calc(var(--in-menu-radius) - 2px);
+  background: var(--surface-2);
+}
+
+.menu-game-words {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.menu-game-words .row {
+  gap: 5px;
+  color: var(--fg-dim);
+  font-weight: 500;
+}
+
 .menu-volume-label {
   color: var(--fg);
   font-size: 13px;

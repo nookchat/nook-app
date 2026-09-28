@@ -150,6 +150,7 @@ export class SpaceRuntime {
       // How long, not since when: the clocks of two devices differ.
       voiceFor: this.voice?.state.channel ? Math.max(0, Date.now() - this.voice.state.since) : undefined,
       playing: playingNow()?.name,
+      steam: playingNow()?.steam,
       playingFor: playingNow() ? Math.max(0, Date.now() - playingNow()!.since) : undefined,
       ...this.extras(),
     })

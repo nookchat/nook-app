@@ -13,7 +13,7 @@ import { mentionsMe } from './chat'
 import { checkSupport } from './diagnostics'
 import { startStreaming } from './net/files'
 import { watchPlaying } from './net/playing'
-import { watchForUpdates } from './net/updates'
+import { watchForDesktopUpdates, watchForUpdates } from './net/updates'
 import { warmEmoji } from './ui/emoji'
 import { clearLink, readLink, setLinkSecret } from './room'
 import { spaces } from './space/registry'
@@ -54,6 +54,7 @@ if (boot) {
 watchTheme()
 startStreaming()
 watchForUpdates()
+watchForDesktopUpdates()
 warmEmoji()
 
 interface Screen {

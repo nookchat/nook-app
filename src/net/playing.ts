@@ -13,6 +13,8 @@ export const GAME_NAME_MAX = 64
 
 export interface Playing {
   name: string
+  /** Its Steam app id, when it has one: the page shows Steam's picture of it. */
+  steam?: number
   /** When it started, by this device's clock. */
   since: number
 }
@@ -34,6 +36,16 @@ let started = false
 export function cleanGameName(value: unknown): string {
   if (typeof value !== 'string') return ''
   return value.replace(/[\p{Cc}\p{Cf}]/gu, '').trim().slice(0, GAME_NAME_MAX)
+}
+
+/** A Steam app id somebody sent, or undefined. */
+export function cleanSteamId(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : undefined
+}
+
+/** Steam's own picture of a game, 460 by 215. */
+export function steamPicture(steam: number): string {
+  return `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${steam}/header.jpg`
 }
 
 /** The desktop app can see games. */
@@ -77,7 +89,8 @@ export function watchPlaying(): void {
   desktop.onPlaying?.((next) => {
     const name = cleanGameName(next?.name)
     const was = now?.name ?? ''
-    now = name && showsPlaying() ? { name, since: typeof next?.since === 'number' ? next.since : Date.now() } : null
+    const since = typeof next?.since === 'number' ? next.since : Date.now()
+    now = name && showsPlaying() ? { name, steam: cleanSteamId(next?.steam), since } : null
     if ((now?.name ?? '') !== was) window.dispatchEvent(new Event(PLAYING_CHANGED))
   })
   window.addEventListener(PREFS_CHANGED, (ev) => {

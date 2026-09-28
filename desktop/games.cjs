@@ -50,39 +50,42 @@ const NOT_GAMES = new Set(
 )
 const NOT_GAME_PREFIXES = ['proton', 'steam linux runtime', 'steamlinuxruntime']
 
-/** Games that install outside a store's library, or have a better name than their folder. By program name. */
+/**
+ * Games that install outside a store's library, or have a better name than their
+ * folder. By program name. `steam` is the game's Steam app id, for its picture.
+ */
 const PROGRAMS = new Map([
-  ['overwatch', 'Overwatch 2'],
-  ['wow', 'World of Warcraft'],
-  ['wowclassic', 'World of Warcraft Classic'],
-  ['hearthstone', 'Hearthstone'],
-  ['diablo iv', 'Diablo IV'],
-  ['sc2', 'StarCraft II'],
-  ['sc2_x64', 'StarCraft II'],
-  ['cod', 'Call of Duty'],
-  ['robloxplayerbeta', 'Roblox'],
-  ['robloxplayer', 'Roblox'],
-  ['minecraft.windows', 'Minecraft'],
-  ['osu!', 'osu!'],
-  ['league of legends', 'League of Legends'],
-  ['leagueclient', 'League of Legends'],
-  ['valorant-win64-shipping', 'VALORANT'],
-  ['fortniteclient-win64-shipping', 'Fortnite'],
-  ['gta5', 'Grand Theft Auto V'],
-  ['gta5_enhanced', 'Grand Theft Auto V'],
-  ['rocketleague', 'Rocket League'],
-  ['r5apex', 'Apex Legends'],
-  ['r5apex_dx12', 'Apex Legends'],
-  ['cs2', 'Counter-Strike 2'],
-  ['dota2', 'Dota 2'],
-  ['eldenring', 'ELDEN RING'],
-  ['fallguys_client', 'Fall Guys'],
-  ['destiny2', 'Destiny 2'],
-  ['rainbowsix', 'Rainbow Six Siege'],
-  ['eurotrucks2', 'Euro Truck Simulator 2'],
-  ['terraria', 'Terraria'],
-  ['stardew valley', 'Stardew Valley'],
-  ['factorio', 'Factorio'],
+  ['overwatch', { name: 'Overwatch 2', steam: 2357570 }],
+  ['wow', { name: 'World of Warcraft' }],
+  ['wowclassic', { name: 'World of Warcraft Classic' }],
+  ['hearthstone', { name: 'Hearthstone' }],
+  ['diablo iv', { name: 'Diablo IV', steam: 2344520 }],
+  ['sc2', { name: 'StarCraft II' }],
+  ['sc2_x64', { name: 'StarCraft II' }],
+  ['cod', { name: 'Call of Duty', steam: 1938090 }],
+  ['robloxplayerbeta', { name: 'Roblox' }],
+  ['robloxplayer', { name: 'Roblox' }],
+  ['minecraft.windows', { name: 'Minecraft' }],
+  ['osu!', { name: 'osu!' }],
+  ['league of legends', { name: 'League of Legends' }],
+  ['leagueclient', { name: 'League of Legends' }],
+  ['valorant-win64-shipping', { name: 'VALORANT' }],
+  ['fortniteclient-win64-shipping', { name: 'Fortnite' }],
+  ['gta5', { name: 'Grand Theft Auto V', steam: 271590 }],
+  ['gta5_enhanced', { name: 'Grand Theft Auto V', steam: 3240220 }],
+  ['rocketleague', { name: 'Rocket League', steam: 252950 }],
+  ['r5apex', { name: 'Apex Legends', steam: 1172470 }],
+  ['r5apex_dx12', { name: 'Apex Legends', steam: 1172470 }],
+  ['cs2', { name: 'Counter-Strike 2', steam: 730 }],
+  ['dota2', { name: 'Dota 2', steam: 570 }],
+  ['eldenring', { name: 'ELDEN RING', steam: 1245620 }],
+  ['fallguys_client', { name: 'Fall Guys', steam: 1097150 }],
+  ['destiny2', { name: 'Destiny 2', steam: 1085660 }],
+  ['rainbowsix', { name: 'Rainbow Six Siege', steam: 359550 }],
+  ['eurotrucks2', { name: 'Euro Truck Simulator 2', steam: 227300 }],
+  ['terraria', { name: 'Terraria', steam: 105600 }],
+  ['stardew valley', { name: 'Stardew Valley', steam: 413150 }],
+  ['factorio', { name: 'Factorio', steam: 427520 }],
 ])
 
 const JAVA = /^javaw?(\.exe)?$/i
@@ -100,9 +103,10 @@ function isNotGame(folder) {
 }
 
 /**
- * The game among these programs, or null. `steamName` turns a Steam library and
- * one of its folders into the name Steam shows. `keep` wins when it still runs,
- * so two games at once do not take turns.
+ * The game among these programs, as { name, steam? }, or null. `steamName` turns
+ * a Steam library and one of its folders into { name, steam } as Steam knows
+ * the game. `keep` is a name that wins when it still runs, so two games at once
+ * do not take turns.
  */
 function gameIn(programs, steamName = () => null, keep = null) {
   const found = []
@@ -116,19 +120,18 @@ function gameIn(programs, steamName = () => null, keep = null) {
       continue
     }
     if (JAVA.test(path.win32.basename(exe)) && /minecraft/i.test(line)) {
-      found.push('Minecraft')
+      found.push({ name: 'Minecraft' })
       continue
     }
     for (const library of LIBRARIES) {
       const hit = library.exec(text)
       if (!hit || isNotGame(hit[1])) continue
       const steam = /steamapps[\\/]common[\\/]/i.test(hit[0])
-      found.push((steam && steamName(text.slice(0, hit.index + hit[0].search(/[\\/]common[\\/]/i)), hit[1])) || hit[1])
+      found.push((steam && steamName(text.slice(0, hit.index + hit[0].search(/[\\/]common[\\/]/i)), hit[1])) || { name: hit[1] })
       break
     }
   }
-  if (keep && found.includes(keep)) return keep
-  return found[0] ?? null
+  return found.find((game) => game.name === keep) ?? found[0] ?? null
 }
 
 /** Proton gives a Windows path to a Linux file: Z:\home\... is /home/... */
@@ -137,7 +140,7 @@ function localPath(p) {
   return p.slice(2).replace(/\\/g, '/')
 }
 
-/** Reads a Steam library's appmanifest files: the folder of each game, and its name. */
+/** Reads a Steam library's appmanifest files: the folder of each game, its name and its app id. */
 function readSteamNames(steamapps) {
   const names = new Map()
   let files = []
@@ -151,7 +154,8 @@ function readSteamNames(steamapps) {
       const text = fs.readFileSync(path.join(steamapps, file), 'utf8')
       const name = /"name"\s+"([^"]+)"/.exec(text)?.[1]
       const dir = /"installdir"\s+"([^"]+)"/.exec(text)?.[1]
-      if (name && dir) names.set(dir.toLowerCase(), name)
+      const steam = Number(/"appid"\s+"(\d+)"/.exec(text)?.[1]) || undefined
+      if (name && dir) names.set(dir.toLowerCase(), { name, steam })
     } catch {
       /* a manifest Steam is writing */
     }
@@ -234,7 +238,7 @@ async function listPrograms() {
   return out
 }
 
-/** Looks every few seconds and calls `onChange` with { name, since } or null. Stop with the returned function. */
+/** Looks every few seconds and calls `onChange` with { name, steam?, since } or null. Stop with the returned function. */
 function watchGames(onChange) {
   const steamName = steamNamer()
   let now = null
@@ -244,9 +248,9 @@ function watchGames(onChange) {
   const look = async () => {
     const programs = await listPrograms()
     if (stopped) return
-    const name = gameIn(programs, steamName, now?.name ?? null)
-    if (name !== (now?.name ?? null)) {
-      now = name ? { name, since: Date.now() } : null
+    const game = gameIn(programs, steamName, now?.name ?? null)
+    if ((game?.name ?? null) !== (now?.name ?? null)) {
+      now = game ? { ...game, since: Date.now() } : null
       onChange(now)
     }
     timer = setTimeout(look, POLL_MS)

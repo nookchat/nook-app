@@ -1,11 +1,12 @@
 // Nook for the desktop. The window loads the web app from its home, so invite
 // links point at the same place as on the web and the service worker works.
 // The shell adds what a browser tab cannot: a picker for a screen or a window,
-// the system sound on Windows, and the game you are playing.
+// the system sound on Windows, the game you are playing, and updates of itself.
 
 const { app, BrowserWindow, desktopCapturer, ipcMain, nativeTheme, session, shell } = require('electron')
 const path = require('node:path')
 const { watchGames } = require('./games.cjs')
+const { watchUpdates } = require('./updates.cjs')
 
 app.setName('Nook')
 
@@ -96,6 +97,10 @@ function createWindow() {
   })
   main.on('closed', () => {
     main = null
+  })
+  // The page holds the window open during a call. A restart into an update it asked for goes anyway.
+  main.webContents.on('will-prevent-unload', (ev) => {
+    if (installing) ev.preventDefault()
   })
   const tell = (channel, value) => main && main.webContents.send(channel, value)
   main.on('maximize', () => tell('window:maximized', true))
@@ -197,6 +202,24 @@ ipcMain.on('games:watch', (ev, on) => {
   }
 })
 
+// A newer desktop app: the page offers it, and says when to restart into it.
+let updates = null
+let installing = false
+
+function tellUpdate(offer) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (isHome(win.webContents.getURL())) win.webContents.send('update:offer', offer)
+  }
+}
+
+ipcMain.handle('update:now', (ev) => (isHome(ev.sender.getURL()) ? (updates?.now() ?? null) : null))
+ipcMain.handle('app:version', () => app.getVersion())
+ipcMain.on('update:install', (ev) => {
+  if (!isHome(ev.sender.getURL()) || !updates) return
+  if (updates.now()?.ready) installing = true
+  updates.install()
+})
+
 ipcMain.on('window:control', (ev, action) => {
   const win = BrowserWindow.fromWebContents(ev.sender)
   if (!win) return
@@ -249,6 +272,7 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     setUpSession()
     createWindow()
+    updates = watchUpdates(tellUpdate)
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
     })

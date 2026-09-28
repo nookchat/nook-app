@@ -11,6 +11,7 @@ import { avatarOf } from './chat-panel'
 import { clear, copyText, h } from './dom'
 import { openEmojiPicker, quickReactions, setQuickReactions } from './emoji'
 import { icon } from './icons'
+import { gameCard } from './game-card'
 import { enterLinkCode, lastBackup, showBackup, showLinkCode } from './link-device'
 import { askNotify, notifyState, stopNotify } from './notify'
 import { setSounds, soundsOn } from './sounds'
@@ -366,16 +367,19 @@ export function settingsView(actions: SettingsActions): HTMLElement {
       label: 'Activity',
       icon: 'game',
       build: () => {
-        const now = h('div', { class: 'tiny faint' })
+        const now = h('div', { class: 'tiny faint settings-game' })
         const paintNow = (): void => {
           const game = playingNow()
-          now.textContent = !seesGames()
-            ? 'Nook finds the game in the desktop app. A browser cannot see your other programs.'
-            : !showsPlaying()
-              ? 'Nobody sees what you play.'
-              : game
-                ? `Now: Playing ${game.name}`
+          clear(now)
+          // What the others see, the same card as in your menu for them.
+          if (seesGames() && showsPlaying() && game) now.append(gameCard(game))
+          else {
+            now.textContent = !seesGames()
+              ? 'Nook finds the game in the desktop app. A browser cannot see your other programs.'
+              : !showsPlaying()
+                ? 'Nobody sees what you play.'
                 : 'No game is running now.'
+          }
         }
         const onPlaying = (): void => {
           if (now.isConnected) paintNow()
