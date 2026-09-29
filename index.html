@@ -17,7 +17,7 @@
           if (saved === 'light' || saved === 'dark') root.dataset.theme = saved
         } catch (e) {}
         var dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches
-        document.querySelector('meta[name="theme-color"]').content = dark ? '#15131F' : '#FBF7EF'
+        document.querySelector('meta[name="theme-color"]').content = dark ? '#0D0D0F' : '#FBF7EF'
       })()
     </script>
     <meta
@@ -48,10 +48,10 @@
          The colours are the brand tokens (src/brand/tokens.css) for each theme. The ghost does the
          moving, as the brand's motion rules say: it peeks in, then floats and blinks. src/ui/boot.ts
          moves the bar through the real steps of the start, and takes the screen away. */
-      :root { --boot-page: #FBF7EF; --boot-brand: #1E1B2E; --boot-on-brand: #FBF7EF; --boot-track: #E8E1D3; --boot-words: #6E6984; }
-      :root[data-theme="dark"] { --boot-page: #15131F; --boot-brand: #FBF7EF; --boot-on-brand: #1E1B2E; --boot-track: #332E47; --boot-words: #A7A1BD; }
+      :root { --boot-page: #FBF7EF; --boot-brand: #151518; --boot-on-brand: #FBF7EF; --boot-track: #E8E1D3; --boot-words: #6B6760; }
+      :root[data-theme="dark"] { --boot-page: #0D0D0F; --boot-brand: #FBF7EF; --boot-on-brand: #151518; --boot-track: #2B2B2F; --boot-words: #A4A19B; }
       @media (prefers-color-scheme: dark) {
-        :root:not([data-theme="light"]) { --boot-page: #15131F; --boot-brand: #FBF7EF; --boot-on-brand: #1E1B2E; --boot-track: #332E47; --boot-words: #A7A1BD; }
+        :root:not([data-theme="light"]) { --boot-page: #0D0D0F; --boot-brand: #FBF7EF; --boot-on-brand: #151518; --boot-track: #2B2B2F; --boot-words: #A4A19B; }
       }
       html, body { margin: 0; background: var(--boot-page); }
       #boot {

@@ -6,6 +6,7 @@ import {
   cleanAvatar,
   cleanSpacePicture,
   cleanChannel,
+  cleanOrder,
   cleanNoteTitle,
   cleanFiles,
   DEFAULT_CHANNEL,
@@ -287,6 +288,13 @@ export class RoomChat {
   /** Keeps a channel to these levels. None opens it to everybody. */
   setChannelLevels(name: string, levels: string[], voice = false): Promise<LogEvent> {
     const body: Record<string, unknown> = { name: cleanChannel(name), levels }
+    if (voice) body.voice = true
+    return this.write('channel', body)
+  }
+
+  /** Puts the channels in this order, for everybody. Channels it does not name go after, by name. */
+  orderChannels(names: string[], voice = false): Promise<LogEvent> {
+    const body: Record<string, unknown> = { order: cleanOrder(names) }
     if (voice) body.voice = true
     return this.write('channel', body)
   }

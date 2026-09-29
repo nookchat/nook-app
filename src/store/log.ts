@@ -31,7 +31,7 @@ export type Role = string
 export type Permission = 'channels' | 'pin' | 'delete' | 'remove' | 'move' | 'soundboard' | 'levels' | 'space'
 
 export const PERMISSIONS: { id: Permission; label: string; about: string }[] = [
-  { id: 'channels', label: 'Channels', about: 'Make, rename and delete channels' },
+  { id: 'channels', label: 'Channels', about: 'Make, rename, order and delete channels' },
   { id: 'pin', label: 'Pin messages', about: 'Hold a message up at the top of a channel' },
   { id: 'delete', label: 'Delete messages', about: 'Take down what anybody wrote' },
   { id: 'remove', label: 'Remove people', about: 'Remove somebody, or let them back in' },
@@ -514,11 +514,17 @@ export class RoomLog {
     const levels = new Map<string, string[]>()
     const gone = new Set<string>()
     const auth = this.authority()
+    /** The newest order somebody who keeps the channels put them in. */
+    let order: string[] = []
 
     for (const e of this.all()) {
       if (e.kind === 'channel') {
         if (!auth.can(e.author, 'channels')) continue
         if ((e.body.voice === true) !== voice) continue
+        if (Array.isArray(e.body.order)) {
+          order = cleanOrder(e.body.order)
+          continue
+        }
         const name = cleanChannel(String(e.body.name ?? ''))
         if (!name) continue
         names.add(name)
@@ -539,9 +545,12 @@ export class RoomLog {
     // Everybody lands in the default channels, so they stay open to all.
     levels.delete(defaultName)
 
+    // In the order they were put in, and any channel it does not name after them, by name.
+    const place = new Map(order.map((name, at) => [name, at]))
+    const rank = (name: string): number => place.get(name) ?? Number.MAX_SAFE_INTEGER
     return [...names]
       .filter((name) => !gone.has(name))
-      .sort()
+      .sort((a, b) => rank(a) - rank(b) || (a < b ? -1 : a > b ? 1 : 0))
       .map((name) => ({ name, label: label.get(name) || name, topic: topic.get(name) ?? '', levels: levels.get(name) ?? [] }))
   }
 
@@ -876,6 +885,19 @@ export function oneEmoji(raw: string): string {
     break
   }
   return out
+}
+
+/** The most channels an order names. */
+export const MAX_ORDER = 200
+
+/** Channel names, each once, in the order given. */
+export function cleanOrder(raw: unknown[]): string[] {
+  const out = new Set<string>()
+  for (const one of raw.slice(0, MAX_ORDER)) {
+    const name = typeof one === 'string' ? cleanChannel(one) : ''
+    if (name) out.add(name)
+  }
+  return [...out]
 }
 
 export function cleanChannel(raw: string): string {

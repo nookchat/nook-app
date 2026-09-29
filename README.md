@@ -47,7 +47,14 @@ with voice does it.
   are in one call at a time, and joining and leaving make a sound.
 - **Voice**: click a voice channel to join it. The voice bar has the
   microphone, Share screen, and Leave. Somebody who is sharing has a LIVE badge
-  in the voice channel, and a click on it watches them.
+  in the voice channel, and a click on it watches them. A share that starts
+  makes a sound, for whoever shares and for the others in their voice channel.
+- **Channel order**: somebody whose level has Channels drags a text or voice
+  channel to a new place, or uses Move up and Move down in its menu, and
+  everybody sees that order. A channel made later goes at the end. Every
+  device ignores an order from somebody without Channels.
+- **Video controls** show while the pointer moves over a playing video or a
+  stream, and go when it rests.
 - **Files**: the clip in the box, a file dropped on the conversation, or one
   pasted in. Each is encrypted on your device with a key of its own before it
   goes up. Pictures show in the message and open full screen; videos show
@@ -187,7 +194,7 @@ with the QR decoder built into Chrome.
 ## Look
 
 Nook follows the brand in `nook-brand/` (read `nook-brand/STYLE_GUIDE.md`).
-Warm cream by day, deep night after dark, and a small ghost at the heart of it.
+Warm cream by day, near-black charcoal after dark, and a small ghost at the heart of it.
 The channels are on the left under the switcher, the conversation is in the
 middle, and who is here is on the right.
 
@@ -329,8 +336,9 @@ test/
 | `+` `-` | Zoom in and out |
 | `Esc` | Take every share off your screen. In fullscreen it also leaves fullscreen |
 
-Double click switches between fit and actual size. Control plus the wheel, or a
-trackpad pinch, zooms anywhere.
+Double click on the picture switches between fit and actual size. Control plus
+the wheel, a trackpad pinch, or `+` and `-`, zooms from any fit. At actual size,
+the bar has Zoom out, Zoom in and Reset.
 
 ## Keyboard, anywhere in a space
 
@@ -390,8 +398,10 @@ Set `NOOK_URL` to point the shell at another home.
 The emoji pictures are [Twemoji](https://github.com/jdecked/twemoji), by
 Twitter and its contributors, under [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 
-The app's sounds (joining, leaving, a message, a mention, a call ringing, mute
-and deafen) are from [Interface Sounds](https://kenney.nl/assets/interface-sounds)
-by Kenney, under [CC0](https://creativecommons.org/publicdomain/zero/1.0/). They
-are in `public/sounds`, with Kenney's licence.
+The app's sounds (joining, leaving, a message, a mention, a call ringing, mute,
+deafen and a share that starts) are Google's
+[Material Design sound resources](https://m2.material.io/design/sound/sound-resources.html),
+under [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/), brought to the
+same loudness. They are in `public/sounds`, with the licence and the name of
+each one.
 They are Twemoji 17, from its GitHub release, as the `twemoji-art` package.

@@ -239,12 +239,13 @@ export function videoPlayer(label: string, knownDuration = 0): VideoPlayer {
     wake()
   })
 
-  // The bar hides while the video plays and the pointer rests.
+  // The bar shows while the pointer moves over a playing video, and hides when it rests. It
+  // stays while the pointer is on the bar itself, or a control there has the keyboard's focus.
   let hideTimer: number | null = null
   function armHide(): void {
     if (hideTimer !== null) window.clearTimeout(hideTimer)
     hideTimer = window.setTimeout(() => {
-      if (video.paused || dragging || bar.contains(document.activeElement) || bar.matches(':hover')) return
+      if (video.paused || dragging || bar.matches(':hover') || bar.querySelector(':focus-visible')) return
       root.classList.add('idle')
     }, HIDE_AFTER_MS)
   }
@@ -252,7 +253,15 @@ export function videoPlayer(label: string, knownDuration = 0): VideoPlayer {
     root.classList.remove('idle')
     if (!video.paused) armHide()
   }
-  root.addEventListener('pointermove', wake)
+  // A pointer that rests is sent a move when the page scrolls under it: only a real move wakes the bar.
+  let lastX = NaN
+  let lastY = NaN
+  root.addEventListener('pointermove', (ev) => {
+    if (Math.abs(ev.clientX - lastX) < 2 && Math.abs(ev.clientY - lastY) < 2) return
+    lastX = ev.clientX
+    lastY = ev.clientY
+    wake()
+  })
   root.addEventListener('pointerdown', wake)
   root.addEventListener('pointerleave', () => {
     if (!video.paused && !dragging) root.classList.add('idle')

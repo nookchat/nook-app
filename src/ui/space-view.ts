@@ -47,7 +47,7 @@ import { filesFor, isCallChannel, type SpaceRuntime } from '../space/runtime'
 import { spaces } from '../space/registry'
 import { spaceFace, switcherButton } from './space-switcher'
 import { voiceDock } from './call'
-import { chirpMention, chirpMessage, isNews, speak } from './sounds'
+import { chirpMention, chirpMessage, chirpStream, isNews, speak } from './sounds'
 import type { LinkQuality } from '../net/voice'
 import { CUSTOM, CUSTOM_MAX_S, decodeClip, openSoundboard, playClip, type Sound } from './soundboard'
 import { ask, askChannel, askSound, pickSome } from './ask'
@@ -229,6 +229,8 @@ function gifCell(g: Gif): HTMLVideoElement | HTMLImageElement {
 
 /** What a share from outside voice is kept under: no channel name can be this. */
 const NO_VOICE = '*'
+/** A share heard of this soon after it started has just started, and plays its sound. */
+const SHARE_NEW_MS = 10_000
 
 export class SpaceView {
   private readonly root: HTMLElement
@@ -249,6 +251,8 @@ export class SpaceView {
   private channel = DEFAULT_CHANNEL
   /** The channel you were in before a reload or a restart, opened once it has loaded. */
   private wantChannel: string | null = null
+  /** The channel being dragged to a new place. Its list is not drawn again until the drag ends. */
+  private channelDrag: { name: string; voice: boolean } | null = null
   private drawQueued = false
   readonly locked: boolean
   readonly server: string
@@ -266,6 +270,8 @@ export class SpaceView {
   private settingsOpen: 'user' | 'space' | null = null
 
   private capture: ScreenCapture | null = null
+  /** When this page's share started, by this clock. */
+  private sharedAt = 0
   private mixer: AudioMixer | null = null
   private outStream: MediaStream | null = null
   private readonly watchers = new Map<string, HostPeer>()
@@ -416,6 +422,8 @@ export class SpaceView {
     space.extras = () => ({
       // The voice channel, or true for a share from outside voice.
       sharing: this.capture ? (this.voice?.state.channel ?? true) : undefined,
+      // How long, not since when: the clocks of two devices differ.
+      sharingFor: this.capture ? Math.max(0, Date.now() - this.sharedAt) : undefined,
       watching: this.watchingAnyone()
         ? [...this.watched.keys()].filter((id) => id !== this.selfId)
         : undefined,
@@ -687,6 +695,7 @@ export class SpaceView {
     const wasSharing = this.sharers.get(from)
     if (sharing) this.sharers.set(from, sharing)
     else this.sharers.delete(from)
+    if (sharing && !wasSharing && this.shareIsNew(sharing, data.sharingFor)) chirpStream()
 
     const key = this.keyOf(from)
     const wasUpdating = this.updatingBy.get(key)
@@ -1043,6 +1052,7 @@ export class SpaceView {
     if (!this.chat?.can('channels')) return [mute]
     const items: MenuItem[] = [
       mute,
+      ...this.moveItems(channel.name, false),
       {
         label: 'Rename',
         note: `Shown instead of ${channel.name}`,
@@ -1085,6 +1095,7 @@ export class SpaceView {
   /** For whoever can change channels: the name, who may join, and, but for the default one, delete. */
   private voiceChannelActions(channel: ChannelInfo): MenuItem[] {
     const items: MenuItem[] = [
+      ...this.moveItems(channel.name, true),
       {
         label: 'Rename',
         note: `Shown instead of ${channel.name}`,
@@ -2292,6 +2303,7 @@ export class SpaceView {
   }
 
   private renderChannels(): void {
+    if (this.channelDrag && !this.channelDrag.voice) return
     const chat = this.chat
     clear(this.channelList)
     const canEdit = chat?.can('channels') === true
@@ -2341,9 +2353,88 @@ export class SpaceView {
       more.append(icon('more', 17))
       const railRow = h('div', { class: 'row rail-row' }, [open, more])
       onContextMenu(railRow, () => this.channelActions(channel))
+      if (canEdit) this.orderByHand(railRow, name, false)
       this.channelList.append(railRow)
     }
     this.mentions = mentions
+  }
+
+  /** Somebody who keeps the channels drags one to a new place in its list, for everybody. */
+  private orderByHand(row: HTMLElement, name: string, voice: boolean): void {
+    row.draggable = true
+    row.dataset.channel = name
+    const unmark = (): void => row.classList.remove('drop-before', 'drop-after')
+    const after = (ev: DragEvent): boolean => {
+      const box = row.getBoundingClientRect()
+      return ev.clientY > box.top + box.height / 2
+    }
+    const mine = (): boolean => !!this.channelDrag && this.channelDrag.voice === voice && this.channelDrag.name !== name
+    row.addEventListener('dragstart', (ev) => {
+      this.channelDrag = { name, voice }
+      if (ev.dataTransfer) {
+        ev.dataTransfer.effectAllowed = 'move'
+        ev.dataTransfer.setData('text/plain', name)
+      }
+      row.classList.add('dragging')
+    })
+    row.addEventListener('dragend', () => {
+      this.channelDrag = null
+      this.draw()
+    })
+    row.addEventListener('dragover', (ev) => {
+      if (!mine()) return
+      ev.preventDefault()
+      if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'move'
+      const below = after(ev)
+      row.classList.toggle('drop-after', below)
+      row.classList.toggle('drop-before', !below)
+    })
+    row.addEventListener('dragleave', (ev) => {
+      if (!(ev.relatedTarget instanceof Node && row.contains(ev.relatedTarget))) unmark()
+    })
+    row.addEventListener('drop', (ev) => {
+      unmark()
+      const dragged = this.channelDrag
+      if (!dragged || !mine()) return
+      ev.preventDefault()
+      this.channelDrag = null
+      this.moveChannel(dragged.name, voice, name, after(ev))
+    })
+  }
+
+  /** Puts a channel just before or after another one, or up and down one place with no target. */
+  private moveChannel(name: string, voice: boolean, target: string | number, below = false): void {
+    const chat = this.chat
+    if (!chat?.can('channels')) return
+    const names = chat.channelInfo(voice).map((c) => c.name)
+    const from = names.indexOf(name)
+    if (from < 0) return
+    names.splice(from, 1)
+    let to: number
+    if (typeof target === 'number') to = Math.max(0, Math.min(names.length, from + target))
+    else {
+      const at = names.indexOf(target)
+      if (at < 0) return
+      to = below ? at + 1 : at
+    }
+    names.splice(to, 0, name)
+    if (to === from) {
+      this.draw()
+      return
+    }
+    void this.publish((c) => c.orderChannels(names, voice))
+  }
+
+  /** Move up and Move down, for a channel's menu: a drag is not there on a touch screen. */
+  private moveItems(name: string, voice: boolean): MenuItem[] {
+    const names = this.chat?.channelInfo(voice).map((c) => c.name) ?? []
+    const at = names.indexOf(name)
+    const items: MenuItem[] = []
+    if (at > 0) items.push({ label: 'Move up', lead: h('span', { class: 'menu-icon' }, [icon('arrow-up', 16)]), run: () => this.moveChannel(name, voice, -1) })
+    if (at >= 0 && at < names.length - 1) {
+      items.push({ label: 'Move down', lead: h('span', { class: 'menu-icon' }, [icon('arrow-down', 16)]), run: () => this.moveChannel(name, voice, 1) })
+    }
+    return items
   }
 
   private renderThreads(): void {
@@ -2372,6 +2463,10 @@ export class SpaceView {
   }
 
   private renderVoice(): void {
+    if (this.channelDrag?.voice) {
+      this.renderVoiceBar()
+      return
+    }
     const chat = this.chat
     clear(this.voiceList)
     this.newVoiceButton.classList.toggle('hidden', !chat?.can('channels'))
@@ -2414,6 +2509,7 @@ export class SpaceView {
       })
       if (canEdit) onContextMenu(head, () => this.voiceChannelActions(channel))
       const row = h('div', { class: 'voice-channel' }, [head])
+      if (canEdit) this.orderByHand(row, name, true)
       for (const [key, ids] of people) {
         row.append(this.voiceMember(key, ids, peers, names.get(key) ?? '', avatars.get(key) ?? ''))
       }
@@ -3376,9 +3472,20 @@ export class SpaceView {
       }
     })
 
+    this.sharedAt = Date.now()
+    chirpStream()
     this.showOwnPreview()
     this.announceMe()
     this.draw()
+  }
+
+  /**
+   * A share that has just started, in your voice channel or outside voice, plays a sound. One
+   * that was already going when this page first heard of it does not.
+   */
+  private shareIsNew(where: string, lasted: unknown): boolean {
+    if (typeof lasted !== 'number' || !Number.isFinite(lasted) || lasted > SHARE_NEW_MS) return false
+    return where === NO_VOICE || where === this.voice?.state.channel
   }
 
   private stopSharing(): void {

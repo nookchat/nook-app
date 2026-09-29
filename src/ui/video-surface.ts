@@ -223,12 +223,27 @@ export class VideoSurface {
     this.resizeObserver.observe(this.root)
   }
 
+  /** On the bar or the sound prompt, not the picture: their clicks are their own. */
+  private onControls(ev: Event): boolean {
+    return ev.target instanceof Element && ev.target.closest('.surface-bar, .sound-prompt') !== null
+  }
+
   private bindPointer(): void {
-    this.root.addEventListener('pointermove', () => this.showBar())
+    // A pointer that rests is sent a move when the page scrolls under it: only a real move shows the bar.
+    let restX = NaN
+    let restY = NaN
+    this.root.addEventListener('pointermove', (ev) => {
+      if (Math.abs(ev.clientX - restX) < 2 && Math.abs(ev.clientY - restY) < 2) return
+      restX = ev.clientX
+      restY = ev.clientY
+      this.showBar()
+    })
     this.root.addEventListener('pointerleave', () => this.armAutoHide(600))
     this.root.addEventListener('pointerdown', () => this.showBar())
 
-    this.root.addEventListener('dblclick', () => {
+    // Two quick presses of Zoom in are two zooms, not a double click on the picture.
+    this.root.addEventListener('dblclick', (ev) => {
+      if (this.onControls(ev)) return
       this.setMode(this.mode === 'actual' ? 'fit' : 'actual')
     })
 
@@ -244,8 +259,9 @@ export class VideoSurface {
       { passive: false },
     )
 
+    // A drag holds the pointer, and the click then goes to the picture: never from a button.
     this.root.addEventListener('pointerdown', (ev) => {
-      if (this.mode !== 'actual' || ev.button !== 0) return
+      if (this.mode !== 'actual' || ev.button !== 0 || this.onControls(ev)) return
       this.dragging = true
       this.dragId = ev.pointerId
       this.lastX = ev.clientX
@@ -275,6 +291,7 @@ export class VideoSurface {
 
   private bindKeys(): void {
     this.root.addEventListener('keydown', (ev) => {
+      this.showBar()
       switch (ev.key.toLowerCase()) {
         case 'f':
           ev.preventDefault()
@@ -365,6 +382,8 @@ export class VideoSurface {
   }
 
   private zoomBy(factor: number): void {
+    // From Fit or Fill, as a pinch does: zooming is at actual size.
+    if (this.mode !== 'actual') this.setMode('actual')
     const box = this.root.getBoundingClientRect()
     this.zoomAt(factor, box.left + box.width / 2, box.top + box.height / 2, box)
   }
@@ -416,7 +435,8 @@ export class VideoSurface {
     if (this.hideTimer !== null) window.clearTimeout(this.hideTimer)
     this.hideTimer = window.setTimeout(() => {
       if (this.destroyed || this.dragging) return
-      if (this.root.contains(document.activeElement)) return
+      // A click on the picture gives it the focus, and must not keep the bar up for good.
+      if (this.bar.matches(':hover') || this.bar.querySelector(':focus-visible')) return
       this.root.classList.add('hide-bar')
     }, delay)
   }

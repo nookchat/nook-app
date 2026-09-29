@@ -333,7 +333,7 @@ export function settingsView(actions: SettingsActions): HTMLElement {
       icon: 'sun',
       build: () =>
         h('div', { class: 'stack settings-stack' }, [
-          card('Theme', note('Cream by day, deep night after dark. System follows your device.'), themeChoice()),
+          card('Theme', note('Cream by day, charcoal after dark. System follows your device.'), themeChoice()),
         ]),
     },
     {

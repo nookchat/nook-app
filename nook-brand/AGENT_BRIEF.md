@@ -41,7 +41,7 @@ nook-brand/
    - Pinned messages: a short card with the words (3 lines at most) and a line for any files. Never play media in it; a click goes to the message.
 7. **Inbox.** Rows per STYLE_GUIDE (avatar 44px on `accent-soft`, presence dot, unread badge, receipts before your own last message). Empty inbox: centred `<NookGhost mood="idle" size={96} />` + short line in `text-title` + primary button.
 8. **States.** Offline / reconnecting banner uses `<NookGhost mood="sleeping" size={24} />` + text on `surface-2`. Mentions trigger `entrance="wiggle"` on the ghost in the tab bar.
-9. **App icons + meta.** Replace favicon and app icons from `logo/png` + `logo/favicon.ico`. PWA manifest: `app-icon-maskable-512.png` with `"purpose": "maskable"`, rounded 512/192 as `"any"`; `theme_color` #1E1B2E, `background_color` #FBF7EF. `apple-touch-icon` = `app-icon-180.png`.
+9. **App icons + meta.** Replace favicon and app icons from `logo/png` + `logo/favicon.ico`. PWA manifest: `app-icon-maskable-512.png` with `"purpose": "maskable"`, rounded 512/192 as `"any"`; `theme_color` #151518, `background_color` #FBF7EF. `apple-touch-icon` = `app-icon-180.png`.
 10. **Check.** Both themes on every screen, keyboard focus visible everywhere (2px focus-ring, 2px offset), 44px hit areas, `prefers-reduced-motion` stops the loops, only one animated ghost on screen at a time.
 
 ## Don'ts

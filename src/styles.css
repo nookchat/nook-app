@@ -25,11 +25,11 @@
   --line: var(--border);
   --line-soft: var(--border);
 
-  /* Every ink clears 4.5:1 on every surface: test/polish.test.mjs. Muted text, online and warning
-     take a touch of the text colour, because the plain token falls just short on surface-2. */
+  /* Every ink clears 4.5:1 on every surface: test/polish.test.mjs. Online and warning take a
+     touch of the text colour, because the plain token falls just short on surface-2. */
   --fg: var(--text-primary);
   --fg-dim: var(--text-secondary);
-  --fg-faint: color-mix(in srgb, var(--text-muted) 96%, var(--text-primary));
+  --fg-faint: var(--text-muted);
   --fg-disabled: color-mix(in srgb, var(--text-muted) 60%, transparent);
   --heading: var(--text-secondary);
 
@@ -6412,4 +6412,20 @@ input.invalid:focus {
 
 #nook-titlebar .controls button:active {
   transform: none;
+}
+
+/* A channel dragged to a new place: a line where it would go. */
+.rail-row.dragging,
+.voice-channel.dragging {
+  opacity: 0.5;
+}
+
+.rail-row.drop-before,
+.voice-channel.drop-before {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.rail-row.drop-after,
+.voice-channel.drop-after {
+  box-shadow: inset 0 -2px 0 var(--accent);
 }

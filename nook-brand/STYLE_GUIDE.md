@@ -1,6 +1,6 @@
 # Nook
 
-A cozy corner to talk. Nook is a messenger with a small, friendly ghost at its heart: warm cream and deep night surfaces, one ember hot spot per screen, and a mascot that floats, blinks and types along with you.
+A cozy corner to talk. Nook is a messenger with a small, friendly ghost at its heart: warm cream and near-black charcoal surfaces, one ember hot spot per screen, and a mascot that floats, blinks and types along with you.
 
 This system covers light and dark themes, the bubble-ghost logo, the icon set, the ghost's motion vocabulary, and the core chat components (message rows, composer, typing indicator, list rows, buttons).
 
@@ -38,13 +38,13 @@ The mark is the **bubble ghost**: a ghost whose scalloped hem ends in a speech-b
 
 Two themes, same token names. Everything is semantic: build with `surface-*`, `text-*`, `brand`, `accent`, never raw hex.
 
-- **Light** is cream (`surface-0` #FBF7EF) with ink (#1E1B2E) type and ghost.
-- **Dark** is deep night (`surface-0` #15131F) with a cream ghost. `brand` and `on-brand` **swap** between themes, so a ghost drawn with `brand`/`on-brand` is always the highest-contrast shape on screen.
+- **Light** is cream (`surface-0` #FBF7EF) with ink (#151518) type and ghost.
+- **Dark** is near-black charcoal (`surface-0` #0D0D0F) with a cream ghost. `brand` and `on-brand` **swap** between themes, so a ghost drawn with `brand`/`on-brand` is always the highest-contrast shape on screen.
 - **Ember** (`accent` #FF8A5B) is the one hot spot: the ghost's cheeks, the send button, unread badges, a message that names you. One accent element per region. Ember is a fill: text on it is always `on-accent` (ink, 7:1). When ember must be text or a link, use `accent-text`.
 - **Messages** sit straight on `surface-0` in `text-primary`, yours and theirs alike. A hovered message takes a 6% `text-primary` wash. A message that names you takes a 70% `accent-soft` wash and a 2px `accent` bar on its left edge.
 - **Panes:** the channel rail and the member list are `surface-1` with a `border` line, on the `surface-0` page. The conversation is the page itself.
 - **Status:** `online`, `danger`, `warning` are always paired with an icon or label. The presence dot also has a surface-coloured ring so it reads as a shape.
-- **Contrast:** text must be 4.5:1+ on `surface-0`, `surface-1` and `surface-2` in both themes; `border-strong`, `focus-ring` and icons are 3:1+. `border` is decorative only. In light, `text-muted`, `online` and `warning` fall just short on `surface-2`, so as text they take a little `text-primary` (96%, 88% and 94% of the token). A level colour picked by a space takes 45% of its colour and 55% `text-primary` as text in light, and stays as it is in dark.
+- **Contrast:** text must be 4.5:1+ on `surface-0`, `surface-1` and `surface-2` in both themes; `border-strong`, `focus-ring` and icons are 3:1+. `border` is decorative only. In light, `online` and `warning` fall just short on `surface-2`, so as text they take a little `text-primary` (88% and 94% of the token). A level colour picked by a space takes 45% of its colour and 55% `text-primary` as text in light, and stays as it is in dark.
 
 Theme switching: set `data-theme="light"` or `"dark"` on `<html>`; with no attribute the OS preference wins. Offer System / Light / Dark in settings (sun and moon icons).
 
