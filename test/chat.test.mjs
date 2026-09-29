@@ -1,4 +1,4 @@
-import { APP_URL, FAKE_MEDIA, check, finish, launch, stoppedEarly } from './harness.mjs'
+import { APP_URL, FAKE_MEDIA, answer, check, finish, launch, stoppedEarly } from './harness.mjs'
 
 const openSearch = (page) =>
   page.evaluate(() => {
@@ -162,8 +162,8 @@ try {
   )
   check('a member is not offered the channel button', plusHidden)
 
-  alice.once('dialog', (d) => d.accept('random'))
   await alice.click('.rail-left button[title="Make a text channel"]')
+  await answer(alice, 'random')
   await alice.waitForFunction(() => document.querySelector('.space-head .channel-name')?.textContent === 'random', null, { timeout: 10_000 })
   await alice.click('.rail-left .rail-item:has-text("general")')
   await bob.click('.rail-left .rail-item:has-text("random")')

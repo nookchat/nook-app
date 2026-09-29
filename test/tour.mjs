@@ -1,5 +1,5 @@
 import { mkdirSync } from 'node:fs'
-import { APP_URL, FAKE_MEDIA, launch, wait } from './harness.mjs'
+import { APP_URL, FAKE_MEDIA, answer, launch, wait } from './harness.mjs'
 
 const OUT = new URL('../test-output/tour/', import.meta.url).pathname
 mkdirSync(OUT, { recursive: true })
@@ -53,8 +53,8 @@ try {
   const link = ada.url()
 
   for (const [voice, name] of [[false, 'design'], [false, 'releases'], [true, 'Lounge']]) {
-    ada.once('dialog', (d) => void d.accept(name))
     await ada.click(voice ? 'button[title="Make a voice channel"]' : 'button[title="Make a text channel"]')
+    await answer(ada, name)
     await wait(300)
   }
   await ada.click('.rail-item:has-text("general")').catch(() => undefined)

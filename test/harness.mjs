@@ -39,6 +39,14 @@ export function finish() {
   process.exit(failed || process.exitCode ? 1 : 0)
 }
 
+/** Types an answer into Nook's own question box, which stands in for window.prompt. */
+export async function answer(page, text) {
+  const box = page.locator('.ask-modal .ask-input')
+  await box.waitFor({ timeout: 10_000 })
+  await box.fill(text)
+  await box.press('Enter')
+}
+
 export async function launch({ args = [], named = true, ...options } = {}) {
   const browser = await chromium.launch({ executablePath: CHROME, headless: HEADLESS, args, ...options })
   return named ? nameEveryone(browser) : browser

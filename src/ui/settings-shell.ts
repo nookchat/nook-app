@@ -29,7 +29,7 @@ export function settingsShell(options: ShellOptions): HTMLElement {
 
   const onEscape = (ev: KeyboardEvent): void => {
     if (ev.key !== 'Escape' || ev.defaultPrevented) return
-    if (document.querySelector('.scrim, .menu, .emoji-picker, .emoji-pop, .viewer, .gif-pop')) return
+    if (document.querySelector('.scrim, .menu, .emoji-picker, .emoji-pop, .viewer, .gif-pop, .shortcut-row.recording')) return
     close()
   }
   const close = (): void => {

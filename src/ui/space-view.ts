@@ -62,13 +62,14 @@ import {
   type Sound,
   warmSounds,
 } from './soundboard'
+import { ask } from './ask'
 import { avatarOf, ChatPanel, imageLinks } from './chat-panel'
 import { clear, copyText, fmtKbps, h, onPress, roleInk } from './dom'
 import { forHowLong, gameCard } from './game-card'
 import { ghost } from './ghost'
 import { icon } from './icons'
 import { closeMenu, onContextMenu, openMenu, type MenuItem, type MenuEntry } from './menu'
-import { showShortcuts } from './shortcuts'
+import { actionFor, type Action } from './shortcuts'
 import { NoteEditor } from './notes-view'
 import { placeNear } from './emoji'
 import { loadAvatar, squareThumb } from './avatar'
@@ -493,41 +494,13 @@ export class SpaceView {
         return
       }
     }
-    if (ev.altKey && !ev.metaKey && !ev.ctrlKey && !ev.shiftKey && (ev.key === 'ArrowUp' || ev.key === 'ArrowDown')) {
-      const names = this.chat?.channels() ?? []
-      const at = names.indexOf(this.channel)
-      const wanted = names[at + (ev.key === 'ArrowUp' ? -1 : 1)]
-      if (!wanted) return
+    const action = actionFor(ev)
+    if (action) {
       ev.preventDefault()
-      this.openChannel(wanted)
-      this.chatPanel.focus()
+      this.runShortcut(action)
       return
     }
-    if (!(ev.metaKey || ev.ctrlKey)) return
-    if (ev.shiftKey) {
-      const key = ev.key.toLowerCase()
-      if (key === 'm') {
-        ev.preventDefault()
-        this.toggleMute()
-      } else if (key === 'd') {
-        ev.preventDefault()
-        this.toggleDeafen()
-      } else if (key === 's') {
-        ev.preventDefault()
-        void this.toggleShare()
-      }
-      return
-    }
-    if (ev.key === '/') {
-      ev.preventDefault()
-      showShortcuts()
-      return
-    }
-    if (ev.key.toLowerCase() === 'k') {
-      ev.preventDefault()
-      this.openSearchBox()
-      return
-    }
+    if (!(ev.metaKey || ev.ctrlKey) || ev.shiftKey || ev.altKey) return
     if (/^[1-9]$/.test(ev.key)) {
       const wanted = (this.chat?.channels() ?? [])[Number(ev.key) - 1]
       if (!wanted) return
@@ -537,25 +510,32 @@ export class SpaceView {
     }
   }
 
+  private runShortcut(action: Action): void {
+    if (action === 'search') this.openSearchBox()
+    else if (action === 'mute') this.toggleMute()
+    else if (action === 'deafen') this.toggleDeafen()
+    else if (action === 'share') void this.toggleShare()
+    else if (action === 'leave') this.leaveVoice()
+    else {
+      const names = this.chat?.channels() ?? []
+      const wanted = names[names.indexOf(this.channel) + (action === 'channel-up' ? -1 : 1)]
+      if (!wanted) return
+      this.openChannel(wanted)
+      this.chatPanel.focus()
+    }
+  }
+
   private toggleMute(): void {
     const state = this.voice?.state
-    if (!state?.channel) {
-      toast('You are not in a voice channel.', 'warn', 2500)
-      return
-    }
+    if (!state?.channel) return
     this.voice?.setMuted(!state.muted)
-    toast(state.muted ? 'Microphone on.' : 'Microphone muted.', 'info', 2000)
     this.draw()
   }
 
   private toggleDeafen(): void {
     const state = this.voice?.state
-    if (!state?.channel) {
-      toast('You are not in a voice channel.', 'warn', 2500)
-      return
-    }
+    if (!state?.channel) return
     this.voice?.setDeafened(!state.deafened)
-    toast(state.deafened ? 'You can hear again.' : 'Deafened.', 'info', 2000)
     this.draw()
   }
 
@@ -935,9 +915,9 @@ export class SpaceView {
       toast(`A sound may be at most ${CUSTOM_MAX_S} seconds. That one is ${Math.round(length)}.`, 'warn')
       return
     }
-    const named = window.prompt('What is the sound called?', file.name.replace(/\.[^.]+$/, '').slice(0, 24))
+    const named = await ask('What is the sound called?', { value: file.name.replace(/\.[^.]+$/, '').slice(0, 24), ok: 'Next' })
     if (named === null || !named.trim()) return
-    const emoji = window.prompt('One emoji for it', '🔊') ?? '🔊'
+    const emoji = (await ask('One emoji for it', { value: '🔊', ok: 'Add' })) ?? '🔊'
     toast(`Adding ${named.trim()}...`, 'info', 2500)
     try {
       const sent = await filesFor(this.space).send(file, () => undefined, new AbortController().signal)
@@ -1009,8 +989,8 @@ export class SpaceView {
       {
         label: 'Rename',
         note: `Shown instead of ${channel.name}`,
-        run: () => {
-          const raw = window.prompt('What should this channel be called?', channel.label) ?? ''
+        run: async () => {
+          const raw = (await ask('What should this channel be called?', { value: channel.label, ok: 'Rename' })) ?? ''
           const label = raw.trim().slice(0, 32)
           if (!label) return
           void this.publish((c) => c.labelChannel(channel.name, label))
@@ -1019,8 +999,9 @@ export class SpaceView {
       {
         label: channel.topic ? 'Change the topic' : 'Set a topic',
         note: channel.topic || 'A line saying what it is for',
-        run: () => {
-          const raw = window.prompt('What is this channel for?', channel.topic) ?? ''
+        run: async () => {
+          const raw = await ask('What is this channel for?', { value: channel.topic, ok: 'Save' })
+          if (raw === null) return
           void this.publish((c) => c.setTopic(channel.name, raw.trim().slice(0, 140)))
         },
       },
@@ -1487,8 +1468,8 @@ export class SpaceView {
       { label: 'Open', run: () => this.openNote(note.id) },
       {
         label: 'Rename',
-        run: () => {
-          const raw = window.prompt('What should this note be called?', note.title)
+        run: async () => {
+          const raw = await ask('What should this note be called?', { value: note.title, ok: 'Rename' })
           if (raw === null || !raw.trim()) return
           void this.publish((c) => c.saveNote(note.id, raw))
         },
@@ -1519,7 +1500,7 @@ export class SpaceView {
   }
 
   private async newNote(): Promise<void> {
-    const raw = window.prompt('What should the note be called?', '')
+    const raw = await ask('What should the note be called?', { placeholder: 'Untitled', ok: 'Make' })
     if (raw === null) return
     const bytes = crypto.getRandomValues(new Uint8Array(8))
     const id = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')
@@ -1800,7 +1781,6 @@ export class SpaceView {
         ...(this.spaceRights().any
           ? [{ label: 'Settings', lead: h('span', { class: 'menu-icon' }, [icon('settings', 16)]), run: () => void this.openSpaceSettings() }]
           : []),
-        { label: 'Keyboard shortcuts', lead: h('span', { class: 'menu-icon' }, [icon('keyboard', 16)]), run: () => showShortcuts() },
         { label: 'Leave', danger: true, lead: h('span', { class: 'menu-icon' }, [icon('leave', 16)]), run: () => void this.leaveSpace() },
       ],
     })
@@ -2024,7 +2004,7 @@ export class SpaceView {
       toast('Your level cannot rename this space.', 'warn')
       return
     }
-    const raw = window.prompt('Name this space', this.chat.spaceName()) ?? ''
+    const raw = (await ask('Name this space', { value: this.chat.spaceName(), ok: 'Rename' })) ?? ''
     const name = raw.trim().slice(0, 32)
     if (!name) return
     await this.publish((c) => c.setSpaceName(name))
@@ -2275,7 +2255,7 @@ export class SpaceView {
             here === name
               ? 'You are in here. Click to leave.'
               : 'Join this voice channel. Everybody in it hears everybody else.',
-          on: { click: () => void this.joinVoice(name) },
+          on: { click: () => this.clickVoice(name) },
         },
         [icon('volume', 16), h('span', { class: 'truncate grow', text: name })],
       )
@@ -2292,7 +2272,7 @@ export class SpaceView {
       ])
       head.addEventListener('click', (ev) => {
         if ((ev.target as Element).closest('button')) return
-        void this.joinVoice(name)
+        this.clickVoice(name)
       })
       const row = h('div', { class: 'voice-channel' }, [head])
       for (const [key, ids] of people) {
@@ -2568,6 +2548,12 @@ export class SpaceView {
         ]),
       )
     }
+  }
+
+  /** A click on a voice channel joins it, or leaves it when you are in it already. */
+  private clickVoice(name: string): void {
+    if (this.voice?.state.channel === name) this.leaveVoice()
+    else void this.joinVoice(name)
   }
 
   private async joinVoice(name: string): Promise<void> {
@@ -3134,9 +3120,9 @@ export class SpaceView {
     const mark = line.search(/[?]/)
     let question = mark === -1 ? '' : line.slice(0, mark + 1).trim()
     let raw = mark === -1 ? '' : line.slice(mark + 1).trim()
-    if (!question) question = window.prompt('What is the question?', line)?.trim() ?? ''
+    if (!question) question = (await ask('What is the question?', { value: line, ok: 'Next' }))?.trim() ?? ''
     if (!question) return
-    if (!raw) raw = window.prompt('The answers, separated by commas.', 'Yes, No')?.trim() ?? ''
+    if (!raw) raw = (await ask('The answers, separated by commas.', { value: 'Yes, No', ok: 'Ask' }))?.trim() ?? ''
     if (!raw) return
     const options = raw
       .split(',')
@@ -3170,7 +3156,10 @@ export class SpaceView {
       toast('Your level cannot make channels.', 'warn')
       return
     }
-    const raw = window.prompt(voice ? 'Name the voice channel' : 'Name the channel')
+    const raw = await ask(voice ? 'Name the voice channel' : 'Name the channel', {
+      placeholder: voice ? 'lounge' : 'general',
+      ok: 'Make',
+    })
     if (raw === null) return
     const name = cleanChannel(raw)
     if (!name) {

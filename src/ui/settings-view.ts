@@ -16,6 +16,7 @@ import { enterLinkCode, lastBackup, showBackup, showLinkCode } from './link-devi
 import { askNotify, notifyState, stopNotify } from './notify'
 import { setSounds, soundsOn } from './sounds'
 import { card, note, settingsShell, switchRow, toggle, type SettingsTab } from './settings-shell'
+import { shortcutSettings } from './shortcuts'
 import { setTheme, theme, type Theme } from './theme'
 import { toast } from './toast'
 import { voiceSettings } from './voice-settings'
@@ -411,6 +412,12 @@ export function settingsView(actions: SettingsActions): HTMLElement {
             quick,
           ),
         ]),
+    },
+    {
+      id: 'keys',
+      label: 'Keyboard',
+      icon: 'keyboard',
+      build: () => shortcutSettings(),
     },
     {
       id: 'devices',

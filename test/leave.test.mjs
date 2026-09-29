@@ -1,4 +1,4 @@
-import { APP_URL, FAKE_MEDIA, check, finish, launch, stoppedEarly, openSpaceSettings } from './harness.mjs'
+import { APP_URL, FAKE_MEDIA, answer, check, finish, launch, stoppedEarly, openSpaceSettings } from './harness.mjs'
 
 const browser = await launch({ args: FAKE_MEDIA })
 
@@ -52,8 +52,8 @@ try {
 
   const guest = await person()
   await guest.fill('input[aria-label="Room code"]', lockedLink)
-  guest.once('dialog', (d) => d.accept('hunter2'))
   await guest.click('button:has-text("Join")')
+  await answer(guest, 'hunter2')
   await guest.waitForSelector('.space-name', { timeout: 15_000 })
   check('a pasted locked link asks for the password', guest.url() === lockedLink, guest.url())
   await guest.context().close()
@@ -72,8 +72,8 @@ try {
   check('a member sees the name the admin gave it', true)
 
   await openSpaceSettings(admin, 'overview')
-  admin.once('dialog', (d) => d.accept('staff room'))
   await admin.click('.settings-page button:text-is("Rename")')
+  await answer(admin, 'staff room')
   await admin.waitForTimeout(800)
   const shown = await admin.textContent('.space-card-name')
   check('the settings card shows the name it was just given', shown === 'staff room', shown)

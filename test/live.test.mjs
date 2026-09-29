@@ -1,4 +1,4 @@
-import { APP_URL, FAKE_MEDIA, check, finish, launch, poll, stoppedEarly } from './harness.mjs'
+import { APP_URL, FAKE_MEDIA, answer, check, finish, launch, poll, stoppedEarly } from './harness.mjs'
 
 // A fake display, so a share needs no permission and no real screen.
 const DISPLAY_STUB = `
@@ -217,8 +217,8 @@ try {
     bobOffered.join(' | ') || 'nothing',
   )
 
-  alice.once('dialog', (d) => d.accept('war-room'))
   await alice.click('button[title="Make a voice channel"]')
+  await answer(alice, 'war-room')
   await alice.getByRole('button', { name: 'war-room' }).first().click()
   await alice.waitForTimeout(1500)
 

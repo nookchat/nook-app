@@ -1,4 +1,4 @@
-import { APP_URL, FAKE_MEDIA, check, finish, launch, stoppedEarly } from './harness.mjs'
+import { APP_URL, FAKE_MEDIA, answer, check, finish, launch, stoppedEarly } from './harness.mjs'
 
 const browser = await launch({ args: FAKE_MEDIA })
 
@@ -146,8 +146,8 @@ try {
     .catch(() => false)
   check('everybody else sees the new name', seenByBob)
 
-  alice.once('dialog', (d) => d.accept('scratch'))
   await alice.click('.rail-left button[title="Make a text channel"]')
+  await answer(alice, 'scratch')
   await alice.waitForTimeout(700)
   await say(alice, 'something in the scratch channel')
   const row = alice.locator('.rail-row', { hasText: 'scratch' })
@@ -243,8 +243,8 @@ try {
 
   await alice.click(BOX)
   await alice.keyboard.type('half a thought')
-  alice.once('dialog', (d) => d.accept('other'))
   await alice.click('.rail-left button[title="Make a text channel"]')
+  await answer(alice, 'other')
   await alice.waitForTimeout(700)
   check('switching channel empties the box', (await alice.inputValue(BOX)) === '')
   await alice.click('.rail-left .rail-item:has-text("The Main Room")')

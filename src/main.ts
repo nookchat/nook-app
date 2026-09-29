@@ -23,6 +23,7 @@ import { isCallChannel, type SpaceRuntime } from './space/runtime'
 import { nameChosen, shortKey } from './store/identity'
 import { newSpaceServer } from './store/server-spaces'
 import { findSpace } from './store/spaces'
+import { ask } from './ui/ask'
 import { installCalls } from './ui/call'
 import { clear } from './ui/dom'
 import { HomeView, type DirectRef } from './ui/home-view'
@@ -182,7 +183,7 @@ async function enter(
   let pass = password
   if (needsPassword && !pass) pass = known?.password ?? ''
   if (needsPassword && !pass) {
-    pass = window.prompt('This space has a password.') ?? ''
+    pass = (await ask('This space has a password.', { password: true, ok: 'Join' })) ?? ''
     if (!pass) {
       void showHome()
       return
