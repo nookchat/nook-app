@@ -2327,6 +2327,50 @@ button.start {
   margin-top: 0;
 }
 
+/* A channel kept to some levels. */
+.kept-mark {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--fg-faint);
+}
+
+.pick-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.pick-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 0 4px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.pick-row:hover {
+  background: var(--hover);
+}
+
+.pick-row input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.pick-dot {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--fg-faint);
+}
+
 .ask-buttons {
   justify-content: flex-end;
   gap: 8px;

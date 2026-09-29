@@ -26,6 +26,9 @@ const ICE_WAIT_MS = 5000
 /** A voice channel joined again after an update, with nobody reached by now, is joined once more. */
 const RESUME_CHECK_MS = 12_000
 const RING_TIMEOUT_MS = 30_000
+/** After a reconnect, how long the others get to say hello before the silent ones count as gone. */
+const EVERYONE_WAIT_MS = 25_000
+const STILL_HERE_MS = 60_000
 
 type NotePatch = Partial<{
   founder: string
@@ -109,6 +112,7 @@ export class SpaceRuntime {
   private iceReady: Promise<void> = Promise.resolve()
   private ringTimer = 0
   private voiceWas: string | null = null
+  private stillHere = 0
   /** People who said they are updating, by key: their voice comes back in a moment, with no sound. */
   private readonly comingBack = new Map<string, number>()
   private stopped = false
@@ -145,6 +149,8 @@ export class SpaceRuntime {
     channel.onEvents = (events) => void this.take(events)
     channel.onLeft = (session) =>
       this.bus.deliver({ v: 1, id: `left:${session}:${Date.now()}`, from: session, t: Date.now(), type: 'bye' })
+    // The others reconnect too after a server restart, some later than us, so they get a while to say hello.
+    channel.onEveryone = (since) => window.setTimeout(() => void this.dropSilent(since), EVERYONE_WAIT_MS)
     channel.onRefused = (why) => console.warn(`[nook] the server would not keep a write: ${why}`)
     this.channel = channel
 
@@ -196,7 +202,8 @@ export class SpaceRuntime {
       this.ice = ice
     })
     const voice = new Voice(bus, this.selfId, () => rtcConfig(this.ice.iceServers, this.ice.relayOnly))
-    voice.admit = (peer, channel) => !isCallChannel(channel) || (!!this.call && this.keyOf(peer) === this.call.with)
+    voice.admit = (peer, channel) =>
+      isCallChannel(channel) ? !!this.call && this.keyOf(peer) === this.call.with : this.chat.mayEnter(this.keyOf(peer), channel, true)
     voice.onArrival = (arrived, peer) => {
       // Somebody back from an update was never gone, so neither sound plays.
       const key = this.keyOf(peer)
@@ -225,6 +232,8 @@ export class SpaceRuntime {
     mesh.start()
     document.addEventListener('visibilitychange', this.announceAgain)
     window.addEventListener(PLAYING_CHANGED, this.announceAgain)
+    // Now and then, so anybody who counted us gone by mistake after a reconnect has us back.
+    this.stillHere = window.setInterval(this.announceAgain, STILL_HERE_MS)
 
     await Promise.race([channel.loaded, new Promise((r) => window.setTimeout(r, HISTORY_WAIT_MS))])
     if (this.stopped) return
@@ -285,6 +294,17 @@ export class SpaceRuntime {
     if (saidAt <= avatarSavedAt()) return loadAvatar()
     adoptAvatar(this.chat.avatarOf(this.chat.me), saidAt)
     return undefined
+  }
+
+  /** Sessions not heard from since a hello went out left while we could not hear it. */
+  private async dropSilent(since: number): Promise<void> {
+    await this.bus?.settled()
+    if (this.stopped) return
+    for (const peer of this.mesh?.peers() ?? []) {
+      // A call with sound going both ways is proof enough that they are there.
+      if (peer.lastSeen >= since || this.voice?.inCallWith(peer.id)) continue
+      this.bus?.deliver({ v: 1, id: `gone:${peer.id}:${Date.now()}`, from: peer.id, t: Date.now(), type: 'bye' })
+    }
   }
 
   private readonly announceAgain = (): void => {
@@ -554,6 +574,7 @@ export class SpaceRuntime {
     this.voice?.dispose()
     document.removeEventListener('visibilitychange', this.announceAgain)
     window.removeEventListener(PLAYING_CHANGED, this.announceAgain)
+    window.clearInterval(this.stillHere)
     this.mesh?.stop()
     const bus = this.bus
     if (bus) window.setTimeout(() => bus.stop(), 200)

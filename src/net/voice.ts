@@ -260,11 +260,15 @@ export class Voice {
     this.talking.remove(peerId)
   }
 
-  /** A session with a call stays: a relay outage empties the roster while the audio keeps flowing. */
+  inCallWith(peerId: string): boolean {
+    return this.calls.get(peerId)?.live === true
+  }
+
+  /** A session with a live call stays: a relay outage empties the roster while the audio keeps flowing. */
   prune(alive: Set<string>): void {
     let changed = false
     for (const id of this.standing.keys()) {
-      if (alive.has(id) || this.calls.has(id)) continue
+      if (alive.has(id) || this.inCallWith(id)) continue
       this.standing.delete(id)
       changed = true
     }

@@ -276,6 +276,17 @@ export class RoomChat {
     return this.write('channel', body)
   }
 
+  /** Keeps a channel to these levels. None opens it to everybody. */
+  setChannelLevels(name: string, levels: string[], voice = false): Promise<LogEvent> {
+    const body: Record<string, unknown> = { name: cleanChannel(name), levels }
+    if (voice) body.voice = true
+    return this.write('channel', body)
+  }
+
+  mayEnter(pubkey: string, channel: string, voice = false): boolean {
+    return this.log.mayEnter(pubkey, channel, voice)
+  }
+
   dropChannel(name: string, voice = false): Promise<LogEvent> {
     const body: Record<string, unknown> = { name: cleanChannel(name), gone: true }
     if (voice) body.voice = true

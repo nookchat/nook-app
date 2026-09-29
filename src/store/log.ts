@@ -115,6 +115,18 @@ export class Authority {
   }
 }
 
+function cleanLevelIds(raw: unknown[]): string[] {
+  const ids = raw.map(String).filter((id) => /^[a-z0-9]{1,16}$/.test(id) && id !== OWNER)
+  return [...new Set(ids)].slice(0, 32)
+}
+
+/** The owner and whoever looks after channels see them all, so they can open one up again. */
+function mayEnter(auth: Authority, key: string, channel: ChannelInfo): boolean {
+  if (channel.levels.length === 0) return true
+  if (!key || auth.isKicked(key)) return false
+  return key === auth.founder || auth.can(key, 'channels') || channel.levels.includes(auth.levelOf(key).id)
+}
+
 function cleanColour(raw: unknown): string {
   const text = typeof raw === 'string' ? raw.trim().toLowerCase() : ''
   return /^#[0-9a-f]{6}$/.test(text) ? text : ''
@@ -456,15 +468,34 @@ export class RoomLog {
     return this.ordered
   }
 
+  /** The channels you may see. */
   channels(voice = false): string[] {
     return this.channelList(voice).map((c) => c.name)
   }
 
+  /** The channels you may see, as `me`. */
   channelList(voice = false): ChannelInfo[] {
+    const auth = this.authority()
+    return this.everyChannel(voice).filter((c) => mayEnter(auth, this.me, c))
+  }
+
+  /** Whether this person may see and use this channel. */
+  mayEnter(key: string, name: string, voice = false): boolean {
+    const info = this.everyChannel(voice).find((c) => c.name === name)
+    return !info || mayEnter(this.authority(), key, info)
+  }
+
+  /** Every channel, those kept to some levels too. */
+  everyChannel(voice = false): ChannelInfo[] {
+    return this.cached(voice ? 'voiceChannels' : 'textChannels', () => this.foldChannels(voice))
+  }
+
+  private foldChannels(voice: boolean): ChannelInfo[] {
     const defaultName = voice ? DEFAULT_VOICE : DEFAULT_CHANNEL
     const names = new Set<string>([defaultName])
     const label = new Map<string, string>()
     const topic = new Map<string, string>()
+    const levels = new Map<string, string[]>()
     const gone = new Set<string>()
     const auth = this.authority()
 
@@ -480,6 +511,7 @@ export class RoomLog {
           if (shown) label.set(name, shown)
         }
         if (typeof e.body.topic === 'string') topic.set(name, e.body.topic.slice(0, 140).trim())
+        if (Array.isArray(e.body.levels)) levels.set(name, cleanLevelIds(e.body.levels))
         if (e.body.gone === true) gone.add(name)
         else gone.delete(name)
       } else if (!voice && e.kind === 'said' && auth.can(e.author, 'channels')) {
@@ -488,11 +520,13 @@ export class RoomLog {
     }
 
     gone.delete(defaultName)
+    // Everybody lands in the default channels, so they stay open to all.
+    levels.delete(defaultName)
 
     return [...names]
       .filter((name) => !gone.has(name))
       .sort()
-      .map((name) => ({ name, label: label.get(name) || name, topic: topic.get(name) ?? '' }))
+      .map((name) => ({ name, label: label.get(name) || name, topic: topic.get(name) ?? '', levels: levels.get(name) ?? [] }))
   }
 
   /** Shared notes. Anybody still in the space may write; the maker or a channel keeper may delete. */
@@ -554,8 +588,13 @@ export class RoomLog {
     })
   }
 
+  /** Channels that are there, but kept from you or from whoever writes in them. */
+  private keptChannels(): Map<string, ChannelInfo> {
+    return new Map(this.everyChannel().filter((c) => c.levels.length > 0).map((c) => [c.name, c]))
+  }
+
   private deletedChannels(): Set<string> {
-    const live = new Set(this.channels())
+    const live = new Set(this.everyChannel().map((c) => c.name))
     const gone = new Set<string>()
     const auth = this.authority()
     for (const e of this.all()) {
@@ -576,6 +615,13 @@ export class RoomLog {
     const kicked = auth.kickedAt
     const cleared = this.resetAt()
     const removed = this.deletedChannels()
+    const kept = this.keptChannels()
+    // Not for you to read, or written by somebody it is not for. Anybody with the space's
+    // key can still open these lines; the app only keeps them out of sight.
+    const shut = (e: LogEvent): boolean => {
+      const info = kept.get(channelOf(e))
+      return !!info && (!mayEnter(auth, this.me, info) || !mayEnter(auth, e.author, info))
+    }
 
     for (const e of this.all()) {
       if (e.lamport < cleared && CLEARABLE.has(e.kind)) continue
@@ -587,7 +633,7 @@ export class RoomLog {
         continue
       }
       if (e.kind === 'poll') {
-        if (removed.has(channelOf(e))) continue
+        if (removed.has(channelOf(e)) || shut(e)) continue
         if (channel && channelOf(e) !== channel) continue
         const question = String(e.body.question ?? '').slice(0, 200).trim()
         const raw = Array.isArray(e.body.options) ? e.body.options : []
@@ -625,7 +671,7 @@ export class RoomLog {
         continue
       }
       if (e.kind === 'said') {
-        if (removed.has(channelOf(e))) continue
+        if (removed.has(channelOf(e)) || shut(e)) continue
         if (channel && channelOf(e) !== channel) continue
         const message: Message = {
           id: e.id,
@@ -863,6 +909,8 @@ export interface ChannelInfo {
   name: string
   label: string
   topic: string
+  /** The levels that may see and use it. Empty is everybody. */
+  levels: string[]
 }
 
 /** Stored on the server under `id` (SHA-256 of the sealed bytes), sealed with `key`, which the server never sees. */

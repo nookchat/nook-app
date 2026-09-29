@@ -62,7 +62,7 @@ import {
   type Sound,
   warmSounds,
 } from './soundboard'
-import { ask } from './ask'
+import { ask, pickSome } from './ask'
 import { avatarOf, ChatPanel, imageLinks } from './chat-panel'
 import { clear, copyText, fmtKbps, h, onPress, roleInk } from './dom'
 import { forHowLong, gameCard } from './game-card'
@@ -1007,6 +1007,7 @@ export class SpaceView {
       },
     ]
     if (channel.name !== DEFAULT_CHANNEL) {
+      items.push(this.whoMayEnter(channel, false))
       items.push({
         label: 'Delete',
         note: 'Takes the channel and everything said in it',
@@ -1022,6 +1023,35 @@ export class SpaceView {
       })
     }
     return items
+  }
+
+  /** Keeps a channel to some levels. The default channels stay open to everybody. */
+  private whoMayEnter(channel: ChannelInfo, voice: boolean): MenuItem {
+    const levels = this.chat?.levels() ?? []
+    const names = channel.levels.map((id) => levels.find((l) => l.id === id)?.name).filter(Boolean)
+    return {
+      label: voice ? 'Who can join' : 'Who can see it',
+      note: names.length ? `Only ${names.join(', ')}` : 'Everybody',
+      run: async () => {
+        const choices = levels.filter((l) => l.id !== OWNER).map((l) => ({ id: l.id, name: l.name, colour: l.colour }))
+        const picked = await pickSome(
+          voice ? `Who can join ${channel.label}` : `Who can see ${channel.label}`,
+          'Tick nobody for everybody. The owner, and whoever can change channels, always get in.',
+          choices,
+          channel.levels,
+        )
+        if (picked === null) return
+        void this.publish((c) => c.setChannelLevels(channel.name, picked, voice))
+      },
+    }
+  }
+
+  private keptMark(channel: ChannelInfo): HTMLElement {
+    const levels = this.chat?.levels() ?? []
+    const names = channel.levels.map((id) => levels.find((l) => l.id === id)?.name).filter(Boolean)
+    const mark = h('span', { class: 'kept-mark', title: `Only for ${names.join(', ') || 'whoever can change channels'}` })
+    mark.append(icon('lock', 13))
+    return mark
   }
 
   private runCommand(line: string): boolean {
@@ -2174,7 +2204,10 @@ export class SpaceView {
     for (const [, count] of waiting) mentions += count.mentions
     const liveChannels = new Set(this.sharers.values())
 
-    for (const channel of chat?.channelInfo() ?? [{ name: DEFAULT_CHANNEL, label: DEFAULT_CHANNEL, topic: '' }]) {
+    // Kept from you now, by a change to the channel or to your level.
+    if (chat && !chat.mayEnter(chat.me, this.channel)) queueMicrotask(() => this.openChannel(DEFAULT_CHANNEL))
+
+    for (const channel of chat?.channelInfo() ?? [{ name: DEFAULT_CHANNEL, label: DEFAULT_CHANNEL, topic: '', levels: [] }]) {
       const name = channel.name
       const news = waiting.get(name)
       const open = h(
@@ -2187,6 +2220,7 @@ export class SpaceView {
         [
           icon('hash', 16),
           h('span', { class: 'truncate grow', text: channel.label }),
+          channel.levels.length ? this.keptMark(channel) : null,
           liveChannels.has(name) ? h('span', { class: 'pill live', text: 'live' }) : null,
           news?.mentions
             ? h('span', { class: 'pill bad', text: `${news.mentions}`, title: 'You were mentioned' })
@@ -2245,7 +2279,10 @@ export class SpaceView {
     const peers = this.peersById()
     const names = chat?.log.names() ?? new Map<string, string>()
     const avatars = chat?.log.avatars() ?? new Map<string, string>()
-    for (const name of chat?.channels(true) ?? [DEFAULT_VOICE]) {
+    if (chat && here && !chat.mayEnter(chat.me, here, true)) queueMicrotask(() => this.leaveVoice())
+    const canEdit = chat?.can('channels') === true
+    for (const channel of chat?.channelInfo(true) ?? [{ name: DEFAULT_VOICE, label: DEFAULT_VOICE, topic: '', levels: [] }]) {
+      const name = channel.name
       const people = this.sessionsByPerson(this.voice?.membersOf(name) ?? [], peers)
       const join = h(
         'button',
@@ -2257,7 +2294,7 @@ export class SpaceView {
               : 'Join this voice channel. Everybody in it hears everybody else.',
           on: { click: () => this.clickVoice(name) },
         },
-        [icon('volume', 16), h('span', { class: 'truncate grow', text: name })],
+        [icon('volume', 16), h('span', { class: 'truncate grow', text: name }), channel.levels.length ? this.keptMark(channel) : null],
       )
       const since = this.channelSince(name)
       const timer = since ? h('span', { class: 'voice-timer', title: 'How long somebody has been in here' }) : null
@@ -2274,6 +2311,7 @@ export class SpaceView {
         if ((ev.target as Element).closest('button')) return
         this.clickVoice(name)
       })
+      if (canEdit && name !== DEFAULT_VOICE) onContextMenu(head, () => [this.whoMayEnter(channel, true)])
       const row = h('div', { class: 'voice-channel' }, [head])
       for (const [key, ids] of people) {
         row.append(this.voiceMember(key, ids, peers, names.get(key) ?? '', avatars.get(key) ?? ''))

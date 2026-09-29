@@ -18,6 +18,7 @@ export class SignalBus {
   private readonly guard = new ReplayGuard()
   private started = false
   private readonly health = new Map<Transport, RelayHealth>()
+  private readonly opening = new Set<Promise<void>>()
 
   constructor(room: Room, selfId: string, transports: Transport[]) {
     this.room = room
@@ -44,7 +45,10 @@ export class SignalBus {
 
   private open(t: Transport): void {
     t.connect({
-      onWire: (wire) => void this.receive(wire),
+      onWire: (wire) => {
+        const done = this.receive(wire).finally(() => this.opening.delete(done))
+        this.opening.add(done)
+      },
       onStatus: (transport, status, detail) => {
         this.health.set(transport, { name: transport.name, status, detail })
         this.onHealth?.(this.healthList)
@@ -62,6 +66,11 @@ export class SignalBus {
     }
   }
 
+  /** Once every message that has come in so far has been opened and handled. */
+  async settled(): Promise<void> {
+    await Promise.all([...this.opening])
+  }
+
   stop(): void {
     this.started = false
     for (const t of this.transports) t.close()
@@ -72,7 +81,9 @@ export class SignalBus {
     if (!env) return
     if (env.from === this.selfId) return
     if (env.to && env.to !== this.selfId) return
-    if (!this.guard.accept(env.id)) return
+    // The server sends everybody's last announce again after a reconnect, and that
+    // says they are still here. Hearing an announce twice changes nothing else.
+    if (!this.guard.accept(env.id) && !(env.type === 'announce' && !env.to)) return
     this.onMessage?.(env)
   }
 }

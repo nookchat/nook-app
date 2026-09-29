@@ -172,6 +172,11 @@ export class Channel implements Transport {
 
   onEvents: ((events: unknown[]) => void) | null = null
   onLeft: ((session: string) => void) | null = null
+  /**
+   * The server has sent everybody here now, after a hello sent at `since`. Somebody who
+   * left while the socket was down never gets a "left", so whoever it did not send is gone.
+   */
+  onEveryone: ((since: number) => void) | null = null
   onRefused: ((why: string) => void) | null = null
   readonly loaded: Promise<void>
 
@@ -186,6 +191,7 @@ export class Channel implements Transport {
   private readonly unacked = new Map<string, string[]>()
   private nextId = 0
   private markLoaded: () => void = () => undefined
+  private helloAt = 0
   private openInOrder: Promise<void> = Promise.resolve()
 
   constructor(connection: Connection, room: Room, name: string) {
@@ -263,6 +269,7 @@ export class Channel implements Transport {
   opened(): void {
     this.statusChanged('open')
     if (this.state) this.send({ t: 'state', ...this.state })
+    this.helloAt = Date.now()
     this.send({ t: 'hello', from: this.at })
     for (const [id, lines] of this.unacked) this.send({ t: 'put', id, lines, w: this.room.write })
     const now = Date.now()
@@ -292,10 +299,14 @@ export class Channel implements Transport {
         })
         return
       }
-      case 'live':
+      case 'live': {
         if (message.at > this.at) this.at = message.at
         void this.openInOrder.then(() => this.markLoaded())
+        const since = this.helloAt
+        this.helloAt = 0
+        if (since) this.onEveryone?.(since)
         return
+      }
       case 'ack':
         // `at` stays: lines before this one may still be on their way down.
         this.unacked.delete(message.id)
