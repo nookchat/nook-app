@@ -1,4 +1,4 @@
-import { APP_URL, FAKE_MEDIA, check, finish, hostAndShare, joinAndWatch, launch, stoppedEarly } from './harness.mjs'
+import { APP_URL, FAKE_MEDIA, check, finish, hostAndShare, joinAndWatch, launch, poll, stoppedEarly } from './harness.mjs'
 
 const STUB = `(() => {
   const c = document.createElement('canvas')
@@ -59,15 +59,23 @@ try {
     receives.filter((m) => !/rtx|red|ulpfec|flexfec/i.test(m)).join(', '),
   )
 
-  await host.waitForTimeout(14_000)
-
-  const playing = await viewer.evaluate(() => {
-    const el = document.querySelector('video')
-    return { w: el?.videoWidth ?? 0, live: !!el && !el.paused && el.currentTime > 0 }
-  })
+  const picture = () =>
+    viewer.evaluate(() => {
+      const el = document.querySelector('video')
+      return { w: el?.videoWidth ?? 0, live: !!el && !el.paused && el.currentTime > 0 }
+    })
+  const playing = (await poll(async () => {
+    const now = await picture()
+    return now.live && now.w > 0 ? now : null
+  }, 20_000)) ?? (await picture())
   check('a viewer without HEVC still receives a picture', playing.live && playing.w > 0, `${playing.w} px wide`)
 
-  const row = await viewer.evaluate(() => document.querySelector('.stage-tile')?.title ?? '')
+  // The codec shows on the tile once the stats, every two seconds, have seen the stream.
+  const tileSays = () => viewer.evaluate(() => document.querySelector('.stage-tile')?.title ?? '')
+  const row = (await poll(async () => {
+    const title = await tileSays()
+    return /VP9|VP8|H264|AV1/.test(title) ? title : null
+  }, 15_000)) ?? (await tileSays())
   check('the stream falls back to a codec the viewer can decode', /VP9|VP8|H264|AV1/.test(row), row.trim())
 } catch (err) {
   stoppedEarly(err)

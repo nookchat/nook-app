@@ -18,6 +18,13 @@ try {
   const page = await (await browser.newContext()).newPage()
   await page.goto(APP_URL, { waitUntil: 'domcontentloaded' })
 
+  // Chrome reads QR codes on macOS, Android and ChromeOS only, so a Linux CI machine cannot check them.
+  if (!(await page.evaluate(() => 'BarcodeDetector' in window))) {
+    console.log('SKIP  every QR check  (no BarcodeDetector in this browser)')
+    await browser.close()
+    finish()
+  }
+
   const results = await page.evaluate(async (cases) => {
     const { qrMatrix } = await import('/src/ui/qr.ts')
     const detector = new window.BarcodeDetector({ formats: ['qr_code'] })

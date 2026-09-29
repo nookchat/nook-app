@@ -25,8 +25,10 @@ import { cleanChannel, DEFAULT_CHANNEL, type LogEvent } from './store/log'
 import { channelMuted } from './store/mute'
 import { newSpaceServer } from './store/server-spaces'
 import { findSpace } from './store/spaces'
+import { lastScreen } from './store/screen'
 import { ask } from './ui/ask'
 import { watchUnread } from './ui/badge'
+import { bootDone, bootStep } from './ui/boot'
 import { installCalls } from './ui/call'
 import { clear } from './ui/dom'
 import { HomeView, type DirectRef } from './ui/home-view'
@@ -42,29 +44,30 @@ import { drawEmojiAsArt } from './ui/twemoji'
 const DEVICE_LINK_PREFIX = '#link='
 /** How long the last word before an update's reload gets to reach the others. */
 const ANNOUNCE_OUT_MS = 300
+/** How long the first screen waits for your spaces, to open the one you were in. */
+const RESUME_WAIT_MS = 4000
+/** How long the loading screen waits for the messages of the space it opens. */
+const SETTLE_MS = 5000
 
 const app = document.getElementById('app')
 if (!app) throw new Error('The page could not find its mount point.')
 const mount = app
 
-// The loading screen in index.html goes as soon as the first screen is on the page.
-const boot = document.getElementById('boot')
-if (boot) {
-  const done = new MutationObserver(() => {
-    if (mount.childElementCount === 0) return
-    done.disconnect()
-    boot.classList.add('gone')
-    window.setTimeout(() => boot.remove(), 250)
-  })
-  done.observe(mount, { childList: true })
-}
+// The loading screen in index.html stays until the first screen has what it needs.
+bootStep(30, 'Loading Nook')
 
 watchTheme()
 watchUnread()
 startStreaming()
 watchForUpdates({
   inCall: () => spaces.all().some((space) => !!space.voice?.state.channel),
-  beforeReload: async () => {
+  // Nothing a reload would lose: no call, no share, no half-written message or unsaved note.
+  idle: () =>
+    !spaces.all().some((space) => !!space.voice?.state.channel) &&
+    !active?.sharingIn &&
+    ![...document.querySelectorAll<HTMLTextAreaElement>('.chat-compose textarea')].some((box) => box.value.trim()) &&
+    !document.querySelector('.note-status')?.textContent?.includes('Not saved'),
+  beforeReload: async (restart = false) => {
     const inVoice = spaces.all().find((space) => {
       const channel = space.voice?.state.channel ?? null
       return channel !== null && !isCallChannel(channel)
@@ -75,6 +78,7 @@ watchForUpdates({
         ? { room: inVoice.room.id, channel: state.channel, muted: state.muted, deafened: state.deafened }
         : null,
       active?.sharingIn ?? null,
+      restart,
     )
     // Tells the others this is a reload, so they keep a place and play no sound; then gives it time to go out.
     for (const space of spaces.all()) space.announce()
@@ -261,18 +265,64 @@ installCalls((space, key) => void showHome({ room: space.room.id, key }))
 drawEmojiAsArt()
 watchPlaying()
 
+/** The loading screen goes once the space on screen has its messages, or a little later at most. */
+async function settle(): Promise<void> {
+  const view = active
+  if (view instanceof SpaceView) {
+    bootStep(80, 'Catching up on messages')
+    await Promise.race([view.space.ready, new Promise((done) => window.setTimeout(done, SETTLE_MS))])
+  }
+  bootDone()
+}
+
 async function start(): Promise<void> {
   if (window.location.hash.startsWith(DEVICE_LINK_PREFIX)) {
     const { linkFromAddress } = await import('./ui/link-device')
+    bootDone()
     if (await linkFromAddress(mount)) return
   }
   if (!nameChosen()) {
     const { welcome } = await import('./ui/welcome')
+    bootDone()
     await welcome(mount, linked !== null)
   }
-  void spaces.load()
-  if (linked) void enter(linked.secret, linked.locked, '', false, '', linked.server)
-  else void showHome()
+  bootStep(50, 'Opening your spaces')
+  const loaded = spaces.load()
+  // A slow server does not keep the window blank: past this, home opens as usual.
+  const listed = Promise.race([loaded, new Promise<void>((done) => window.setTimeout(done, RESUME_WAIT_MS))])
+  const last = lastScreen()
+  if (linked) {
+    bootStep(65, 'Opening the space')
+    await enter(linked.secret, linked.locked, '', false, '', linked.server)
+    void settle()
+    const view = active
+    // The room is known once the space has started.
+    if (last?.kind === 'space' && view instanceof SpaceView) {
+      void view.space.ready.then(() => view.space.room.id === last.room && view.resumeChannel(last.channel))
+    }
+    return
+  }
+  // Back where you were: the desktop app opens at home after a restart, and a reload loses the channel.
+  if (last?.kind === 'space') {
+    await listed
+    const space = spaces.get(last.room)
+    if (space) {
+      bootStep(65, space.note?.title ? `Opening ${space.note.title}` : 'Opening your space')
+      openSpace(space)
+      if (active instanceof SpaceView) active.resumeChannel(last.channel)
+      void settle()
+      return
+    }
+  }
+  if (last?.kind === 'home' && last.dm) {
+    await listed
+    if (spaces.get(last.dm.room)) {
+      await showHome(last.dm)
+      return void settle()
+    }
+  }
+  await showHome()
+  void settle()
 }
 void start()
 

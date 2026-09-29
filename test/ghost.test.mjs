@@ -9,8 +9,10 @@ let server = await startServer(PORT)
 const browser = await launch({ args: FAKE_MEDIA })
 const BOX = '[aria-label="Write a message"]'
 
-async function person(name) {
+async function person(name, { clock = false } = {}) {
   const page = await (await browser.newContext({ viewport: { width: 1280, height: 820 } })).newPage()
+  // Alice's clock can be wound on, so the wait after a reconnect takes no time.
+  if (clock) await page.clock.install()
   await page.goto(APP_URL)
   await page.evaluate(
     ({ n, at }) => {
@@ -29,7 +31,7 @@ const inVoice = (page) =>
   page.evaluate(() => [...document.querySelectorAll('.voice-channel .voice-member')].map((m) => m.textContent.trim()))
 
 try {
-  const alice = await person('Alice')
+  const alice = await person('Alice', { clock: true })
   await alice.fill('input[aria-label="Space name"]', 'ghosts')
   await alice.click('button:has-text("New space")')
   await alice.waitForSelector(BOX)
@@ -54,7 +56,16 @@ try {
   await bob.context().close()
   server = await startServer(PORT, { DATABASE_URL: server.database, NOOK_FILES: server.files })
 
-  const gone = await poll(async () => !(await inVoice(alice)).some((t) => t.includes('Bob')), 50_000)
+  // Both back on the server, and Carol's hello through to Alice, before Alice's wait is wound on.
+  const connected = (page) =>
+    page.evaluate(async () => {
+      const { spaces } = await import('/src/space/registry.ts')
+      return spaces.all()[0]?.bus?.healthList.every((h) => h.status === 'open') === true
+    })
+  await poll(async () => (await connected(alice)) && (await connected(carol)), 30_000)
+  await wait(2000)
+  await alice.clock.runFor(30_000)
+  const gone = await poll(async () => !(await inVoice(alice)).some((t) => t.includes('Bob')), 10_000)
   check('once the server is back, Bob is out of the channel', gone, (await inVoice(alice)).join(', '))
   const here = await alice.evaluate(() => document.querySelector('.status-bar')?.dataset.here ?? '')
   check('and out of the count of who is here', here === '2', here)

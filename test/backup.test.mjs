@@ -128,6 +128,8 @@ try {
   await ana.evaluate(() => document.querySelector('button[aria-label="Settings"]').click())
   await ana.click('button.tiny-btn:text-is("Remove")')
   await ana.click('button[aria-label="Close settings"]')
+  // Home, not the space it was last in, so the space is opened from the list.
+  await two.evaluate(() => localStorage.removeItem('nook.screen.v1'))
   await two.goto(APP_URL)
   await two.click('.space-row .rail-item')
   const gone = await two
@@ -155,6 +157,7 @@ try {
   }, bobKey)
   // The record is saved a couple of seconds after a change, and read when a page opens.
   await wait(4000)
+  await two.evaluate(() => localStorage.removeItem('nook.screen.v1'))
   await two.goto(APP_URL)
   await two.waitForSelector('input[aria-label="Space name"]')
   const carried = await two

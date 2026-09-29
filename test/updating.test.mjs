@@ -7,6 +7,8 @@ const BOX = '[aria-label="Write a message"]'
 
 async function person(name) {
   const page = await (await browser.newContext()).newPage()
+  // A clock the check can wind on, so the half minute an update is given takes no time.
+  await page.clock.install()
   await page.goto(APP_URL)
   await page.evaluate((n) => localStorage.setItem('nook.name.v1', n), name)
   await page.reload()
@@ -41,7 +43,8 @@ try {
   await wait(500)
   await bob.context().close()
 
-  const gone = await poll(async () => !(await updatingShown(alice)), 50_000)
+  await alice.clock.runFor(35_000)
+  const gone = await poll(async () => !(await updatingShown(alice)), 5000)
   check('with Bob never back, it goes by itself', gone)
 } catch (err) {
   stoppedEarly(err)

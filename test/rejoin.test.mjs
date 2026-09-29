@@ -95,6 +95,9 @@ try {
     rows.map((r) => r.text).join(' | '),
   )
 
+  // As a tab closes, the page goes and takes its socket with it. Closing only the context
+  // leaves the socket to Chrome, which can hold it open past the wait below.
+  await bob.goto('about:blank')
   await bob.context().close()
   const gone = await waitFor(
     async () => {

@@ -7,8 +7,8 @@
 
 const VOICE_KEY = 'nook.resume.voice.v1'
 const SHARE_KEY = 'nook.resume.share.v1'
-/** A note older than this is from some other visit, not a reload. */
-const FRESH_MS = 60_000
+/** A note older than this is from some other visit, not a reload or a restart into an update. */
+const FRESH_MS = 120_000
 /** How long the others wait for somebody who said they are updating. */
 export const BACK_WITHIN_MS = 30_000
 
@@ -26,13 +26,18 @@ export function updatingNow(): boolean {
   return updating
 }
 
-/** Called just before the reload. `sharingIn` is the room whose screen this page shares, if any. */
-export function noteForUpdate(voice: VoiceNote | null, sharingIn: string | null): void {
+/**
+ * Called just before the reload. `sharingIn` is the room whose screen this page shares, if any.
+ * `restart` is a restart of the desktop app into its update, which empties sessionStorage, so
+ * the note goes where a restart keeps it. The desktop app has one window, so no other tab takes it.
+ */
+export function noteForUpdate(voice: VoiceNote | null, sharingIn: string | null, restart = false): void {
   updating = true
   const at = Date.now()
   try {
-    if (voice) sessionStorage.setItem(VOICE_KEY, JSON.stringify({ ...voice, at }))
-    if (sharingIn) sessionStorage.setItem(SHARE_KEY, JSON.stringify({ room: sharingIn, at }))
+    const store = restart ? localStorage : sessionStorage
+    if (voice) store.setItem(VOICE_KEY, JSON.stringify({ ...voice, at }))
+    if (sharingIn) store.setItem(SHARE_KEY, JSON.stringify({ room: sharingIn, at }))
   } catch {
     /* storage blocked: the reload leaves the channel, as before */
   }
@@ -40,16 +45,19 @@ export function noteForUpdate(voice: VoiceNote | null, sharingIn: string | null)
 
 /** The note for this room, once: it is gone after it is read. */
 function take(key: string, room: string): Record<string, unknown> | null {
-  try {
-    const raw = sessionStorage.getItem(key)
-    if (!raw) return null
-    const note = JSON.parse(raw) as Record<string, unknown>
-    if (note.room !== room) return null
-    sessionStorage.removeItem(key)
-    return typeof note.at === 'number' && Date.now() - note.at < FRESH_MS ? note : null
-  } catch {
-    return null
+  for (const store of [sessionStorage, localStorage]) {
+    try {
+      const raw = store.getItem(key)
+      if (!raw) continue
+      const note = JSON.parse(raw) as Record<string, unknown>
+      if (note.room !== room) continue
+      store.removeItem(key)
+      if (typeof note.at === 'number' && Date.now() - note.at < FRESH_MS) return note
+    } catch {
+      /* storage blocked, or a note from some other version */
+    }
   }
+  return null
 }
 
 export function takeVoiceNote(room: string): VoiceNote | null {

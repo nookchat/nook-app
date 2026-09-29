@@ -2,6 +2,7 @@ import { spaces } from '../space/registry'
 import { filesFor, type SpaceRuntime } from '../space/runtime'
 import { shortKey } from '../store/identity'
 import { ROOMS_CHANGED } from '../store/notes'
+import { saveScreen } from '../store/screen'
 import { callControls, voiceDock } from './call'
 import { ChatPanel, avatarOf } from './chat-panel'
 import { h } from './dom'
@@ -157,6 +158,7 @@ export class HomeView {
     this.callBits?.stop()
     this.callBits = null
     this.open = ref
+    saveScreen({ kind: 'home', dm: ref ? { room: ref.room, key: ref.key } : null })
     this.shell.classList.toggle('dm-open', ref !== null)
     if (!ref) {
       this.panel = null

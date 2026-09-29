@@ -35,7 +35,7 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:17-alpine
@@ -49,6 +49,8 @@ jobs:
     env:
       NOOK_TEST_PG: postgres://nook:nook@localhost:5432
       CHROME_PATH: /usr/bin/google-chrome
+      # Four processors, and most checks run two or three browsers.
+      CHECKS_AT_ONCE: 3
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

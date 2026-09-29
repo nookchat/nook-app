@@ -87,7 +87,9 @@ try {
   const offer = await host.waitForSelector('.update-pop', { timeout: 5000 }).then((el) => el.textContent(), () => '')
   check('a new desktop app that has downloaded is offered', offer.includes('Nook 9.9.9 for the desktop is ready'), offer)
   await host.click('.update-pop button:has-text("Restart")')
-  check('and Restart asks the shell to install it', (await host.evaluate(() => window.__installed)) === true)
+  // Restart first notes the call and puts the new web version in charge, then asks.
+  const installed = await host.waitForFunction(() => window.__installed === true, null, { timeout: 8000 }).then(() => true, () => false)
+  check('and Restart asks the shell to install it', installed)
   await host.evaluate(() => document.querySelector('.update-pop')?.remove())
 
   const old = await (await browser.newContext()).newPage()

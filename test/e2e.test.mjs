@@ -188,7 +188,7 @@ try {
       URL.revokeObjectURL(url)
     }
   })
-  // Chrome reads QR codes on macOS, Android and ChromeOS only: elsewhere qr.test.mjs checks the code.
+  // Chrome reads QR codes on macOS, Android and ChromeOS only, so on Linux this one is skipped.
   if (scanned.skipped) console.log('SKIP  the QR code decodes back to the link  (no BarcodeDetector here)')
   else check('the QR code decodes back to the link', scanned.value === link, scanned.error ?? scanned.value ?? 'nothing')
   await host.keyboard.press('Escape')

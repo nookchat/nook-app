@@ -51,6 +51,7 @@ import { chirpMessage, isNews, speak } from './sounds'
 import type { LinkQuality } from '../net/voice'
 import { CUSTOM, CUSTOM_MAX_S, decodeClip, openSoundboard, playClip, type Sound } from './soundboard'
 import { ask, askChannel, askSound, pickSome } from './ask'
+import { saveScreen } from '../store/screen'
 import { channelMuted, channelMutedItself, MUTED_CHANGED, muteChannel, muteSpace, spaceMuted } from '../store/mute'
 import { avatarOf, ChatPanel, imageLinks } from './chat-panel'
 import { clear, copyText, fmtKbps, h, onPress, roleInk } from './dom'
@@ -68,6 +69,8 @@ import { VideoSurface } from './video-surface'
 
 const RECENT_MS = 14 * 24 * 60 * 60 * 1000
 const STATS_MS = 2000
+/** After the history is in, how long a remembered channel may still turn up. */
+const RESUME_GIVE_UP_MS = 5000
 const SOUND_EVERY_MS = 120
 /** How long the ring shows when the length of the sound is not known here. */
 const SOUND_RING_S = 1.5
@@ -244,6 +247,8 @@ export class SpaceView {
   private chatPanel!: ChatPanel
 
   private channel = DEFAULT_CHANNEL
+  /** The channel you were in before a reload or a restart, opened once it has loaded. */
+  private wantChannel: string | null = null
   private drawQueued = false
   readonly locked: boolean
   readonly server: string
@@ -401,6 +406,7 @@ export class SpaceView {
     this.chatPanel.useDraft(this.channel)
     this.read = { ...(space.note?.read ?? {}) }
     this.readWhenOpened = this.read[this.channel] ?? 0
+    saveScreen({ kind: 'space', room: space.room.id, channel: this.wantChannel ?? this.channel })
 
     void fetchIce(this.server).then((ice) => {
       if (!this.stopped) useServedIce(ice.iceServers, ice.relayOnly)
@@ -2277,6 +2283,11 @@ export class SpaceView {
 
     // Kept from you now, by a change to the channel or to your level.
     if (chat && !chat.mayEnter(chat.me, this.channel)) queueMicrotask(() => this.openChannel(DEFAULT_CHANNEL))
+    const wanted = this.wantChannel
+    if (chat && wanted && chat.channels().includes(wanted)) {
+      this.wantChannel = null
+      queueMicrotask(() => this.openChannel(wanted))
+    }
 
     for (const channel of chat?.channelInfo() ?? [{ name: DEFAULT_CHANNEL, label: DEFAULT_CHANNEL, topic: '', levels: [] }]) {
       const name = channel.name
@@ -3206,6 +3217,15 @@ export class SpaceView {
     openMenu(this.pinsButton, [{ heading: `Pinned in #${this.channel}` }, { custom: list }], { className: 'pins-menu' })
   }
 
+  /** Opens the channel you were in last time, as soon as the space knows it. */
+  resumeChannel(name: string): void {
+    if (name === this.channel) return
+    this.wantChannel = name
+    this.draw()
+    // History that never lists it: the channel is gone, and general it is.
+    void this.space.ready.then(() => window.setTimeout(() => (this.wantChannel = null), RESUME_GIVE_UP_MS))
+  }
+
   /** For a notification's click. Only a channel you may see. */
   openChannelNamed(name: string): void {
     if (this.chat?.channels().includes(name)) this.openChannel(name)
@@ -3225,6 +3245,7 @@ export class SpaceView {
     this.chatPanel.setDirect(null)
     this.chatPanel.useDraft(name)
     this.readWhenOpened = this.read[name] ?? 0
+    saveScreen({ kind: 'space', room: this.space.room.id, channel: name })
     this.stopWatching()
     this.draw()
   }

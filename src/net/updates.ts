@@ -1,3 +1,4 @@
+import { showBoot } from '../ui/boot'
 import { h } from '../ui/dom'
 import { icon } from '../ui/icons'
 
@@ -12,13 +13,24 @@ const CALL_LOOK_MS = 2000
 export interface UpdateHooks {
   /** In a voice channel or a call now. */
   inCall: () => boolean
-  /** Just before the reload: notes the call, so the new version joins it again. */
-  beforeReload: () => Promise<void>
+  /** Nothing a reload would lose: no call, no share, nothing half written. */
+  idle: () => boolean
+  /** Just before the reload: notes the call, so the new version joins it again. `restart` is the desktop app's. */
+  beforeReload: (restart?: boolean) => Promise<void>
 }
 
-let hooks: UpdateHooks = { inCall: () => false, beforeReload: async () => undefined }
+let hooks: UpdateHooks = { inCall: () => false, idle: () => false, beforeReload: async () => undefined }
 /** Offers a worker that has its files. Set once the service worker is ready. */
 let offerWorker: ((worker: ServiceWorker) => void) | null = null
+/**
+ * In the desktop app, a newer desktop app goes first: its offer stands in for the web
+ * one, and taking it takes the new web version too, so there is one restart, not two.
+ */
+let desktopFirst: (() => void) | null = null
+/** A new web version that has all its files, and the Update that reloads into it. */
+let webWaiting: { worker: ServiceWorker; update: () => Promise<void> } | null = null
+/** How long a quiet swap waits for the new worker to take charge, before the restart. */
+const QUIET_SWAP_MS = 3000
 
 /**
  * A new version downloads in the background, as a new service worker. When it
@@ -46,7 +58,21 @@ export function watchForUpdates(given: UpdateHooks): void {
       offered = worker
       const update = async (): Promise<void> => {
         asked = true
+        // The loading screen from here on, so the reload goes from one to the other with no flash.
+        document.querySelector('.update-pop')?.remove()
+        showBoot('Updating Nook')
         await swapToNewest(reg)
+      }
+      webWaiting = { worker, update }
+      if (desktopFirst) {
+        // Said again, so its words say the new web version comes with it.
+        if (!document.querySelector('.update-pop button:disabled')) desktopFirst()
+        return
+      }
+      // Nobody is looking and nothing would be lost: update now, with no question. The same screen comes back.
+      if (document.hidden && hooks.idle()) {
+        void update()
+        return
       }
       const inCall = hooks.inCall()
       showOffer(
@@ -89,7 +115,15 @@ export function watchForUpdates(given: UpdateHooks): void {
     }
     window.setInterval(check, CHECK_MS)
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') check()
+      if (document.visibilityState === 'visible') {
+        check()
+        return
+      }
+      // Put in the background with an update waiting: take it now, if nothing would be lost.
+      if (webWaiting && !desktopFirst && !waiting && !asked && hooks.idle()) {
+        document.querySelector('.update-pop')?.remove()
+        void webWaiting.update()
+      }
     })
   })
 }
@@ -194,27 +228,54 @@ export function watchForDesktopUpdates(): void {
     return
   }
   const install = shell.installUpdate
-  shell.onUpdate(({ version, ready }) =>
-    showOffer(
-      ready
-        ? {
-            title: `Nook ${version} for the desktop is ready`,
-            about: 'It has downloaded. Restart to use it. A call you are in ends, and you join again after.',
-            button: 'Restart',
-            busy: 'Restarting…',
+  shell.onUpdate(({ version, ready }) => {
+    desktopFirst = () => {
+      const alsoWeb = webWaiting ? ' The newest web version comes with it.' : ''
+      showOffer(
+        ready
+          ? {
+              title: `Nook ${version} for the desktop is ready`,
+              about: `It has downloaded. Restart to use it, and you are back on this screen, and in your call.${alsoWeb}`,
+              button: 'Restart',
+              busy: 'Restarting…',
+            }
+          : {
+              title: `Nook ${version} for the desktop is out`,
+              about: `Download it and open it in place of this one. Your spaces stay as they are.${alsoWeb}`,
+              button: 'Download',
+              busy: 'Opening…',
+            },
+        async () => {
+          if (ready) {
+            // The call is noted, to join again after, and the new worker takes charge first,
+            // so the restarted app opens on the new web version, on the same screen.
+            showBoot(`Restarting into Nook ${version}`, true)
+            await hooks.beforeReload(true)
+            await takeWebQuietly()
+            install()
+            return
           }
-        : {
-            title: `Nook ${version} for the desktop is out`,
-            about: 'Download it and open it in place of this one. Your spaces stay as they are.',
-            button: 'Download',
-            busy: 'Opening…',
-          },
-      async () => {
-        install()
-        if (!ready) document.querySelector('.update-pop')?.remove()
-      },
-    ),
-  )
+          install()
+          document.querySelector('.update-pop')?.remove()
+          // The app keeps running while the download does, so the page reloads into the new web version now.
+          await webWaiting?.update()
+        },
+      )
+    }
+    desktopFirst()
+  })
+}
+
+/** Puts the waiting web version in charge with no reload: the restart that follows loads it. */
+async function takeWebQuietly(): Promise<void> {
+  const worker = webWaiting?.worker
+  if (!worker || !('serviceWorker' in navigator)) return
+  const inCharge = new Promise<void>((done) => {
+    navigator.serviceWorker.addEventListener('controllerchange', () => done(), { once: true })
+    window.setTimeout(done, QUIET_SWAP_MS)
+  })
+  worker.postMessage({ type: 'nook-update' })
+  await inCharge
 }
 
 interface OfferWords {
