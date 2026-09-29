@@ -163,6 +163,24 @@ try {
     10_000,
   )
   check('a click opens it full screen', viewed === 'screen.png', viewed ?? 'no viewer')
+
+  // The desktop app's title bar is over everything: the viewer's buttons must be under it, not behind it.
+  const underBar = await bob.evaluate(() => {
+    document.documentElement.style.setProperty('--nook-titlebar', '32px')
+    const bar = Object.assign(document.createElement('div'), { id: 'fake-titlebar' })
+    Object.assign(bar.style, { position: 'fixed', left: 0, right: 0, top: 0, height: '32px', zIndex: 2147483000 })
+    document.body.append(bar)
+    const hit = (el) => {
+      const box = el.getBoundingClientRect()
+      return document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.closest('button') === el
+    }
+    const buttons = [...document.querySelectorAll('.viewer-bar button')]
+    const ok = buttons.length === 2 && buttons.every((b) => b.getBoundingClientRect().top >= 32 && hit(b))
+    bar.remove()
+    document.documentElement.style.removeProperty('--nook-titlebar')
+    return ok
+  })
+  check('under the desktop title bar, Save and Close are below it and take a click', underBar)
   await wait(400)
   await shot(bob, 'viewer')
   await bob.keyboard.press('Escape')

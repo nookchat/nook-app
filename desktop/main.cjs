@@ -4,10 +4,11 @@
 // the system sound on Windows, the game you are playing, the unread count on
 // its icon, and updates of itself.
 
-const { app, BrowserWindow, desktopCapturer, ipcMain, nativeImage, nativeTheme, screen, session, shell } = require('electron')
+const { app, BrowserWindow, clipboard, desktopCapturer, ipcMain, Menu, nativeImage, nativeTheme, screen, session, shell } = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')
 const { watchGames } = require('./games.cjs')
+const { editMenu } = require('./edit-menu.cjs')
 const { pickerBounds, restoreBounds, screenOf } = require('./placement.cjs')
 const { watchUpdates } = require('./updates.cjs')
 
@@ -149,6 +150,21 @@ function createWindow() {
     if (isHome(url)) main.loadURL(url)
     else openOutside(url)
     return { action: 'deny' }
+  })
+  // A right click in a text box, on a selection, a link or a picture gets the menu a browser
+  // gives, with spelling. The page's own menus cancel the right click, so they never come here.
+  main.webContents.on('context-menu', (_ev, params) => {
+    const win = main
+    if (!win) return
+    const wc = win.webContents
+    const items = editMenu(params, {
+      replace: (word) => wc.replaceMisspelling(word),
+      learn: (word) => wc.session.addWordToSpellCheckerDictionary(word),
+      open: (url) => (isHome(url) ? win.loadURL(url) : openOutside(url)),
+      copyText: (text) => clipboard.writeText(text),
+      copyImage: (x, y) => wc.copyImageAt(x, y),
+    })
+    if (items.length) Menu.buildFromTemplate(items).popup({ window: win })
   })
   main.webContents.on('will-navigate', (ev, url) => {
     if (isHome(url)) return

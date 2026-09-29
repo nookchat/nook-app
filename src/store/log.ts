@@ -35,7 +35,7 @@ export const PERMISSIONS: { id: Permission; label: string; about: string }[] = [
   { id: 'pin', label: 'Pin messages', about: 'Hold a message up at the top of a channel' },
   { id: 'delete', label: 'Delete messages', about: 'Take down what anybody wrote' },
   { id: 'remove', label: 'Remove people', about: 'Remove somebody, or let them back in' },
-  { id: 'move', label: 'Move people', about: 'Move somebody into your voice channel' },
+  { id: 'move', label: 'Move people', about: 'Move somebody into a voice channel' },
   { id: 'soundboard', label: 'Soundboard', about: 'Play sounds in a voice channel, and add them' },
   { id: 'levels', label: 'Levels', about: 'Change levels below theirs, and put people on them' },
   { id: 'space', label: 'The space', about: 'Rename it, clear its history, or delete it' },

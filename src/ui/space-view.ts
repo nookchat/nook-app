@@ -253,6 +253,8 @@ export class SpaceView {
   private wantChannel: string | null = null
   /** The channel being dragged to a new place. Its list is not drawn again until the drag ends. */
   private channelDrag: { name: string; voice: boolean } | null = null
+  /** The key of somebody being dragged into a voice channel. The lists wait for the drop. */
+  private personDrag: string | null = null
   private drawQueued = false
   readonly locked: boolean
   readonly server: string
@@ -2359,6 +2361,48 @@ export class SpaceView {
     this.mentions = mentions
   }
 
+  /** Somebody who may move people drags a person, from voice or from the list of people. */
+  private dragPerson(el: HTMLElement, key: string): void {
+    el.draggable = true
+    el.addEventListener('dragstart', (ev) => {
+      ev.stopPropagation()
+      this.personDrag = key
+      if (ev.dataTransfer) {
+        ev.dataTransfer.effectAllowed = 'move'
+        ev.dataTransfer.setData('text/plain', key)
+      }
+      el.classList.add('dragging')
+    })
+    el.addEventListener('dragend', () => {
+      this.personDrag = null
+      for (const row of this.voiceList.querySelectorAll('.drop-into')) row.classList.remove('drop-into')
+      this.draw()
+    })
+  }
+
+  /** A voice channel that takes a dragged person: their device is asked to join it. */
+  private takePeople(row: HTMLElement, channel: ChannelInfo): void {
+    row.addEventListener('dragover', (ev) => {
+      if (!this.personDrag) return
+      ev.preventDefault()
+      if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'move'
+      row.classList.add('drop-into')
+    })
+    row.addEventListener('dragleave', (ev) => {
+      if (!(ev.relatedTarget instanceof Node && row.contains(ev.relatedTarget))) row.classList.remove('drop-into')
+    })
+    row.addEventListener('drop', (ev) => {
+      row.classList.remove('drop-into')
+      const key = this.personDrag
+      if (!key) return
+      ev.preventDefault()
+      ev.stopPropagation()
+      this.personDrag = null
+      void this.moveTo(key, channel.name)
+      this.draw()
+    })
+  }
+
   /** Somebody who keeps the channels drags one to a new place in its list, for everybody. */
   private orderByHand(row: HTMLElement, name: string, voice: boolean): void {
     row.draggable = true
@@ -2463,7 +2507,7 @@ export class SpaceView {
   }
 
   private renderVoice(): void {
-    if (this.channelDrag?.voice) {
+    if (this.channelDrag?.voice || this.personDrag) {
       this.renderVoiceBar()
       return
     }
@@ -2510,6 +2554,7 @@ export class SpaceView {
       if (canEdit) onContextMenu(head, () => this.voiceChannelActions(channel))
       const row = h('div', { class: 'voice-channel' }, [head])
       if (canEdit) this.orderByHand(row, name, true)
+      if (chat?.can('move')) this.takePeople(row, channel)
       for (const [key, ids] of people) {
         row.append(this.voiceMember(key, ids, peers, names.get(key) ?? '', avatars.get(key) ?? ''))
       }
@@ -2562,6 +2607,10 @@ export class SpaceView {
     if (!mine) {
       onContextMenu(member, () => [{ custom: this.volumeBlock(key, name) }])
       member.title = 'Right click for their volume'
+      if (this.chat?.can('move')) {
+        this.dragPerson(member, key)
+        member.title = 'Drag to another voice channel to move them. Right click for their volume'
+      }
     }
     const who = h('span', { class: 'truncate grow', text: label })
     const colour = this.chat?.levelOf(key).colour
@@ -2814,6 +2863,9 @@ export class SpaceView {
     const me = loadIdentity().pubkey
     if (!(await verifyClaim(['vmove', this.room.id, me, asked, at], sig, by))) return
     if (!this.chat.authority().can(by, 'move')) return
+    // Only to a voice channel there is, that this person may go in, and not the one they are in.
+    if (!this.chat.channelInfo(true).some((c) => c.name === channel)) return
+    if (!this.chat.mayEnter(me, channel, true) || this.voice?.state.channel === channel) return
     // Replay guard: the signed time must climb per admin key. Clocks differ, so it is not compared with ours.
     if (at <= (this.newestMoveBy.get(by) ?? 0)) return
     this.newestMoveBy.set(by, at)
@@ -2851,17 +2903,25 @@ export class SpaceView {
   }
 
   private async moveTo(key: string, channel: string): Promise<void> {
-    if (!this.room) return
-    const peer = this.mesh?.peers().find((p) => p.key === key)
+    if (!this.room || !this.chat?.can('move')) return
+    const sessions = (this.mesh?.peers() ?? []).filter((p) => p.key === key)
+    // The device of theirs that is in voice, if one is: that is the one to move.
+    const peer = sessions.find((p) => this.voice?.whereIs(p.id)) ?? sessions[0]
     if (!peer) {
       toast('They are not here right now.', 'warn', 4000)
+      return
+    }
+    const label = this.chat.channelInfo(true).find((c) => c.name === channel)?.label ?? channel
+    if (this.voice?.whereIs(peer.id) === channel) return
+    if (!this.chat.mayEnter(key, channel, true)) {
+      toast(`Their level may not go in ${label}.`, 'warn', 5000)
       return
     }
     const by = loadIdentity().pubkey
     const at = Date.now()
     const sig = await signClaim(['vmove', this.room.id, key, channel, at])
     void this.bus?.send({ type: 'vmove', to: peer.id, data: { channel, by, at, sig } })
-    toast(`Asked them to join ${channel}`, 'good', 4000)
+    toast(this.voice?.whereIs(peer.id) ? `Moved them to ${label}` : `Asked them to join ${label}`, 'good', 4000)
   }
 
   private personMenu(key: string, role: string, you: boolean, here: boolean): MenuEntry[] {
@@ -2960,12 +3020,21 @@ export class SpaceView {
     const auth = chat.authority()
     const me = chat.me
     const standing = this.voice?.state.channel
-    if (here && standing && auth.can(me, 'move')) {
-      items.push({
-        label: `Move to ${standing}`,
-        note: 'Asks their device to join the voice channel you are in',
-        run: () => void this.moveTo(key, standing),
-      })
+    if (here && !you && auth.can(me, 'move')) {
+      // Every voice channel they may go in and are not in: a drag does the same, where there is a mouse.
+      const theirs = (this.mesh?.peers() ?? []).filter((p) => p.key === key).map((p) => this.voice?.whereIs(p.id)).find(Boolean)
+      const into = chat.channelInfo(true).filter((c) => c.name !== theirs && chat.mayEnter(key, c.name, true))
+      if (into.length) {
+        items.push('line', { heading: 'Move to' })
+        for (const c of into) {
+          items.push({
+            label: c.label,
+            lead: h('span', { class: 'menu-icon' }, [icon('volume', 16)]),
+            note: c.name === standing ? 'The voice channel you are in' : undefined,
+            run: () => void this.moveTo(key, c.name),
+          })
+        }
+      }
     }
     if (role !== 'kicked' && auth.mayPlace(me, key)) {
       const mine = auth.levelOf(me).rank
@@ -3085,6 +3154,7 @@ export class SpaceView {
   }
 
   private renderPeople(order: PersonRow[]): void {
+    if (this.personDrag) return
     clear(this.peopleList)
     const chat = this.chat
     const roles = chat?.roles() ?? new Map<string, string>()
@@ -3154,6 +3224,7 @@ export class SpaceView {
       more,
     ])
     if (!row.you) onContextMenu(person, () => this.personMenu(row.key, role, row.you, row.here))
+    if (!row.you && row.here && this.chat?.can('move')) this.dragPerson(person, row.key)
     return person
   }
 

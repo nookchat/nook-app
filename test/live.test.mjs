@@ -194,21 +194,27 @@ try {
     await more.first().evaluate((el) => el.focus())
     await more.first().click()
     await page.waitForSelector('.menu', { timeout: 5000 })
-    const items = await page.$$eval('.menu-item', (els) =>
+    // Headings too: Move to is a heading, with a voice channel under it for each place to go.
+    const items = await page.$$eval('.menu-item, .menu-heading', (els) =>
       els.map((e) => e.textContent.trim().split('\n')[0]),
     )
     await page.keyboard.press('Escape')
     return items
   }
 
+  await alice.click('button[title="Make a voice channel"]')
+  await answer(alice, 'war-room')
+  await alice.getByRole('button', { name: 'war-room' }).first().click()
+  await alice.waitForTimeout(1500)
+
   const canMove = await poll(
     async () => {
       const items = await menuFor(alice, 'Bob')
-      return items.some((t) => t.startsWith('Move to')) ? items : null
+      return items.includes('Move to') && items.some((t) => t.startsWith('war-room')) ? items : null
     },
     20_000,
   )
-  check('an admin standing in a voice channel can move people to it', !!canMove, (canMove ?? []).join(' | '))
+  check('an admin can move people to a voice channel', !!canMove, (canMove ?? []).join(' | '))
 
   const bobOffered = await menuFor(bob, 'Alice')
   check(
@@ -217,16 +223,11 @@ try {
     bobOffered.join(' | ') || 'nothing',
   )
 
-  await alice.click('button[title="Make a voice channel"]')
-  await answer(alice, 'war-room')
-  await alice.getByRole('button', { name: 'war-room' }).first().click()
-  await alice.waitForTimeout(1500)
-
   const bobRow = alice.locator('.rail-person', { hasText: 'Bob' })
   await bobRow.locator('.person-more').first().evaluate((el) => el.focus())
   await bobRow.locator('.person-more').first().click()
   await alice.waitForSelector('.menu', { timeout: 5000 })
-  await alice.click('.menu-item:has-text("Move to war-room")')
+  await alice.click('.menu-item:has-text("war-room")')
 
   const moved = await poll(
     async () => {

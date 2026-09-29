@@ -53,6 +53,12 @@ with voice does it.
   channel to a new place, or uses Move up and Move down in its menu, and
   everybody sees that order. A channel made later goes at the end. Every
   device ignores an order from somebody without Channels.
+- **Moving people**: somebody whose level has Move people (Admin and
+  Moderator to start with) drags a person, from a voice channel or from the
+  list of people, onto a voice channel, or picks one under Move to in their
+  menu. Somebody in voice goes there; somebody who is not is asked to join,
+  since a browser opens the microphone only on a click. Their own device
+  checks the mover's level and that they may go in that channel.
 - **Video controls** show while the pointer moves over a playing video or a
   stream, and go when it rests.
 - **Files**: the clip in the box, a file dropped on the conversation, or one
@@ -358,6 +364,11 @@ the bar has Zoom out, Zoom in and Reset.
   for a screen or a window. On Windows it can share the system sound too. It
   also tells the page what game you are playing: `desktop/games.cjs` looks at
   the running programs every 15 seconds, while Settings lets it.
+- **Right click in the desktop app:** a text box, a selection, a link or a
+  picture gets the menu a browser gives, with spelling guesses
+  (`desktop/edit-menu.cjs`). The page's own menus, on a channel or a
+  person, stay as they are. Full screen pictures and dialogs sit under the
+  app's title bar, not behind it.
 - **Desktop windows:** the picker for a screen or a window opens over the
   Nook window, on its screen, so with Nook on a second screen the picker is
   there too. Nook opens where it was when it last closed: the same place,
