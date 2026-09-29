@@ -102,7 +102,7 @@ export async function makeClip(source: ClipSource, range: ClipRange, options: Cl
     if (!plan) throw new ClipRefused(`That part is too long for this server. Pick ${longestClip(options.max)} seconds or less.`)
     // A picture this browser cannot decode cannot be made again: copied as it is, if it fits.
     if (!plan.copy && !(await video.canDecode())) {
-      if (copyGuess > options.max * FILL) throw new ClipRefused('This browser cannot make that part smaller. Pick a shorter part.')
+      if (copyGuess > options.max * FILL) throw new ClipRefused('This browser cannot compress that part. Pick a shorter part.')
       plan = { copy: true }
     }
 
@@ -167,7 +167,7 @@ async function convert(
     showWarnings: false,
   })
   if (!conversion.isValid) throw new ClipRefused('This recording cannot be made into a clip here.')
-  const words = plan.copy ? 'Cutting' : 'Making it smaller'
+  const words = plan.copy ? 'Cutting' : 'Compressing'
   onPart?.(0, words)
   conversion.onProgress = (part) => onPart?.(part, words)
   const stop = (): void => void conversion.cancel()

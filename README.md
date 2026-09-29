@@ -144,7 +144,7 @@ with voice does it.
   `localconfig.vdf` says. The desktop app (`desktop/recordings.cjs`) serves
   those pieces as one MP4 with its sound, at a `nook-rec://` address, and the
   page plays it a piece at a time. The clip is copied as it is when it fits
-  the server, and made smaller when it does not, on your device, with the
+  the server, and compressed when it does not, on your device, with the
   browser's own encoder (`src/media/clip.ts`). HEVC becomes H.264, which
   every browser plays.
 - **GIFs** come from the server of the space, with its key: whoever runs it

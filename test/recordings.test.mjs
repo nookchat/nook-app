@@ -8,7 +8,7 @@ import { APP_URL, check, finish, launch, poll, stoppedEarly } from './harness.mj
 // Your recordings, and a clip of one. The desktop app is not here, so a stand-in plays its part:
 // window.nookDesktop.recordings lists the videos ffmpeg makes, and the page reads them from an
 // address that answers ranges, as the app's nook-rec:// one does. The clip is cut as it is when
-// it fits, made smaller when it does not, and made H.264 when it is HEVC.
+// it fits, compressed when it does not, and made H.264 when it is HEVC.
 
 const dir = mkdtempSync(join(tmpdir(), 'nook-recordings-'))
 const ffmpeg = (...args) => execFileSync('ffmpeg', ['-v', 'error', '-y', ...args], { cwd: dir })
@@ -168,7 +168,7 @@ try {
   check('named for the game', copied.name.startsWith('Counter-Strike 2 ') && copied.name.endsWith('.mp4'), copied.name)
 
   const small = await readClip(page, await made('plain', 0, 30, 6 * 1024 * 1024))
-  check('a part too big for the server is made smaller, and fits', small.size <= 6 * 1024 * 1024 && small.video === 'avc', `${(small.size / 1024 / 1024).toFixed(1)} MB`)
+  check('a part too big for the server is compressed, and fits', small.size <= 6 * 1024 * 1024 && small.video === 'avc', `${(small.size / 1024 / 1024).toFixed(1)} MB`)
   check('and keeps its length and its sound', Math.abs(small.duration - 30) < 1.2 && small.audio === 'aac', `${small.duration.toFixed(2)} s`)
 
   const refused = await page.evaluate(async (item) => {
@@ -201,6 +201,8 @@ try {
   const loaded = await poll(() => page.evaluate(() => document.querySelector('.clip-video')?.readyState >= 1), 10_000)
   check('a recording opens in the clip editor, and plays', loaded)
   const about = () => page.locator('.clip-about').textContent()
+  const marks = page.locator('.clip-controls button[aria-label="Start the clip here"], .clip-controls button[aria-label="End the clip here"]')
+  check('the start and the end are set with icon buttons', (await marks.count()) === 2 && (await marks.first().textContent()).trim() === '' && (await marks.first().locator('svg').count()) === 1)
   check('a short one starts as all of it', /Clip 0:00 to 0:40 · 0:40/.test(await about()), await about())
   // The end, three presses to the left with Shift: fifteen seconds earlier.
   await page.locator('.clip-handle.end').focus()
@@ -216,6 +218,7 @@ try {
   await page.waitForSelector('.attach-chip', { timeout: 30_000 })
   check('Add to message puts the clip in the message box', (await page.locator('.attach-chip .attach-name').textContent()).endsWith('.mp4'))
   check('and closes the dialog', (await page.locator('.recordings-modal').count()) === 0)
+  check('with no toast', (await page.locator('.toast').count()) === 0, await page.locator('.toast').allTextContents().then((t) => t.join(' | ')))
   const sent = await poll(() => page.evaluate(() => document.querySelector('.attach-chip.done') !== null), 30_000)
   check('the clip goes up to the server', sent)
   await page.click('button[aria-label="Send"]')

@@ -154,7 +154,6 @@ export function openRecordings(options: RecordingsOptions): void {
     editor = new ClipEditor(rec, options.max, (file) => {
       options.onClip(file)
       close()
-      toast('The clip is in your message. Send it when you are ready.', 'good')
     })
     body.replaceChildren(editor.root)
     editor.focus()
@@ -342,8 +341,18 @@ class ClipEditor {
         this.playButton,
         this.clock,
         h('span', { class: 'grow' }),
-        h('button', { class: 'ghost small', title: 'The start is here (I)', on: { click: () => this.setStart(this.now()) } }, ['Start here']),
-        h('button', { class: 'ghost small', title: 'The end is here (O)', on: { click: () => this.setEnd(this.now()) } }, ['End here']),
+        h('button', {
+          class: 'ghost icon-only',
+          title: 'Start the clip here (I)',
+          ariaLabel: 'Start the clip here',
+          on: { click: () => this.setStart(this.now()) },
+        }, [icon('clip-start', 18)]),
+        h('button', {
+          class: 'ghost icon-only',
+          title: 'End the clip here (O)',
+          ariaLabel: 'End the clip here',
+          on: { click: () => this.setEnd(this.now()) },
+        }, [icon('clip-end', 18)]),
       ]),
       this.track,
       h('div', { class: 'row wrap clip-foot' }, [
@@ -502,7 +511,7 @@ class ClipEditor {
     this.about.textContent = tooLong
       ? `${timeLabel(seconds)} is too long for this server. Pick ${longestClip(this.max)} seconds or less.`
       : `Clip ${timeLabel(this.start)} to ${timeLabel(this.end)} · ${timeLabel(seconds)} · ${
-          fits ? `about ${sizeLabel(guess)}` : `made smaller to fit ${sizeLabel(this.max)}`
+          fits ? `about ${sizeLabel(guess)}` : `compressed to fit ${sizeLabel(this.max)}`
         }`
     this.about.classList.toggle('bad', tooLong)
     this.shareButton.disabled = tooLong || !this.duration
