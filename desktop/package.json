@@ -25,6 +25,7 @@
       "main.cjs",
       "games.cjs",
       "updates.cjs",
+      "placement.cjs",
       "preload.cjs",
       "picker.html",
       "picker-preload.cjs",

@@ -358,6 +358,11 @@ the bar has Zoom out, Zoom in and Reset.
   for a screen or a window. On Windows it can share the system sound too. It
   also tells the page what game you are playing: `desktop/games.cjs` looks at
   the running programs every 15 seconds, while Settings lets it.
+- **Desktop windows:** the picker for a screen or a window opens over the
+  Nook window, on its screen, so with Nook on a second screen the picker is
+  there too. Nook opens where it was when it last closed: the same place,
+  size and screen, maximized if it was (`desktop/placement.cjs`). If that
+  screen is gone, it opens in the middle of the main screen.
 - **Desktop updates:** the desktop app looks for a newer version in the
   [GitHub releases](https://github.com/nookchat/nook-app/releases) at start
   and every 4 hours (`desktop/updates.cjs`), and downloads it. The page offers

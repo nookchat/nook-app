@@ -4,9 +4,11 @@
 // the system sound on Windows, the game you are playing, the unread count on
 // its icon, and updates of itself.
 
-const { app, BrowserWindow, desktopCapturer, ipcMain, nativeImage, nativeTheme, session, shell } = require('electron')
+const { app, BrowserWindow, desktopCapturer, ipcMain, nativeImage, nativeTheme, screen, session, shell } = require('electron')
+const fs = require('node:fs')
 const path = require('node:path')
 const { watchGames } = require('./games.cjs')
+const { pickerBounds, restoreBounds, screenOf } = require('./placement.cjs')
 const { watchUpdates } = require('./updates.cjs')
 
 app.setName('Nook')
@@ -63,12 +65,67 @@ function openLink(url) {
   main.focus()
 }
 
+const MIN_SIZE = { width: 380, height: 500 }
+/** Where the window was when it last closed: its place, its screen, and whether it filled it. */
+const PLACE_FILE = () => path.join(app.getPath('userData'), 'window.json')
+const PLACE_SAVE_MS = 600
+
+function readPlace() {
+  try {
+    return JSON.parse(fs.readFileSync(PLACE_FILE(), 'utf8'))
+  } catch {
+    return null
+  }
+}
+
+function writePlace(place) {
+  try {
+    fs.writeFileSync(PLACE_FILE(), JSON.stringify(place))
+  } catch {
+    /* no place to keep it: the next start picks, as on a first start */
+  }
+}
+
+/**
+ * Keeps the window's place as it moves, so a quit of any kind finds it. The place is the
+ * size it has when not maximized or full screen; the screen is the one it is on now.
+ */
+function rememberPlace(win, saved) {
+  let normal = saved?.bounds ?? win.getBounds()
+  let timer = null
+  const now = () => {
+    if (win.isDestroyed()) return null
+    const plain = !win.isMaximized() && !win.isFullScreen() && !win.isMinimized()
+    if (plain) normal = win.getBounds()
+    const on = screen.getDisplayMatching(win.getBounds())
+    // Maximized on another screen than its plain place: that screen is where it opens next.
+    const bounds = screenOf(normal, [on]) ? normal : { ...normal, x: on.workArea.x, y: on.workArea.y }
+    return { bounds, displayId: on.id, maximized: win.isMaximized() }
+  }
+  const save = () => {
+    const place = now()
+    if (place) writePlace(place)
+  }
+  const soon = () => {
+    if (timer) clearTimeout(timer)
+    timer = setTimeout(save, PLACE_SAVE_MS)
+  }
+  for (const ev of ['move', 'resize', 'maximize', 'unmaximize', 'leave-full-screen']) win.on(ev, soon)
+  win.on('close', () => {
+    if (timer) clearTimeout(timer)
+    save()
+  })
+}
+
 function createWindow() {
+  const saved = readPlace()
+  const place = restoreBounds(saved, screen.getAllDisplays(), MIN_SIZE)
   main = new BrowserWindow({
     width: 1280,
     height: 800,
-    minWidth: 380,
-    minHeight: 500,
+    ...(place ?? {}),
+    minWidth: MIN_SIZE.width,
+    minHeight: MIN_SIZE.height,
     backgroundColor: pageColour(),
     title: 'Nook',
     autoHideMenuBar: true,
@@ -98,6 +155,8 @@ function createWindow() {
     ev.preventDefault()
     openOutside(url)
   })
+  if (place && saved.maximized) main.maximize()
+  rememberPlace(main, place ? { ...saved, bounds: place } : null)
   main.on('closed', () => {
     main = null
   })
@@ -134,12 +193,15 @@ async function pickSource(parent) {
   if (sources.length === 0) return null
   if (sources.length === 1) return { source: sources[0], audio: false }
 
+  const size = { width: 880 + PICKER_MARGIN * 2, height: 640 + PICKER_MARGIN * 2 }
+  // Over the main window, on its screen: with Nook on a second screen, the picker is there too.
+  const at = parent && !parent.isDestroyed() ? pickerBounds(parent.getBounds(), screen.getAllDisplays(), size.width, size.height) : null
   const picker = new BrowserWindow({
     parent,
     modal: true,
     // The page draws the window: rounded like a Nook dialog, with its own shadow in a clear margin.
-    width: 880 + PICKER_MARGIN * 2,
-    height: 640 + PICKER_MARGIN * 2,
+    ...size,
+    ...(at ?? {}),
     frame: false,
     transparent: true,
     backgroundColor: '#00000000',
