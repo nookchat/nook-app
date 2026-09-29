@@ -10,7 +10,8 @@ export type IconName =
   | 'mute'
   | 'zoom-in'
   | 'zoom-out'
-  | 'fit'
+  | 'window'
+  | 'clapper'
   | 'close'
   | 'refresh'
   | 'monitor'
@@ -154,7 +155,8 @@ const ICONS: Record<IconName, string | Drawing> = {
   volume: 'M11 5.5 6.5 9.5H3.5v5h3l4.5 4zM15.5 9.5a3.6 3.6 0 0 1 0 5M18.5 6.5a7.5 7.5 0 0 1 0 11',
   'volume-low': 'M11 5.5 6.5 9.5H3.5v5h3l4.5 4zM15.5 9.5a3.6 3.6 0 0 1 0 5',
   mute: 'M11 5.5 6.5 9.5H3.5v5h3l4.5 4zM16 10l5 4M21 10l-5 4',
-  fit: `${rect(3, 6, 18, 12, 2)}M8 9.5h8v5H8z`,
+  clapper: 'M4 10h16v8.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5zM4 10l-.7-3.1a1.5 1.5 0 0 1 1.1-1.8L17 2.3a1.5 1.5 0 0 1 1.8 1.1l.4 1.7zM8.3 4.2l2.2 3.6M13.1 3.1l2.2 3.6',
+  window: `${rect(3, 4, 18, 16, 2)}M3 8.5h18M9 12 7 14l2 2M15 12l2 2-2 2`,
   refresh: 'M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5',
   signal: 'M5 19v-3M10 19v-6.5M15 19V9M20 19V5.5',
   monitor: `${rect(3, 4, 18, 12, 2)}M9 20h6M12 16v4`,

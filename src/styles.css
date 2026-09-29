@@ -1223,18 +1223,6 @@ details.adv[open] > summary {
   background: var(--video-bg);
 }
 
-.surface[data-mode="fit"] video {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
-.surface[data-mode="fill"] video {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
 .surface[data-mode="actual"] {
   overflow: hidden;
   cursor: grab;
@@ -1291,6 +1279,20 @@ details.adv[open] > summary {
   margin: 0 2px;
   background: var(--line);
   flex: 0 0 auto;
+}
+
+/* Over the whole window, under the desktop app's title bar. */
+.surface.full-window {
+  position: fixed;
+  inset: var(--nook-titlebar, 0px) 0 0 0;
+  z-index: 55;
+  border: 0;
+  border-radius: 0;
+}
+
+.surface-bar button.on {
+  background: var(--hover);
+  color: var(--fg);
 }
 
 .surface.hide-bar .surface-bar {
@@ -1690,10 +1692,6 @@ button.person-more {
   display: inline-flex;
   gap: 2px;
   color: var(--bad);
-}
-
-.voice-member.updating {
-  opacity: 0.55;
 }
 
 .voice-game {
@@ -6520,4 +6518,303 @@ input.invalid:focus {
 .voice-member.dragging,
 .rail-person.dragging {
   opacity: 0.5;
+}
+
+/* Your recordings, and the clip made from one (src/ui/recordings.ts). */
+.recordings-modal {
+  max-width: 920px;
+  max-height: min(88dvh, 860px);
+  overflow: hidden;
+}
+
+.recordings-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 16px 14px 10px 20px;
+}
+
+.recordings-head .invite-words {
+  flex: 1;
+  min-width: 0;
+}
+
+.recordings-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 20px 20px;
+}
+
+.recordings-filters:empty {
+  display: none;
+}
+
+.chip-toggle {
+  min-height: 30px;
+  padding: 0 12px;
+  font-size: var(--size-small);
+  background: var(--select);
+}
+
+.chip-toggle.on {
+  background: var(--brand);
+  color: var(--on-brand);
+}
+
+.recordings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.recording-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  min-height: 0;
+  height: auto;
+  padding: 0;
+  overflow: hidden;
+  text-align: left;
+  background: var(--face);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+}
+
+.recording-card:hover {
+  background: var(--face);
+  border-color: var(--border-strong);
+}
+
+.recording-face {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 16 / 9;
+  background: var(--video-bg);
+  color: var(--on-media);
+}
+
+.recording-picture {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.recording-picture.steam {
+  opacity: 0.8;
+}
+
+.recording-face > svg {
+  position: relative;
+  z-index: 1;
+  opacity: 0;
+  filter: drop-shadow(0 1px 4px rgb(0 0 0 / 60%));
+  transition: opacity 120ms var(--ease);
+}
+
+.recording-card:hover .recording-face > svg,
+.recording-card:focus-visible .recording-face > svg {
+  opacity: 1;
+}
+
+.recording-length,
+.recording-source {
+  position: absolute;
+  z-index: 1;
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--media-chip);
+  color: var(--on-media);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.recording-length {
+  right: 6px;
+  bottom: 6px;
+  font-family: var(--mono);
+}
+
+.recording-source {
+  top: 6px;
+  left: 6px;
+}
+
+.recording-words {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 10px 10px;
+}
+
+.recording-title {
+  font-weight: 600;
+}
+
+.recordings-empty {
+  grid-column: 1 / -1;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 40px 16px;
+  text-align: center;
+  color: var(--fg-dim);
+}
+
+.recordings-empty .tiny {
+  max-width: 420px;
+}
+
+.recordings-folders {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.recordings-modal .recordings-folders {
+  padding: 12px;
+  border-radius: var(--radius-md);
+  background: var(--pane);
+  box-shadow: 0 0 0 1px var(--line);
+}
+
+.recordings-folders.hidden {
+  display: none;
+}
+
+.recording-folder {
+  gap: 8px;
+  min-width: 0;
+}
+
+.folder-kind {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--select);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.clip-editor {
+  gap: 10px;
+}
+
+.clip-stage {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 16 / 9;
+  max-height: 52dvh;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: var(--video-bg);
+}
+
+.clip-video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.clip-controls {
+  gap: 6px;
+}
+
+.clip-clock {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-dim);
+}
+
+/* The whole recording, with the part in the clip, its two ends, and where it is playing. */
+.clip-track {
+  position: relative;
+  height: 44px;
+  margin: 4px 7px;
+  border-radius: var(--radius-sm);
+  background: var(--select);
+  cursor: pointer;
+  touch-action: none;
+}
+
+.clip-chosen {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: color-mix(in srgb, var(--brand) 16%, transparent);
+  box-shadow: inset 0 2px 0 var(--brand), inset 0 -2px 0 var(--brand);
+}
+
+.clip-handle {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 14px;
+  margin-left: -7px;
+  border-radius: 5px;
+  background: var(--brand);
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.clip-handle::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 2px;
+  height: 16px;
+  margin: -8px 0 0 -1px;
+  border-radius: 1px;
+  background: var(--on-brand);
+}
+
+.clip-handle:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.clip-playhead {
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--fg);
+  pointer-events: none;
+}
+
+.clip-foot {
+  gap: 8px;
+}
+
+.clip-about.bad {
+  color: var(--bad);
+}
+
+.clip-progress {
+  margin: 0;
+}
+
+.clip-note:empty {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .recordings-body {
+    padding: 0 14px 14px;
+  }
+
+  .recordings-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  }
 }

@@ -167,9 +167,11 @@ try {
         page.evaluate(() => {
           // Their own preview is a tile too, so look for the watched one.
           for (const tile of document.querySelectorAll('.stage-tile')) {
-            const tag = tile.querySelector('.stage-tag')?.textContent ?? ''
+            const tagEl = tile.querySelector('.stage-tag')
+            const tag = tagEl?.textContent ?? ''
             const el = tile.querySelector('video')
-            if (!tag.startsWith('Your screen') && el && el.videoWidth > 0 && !el.paused) {
+            // Your own screen has no tag.
+            if (tagEl && !tagEl.classList.contains('hidden') && el && el.videoWidth > 0 && !el.paused) {
               return `${tag}, ${el.videoWidth}px`
             }
           }

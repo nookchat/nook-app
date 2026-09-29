@@ -9,7 +9,6 @@ import { heardAt } from '../net/volume'
 import { deriveRoom, newPeerId, type Room } from '../room'
 import { rtcConfig } from '../rtc/config'
 import { KeyKeeper, SpaceKeys } from './keys'
-import { BACK_WITHIN_MS, takeVoiceNote, updatingNow } from './resume'
 import { channelMuted } from '../store/mute'
 import { SignalBus } from '../signal/bus'
 import type { Envelope } from '../signal/envelope'
@@ -26,8 +25,6 @@ const LAST_SEEN_REFRESH_MS = 60 * 60 * 1000
 const HISTORY_WAIT_MS = 6000
 /** How long a join waits for the server's relays. Past this it joins without them. */
 const ICE_WAIT_MS = 5000
-/** A voice channel joined again after an update, with nobody reached by now, is joined once more. */
-const RESUME_CHECK_MS = 12_000
 const RING_TIMEOUT_MS = 30_000
 /** After a reconnect, how long the others get to say hello before the silent ones count as gone. */
 const EVERYONE_WAIT_MS = 25_000
@@ -121,15 +118,11 @@ export class SpaceRuntime {
   private iceReady: Promise<void> = Promise.resolve()
   private ringTimer = 0
   private voiceWas: string | null = null
-  /** Set while a mute or deafen is put back after an update, which plays no sound. */
-  private hushVoice = false
   private stillHere = 0
   /** When the minute's check last ran. A page that slept has heard nobody, and drops nobody for it. */
   private lastLook = 0
   /** The server keeps a list of who is here. Only an old one does not, and silence is the clue then. */
   private serverLists = false
-  /** People who said they are updating, by key: their voice comes back in a moment, with no sound. */
-  private readonly comingBack = new Map<string, number>()
   private stopped = false
   private keeper: KeyKeeper | null = null
   private keyQueue: Promise<void> = Promise.resolve()
@@ -186,7 +179,6 @@ export class SpaceRuntime {
       camera: this.voice?.state.channel && this.voice.cameraOn ? true : undefined,
       // How long, not since when: the clocks of two devices differ.
       voiceFor: this.voice?.state.channel ? Math.max(0, Date.now() - this.voice.state.since) : undefined,
-      updating: updatingNow() ? true : undefined,
       playing: playingNow()?.name,
       steam: playingNow()?.steam,
       playingFor: playingNow() ? Math.max(0, Date.now() - playingNow()!.since) : undefined,
@@ -203,8 +195,6 @@ export class SpaceRuntime {
         this.presence.set(env.from, env)
         const said = (env.data ?? {}) as Record<string, unknown>
         const standing = typeof said.voice === 'string' ? cleanChannel(said.voice) : ''
-        const key = this.keyOf(env.from)
-        if (said.updating === true && key) this.comingBack.set(key, Date.now() + BACK_WITHIN_MS)
         this.voice?.noteAnnounce(env.from, standing || null)
       }
       if (env.type === 'bye') {
@@ -232,14 +222,8 @@ export class SpaceRuntime {
     voice.admit = (peer, channel) =>
       isCallChannel(channel) ? !!this.call && this.keyOf(peer) === this.call.with : this.chat.mayEnter(this.keyOf(peer), channel, true)
     voice.onArrival = (arrived, peer) => {
-      // Somebody back from an update was never gone, so neither sound plays.
-      const key = this.keyOf(peer)
-      const back = (this.comingBack.get(key) ?? 0) > Date.now()
-      if (arrived && back) this.comingBack.delete(key)
-      if (!back) {
-        if (arrived) chirpJoin()
-        else chirpLeave()
-      }
+      if (arrived) chirpJoin()
+      else chirpLeave()
       this.callArrival(arrived, peer)
     }
     voice.onFailed = (peer) => callNews({ kind: 'failed', space: this, peer })
@@ -249,7 +233,7 @@ export class SpaceRuntime {
       const said = `${now}:${muted}:${deafened}:${voice.cameraOn}`
       // Your own mute and deafen, in the same channel: each has its sound, as Discord's do.
       const was = this.voiceWas?.split(':')
-      if (was && now && was[0] === now && !this.hushVoice) {
+      if (was && now && was[0] === now) {
         if (String(deafened) !== was[2]) chirpDeafen(deafened)
         else if (String(muted) !== was[1]) chirpMute(muted)
       }
@@ -288,38 +272,6 @@ export class SpaceRuntime {
     await chat.announceName(chat.displayName, this.pictureToAnnounce())
     window.addEventListener(PREFS_CHANGED, this.onPrefs)
     this.emit('changed')
-    await this.resumeVoice()
-  }
-
-  /** Back in the channel this tab was in before a web update reloaded it: no click, and no sound. */
-  private async resumeVoice(): Promise<void> {
-    const note = takeVoiceNote(this.room.id)
-    if (!note || isCallChannel(note.channel) || this.stopped || this.voice.state.channel) return
-    for (const other of runningSpaces) if (other !== this && other.voice?.state.channel) return
-    const join = async (): Promise<boolean> => {
-      await this.relays()
-      try {
-        await this.voice.join(note.channel)
-      } catch {
-        // The microphone asked again and was refused: the channel is a click away, as before.
-        return false
-      }
-      // Muted or deafened as you were, with no sound: nothing changed for you.
-      this.hushVoice = true
-      if (note.deafened) this.voice.setDeafened(true)
-      else if (note.muted) this.voice.setMuted(true)
-      this.hushVoice = false
-      return true
-    }
-    if (!(await join())) return
-    // Others are here but none was reached: join once more, as a click on the channel would.
-    window.setTimeout(() => {
-      if (this.stopped || this.voice.state.channel !== note.channel) return
-      const others = this.voice.membersOf(note.channel).filter((id) => id !== this.selfId)
-      if (others.length === 0 || this.voice.connected > 0) return
-      this.voice.leave()
-      void join()
-    }, RESUME_CHECK_MS)
   }
 
   private readonly onPrefs = (ev: Event): void => {

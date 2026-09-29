@@ -11,8 +11,8 @@ const SWAP_WAIT_MS = 8000
 export interface UpdateHooks {
   /** Nothing a reload would lose: no call, no share, nothing half written. */
   idle: () => boolean
-  /** Just before the reload: notes the call, so the new version joins it again. `restart` is the desktop app's. */
-  beforeReload: (restart?: boolean) => Promise<void>
+  /** Just before the reload: leaves every call, since a reload is a leave. */
+  beforeReload: () => Promise<void>
 }
 
 let hooks: UpdateHooks = { idle: () => false, beforeReload: async () => undefined }
@@ -84,7 +84,7 @@ export function watchForUpdates(given: UpdateHooks): void {
         return
       }
       if (snoozed && !askedFor) return
-      // In a call, Update now is back in it a moment later.
+      // In a call, Update now leaves it: the new version starts out of voice.
       showOffer({ title: 'A new version of Nook is ready', button: 'Update now', busy: 'Updating…' }, update)
     }
 
@@ -225,7 +225,7 @@ export function watchForDesktopUpdates(): void {
   }
   const install = shell.installUpdate
   shell.onUpdate(({ version, ready }) => {
-    // A waiting web version comes with it, so there is one restart, back on this screen and in the call.
+    // A waiting web version comes with it, so there is one restart, back on this screen.
     desktopFirst = () => {
       showOffer(
         ready
@@ -233,10 +233,10 @@ export function watchForDesktopUpdates(): void {
           : { title: `Nook ${version} is out`, button: 'Download', busy: 'Opening…' },
         async () => {
           if (ready) {
-            // The call is noted, to join again after, and the new worker takes charge first,
-            // so the restarted app opens on the new web version, on the same screen.
+            // Out of the call first, and the new worker takes charge, so the restarted app
+            // opens on the new web version, on the same screen.
             showBoot(`Restarting into Nook ${version}`, true)
-            await hooks.beforeReload(true)
+            await hooks.beforeReload()
             await takeWebQuietly()
             install()
             return

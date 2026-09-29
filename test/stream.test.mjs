@@ -72,10 +72,9 @@ try {
   const surface = alice.locator('.stage-tile .surface').first()
   await surface.waitFor({ timeout: 10_000 })
   await surface.hover()
-  const mode = surface.locator('button[title*="(Z)"]')
-  await mode.click()
-  await mode.click()
-  check('the picture is at actual size, with the zoom buttons', (await surface.getAttribute('data-mode')) === 'actual')
+  check('the picture is at actual size, with the zoom buttons', (await surface.getAttribute('data-mode')) === 'actual' && (await surface.locator('.zoom-label').isVisible()))
+  check('and no other way to fit it', (await surface.locator('button[title*="(Z)"]').count()) === 0)
+  check('your own screen has no tag over it', !(await alice.locator('.stage-tile .stage-tag:not(.hidden)').count()))
   const label = () => surface.locator('.zoom-label').textContent()
   await alice.waitForTimeout(150)
   const before = await label()
@@ -94,8 +93,15 @@ try {
   await surface.locator('button:has-text("Reset")').click()
   await alice.waitForTimeout(150)
   check('Reset goes back', (await label()) === before, `${await label()}`)
-  await mode.click()
-  check('the fit button still changes the fit', (await surface.getAttribute('data-mode')) === 'fit')
+  await surface.locator('button[aria-label="Full window (W)"]').click()
+  const covers = await surface.evaluate((el) => {
+    const box = el.getBoundingClientRect()
+    return el.classList.contains('full-window') && box.width === window.innerWidth && box.height >= window.innerHeight - 40
+  })
+  check('Full window covers the window', covers)
+  await alice.keyboard.press('Escape')
+  check('the bar closes the stream: Stop sharing, on your own', (await surface.locator('button[aria-label="Stop sharing"]').count()) === 1)
+  check('and Escape puts it back, with the stream still on', !(await surface.evaluate((el) => el.classList.contains('full-window'))) && (await surface.isVisible()))
 
   // The bar shows while the pointer moves, and goes when it rests, even after a click on the picture.
   const barHidden = () => surface.evaluate((el) => el.classList.contains('hide-bar'))

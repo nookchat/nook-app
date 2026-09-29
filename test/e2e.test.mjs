@@ -420,9 +420,12 @@ try {
       if (!s || !v) return null
       const sr = s.getBoundingClientRect()
       const vr = v.getBoundingClientRect()
+      // The picture is at its actual size, made smaller when that does not fit, and never bigger.
+      const inside = vr.width <= sr.width + 2 && vr.height <= sr.height + 2
+      const touches = Math.abs(sr.width - vr.width) <= 4 || Math.abs(sr.height - vr.height) <= 4
+      const actual = Math.abs(vr.width - v.videoWidth) <= 2
       return {
-        // The stage has a border, so the video sits a pixel inside it.
-        fills: Math.abs(sr.height - vr.height) <= 4 && Math.abs(sr.width - vr.width) <= 4,
+        fills: inside && (touches || actual),
         surface: [Math.round(sr.width), Math.round(sr.height)],
         sideScroll: document.documentElement.scrollWidth > window.innerWidth + 1,
       }
@@ -437,7 +440,7 @@ try {
     ['4K', 3840, 2160],
   ]) {
     const g = await geometryAt(viewer, w, hh)
-    check(`viewer surface fills the window at ${label}`, g?.fills === true, `surface ${g?.surface}`)
+    check(`viewer picture fits the window at ${label}, at no more than its actual size`, g?.fills === true, `surface ${g?.surface}`)
     check(`viewer has no sideways scroll at ${label}`, g?.sideScroll === false)
   }
 

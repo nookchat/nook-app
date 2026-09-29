@@ -1,11 +1,11 @@
 import { h } from './dom'
 import { icon, type IconName } from './icons'
 
-type FitMode = 'fit' | 'fill' | 'actual'
-
 interface SurfaceOptions {
   muted: boolean
   showVolume: boolean
+  /** The last button on the bar, which closes the stream: stop watching it, or stop sharing it. */
+  close?: { label: string; icon: IconName; run: () => void }
 }
 
 function iconButton(name: IconName, title: string, onClick: () => void): HTMLButtonElement {
@@ -26,13 +26,15 @@ export class VideoSurface {
 
   private readonly bar: HTMLDivElement
   private readonly zoomLabel: HTMLSpanElement
-  private readonly modeButton: HTMLButtonElement
+  private readonly windowButton: HTMLButtonElement
   private readonly fullscreenButton: HTMLButtonElement
   private readonly muteButton: HTMLButtonElement | null = null
   private readonly volumeInput: HTMLInputElement | null = null
   private readonly zoomGroup: HTMLDivElement
 
-  private mode: FitMode = 'fit'
+  private fullWindow = false
+  /** Zoomed by hand: a resize keeps the zoom. Otherwise it fits the picture again. */
+  private zoomed = false
   private scale = 1
   private tx = 0
   private ty = 0
@@ -57,10 +59,9 @@ export class VideoSurface {
     this.video.muted = options.muted
     if (options.muted) this.video.setAttribute('muted', '')
 
-    this.modeButton = iconButton('fit', 'Change how the picture fits (Z)', () => this.cycleMode())
-
+    // One way to show the picture: its actual size, made smaller only when it does not fit, with the zoom.
     this.zoomLabel = h('span', { class: 'zoom-label', text: '100%' })
-    this.zoomGroup = h('div', { class: 'row hidden', style: { gap: '2px' } }, [
+    this.zoomGroup = h('div', { class: 'row', style: { gap: '2px' } }, [
       iconButton('zoom-out', 'Zoom out', () => this.zoomBy(1 / 1.25)),
       this.zoomLabel,
       iconButton('zoom-in', 'Zoom in', () => this.zoomBy(1.25)),
@@ -95,19 +96,26 @@ export class VideoSurface {
       controls.push(h('div', { class: 'vol' }, [this.muteButton, this.volumeInput]), h('div', { class: 'divider' }))
     }
 
-    controls.push(this.zoomGroup)
-    controls.push(this.modeButton)
+    controls.push(this.zoomGroup, h('div', { class: 'divider' }))
 
     if ('pictureInPictureEnabled' in document && document.pictureInPictureEnabled) {
       controls.push(iconButton('pip', 'Picture in picture', () => void this.togglePip()))
     }
 
+    this.windowButton = iconButton('window', 'Full window (W)', () => this.toggleFullWindow())
     this.fullscreenButton = iconButton('expand', 'Fullscreen (F)', () => void this.toggleFullscreen())
-    controls.push(this.fullscreenButton)
+    controls.push(this.windowButton, this.fullscreenButton)
+
+    if (options.close) {
+      const { label, icon: glyph, run } = options.close
+      const close = iconButton(glyph, label, run)
+      close.classList.add('surface-close')
+      controls.push(h('div', { class: 'divider' }), close)
+    }
 
     this.bar = h('div', { class: 'surface-bar' }, controls)
 
-    this.root = h('div', { class: 'surface grow', tabIndex: 0, data: { mode: 'fit' } }, [this.video, this.bar])
+    this.root = h('div', { class: 'surface grow', tabIndex: 0, data: { mode: 'actual' } }, [this.video, this.bar])
 
     this.bindPointer()
     this.bindKeys()
@@ -177,33 +185,31 @@ export class VideoSurface {
     void this.toggleFullscreen()
   }
 
-  setMode(mode: FitMode): void {
-    this.mode = mode
-    this.root.dataset.mode = mode
-    this.zoomGroup.classList.toggle('hidden', mode !== 'actual')
-    this.modeButton.title =
-      mode === 'fit'
-        ? 'Fit. Click for Fill (Z)'
-        : mode === 'fill'
-          ? 'Fill. Click for actual size (Z)'
-          : 'Actual size. Click for Fit (Z)'
-    if (mode === 'actual') {
-      this.resetView()
-    } else {
-      this.drawnSize = ''
-      this.video.style.transform = ''
-      this.video.style.width = ''
-      this.video.style.height = ''
-    }
+  /** Over the whole window, not the screen: the rest of Nook is a click away. Escape or W puts it back. */
+  toggleFullWindow(): void {
+    this.fullWindow = !this.fullWindow
+    this.root.classList.toggle('full-window', this.fullWindow)
+    this.windowButton.classList.toggle('on', this.fullWindow)
+    this.windowButton.setAttribute('aria-pressed', String(this.fullWindow))
+    this.windowButton.title = this.fullWindow ? 'Leave full window (W)' : 'Full window (W)'
+    this.windowButton.setAttribute('aria-label', this.windowButton.title)
+    if (this.fullWindow) window.addEventListener('keydown', this.onWindowKey, true)
+    else window.removeEventListener('keydown', this.onWindowKey, true)
+    this.resetView()
     this.showBar()
   }
 
-  cycleMode(): void {
-    this.setMode(this.mode === 'fit' ? 'fill' : this.mode === 'fill' ? 'actual' : 'fit')
+  /** Escape leaves the full window first, before it closes anything else. */
+  private readonly onWindowKey = (ev: KeyboardEvent): void => {
+    if (ev.key !== 'Escape' || document.fullscreenElement) return
+    ev.preventDefault()
+    ev.stopPropagation()
+    this.toggleFullWindow()
   }
 
   destroy(): void {
     this.destroyed = true
+    window.removeEventListener('keydown', this.onWindowKey, true)
     cancelAnimationFrame(this.frame)
     if (this.hideTimer !== null) window.clearTimeout(this.hideTimer)
     this.resizeObserver?.disconnect()
@@ -212,14 +218,10 @@ export class VideoSurface {
   }
 
   private bindVideo(): void {
-    this.video.addEventListener('resize', () => {
-      if (this.mode === 'actual') this.resetView()
-    })
+    this.video.addEventListener('resize', () => this.resetView())
     this.video.addEventListener('volumechange', () => this.syncVolumeUi())
 
-    this.resizeObserver = new ResizeObserver(() => {
-      if (this.mode === 'actual') this.clampPan()
-    })
+    this.resizeObserver = new ResizeObserver(() => (this.zoomed ? this.clampPan() : this.resetView()))
     this.resizeObserver.observe(this.root)
   }
 
@@ -244,16 +246,14 @@ export class VideoSurface {
     // Two quick presses of Zoom in are two zooms, not a double click on the picture.
     this.root.addEventListener('dblclick', (ev) => {
       if (this.onControls(ev)) return
-      this.setMode(this.mode === 'actual' ? 'fit' : 'actual')
+      this.resetView()
     })
 
     this.root.addEventListener(
       'wheel',
       (ev) => {
         // A trackpad pinch arrives as a wheel event with ctrlKey set.
-        if (!ev.ctrlKey && this.mode !== 'actual') return
         ev.preventDefault()
-        if (this.mode !== 'actual') this.setMode('actual')
         this.zoomAt(Math.exp(-ev.deltaY * 0.0018), ev.clientX, ev.clientY)
       },
       { passive: false },
@@ -261,7 +261,7 @@ export class VideoSurface {
 
     // A drag holds the pointer, and the click then goes to the picture: never from a button.
     this.root.addEventListener('pointerdown', (ev) => {
-      if (this.mode !== 'actual' || ev.button !== 0 || this.onControls(ev)) return
+      if (ev.button !== 0 || this.onControls(ev)) return
       this.dragging = true
       this.dragId = ev.pointerId
       this.lastX = ev.clientX
@@ -303,9 +303,9 @@ export class VideoSurface {
             this.toggleMute()
           }
           return
-        case 'z':
+        case 'w':
           ev.preventDefault()
-          this.cycleMode()
+          this.toggleFullWindow()
           return
         case '0':
           ev.preventDefault()
@@ -375,6 +375,7 @@ export class VideoSurface {
     const box = this.root.getBoundingClientRect()
     const { w, h: vh } = this.naturalSize()
     const fitScale = Math.min(box.width / w, box.height / vh)
+    this.zoomed = false
     this.scale = Math.min(1, fitScale > 0 ? fitScale : 1)
     this.tx = (box.width - w * this.scale) / 2
     this.ty = (box.height - vh * this.scale) / 2
@@ -382,18 +383,16 @@ export class VideoSurface {
   }
 
   private zoomBy(factor: number): void {
-    // From Fit or Fill, as a pinch does: zooming is at actual size.
-    if (this.mode !== 'actual') this.setMode('actual')
     const box = this.root.getBoundingClientRect()
     this.zoomAt(factor, box.left + box.width / 2, box.top + box.height / 2, box)
   }
 
   private zoomAt(factor: number, clientX: number, clientY: number, box = this.root.getBoundingClientRect()): void {
-    if (this.mode !== 'actual') return
     const cx = clientX - box.left
     const cy = clientY - box.top
     const next = Math.max(MIN_SCALE, Math.min(MAX_SCALE, this.scale * factor))
     if (next === this.scale) return
+    this.zoomed = true
     this.tx = cx - (cx - this.tx) * (next / this.scale)
     this.ty = cy - (cy - this.ty) * (next / this.scale)
     this.scale = next
@@ -413,7 +412,7 @@ export class VideoSurface {
     if (this.frame) return
     this.frame = requestAnimationFrame(() => {
       this.frame = 0
-      if (this.destroyed || this.mode !== 'actual') return
+      if (this.destroyed) return
       const { w, h: vh } = this.naturalSize()
       const size = `${w}x${vh}`
       if (size !== this.drawnSize) {

@@ -24,6 +24,7 @@
     "files": [
       "main.cjs",
       "games.cjs",
+      "recordings.cjs",
       "updates.cjs",
       "placement.cjs",
       "edit-menu.cjs",

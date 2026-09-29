@@ -1,6 +1,7 @@
 import { MAX_DM_BYTES, MAX_TEXT, type Attachment, type Message } from '../store/log'
 import type { SpaceFiles } from '../net/files'
 import type { LinkPreview } from '../net/server-api'
+import { seesRecordings } from '../net/recordings'
 import { cleanName, EVERYONE, findMentions, mentionsMe } from '../chat'
 import { shortKey } from '../store/identity'
 import { AttachTray, attachmentBlock } from './attachments'
@@ -226,6 +227,7 @@ export class ChatPanel {
   private readonly roomLeft: HTMLSpanElement
   private readonly tray: AttachTray
   private readonly attachButton: HTMLButtonElement
+  private readonly clipButton: HTMLButtonElement
   private readonly fileInput: HTMLInputElement
   private readonly dropCover: HTMLDivElement
   private readonly title: HTMLSpanElement
@@ -334,6 +336,31 @@ export class ChatPanel {
       },
       [icon('paperclip', 20)],
     )
+    // In the desktop app: a clip from your Steam, NVIDIA or other recordings, as an attached file.
+    this.clipButton = h(
+      'button',
+      {
+        class: 'ghost icon-only clip-button hidden',
+        title: 'Share a clip from your recordings',
+        ariaLabel: 'Share a clip from your recordings',
+        on: {
+          click: () => {
+            const files = this.files
+            if (!files) return
+            void import('./recordings').then(({ openRecordings }) =>
+              openRecordings({
+                max: files.max,
+                onClip: (file) => {
+                  this.tray.add([file])
+                  this.textInput.focus()
+                },
+              }),
+            )
+          },
+        },
+      },
+      [icon('clapper', 20)],
+    )
     this.textInput.addEventListener('paste', (ev) => {
       const files = [...(ev.clipboardData?.files ?? [])]
       if (files.length === 0 || !this.files || this.editing) return
@@ -431,6 +458,7 @@ export class ChatPanel {
         this.tray.root,
         h('div', { class: 'row compose-box' }, [
           this.attachButton,
+          this.clipButton,
           this.fileInput,
           emojiField(this.textInput),
           this.roomLeft,
@@ -447,6 +475,7 @@ export class ChatPanel {
   setFiles(files: SpaceFiles | null): void {
     this.files = files
     this.attachButton.classList.toggle('hidden', !files)
+    this.clipButton.classList.toggle('hidden', !files || !seesRecordings())
   }
 
   private watchDrops(): void {

@@ -71,6 +71,14 @@ export class Connection {
     this.send({ t: 'leave', room })
   }
 
+  /** The page is going: says so for each space, and closes the socket, with no try again. */
+  close(): void {
+    for (const room of this.channels.keys()) this.send({ t: 'leave', room })
+    this.channels.clear()
+    this.teardown()
+    this.setStatus('idle')
+  }
+
   send(message: Outgoing): boolean {
     if (!this.open || !this.ws) return false
     try {
@@ -169,6 +177,12 @@ export class Connection {
 }
 
 const connections = new Map<string, Connection>()
+
+/** Every socket, closed now: the page is going, and the servers tell the others at once. */
+export function closeConnections(): void {
+  for (const held of connections.values()) held.close()
+  connections.clear()
+}
 
 export function connectionTo(server: string): Connection {
   const base = serverUrl(server)

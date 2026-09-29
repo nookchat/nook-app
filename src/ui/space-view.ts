@@ -42,7 +42,6 @@ import {
   type NoteInfo,
 } from '../store/log'
 import type { RoomChat } from '../store/room-chat'
-import { BACK_WITHIN_MS, takeShareNote } from '../space/resume'
 import { filesFor, isCallChannel, type SpaceRuntime } from '../space/runtime'
 import { spaces } from '../space/registry'
 import { spaceFace, switcherButton } from './space-switcher'
@@ -107,8 +106,6 @@ interface PersonRow {
   you: boolean
   away: boolean
   playing: Playing | null
-  /** Reloading into a new version of Nook: back in a moment. */
-  updating: boolean
 }
 
 interface StageTile {
@@ -346,10 +343,6 @@ export class SpaceView {
   private linkBusy = false
   /** When each session in voice came into its channel, by our clock. */
   private readonly voiceSince = new Map<string, number>()
-  /** People reloading into a new version, by key: the session that said so, its voice channel, and how long to wait. */
-  private readonly updatingBy = new Map<string, { session: string; channel: string | null; until: number }>()
-  /** Takes each "updating" away when its time is up. Set again each time somebody says it again. */
-  private readonly updatingTimers = new Map<string, number>()
   /** The game each session says it plays, and since when by our clock. */
   private readonly playingBy = new Map<string, Playing>()
   private readonly boardButton = h(
@@ -462,36 +455,10 @@ export class SpaceView {
     window.addEventListener('keydown', this.onShortcut)
     this.draw()
     this.status()
-    if (takeShareNote(space.room.id)) {
-      toast('You were sharing your screen before the update. The browser needs a click to share it again.', 'info', 30_000, {
-        label: 'Share again',
-        run: () => void this.toggleShare(),
-      })
-    }
   }
 
   get sharingIn(): string | null {
     return this.capture ? this.space.room.id : null
-  }
-
-  private stopUpdatingLater(key: string): void {
-    window.clearTimeout(this.updatingTimers.get(key))
-    this.updatingTimers.set(
-      key,
-      window.setTimeout(() => {
-        this.updatingTimers.delete(key)
-        const u = this.updatingBy.get(key)
-        if (!u || u.until > Date.now() || this.stopped) return
-        this.updatingBy.delete(key)
-        this.draw()
-      }, BACK_WITHIN_MS + 100),
-    )
-  }
-
-  /** Reloading into a new version, and not back yet. */
-  private updatingOf(key: string): { channel: string | null } | null {
-    const u = this.updatingBy.get(key)
-    return u && u.until > Date.now() ? u : null
   }
 
   private readonly onVisible = (): void => {
@@ -570,8 +537,6 @@ export class SpaceView {
     window.removeEventListener('keydown', this.onShortcut)
     for (const t of this.timers) window.clearInterval(t)
     this.timers = []
-    for (const t of this.updatingTimers.values()) window.clearTimeout(t)
-    this.updatingTimers.clear()
     this.stopSharing()
     this.stopWatching()
     this.dock.stop()
@@ -706,22 +671,6 @@ export class SpaceView {
     if (sharing) this.sharers.set(from, sharing)
     else this.sharers.delete(from)
     if (sharing && !wasSharing && this.shareIsNew(sharing, data.sharingFor)) chirpStream()
-
-    const key = this.keyOf(from)
-    const wasUpdating = this.updatingBy.get(key)
-    if (data.updating === true) {
-      const channel = typeof data.voice === 'string' ? cleanChannel(data.voice) || null : null
-      this.updatingBy.set(key, { session: from, channel, until: Date.now() + BACK_WITHIN_MS })
-      this.stopUpdatingLater(key)
-      if (!wasUpdating) this.draw()
-    } else if (wasUpdating && wasUpdating.session !== from && (!wasUpdating.channel || typeof data.voice === 'string')) {
-      // A new session of theirs: back. One that was in voice is back when it is in voice again,
-      // since it says hello before it has joined.
-      this.updatingBy.delete(key)
-      window.clearTimeout(this.updatingTimers.get(key))
-      this.updatingTimers.delete(key)
-      this.draw()
-    }
 
     const game = cleanGameName(data.playing)
     const hadGame = this.playingBy.get(from)
@@ -2607,18 +2556,6 @@ export class SpaceView {
       for (const [key, ids] of people) {
         row.append(this.voiceMember(key, ids, peers, names.get(key) ?? '', avatars.get(key) ?? ''))
       }
-      // Somebody reloading into a new version keeps their place, faint, until they are back.
-      for (const [key, u] of this.updatingBy) {
-        if (people.has(key) || u.channel !== name || !this.updatingOf(key)) continue
-        const who = names.get(key) || shortKey(key)
-        row.append(
-          h('div', { class: 'voice-member updating', title: 'Updating Nook, back in a moment' }, [
-            avatarOf(key, who, avatars.get(key) ?? '', 20),
-            h('span', { class: 'truncate grow', text: who }),
-            h('span', { class: 'tiny faint', text: 'updating' }),
-          ]),
-        )
-      }
       this.voiceList.append(row)
     }
     this.renderVoiceBar()
@@ -3202,7 +3139,6 @@ export class SpaceView {
         you: false,
         away: false,
         playing: null,
-        updating: false,
         ...was,
         ...patch,
       })
@@ -3238,12 +3174,6 @@ export class SpaceView {
         voice: this.voice?.whereIs(peer.id) ?? was?.voice ?? null,
         talking: this.voice?.isTalking(peer.id) === true || was?.talking === true,
       })
-    }
-
-    // Gone from the room for a reload, but here.
-    // Not you: this session is here, whatever another of your devices is doing.
-    for (const key of this.updatingBy.keys()) {
-      if (key !== chat?.me && this.updatingOf(key)) put(key, { name: rows.get(key)?.name || chat?.nameOf(key) || '', here: true, updating: true })
     }
 
     dropOtherDeviceRows(rows, chat?.displayName ?? '')
@@ -3341,12 +3271,6 @@ export class SpaceView {
   }
 
   private personDoing(row: PersonRow): HTMLElement | null {
-    if (row.updating) {
-      return h('span', { class: 'person-doing', title: 'Reloading into a new version of Nook, back in a moment' }, [
-        icon('refresh', 11),
-        'Updating Nook',
-      ])
-    }
     if (row.sharing) {
       return h('span', { class: 'person-doing live' }, [h('i', { class: 'live-dot' }), 'Sharing their screen'])
     }
@@ -3778,8 +3702,24 @@ export class SpaceView {
   }
 
   private addTile(id: string): StageTile {
-    const surface = new VideoSurface({ muted: true, showVolume: true })
-    const tag = h('div', { class: 'stage-tag' })
+    const mine = id === this.selfId
+    const surface = new VideoSurface({
+      muted: true,
+      showVolume: true,
+      close: mine
+        ? { label: 'Stop sharing', icon: 'stop', run: () => void this.toggleShare() }
+        : {
+            label: 'Stop watching',
+            icon: 'close',
+            run: () => {
+              this.dropTile(id)
+              this.announceMe()
+              this.draw()
+            },
+          },
+    })
+    // Your own screen has no tag: the tab above it says who is watching.
+    const tag = h('div', { class: `stage-tag${mine ? ' hidden' : ''}` })
     const tile = h('div', { class: 'stage-tile' }, [surface.root, tag])
     this.stage.append(tile)
     const entry: StageTile = { peer: null, surface, tile, tag }
@@ -3874,11 +3814,7 @@ export class SpaceView {
     this.streamBar.classList.toggle('hidden', live.length === 0)
 
     for (const [id, entry] of this.watched) {
-      if (id === this.selfId) {
-        const eyes = this.watcherNames(this.selfId, peers)
-        entry.tag.textContent = eyes.length ? `Your screen · ${eyes.length} watching` : 'Your screen'
-        entry.tag.title = eyes.length ? `Watching: ${eyes.join(', ')}` : 'Nobody is watching yet'
-      } else {
+      if (id !== this.selfId) {
         const whose = live.find((l) => l.id === id)?.name ?? 'a shared screen'
         entry.tag.dataset.who = whose
         if (!entry.tag.textContent?.startsWith(whose)) entry.tag.textContent = whose

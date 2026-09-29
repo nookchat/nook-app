@@ -1,5 +1,6 @@
 // Tells the web app it runs in the desktop shell, what game is running, and
 // when a newer desktop app is out. The page gives it the unread count for the icon.
+// It lets the page list your game recordings and play them from nook-rec:// links.
 // It also draws the title bar in place of the system one: a strip to drag the
 // window by, in the page colour, with the Nook icon and the window's title on the
 // left, and on Windows and Linux the window buttons on the right. On macOS the
@@ -38,6 +39,23 @@ contextBridge.exposeInMainWorld('nookDesktop', {
   installUpdate: () => ipcRenderer.send('update:install'),
   /** The unread count on the Dock or taskbar icon. `overlay` is a PNG data URL, for Windows. */
   setBadge: (count, overlay) => ipcRenderer.send('badge:set', Number(count) || 0, typeof overlay === 'string' ? overlay : ''),
+  /** Your game recordings, from Steam, NVIDIA and your videos folder, and the folders the list looks in. */
+  recordings: {
+    /** The folders: [{ path, label, kind: steam | nvidia | videos | folder, found, exists }]. */
+    folders: () => ipcRenderer.invoke('recordings:folders'),
+    /** Asks for a folder to add. The folders, or null when you cancel. */
+    addFolder: () => ipcRenderer.invoke('recordings:add'),
+    /** A folder you added goes; a found one is hidden. The folders. */
+    removeFolder: (path) => ipcRenderer.invoke('recordings:remove', String(path)),
+    /** Shows the found folders you hid again. The folders. */
+    restoreFolders: () => ipcRenderer.invoke('recordings:restore'),
+    /** Every recording, newest first, each with a nook-rec:// url to play it from. */
+    list: () => ipcRenderer.invoke('recordings:list'),
+    /** Where each fragment of a Steam recording is in its file, or null. */
+    index: (id) => ipcRenderer.invoke('recordings:index', String(id)),
+    /** Shows the recording in the file manager. */
+    show: (id) => ipcRenderer.send('recordings:show', String(id)),
+  },
 })
 
 const BAR_HEIGHT = 32

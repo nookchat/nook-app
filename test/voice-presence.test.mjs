@@ -2,8 +2,8 @@ import { createServer, connect } from 'node:net'
 import { APP_URL, FAKE_MEDIA, check, finish, launch, stoppedEarly, wait } from './harness.mjs'
 import { startServer } from './pg.mjs'
 
-// An update reloads the page into the lounge again. Leaving then must take you out of it,
-// for you, for the others, and for anybody who comes later. And a session the server does
+// A reload, as an update does, is a leave: nobody is put back in the lounge. Leaving must take
+// you out of it, for you, for the others, and for anybody who comes later. And a session the server does
 // not hold, whatever the page once heard, is not shown as here.
 const PORT = 8809
 const { child: server } = await startServer(PORT)
@@ -85,25 +85,19 @@ try {
   // What Update now does, then the reload.
   await alice.evaluate(async () => {
     const { spaces } = await import('/src/space/registry.ts')
-    const { noteForUpdate } = await import('/src/space/resume.ts')
-    const space = spaces.all().find((s) => s.voice?.state.channel)
-    const { channel, muted, deafened } = space.voice.state
-    noteForUpdate({ room: space.room.id, channel, muted, deafened }, null)
-    for (const s of spaces.all()) s.announce()
+    for (const s of spaces.all()) s.leaveVoice()
   })
   await alice.waitForTimeout(300)
   await alice.reload()
   await alice.waitForSelector('.space-name')
-  check(
-    'after the update Alice is back in the lounge',
-    await until(alice, () => document.querySelector('.voice-channel .voice-head')?.classList.contains('on') === true),
-  )
-  check(
-    'and Bob sees her there, not as updating',
-    await until(bob, () =>
-      [...document.querySelectorAll('.voice-member')].some((e) => e.textContent.includes('Alice') && !e.classList.contains('updating')),
-    ),
-  )
+  await alice.waitForTimeout(3000)
+  check('after the reload Alice is not put back in the lounge', !(await alice.evaluate(inOwnLounge)))
+  check('and Bob does not see her there', await until(bob, notInLounge, 'Alice', 8000), (await loungeNames(bob)).join(', '))
+
+  // Back in, to leave with the button.
+  await alice.click('.voice-join')
+  await until(alice, inOwnLounge)
+  check('Alice joins again with a click', await until(bob, inLounge, 'Alice'))
   await alice.waitForTimeout(1500)
 
   await alice.click('button.voice-leave')

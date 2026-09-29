@@ -2,17 +2,40 @@
 // links point at the same place as on the web and the service worker works.
 // The shell adds what a browser tab cannot: a picker for a screen or a window,
 // the system sound on Windows, the game you are playing, the unread count on
-// its icon, and updates of itself.
+// its icon, and updates of itself. It also lists your game recordings, to share one.
 
-const { app, BrowserWindow, clipboard, desktopCapturer, ipcMain, Menu, nativeImage, nativeTheme, screen, session, shell } = require('electron')
+const {
+  app,
+  BrowserWindow,
+  clipboard,
+  desktopCapturer,
+  dialog,
+  ipcMain,
+  Menu,
+  nativeImage,
+  nativeTheme,
+  protocol,
+  screen,
+  session,
+  shell,
+} = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')
 const { watchGames } = require('./games.cjs')
 const { editMenu } = require('./edit-menu.cjs')
 const { pickerBounds, restoreBounds, screenOf } = require('./placement.cjs')
 const { watchUpdates } = require('./updates.cjs')
+const recordings = require('./recordings.cjs')
 
 app.setName('Nook')
+
+// The page plays a recording from a nook-rec:// link. The scheme needs its rights before the app is ready.
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'nook-rec',
+    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true, bypassCSP: true },
+  },
+])
 
 const HOME = process.env.NOOK_URL || 'https://cathode.video/'
 const ALLOWED = new Set(['media', 'display-capture', 'notifications', 'clipboard-sanitized-write', 'fullscreen'])
@@ -317,6 +340,39 @@ ipcMain.on('badge:set', (ev, count, overlay) => {
   app.setBadgeCount(n)
 })
 
+// Your game recordings: the folders to look in, what is in them, and where each part of a Steam one is.
+/** Where the folders list is kept, and the system's own videos folder. */
+function recordingPlaces() {
+  let videos = null
+  try {
+    videos = app.getPath('videos')
+  } catch {
+    /* this system has no videos folder */
+  }
+  return { file: path.join(app.getPath('userData'), 'recordings.json'), videos }
+}
+
+ipcMain.handle('recordings:folders', (ev) => (isHome(ev.sender.getURL()) ? recordings.folders(recordingPlaces()) : []))
+ipcMain.handle('recordings:add', async (ev) => {
+  if (!isHome(ev.sender.getURL())) return null
+  const win = BrowserWindow.fromWebContents(ev.sender)
+  const options = { properties: ['openDirectory'] }
+  const picked = await (win ? dialog.showOpenDialog(win, options) : dialog.showOpenDialog(options))
+  if (picked.canceled || !picked.filePaths[0]) return null
+  return recordings.addFolder(recordingPlaces(), picked.filePaths[0])
+})
+ipcMain.handle('recordings:remove', (ev, folder) =>
+  isHome(ev.sender.getURL()) && typeof folder === 'string' ? recordings.removeFolder(recordingPlaces(), folder) : [],
+)
+ipcMain.handle('recordings:restore', (ev) => (isHome(ev.sender.getURL()) ? recordings.restoreFolders(recordingPlaces()) : []))
+ipcMain.handle('recordings:list', (ev) => (isHome(ev.sender.getURL()) ? recordings.list(recordingPlaces()) : []))
+ipcMain.handle('recordings:index', (ev, id) => (isHome(ev.sender.getURL()) && typeof id === 'string' ? recordings.index(id) : null))
+ipcMain.on('recordings:show', (ev, id) => {
+  if (!isHome(ev.sender.getURL()) || typeof id !== 'string') return
+  const where = recordings.place(id)
+  if (where) shell.showItemInFolder(where)
+})
+
 ipcMain.on('window:control', (ev, action) => {
   const win = BrowserWindow.fromWebContents(ev.sender)
   if (!win) return
@@ -343,6 +399,9 @@ function setUpSession() {
       callback({})
     }
   })
+
+  // Only a page from home can read a recording with fetch. A video element plays it without that.
+  protocol.handle('nook-rec', (request) => recordings.respond(request, { isHome }))
 }
 
 if (!app.requestSingleInstanceLock()) {

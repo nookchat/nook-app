@@ -11,6 +11,7 @@ import './brand/components.css'
 import './styles.css'
 import { mentionsMe } from './chat'
 import { checkSupport } from './diagnostics'
+import { closeConnections } from './net/connection'
 import { startStreaming } from './net/files'
 import { watchPush } from './net/push'
 import { watchPlaying } from './net/playing'
@@ -19,8 +20,7 @@ import { watchForDesktopUpdates, watchForUpdates } from './net/updates'
 import { warmEmoji } from './ui/emoji'
 import { clearLink, readLink, setLinkSecret } from './room'
 import { spaces } from './space/registry'
-import { noteForUpdate } from './space/resume'
-import { isCallChannel, type SpaceRuntime } from './space/runtime'
+import type { SpaceRuntime } from './space/runtime'
 import { nameChosen, shortKey } from './store/identity'
 import { cleanChannel, DEFAULT_CHANNEL, type LogEvent } from './store/log'
 import { channelMuted } from './store/mute'
@@ -69,21 +69,9 @@ watchForUpdates({
     !active?.sharingIn &&
     ![...document.querySelectorAll<HTMLTextAreaElement>('.chat-compose textarea')].some((box) => box.value.trim()) &&
     !document.querySelector('.note-status')?.textContent?.includes('Not saved'),
-  beforeReload: async (restart = false) => {
-    const inVoice = spaces.all().find((space) => {
-      const channel = space.voice?.state.channel ?? null
-      return channel !== null && !isCallChannel(channel)
-    })
-    const state = inVoice?.voice.state
-    noteForUpdate(
-      inVoice && state?.channel
-        ? { room: inVoice.room.id, channel: state.channel, muted: state.muted, deafened: state.deafened }
-        : null,
-      active?.sharingIn ?? null,
-      restart,
-    )
-    // Tells the others this is a reload, so they keep a place and play no sound; then gives it time to go out.
-    for (const space of spaces.all()) space.announce()
+  // A reload is a leave: out of every call first, so the others see it at once.
+  beforeReload: async () => {
+    for (const space of spaces.all()) space.leaveVoice()
     await new Promise((done) => window.setTimeout(done, ANNOUNCE_OUT_MS))
   },
 })
@@ -396,7 +384,15 @@ window.addEventListener('beforeunload', (ev) => {
   }
 })
 
-window.addEventListener('pagehide', () => active?.destroy())
+// Gone from the page is gone from the space: the sockets close now, so the server tells the others
+// at once. A page the browser kept to show again has left, so it starts again.
+window.addEventListener('pagehide', () => {
+  active?.destroy()
+  closeConnections()
+})
+window.addEventListener('pageshow', (ev) => {
+  if (ev.persisted) window.location.reload()
+})
 
 if (checkSupport().isIOS && !linked) {
   toast('This device can watch and chat. Apple does not let any browser share a screen.', 'info', 8000)

@@ -3,6 +3,7 @@ import { SELF_HOSTING_URL, checkServer, serverTag, serverUrl, setDefaultServer }
 import { health } from '../net/server-api'
 import { micSettings, setMicSettings } from '../net/mic'
 import { PLAYING_CHANGED, playingNow, seesGames, setShowsPlaying, showsPlaying } from '../net/playing'
+import { seesRecordings } from '../net/recordings'
 import { loadIdentity, saveDisplayName } from '../store/identity'
 import { spaces } from '../space/registry'
 import { addServer, knownServers, newSpaceServer, ownServers } from '../store/server-spaces'
@@ -14,6 +15,7 @@ import { openEmojiPicker, quickReactions, setQuickReactions } from './emoji'
 import { icon } from './icons'
 import { gameCard } from './game-card'
 import { enterLinkCode, lastBackup, showBackup, showLinkCode } from './link-device'
+import { paintFolders } from './recordings'
 import { askNotify, notifyState, notifyText, notifyWhat, setNotifyText, setNotifyWhat, stopNotify } from './notify'
 import { setSounds, soundsOn } from './sounds'
 import { card, note, settingsShell, switchRow, toggle, type SettingsTab } from './settings-shell'
@@ -407,6 +409,25 @@ export function settingsView(actions: SettingsActions): HTMLElement {
               toggle('Show what you are playing', showsPlaying, setShowsPlaying, 'Everybody in your spaces sees it'),
             ]),
             now,
+          ),
+        ])
+      },
+    },
+    {
+      id: 'recordings',
+      label: 'Recordings',
+      icon: 'clapper',
+      build: () => {
+        const folders = h('div', { class: 'stack tight recordings-folders' })
+        if (seesRecordings()) void paintFolders(folders)
+        else folders.append(note('The desktop app finds your recordings. A browser cannot see your folders.'))
+        return h('div', { class: 'stack settings-stack' }, [
+          card(
+            'Where your recordings are',
+            note(
+              'Nook finds Steam\'s game recordings, and the Videos folder where NVIDIA, OBS and Xbox save theirs. Add any other folder. The clip button in the message box makes a clip from one.',
+            ),
+            folders,
           ),
         ])
       },

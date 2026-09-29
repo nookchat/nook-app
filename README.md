@@ -110,12 +110,12 @@ with voice does it.
   of its text sits behind it, with each picture over an emoji of the same
   width. Code keeps the device's own.
 - **A new version** of the site downloads by itself, and a popup offers it,
-  with Update now and I’ll do it later. In a call, Update now reloads and joins the same
-  voice channel again, muted or deafened as you were, with no click; the
-  others see Updating Nook, keep your place in the channel, and hear no leave
-  or join sound. If the browser holds the sound back after
-  the reload, one click anywhere lets it go. A screen share needs a click to
-  start again, and a toast offers it. A private call is not joined again.
+  with Update now and I’ll do it later. A reload is a leave: in a call,
+  Update now takes you out of it, and the new version starts out of voice.
+  Nothing joins a channel or shares a screen again by itself.
+- **Leaving the page** leaves the space. When a tab closes or reloads, the
+  page closes its sockets, and the server tells the others at once, so
+  nobody stays in a voice channel after they have gone.
 - **The soundboard** is in the voice bar. A sound plays for the people in your
   voice channel, and the green talking ring shows round the face of whoever
   played it, with no toast. Every sound, the board's own and the ones people
@@ -131,6 +131,22 @@ with voice does it.
   person's menu, fetched from Steam by whoever opens it. Settings, Activity
   turns it off. A browser cannot see other programs,
   so the web page never shows a game of its own.
+- **Clips from your recordings**, in the desktop app: the clip button in the
+  message box lists your Steam game recordings, the Videos folder where
+  NVIDIA, OBS and Xbox save theirs, and any folder you add in Settings,
+  Recordings. Pick one, drag its two ends to the part you want (or press I
+  and O while it plays), and Add to message puts the clip in the message box,
+  the way a file you drop does. Save clip keeps it on your computer instead.
+  Steam does not keep a recording as a video file: it keeps a folder of small
+  pieces, the picture and the sound apart (`session.mpd`,
+  `init-stream0.m4s`, `chunk-stream0-00001.m4s`, and so on), in
+  `userdata/<id>/gamerecordings`, or where `BackgroundRecordPath` in Steam's
+  `localconfig.vdf` says. The desktop app (`desktop/recordings.cjs`) serves
+  those pieces as one MP4 with its sound, at a `nook-rec://` address, and the
+  page plays it a piece at a time. The clip is copied as it is when it fits
+  the server, and made smaller when it does not, on your device, with the
+  browser's own encoder (`src/media/clip.ts`). HEVC becomes H.264, which
+  every browser plays.
 - **GIFs** come from the server of the space, with its key: whoever runs it
   sets `NOOK_KLIPY_KEY`, `NOOK_TENOR_KEY` or `NOOK_GIPHY_KEY`, and
   everybody on it can search. Nobody puts a key of their own in the page.
@@ -323,6 +339,7 @@ src/
     voice.ts          voice channels, mic.ts denoise.ts talking.ts around them
     uplink.ts         how much upload Nook may use, guessed then measured
     push.ts           notifications while Nook is closed: subscribe, seal, send
+    recordings.ts     your recordings, as the desktop app finds and serves them
   signal/
     bus.ts            signals in and out of a space, de-duplicated
     envelope.ts       AES-GCM seal and open, replay guard
@@ -336,7 +353,7 @@ src/
     verify-pool.ts    signature checks on Web Workers
     gifs.ts           what a GIF is; the server searches, with its key
   rtc/                screen share connections, codecs, quality, stats
-  media/              the screen picker, the microphone, and the mix
+  media/              the screen picker, the microphone, the mix, and clips from recordings
   brand/              the brand tokens, the ghost's motion and its components, from nook-brand/
   ui/
     home-view.ts      Home: direct messages from every space
@@ -347,6 +364,7 @@ src/
     space-list.ts     the home page: your spaces, making and joining one
     chat-panel.ts     the conversation, drawn as nodes and never as HTML
     attachments.ts    files in a message, the picture viewer, and the upload tray
+    recordings.ts     your recordings, and the clip editor with its two ends
     settings-view.ts  profile, identity, servers, this space, preferences
     levels.ts         the levels of a space: names, colours, what each may do
     space-switcher.ts going from one space to another, behind the space name
@@ -371,18 +389,22 @@ test/
 
 ## Keyboard, on a shared screen
 
+A shared screen shows at its actual size, made smaller only when it does not
+fit, with the zoom. The bar also has Full window, Fullscreen, and a button that
+closes the stream: Stop watching, or Stop sharing on your own screen. Your own
+screen has no tag over it, since the tab above it says who is watching.
+
 | Key | Action |
 | --- | --- |
+| `W` | Full window: the stream over the whole Nook window |
 | `F` | Fullscreen |
 | `M` | Mute |
-| `Z` | Cycle fit, fill, actual size |
 | `0` | Reset the zoom |
 | `+` `-` | Zoom in and out |
-| `Esc` | Take every share off your screen. In fullscreen it also leaves fullscreen |
+| `Esc` | Leave full window. Otherwise take every share off your screen. In fullscreen it also leaves fullscreen |
 
-Double click on the picture switches between fit and actual size. Control plus
-the wheel, a trackpad pinch, or `+` and `-`, zooms from any fit. At actual size,
-the bar has Zoom out, Zoom in and Reset.
+Double click on the picture resets the zoom. Control plus the wheel, a
+trackpad pinch, or `+` and `-`, zooms. A drag moves a zoomed picture.
 
 ## Keyboard, anywhere in a space
 
@@ -416,7 +438,7 @@ the bar has Zoom out, Zoom in and Reset.
   [GitHub releases](https://github.com/nookchat/nook-app/releases) at start
   and every 4 hours (`desktop/updates.cjs`), and downloads it. The page offers
   Restart, which also takes a waiting web update, so both go in at once and
-  you come back to the same screen and call; a web update found while a
+  you come back to the same screen, out of any call; a web update found while a
   desktop one downloads waits for it. Later means this start: the update
   goes in on the next quit. Windows and Linux use electron-updater. macOS
   installs only updates signed by a known developer, which this build is
