@@ -176,7 +176,6 @@ export function shortcutSettings(): HTMLElement {
         h('span', { class: 'shortcut-does', text: action.does }),
         drawKeys(keys),
         h('span', { class: 'shortcut-tools' }, [
-          button,
           keys
             ? h('button', {
                 class: 'ghost tiny-btn',
@@ -205,6 +204,7 @@ export function shortcutSettings(): HTMLElement {
                 },
               })
             : null,
+          button,
         ]),
       ])
       button.addEventListener('click', () => record(action.id, row, button))

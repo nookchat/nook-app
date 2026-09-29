@@ -19,7 +19,7 @@ let hooks: UpdateHooks = { idle: () => false, beforeReload: async () => undefine
 /** Offers a worker that has its files. Set once the service worker is ready. `asked` is a check from About. */
 let offerWorker: ((worker: ServiceWorker, asked?: boolean) => void) | null = null
 /**
- * Later puts an update away until the next start, which takes it in anyway: the web one when
+ * I’ll do it later puts an update away until the next start, which takes it in anyway: the web one when
  * the last window goes, the desktop one on quit. Nothing asks again in between.
  */
 let snoozed = false
@@ -248,7 +248,7 @@ export function watchForDesktopUpdates(): void {
         },
       )
     }
-    // Later means this start: it goes in on quit anyway.
+    // I’ll do it later means this start: it goes in on quit anyway.
     if (!snoozed) desktopFirst()
   })
 }
@@ -272,7 +272,7 @@ interface OfferWords {
   busy: string
 }
 
-/** The popup that offers the new version. Later puts it away until the next start. */
+/** The popup that offers the new version. I’ll do it later puts it away until the next start. */
 function showOffer(words: OfferWords, update: () => Promise<void>): void {
   document.querySelector('.update-pop')?.remove()
   const now = h('button', { class: 'primary', text: words.button })
@@ -281,10 +281,9 @@ function showOffer(words: OfferWords, update: () => Promise<void>): void {
     h('div', { class: 'update-words' }, [
       h('strong', { text: words.title }),
       h('div', { class: 'row wrap update-actions' }, [
-        now,
         h('button', {
           class: 'ghost',
-          text: 'Later',
+          text: 'I’ll do it later',
           on: {
             click: () => {
               snoozed = true
@@ -292,6 +291,7 @@ function showOffer(words: OfferWords, update: () => Promise<void>): void {
             },
           },
         }),
+        now,
       ]),
     ]),
   ])

@@ -200,7 +200,8 @@ export function levelsEditor(options: LevelsOptions): HTMLElement {
         h('div', { class: 'stack tight' }, [h('span', { class: 'eyebrow', text: 'Colour of their names' }), swatches]),
         h('div', { class: 'stack tight' }, [h('span', { class: 'eyebrow', text: 'What they can do' }), powers]),
         level.id === MEMBER ? null : order,
-        h('div', { class: 'row spread' }, [saveButton, remove]),
+        // Delete on the left and Save on the right, as in every dialog.
+        h('div', { class: 'row spread' }, [remove ?? h('span'), saveButton]),
       ])
     }
 

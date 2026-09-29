@@ -59,6 +59,8 @@ import { forHowLong, gameCard } from './game-card'
 import { ghost } from './ghost'
 import { icon } from './icons'
 import { closeMenu, onContextMenu, openMenu, type MenuItem, type MenuEntry } from './menu'
+import { viewArea } from './place'
+import type { MemberRow } from './space-settings'
 import { actionFor, type Action } from './shortcuts'
 import { NoteEditor } from './notes-view'
 import { placeNear } from './emoji'
@@ -145,12 +147,6 @@ const COMMANDS = [
   { name: 'leave', note: 'Leave this space' },
   { name: 'help', note: 'List these' },
 ]
-
-function levelDot(colour: string): HTMLElement {
-  const dot = h('span', { class: 'level-dot' })
-  if (colour) dot.style.background = colour
-  return dot
-}
 
 function parseNote<T extends object>(raw: string, type: string): T | null {
   if (!raw.startsWith(`{"t":"${type}"`)) return null
@@ -1373,7 +1369,8 @@ export class SpaceView {
     this.closeSearch()
     if (m.inThread && m.replyTo) this.openThread(m.replyTo)
     else if (this.thread) this.openThread(null)
-    if (m.channel !== this.channel) this.openChannel(m.channel)
+    // From a note too, which sits in place of the channel it came from.
+    if (m.channel !== this.channel || this.noteId) this.openChannel(m.channel)
     this.drawNow()
     window.setTimeout(() => this.chatPanel.jump(m.id), 40)
   }
@@ -1866,8 +1863,9 @@ export class SpaceView {
         h('div', { class: 'space-head row' }, [
           this.channelsButton,
           this.channelTitle,
-          this.pinsButton,
+          // Search first, then the actions.
           this.searchWrap,
+          this.pinsButton,
           this.peopleButton,
         ]),
         offline,
@@ -2119,6 +2117,12 @@ export class SpaceView {
         picture: this.chat?.spacePicture() ?? '',
         can: rights,
         levels: () => this.levelsEditor(),
+        members: () => this.memberRows(),
+        setLevel: (key, level) => this.setRole(key, level),
+        kick: async (key) => {
+          if (!window.confirm(`Remove ${this.chat?.nameOf(key) || shortKey(key)} from this space?`)) return
+          await this.setRole(key, 'kicked')
+        },
         rename: () => this.renameSpace(),
         setPicture: (file) => this.setSpacePicture(file),
         reset: () => this.resetSpace(),
@@ -2134,6 +2138,34 @@ export class SpaceView {
         back: () => this.closeSettings(),
       }),
     )
+  }
+
+  /** Everybody in the space who is not removed, the highest level first, for the Members tab. */
+  private memberRows(): MemberRow[] {
+    const chat = this.chat
+    if (!chat) return []
+    const auth = chat.authority()
+    const me = chat.me
+    const mine = auth.levelOf(me).rank
+    const avatars = chat.log.avatars()
+    return chat.log
+      .keyMembers()
+      .map((key) => {
+        const level = auth.levelOf(key)
+        const choices = auth.mayPlace(me, key) ? auth.list().filter((l) => l.id !== OWNER && l.rank <= mine) : []
+        return {
+          key,
+          name: key === me ? chat.displayName : chat.nameOf(key) || shortKey(key),
+          picture: avatars.get(key) ?? '',
+          you: key === me,
+          level: { id: level.id, name: level.name, colour: level.colour ? roleInk(level.colour) : '' },
+          choices: choices.map((l) => ({ id: l.id, name: l.name })),
+          mayRemove: auth.mayRemove(me, key),
+          rank: level.rank,
+        }
+      })
+      .sort((a, b) => b.rank - a.rank || a.name.localeCompare(b.name))
+      .map(({ rank: _rank, ...row }) => row)
   }
 
   /** A picture for the space, or null to take it away. */
@@ -3127,24 +3159,7 @@ export class SpaceView {
         }
       }
     }
-    if (role !== 'kicked' && auth.mayPlace(me, key)) {
-      const mine = auth.levelOf(me).rank
-      const current = auth.levelOf(key).id
-      const choices = auth.list().filter((l) => l.id !== OWNER && l.rank <= mine)
-      if (choices.length > 1) {
-        items.push('line', { heading: 'Level' })
-        for (const level of choices) {
-          items.push({
-            label: level.name,
-            lead: levelDot(level.colour),
-            current: level.id === current,
-            run: () => {
-              if (level.id !== current) void this.setRole(key, level.id)
-            },
-          })
-        }
-      }
-    }
+    // A level is changed in the space settings, under Members, not here.
     if (auth.mayRemove(me, key)) {
       items.push('line')
       if (role === 'kicked') {
@@ -3415,7 +3430,8 @@ export class SpaceView {
       const width = pop.offsetWidth
       pop.style.left = `${Math.round(Math.max(8, Math.min(at.right - width, window.innerWidth - width - 8)))}px`
       pop.style.bottom = `${Math.round(window.innerHeight - at.top + 8)}px`
-      pop.style.maxHeight = `${Math.round(at.top - 16)}px`
+      // Never up under the desktop app's title bar.
+      pop.style.maxHeight = `${Math.round(at.top - 8 - viewArea().top)}px`
     }
     window.addEventListener('keydown', onKey, true)
     window.addEventListener('pointerdown', onAway, true)

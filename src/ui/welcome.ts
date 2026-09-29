@@ -73,7 +73,7 @@ export function welcome(mount: HTMLElement, invited: boolean): Promise<void> {
   const naming = h('div', { class: 'welcome-step hidden' }, [
     h('h1', { class: 'welcome-title', text: 'What should people call you?' }),
     h('p', { class: 'welcome-text', text: 'You can change it, and your picture, in Settings.' }),
-    h('div', { class: 'welcome-picture' }, [face, h('div', { class: 'row' }, [pictureButton, removeButton]), picker]),
+    h('div', { class: 'welcome-picture' }, [face, h('div', { class: 'row' }, [removeButton, pictureButton]), picker]),
     h('label', { class: 'welcome-field' }, [h('span', { class: 'eyebrow', text: 'Your name' }), name]),
     go,
   ])

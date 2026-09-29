@@ -340,8 +340,8 @@ try {
 
   const onBob = await menuFor(alice, 'Bob')
   check(
-    'one ellipsis opens everything the owner can do about somebody, their level included',
-    onBob.some((t) => t === 'Admin') && onBob.some((t) => t === 'Member') && onBob.some((t) => t.startsWith('Remove')),
+    'one ellipsis opens what the owner can do about somebody, and levels stay in the space settings',
+    onBob.some((t) => t.startsWith('Remove')) && !onBob.some((t) => t === 'Admin' || t === 'Member'),
     onBob.join(' | '),
   )
   await alice.keyboard.press('Escape')

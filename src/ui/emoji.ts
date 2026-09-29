@@ -1,4 +1,5 @@
 import { h, clear } from './dom'
+import { fitNear } from './place'
 
 interface EmojiGroup {
   id: string
@@ -588,20 +589,5 @@ export function openEmojiPicker(options: PickerOptions): void {
 }
 
 export function placeNear(pop: HTMLElement, anchor: HTMLElement): void {
-  const at = anchor.getBoundingClientRect()
-  const box = pop.getBoundingClientRect()
-  const margin = 6
-
-  let top = at.bottom + margin
-  if (top + box.height > window.innerHeight - margin) {
-    top = at.top - box.height - margin
-  }
-  if (top < margin) top = Math.max(margin, window.innerHeight - box.height - margin)
-
-  let left = at.left
-  if (left + box.width > window.innerWidth - margin) left = window.innerWidth - box.width - margin
-  if (left < margin) left = margin
-
-  pop.style.top = `${Math.round(top)}px`
-  pop.style.left = `${Math.round(left)}px`
+  fitNear(pop, anchor)
 }

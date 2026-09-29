@@ -96,15 +96,26 @@ try {
   await alice.waitForFunction(() => [...document.querySelectorAll('.levels .level-name')].some((e) => e.textContent === 'Helpers'))
   const helpers = await alice.$eval('.levels .level-name:text-is("Helpers")', (e) => getComputedStyle(e).color).catch(() => '')
   check('a new level has its name and colour', helpers === TEAL, helpers)
+  // Levels are changed under Members in the space settings, not in somebody's menu.
+  await alice.click('.settings-tab[data-tab="members"]')
+  const bobLevel = alice.locator('.member-row:has-text("Bob") select.member-level')
+  await bobLevel.waitFor({ timeout: 20_000 })
+  const offered = await bobLevel.evaluate((el) => [...el.options].map((o) => o.textContent))
+  check('the members list offers the levels for Bob', offered.includes('Helpers') && offered.includes('Moderator'), offered.join(' | '))
+  check('with no owner in it', !offered.includes('Owner'))
+  check('and says what his level is now', (await bobLevel.inputValue()) === 'member')
+  await bobLevel.selectOption({ label: 'Helpers' })
+  await alice.waitForTimeout(500)
+  check('the list shows his new level', (await bobLevel.evaluate((el) => el.selectedOptions[0]?.textContent)) === 'Helpers')
   await alice.click('button[aria-label="Close settings"]')
 
   await alice.waitForSelector('button[aria-label="Actions for Bob"]', { timeout: 20_000 })
   await alice.click('button[aria-label="Actions for Bob"]')
   await alice.waitForSelector('.menu')
-  const offered = await alice.$$eval('.menu .menu-item', (els) => els.map((e) => e.textContent ?? ''))
-  check('his menu offers the levels', offered.some((t) => t.includes('Helpers')) && offered.some((t) => t.includes('Moderator')), offered.join(' | ').slice(0, 120))
-  await alice.click('.menu .menu-item:has-text("Helpers")')
-  await alice.waitForTimeout(1500)
+  const inMenu = await alice.$$eval('.menu .menu-item', (els) => els.map((e) => e.textContent ?? ''))
+  check('his menu has no levels in it', !inMenu.some((t) => t.includes('Helpers') || t.includes('Moderator')), inMenu.join(' | ').slice(0, 120))
+  await alice.keyboard.press('Escape')
+  await alice.waitForTimeout(1000)
 
   const colourFor = (page) =>
     page.evaluate(() => {

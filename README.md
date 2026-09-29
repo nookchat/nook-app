@@ -39,7 +39,8 @@ with voice does it.
   so only the two of you can read it.
 - **The space menu**, behind the space name, has Invite people, Settings, and
   Leave space.
-- **Search** is an icon beside the people icon, and opens into a box.
+- **Search** is an icon beside the people icon, and opens into a box. It
+  comes before the actions in the channel head, such as the pinned messages.
 - **Calls**: the phone in a direct conversation, or Call in somebody's menu,
   rings them wherever they are in the app. Only the two of you can be in it.
 - **Voice keeps going** while you read another space, Home or Settings; the
@@ -64,6 +65,9 @@ with voice does it.
   channel is a tile in a row above the conversation, yours too, as a mirror.
   A call has a line for the camera from the start, so turning it on or off
   sets nothing up again. Leaving voice turns it off.
+- **Menus and pickers stay in view**: one that would go off the window, or
+  under the desktop app's title bar, is pushed back in, and one taller than
+  the window scrolls (`src/ui/place.ts`).
 - **Video controls** show while the pointer moves over a playing video or a
   stream, and go when it rests.
 - **Files**: the clip in the box, a file dropped on the conversation, or one
@@ -78,7 +82,8 @@ with voice does it.
   colour, and the names of its people are in that colour everywhere in the
   space; and each has what its people may do: channels, pins, deleting
   messages, removing and moving people, levels, and the space itself. Put
-  somebody on a level from their menu in the list of people. You change only
+  somebody on a level in Space settings, Members, which lists everybody in
+  the space with their level, for whoever may change levels or remove people. You change only
   the levels below yours, and you give nobody a power you do not have. Every
   device checks each change in the log, so a button is never the rule.
 - **The list of people** on the right has the people who are here in groups
@@ -105,7 +110,7 @@ with voice does it.
   of its text sits behind it, with each picture over an emoji of the same
   width. Code keeps the device's own.
 - **A new version** of the site downloads by itself, and a popup offers it,
-  with Update now and Later. In a call, Update now reloads and joins the same
+  with Update now and I’ll do it later. In a call, Update now reloads and joins the same
   voice channel again, muted or deafened as you were, with no click; the
   others see Updating Nook, keep your place in the channel, and hear no leave
   or join sound. If the browser holds the sound back after

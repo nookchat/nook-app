@@ -2215,6 +2215,25 @@ button.start {
   padding: 8px 10px 8px 14px;
 }
 
+/* Space settings, Members: a face and a name, then Remove and the level. */
+.member-who {
+  gap: 10px;
+  min-width: 0;
+}
+
+.member-row {
+  gap: 10px;
+}
+
+.member-level {
+  flex: 0 0 auto;
+  width: 150px;
+}
+
+.members-filter {
+  width: 100%;
+}
+
 .action-row + .action-row {
   border-top: 1px solid var(--line-soft);
 }
@@ -2438,7 +2457,7 @@ button.start {
   opacity: 0.4;
 }
 
-.shortcut-row.recording .shortcut-tools button:first-child {
+.shortcut-row.recording .shortcut-tools button:last-child {
   color: var(--accent);
 }
 
@@ -6344,6 +6363,7 @@ input.invalid:focus {
 
 .update-actions {
   margin-top: 8px;
+  justify-content: flex-end;
 }
 
 @keyframes update-in {

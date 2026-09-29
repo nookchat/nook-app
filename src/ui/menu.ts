@@ -1,5 +1,6 @@
 import { h } from './dom'
 import { placeNear } from './emoji'
+import { fitAtPoint } from './place'
 
 export interface MenuItem {
   label: string
@@ -111,7 +112,7 @@ export function openMenu(anchor: HTMLElement, items: MenuEntry[], options: MenuO
   open = close
   openFor = anchor
   document.body.append(menu)
-  if (options.at) placeAt(menu, options.at.x, options.at.y)
+  if (options.at) fitAtPoint(menu, options.at.x, options.at.y)
   else placeNear(menu, anchor)
   window.addEventListener('keydown', onKey, true)
   window.addEventListener('pointerdown', onDown, true)
@@ -120,17 +121,6 @@ export function openMenu(anchor: HTMLElement, items: MenuEntry[], options: MenuO
 
 export function closeMenu(): void {
   open?.()
-}
-
-function placeAt(menu: HTMLElement, x: number, y: number): void {
-  const box = menu.getBoundingClientRect()
-  const margin = 6
-  let left = x
-  let top = y
-  if (left + box.width > window.innerWidth - margin) left = Math.max(margin, x - box.width)
-  if (top + box.height > window.innerHeight - margin) top = Math.max(margin, y - box.height)
-  menu.style.left = `${Math.round(left)}px`
-  menu.style.top = `${Math.round(top)}px`
 }
 
 /**
