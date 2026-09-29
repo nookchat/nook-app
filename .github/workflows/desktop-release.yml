@@ -1,0 +1,120 @@
+# Builds the desktop app on macOS, Windows and Linux, each on its own system,
+# and publishes a GitHub release that the desktop apps update from.
+#
+# To release: raise "version" in package.json and desktop/package.json, commit,
+# then push a tag of that version, such as v0.3.2. The builds go to a draft
+# release, with SHA256SUMS.txt, and the release is published once all are there.
+#
+# Run it by hand to build without a release: the builds are kept as the run's
+# artifacts. Tick "publish" to release the version in desktop/package.json.
+
+name: desktop release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish a release of the version in desktop/package.json
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      publish: ${{ steps.version.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: version
+        name: The version, and whether it is released
+        run: |
+          tag="v$(node -p "require('./desktop/package.json').version")"
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$GITHUB_REF_NAME" != "$tag" ]; then
+            echo "::error::The tag is $GITHUB_REF_NAME, but desktop/package.json says $tag."
+            exit 1
+          fi
+          publish=false
+          if [ "$GITHUB_REF_TYPE" = tag ] || [ "${{ inputs.publish }}" = true ]; then publish=true; fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+      - name: A draft release to put the builds in
+        if: steps.version.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "The release $TAG is there already; the builds replace its files."
+          else
+            gh release create "$TAG" --draft --title "${TAG#v}" --target "$GITHUB_SHA" --generate-notes
+          fi
+
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            args: --mac dmg --x64 --arm64
+          - os: windows-latest
+            args: --win --x64
+          - os: ubuntu-latest
+            args: --linux --x64
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: desktop
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci
+      - name: Build
+        # No signing certificate here: macOS gets the ad hoc signature the config asks for.
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder ${{ matrix.args }} --publish never
+      - name: Put the builds in the release
+        if: needs.prepare.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          shopt -s nullglob
+          gh release upload "$TAG" release/Nook-* release/latest*.yml --clobber
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nook-${{ runner.os }}
+          path: |
+            desktop/release/Nook-*
+            desktop/release/latest*.yml
+          if-no-files-found: error
+
+  publish:
+    needs: [prepare, build]
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: SHA256SUMS.txt, then publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" -D out -p 'Nook-*.dmg' -p 'Nook-*.exe' -p 'Nook-*.AppImage'
+          (cd out && sha256sum Nook-* > SHA256SUMS.txt && cat SHA256SUMS.txt)
+          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" out/SHA256SUMS.txt --clobber
+          gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --draft=false --latest

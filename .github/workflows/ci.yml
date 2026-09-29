@@ -1,0 +1,76 @@
+# Checks every push and pull request: the types, the build, the desktop shell's
+# syntax, and every check in test/ against a real server, Postgres and Chrome.
+
+name: checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - name: The desktop shell parses
+        run: for f in desktop/*.cjs; do node --check "$f"; done
+      - name: The server parses
+        run: for f in server/server.mjs server/src/*.mjs; do node --check "$f"; done
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: nook
+          POSTGRES_PASSWORD: nook
+          POSTGRES_DB: nook
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U nook" --health-interval 2s --health-timeout 5s --health-retries 30
+    env:
+      NOOK_TEST_PG: postgres://nook:nook@localhost:5432
+      CHROME_PATH: /usr/bin/google-chrome
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            server/package-lock.json
+      - run: npm ci
+      - run: npm ci
+        working-directory: server
+      - name: Start the server and the page
+        run: |
+          node test/stack.mjs > stack.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:5173/ > /dev/null && curl -sf http://localhost:8787/api/v1/health > /dev/null && exit 0
+            sleep 1
+          done
+          cat stack.log
+          exit 1
+      - run: npm test
+      - name: What the server and the page said
+        if: failure()
+        run: cat stack.log

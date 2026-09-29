@@ -8,6 +8,7 @@ import { heardAt } from '../net/volume'
 import { deriveRoom, newPeerId, type Room } from '../room'
 import { rtcConfig } from '../rtc/config'
 import { BACK_WITHIN_MS, takeVoiceNote, updatingNow } from './resume'
+import { channelMuted } from '../store/mute'
 import { SignalBus } from '../signal/bus'
 import type { Envelope } from '../signal/envelope'
 import { loadIdentity } from '../store/identity'
@@ -346,11 +347,13 @@ export class SpaceRuntime {
     this.mesh?.announce()
   }
 
+  /** What waits in this space. A channel or space you muted adds nothing; direct messages always count. */
   unread(): { count: number; mentions: number; direct: number } {
     if (!this.chat) return { count: 0, mentions: 0, direct: 0 }
     let count = 0
     let mentions = 0
-    for (const u of this.chat.unread(this.note?.read ?? {}).values()) {
+    for (const [channel, u] of this.chat.unread(this.note?.read ?? {})) {
+      if (this.room && channelMuted(this.room.id, channel)) continue
       count += u.count
       mentions += u.mentions
     }

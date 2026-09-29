@@ -357,13 +357,20 @@ trackpad pinch, zooms anywhere.
   on the next quit. macOS installs only an update signed by a known
   developer, which this build is not, so there the page offers the download.
 
-To release, raise `version` in `package.json` and `desktop/package.json`, then
-build and publish from `desktop/` with a GitHub token:
+To release, raise `version` in `package.json` and `desktop/package.json`,
+commit, and push a tag of that version:
 
 ```sh
-GH_TOKEN=$(gh auth token) npx electron-builder --win --linux --x64 --publish always
-GH_TOKEN=$(gh auth token) npx electron-builder --mac dmg --x64 --arm64 --publish always
+git tag v0.3.2 && git push origin v0.3.2
 ```
+
+The `desktop release` workflow builds the app on macOS, Windows and Linux, each
+on its own system, puts the builds and `SHA256SUMS.txt` in a draft release, and
+publishes it once all are there. Run the workflow by hand to build without a
+release: the builds are kept as the run's artifacts.
+
+The `checks` workflow runs on every push: the types, the build, and every check
+in `test/`, against a real server, Postgres and Chrome.
 
 ```sh
 cd desktop && npm install

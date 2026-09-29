@@ -16,6 +16,7 @@ export type IconName =
   | 'monitor'
   | 'user'
   | 'bell'
+  | 'bell-off'
   | 'signal'
   | 'mic'
   | 'mic-off'
@@ -128,6 +129,7 @@ const ICONS: Record<IconName, string | Drawing> = {
   'check-double': 'm2.5 12.5 4.5 4.5 9.5-9.5M11.5 16l1 1L22 7.5',
   'arrow-down': 'M12 5v14M6 13l6 6 6-6',
   bell: 'M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20.5a2 2 0 0 0 4 0',
+  'bell-off': 'M6 16v-5a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20.5a2 2 0 0 0 4 0M4 4l16 16',
   lock: `${rect(5, 11, 14, 10, 2)}M8 11V8a4 4 0 0 1 8 0v3`,
   user: `${circle(12, 8, 4)}M4 20a8 8 0 0 1 16 0`,
   people: `${circle(9, 8, 3.5)}M2.5 20a6.5 6.5 0 0 1 13 0M15.5 4.8a3.5 3.5 0 0 1 0 6.4M18 13.8a6.5 6.5 0 0 1 3.5 6.2`,

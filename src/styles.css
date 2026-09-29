@@ -2327,6 +2327,11 @@ button.start {
   margin-top: 0;
 }
 
+/* A channel you muted: there, but quiet. */
+.rail-item.muted {
+  opacity: 0.55;
+}
+
 /* A channel kept to some levels. */
 .kept-mark {
   display: inline-flex;

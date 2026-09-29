@@ -1,7 +1,13 @@
+import { toast } from './toast'
+
 const KEY = 'nook.notify.v1'
 const WHAT_KEY = 'nook.notify.what.v1'
 const TEXT_KEY = 'nook.notify.text.v1'
 const ICON = 'icons/app-icon-rounded-192.png'
+/** Set once the offer to turn notifications on has been made on this device. */
+const OFFERED_KEY = 'nook.notify.offered.v1'
+/** After the first mention's own toast, so the two do not land at once. */
+const OFFER_AFTER_MS = 2500
 
 /** What gets a notification: mentions and direct messages, or every message too. */
 export type NotifyWhat = 'mentions' | 'all'
@@ -105,4 +111,19 @@ export function notify(title: string, body: string, go?: () => void, more: { tag
   } catch {
     /* throws on a page that lost its permission */
   }
+}
+
+/**
+ * A browser asks for leave to notify only after a click, so the first mention or direct
+ * message that arrives while they are off offers them, once per device, in a toast.
+ */
+export function offerNotify(): void {
+  if (!supported() || Notification.permission !== 'default' || read(OFFERED_KEY)) return
+  write(OFFERED_KEY, String(Date.now()))
+  window.setTimeout(() => {
+    toast('Get a notification when somebody mentions you or messages you, while Nook is in the background.', 'info', 20_000, {
+      label: 'Turn on',
+      run: () => void askNotify(),
+    })
+  }, OFFER_AFTER_MS)
 }

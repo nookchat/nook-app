@@ -11,6 +11,7 @@ const SYNCED = [
   'nook.activity.v1',
   'nook.rail.v1',
   'nook.keys.v1',
+  'nook.muted.v1',
   'nook.settings.v1',
   'nook.servers.v1',
   'nook.own.v1',

@@ -51,6 +51,7 @@ import { chirpMessage, isNews, speak } from './sounds'
 import type { LinkQuality } from '../net/voice'
 import { CUSTOM, CUSTOM_MAX_S, decodeClip, openSoundboard, playClip, type Sound } from './soundboard'
 import { ask, askChannel, askSound, pickSome } from './ask'
+import { channelMuted, channelMutedItself, MUTED_CHANGED, muteChannel, muteSpace, spaceMuted } from '../store/mute'
 import { avatarOf, ChatPanel, imageLinks } from './chat-panel'
 import { clear, copyText, fmtKbps, h, onPress, roleInk } from './dom'
 import { forHowLong, gameCard } from './game-card'
@@ -440,6 +441,7 @@ export class SpaceView {
     this.boardButton.addEventListener('click', () => this.openBoard(this.boardButton))
     document.addEventListener('visibilitychange', this.onVisible)
     window.addEventListener(PLAYING_CHANGED, this.onPlaying)
+    window.addEventListener(MUTED_CHANGED, this.onPlaying)
     window.addEventListener('keydown', this.onShortcut)
     this.draw()
     this.status()
@@ -547,6 +549,7 @@ export class SpaceView {
     this.stopped = true
     document.removeEventListener('visibilitychange', this.onVisible)
     window.removeEventListener(PLAYING_CHANGED, this.onPlaying)
+    window.removeEventListener(MUTED_CHANGED, this.onPlaying)
     window.removeEventListener('keydown', this.onShortcut)
     for (const t of this.timers) window.clearInterval(t)
     this.timers = []
@@ -992,6 +995,7 @@ export class SpaceView {
       // The system notification comes from main.ts, for every space alike.
       if (!chat.mayEnter(chat.me, where) || !chat.mayEnter(e.author, where)) continue
       if (where === this.channel && !this.thread) continue
+      if (channelMuted(this.space.room.id, where)) continue
       toast(`${who} mentioned you in #${where}`, 'info', 8000, {
         label: 'Go',
         run: () => this.openChannel(where),
@@ -1000,8 +1004,19 @@ export class SpaceView {
   }
 
   private channelActions(channel: ChannelInfo): MenuItem[] {
-    if (!this.chat?.can('channels')) return []
+    const room = this.space.room.id
+    const mutedItself = channelMutedItself(room, channel.name)
+    const mute: MenuItem = spaceMuted(room)
+      ? { label: 'Muted with the space', note: 'Unmute the space to hear from it', run: () => muteSpace(room, false) }
+      : {
+          label: mutedItself ? 'Unmute' : 'Mute',
+          note: mutedItself ? 'Notifications and counts again' : 'No notifications or counts from it, for you',
+          lead: h('span', { class: 'menu-icon' }, [icon(mutedItself ? 'bell' : 'bell-off', 16)]),
+          run: () => muteChannel(room, channel.name, !mutedItself),
+        }
+    if (!this.chat?.can('channels')) return [mute]
     const items: MenuItem[] = [
+      mute,
       {
         label: 'Rename',
         note: `Shown instead of ${channel.name}`,
@@ -1038,6 +1053,34 @@ export class SpaceView {
         },
       })
     }
+    return items
+  }
+
+  /** For whoever can change channels: the name, who may join, and, but for the default one, delete. */
+  private voiceChannelActions(channel: ChannelInfo): MenuItem[] {
+    const items: MenuItem[] = [
+      {
+        label: 'Rename',
+        note: `Shown instead of ${channel.name}`,
+        run: async () => {
+          const raw = (await ask('What should this voice channel be called?', { value: channel.label, ok: 'Rename' })) ?? ''
+          const label = raw.trim().slice(0, 32)
+          if (!label) return
+          void this.publish((c) => c.labelChannel(channel.name, label, true))
+        },
+      },
+    ]
+    if (channel.name === DEFAULT_VOICE) return items
+    items.push(this.whoMayEnter(channel, true), {
+      label: 'Delete',
+      note: 'Anybody in it now is taken out',
+      danger: true,
+      run: () => {
+        if (!window.confirm(`Delete the voice channel ${channel.label}? Anybody in it now is taken out.`)) return
+        if (this.voice?.state.channel === channel.name) this.leaveVoice()
+        void this.publish((c) => c.dropChannel(channel.name, true))
+      },
+    })
     return items
   }
 
@@ -1827,6 +1870,18 @@ export class SpaceView {
         ...(this.spaceRights().any
           ? [{ label: 'Settings', lead: h('span', { class: 'menu-icon' }, [icon('settings', 16)]), run: () => void this.openSpaceSettings() }]
           : []),
+        spaceMuted(this.space.room.id)
+          ? {
+              label: 'Unmute this space',
+              lead: h('span', { class: 'menu-icon' }, [icon('bell', 16)]),
+              run: () => muteSpace(this.space.room.id, false),
+            }
+          : {
+              label: 'Mute this space',
+              note: 'No notifications or counts from its channels, for you',
+              lead: h('span', { class: 'menu-icon' }, [icon('bell-off', 16)]),
+              run: () => muteSpace(this.space.room.id, true),
+            },
         { label: 'Leave', danger: true, lead: h('span', { class: 'menu-icon' }, [icon('leave', 16)]), run: () => void this.leaveSpace() },
       ],
     })
@@ -2225,11 +2280,12 @@ export class SpaceView {
 
     for (const channel of chat?.channelInfo() ?? [{ name: DEFAULT_CHANNEL, label: DEFAULT_CHANNEL, topic: '', levels: [] }]) {
       const name = channel.name
-      const news = waiting.get(name)
+      const muted = channelMuted(this.space.room.id, name)
+      const news = muted ? undefined : waiting.get(name)
       const open = h(
         'button',
         {
-          class: `rail-item grow${name === this.channel ? ' on' : ''}${news ? ' unread' : ''}`,
+          class: `rail-item grow${name === this.channel ? ' on' : ''}${news ? ' unread' : ''}${muted ? ' muted' : ''}`,
           title: channel.topic || `Open ${channel.label}`,
           on: { click: () => this.openChannel(name) },
         },
@@ -2237,24 +2293,21 @@ export class SpaceView {
           icon('hash', 16),
           h('span', { class: 'truncate grow', text: channel.label }),
           channel.levels.length ? this.keptMark(channel) : null,
+          muted ? h('span', { class: 'kept-mark', title: 'Muted' }, [icon('bell-off', 13)]) : null,
           liveChannels.has(name) ? h('span', { class: 'pill live', text: 'live' }) : null,
           news?.mentions
             ? h('span', { class: 'pill bad', text: `${news.mentions}`, title: 'You were mentioned' })
             : null,
         ],
       )
-      let more: HTMLButtonElement | null = null
-      if (canEdit) {
-        const button = h('button', {
-          class: 'ghost tiny-btn person-more',
-          title: `What you can do with ${channel.label}`,
-          ariaLabel: `Actions for ${channel.label}`,
-          data: { menu: `channel:${name}` },
-        })
-        onPress(button, () => openMenu(button, this.channelActions(channel)))
-        button.append(icon('more', 17))
-        more = button
-      }
+      const more = h('button', {
+        class: 'ghost tiny-btn person-more',
+        title: `What you can do with ${channel.label}`,
+        ariaLabel: `Actions for ${channel.label}`,
+        data: { menu: `channel:${name}` },
+      })
+      onPress(more, () => openMenu(more, this.channelActions(channel)))
+      more.append(icon('more', 17))
       const railRow = h('div', { class: 'row rail-row' }, [open, more])
       onContextMenu(railRow, () => this.channelActions(channel))
       this.channelList.append(railRow)
@@ -2295,7 +2348,8 @@ export class SpaceView {
     const peers = this.peersById()
     const names = chat?.log.names() ?? new Map<string, string>()
     const avatars = chat?.log.avatars() ?? new Map<string, string>()
-    if (chat && here && !chat.mayEnter(chat.me, here, true)) queueMicrotask(() => this.leaveVoice())
+    // Kept from you now, or deleted, while you were in it.
+    if (chat && here && (!chat.mayEnter(chat.me, here, true) || chat.log.wasDropped(here, true))) queueMicrotask(() => this.leaveVoice())
     const canEdit = chat?.can('channels') === true
     for (const channel of chat?.channelInfo(true) ?? [{ name: DEFAULT_VOICE, label: DEFAULT_VOICE, topic: '', levels: [] }]) {
       const name = channel.name
@@ -2310,7 +2364,7 @@ export class SpaceView {
               : 'Join this voice channel. Everybody in it hears everybody else.',
           on: { click: () => this.clickVoice(name) },
         },
-        [icon('volume', 16), h('span', { class: 'truncate grow', text: name }), channel.levels.length ? this.keptMark(channel) : null],
+        [icon('volume', 16), h('span', { class: 'truncate grow', text: channel.label }), channel.levels.length ? this.keptMark(channel) : null],
       )
       const since = this.channelSince(name)
       const timer = since ? h('span', { class: 'voice-timer', title: 'How long somebody has been in here' }) : null
@@ -2327,7 +2381,7 @@ export class SpaceView {
         if ((ev.target as Element).closest('button')) return
         this.clickVoice(name)
       })
-      if (canEdit && name !== DEFAULT_VOICE) onContextMenu(head, () => [this.whoMayEnter(channel, true)])
+      if (canEdit) onContextMenu(head, () => this.voiceChannelActions(channel))
       const row = h('div', { class: 'voice-channel' }, [head])
       for (const [key, ids] of people) {
         row.append(this.voiceMember(key, ids, peers, names.get(key) ?? '', avatars.get(key) ?? ''))

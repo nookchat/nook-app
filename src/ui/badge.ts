@@ -1,5 +1,7 @@
 import { spaces } from '../space/registry'
+import { MUTED_CHANGED } from '../store/mute'
 import { ROOMS_CHANGED } from '../store/notes'
+import { PREFS_CHANGED } from '../store/prefs'
 
 /**
  * What waits for you, on the tab's icon and, in the desktop app, on the Dock or taskbar
@@ -103,6 +105,8 @@ export function watchUnread(): void {
   }
   icon.src = new URL('icons/app-icon.svg', document.baseURI).href
   window.addEventListener(ROOMS_CHANGED, recountSoon)
+  window.addEventListener(MUTED_CHANGED, recountSoon)
+  window.addEventListener(PREFS_CHANGED, recountSoon)
   document.addEventListener('visibilitychange', recountSoon)
   recountSoon()
 }

@@ -485,6 +485,21 @@ export class RoomLog {
     return !info || mayEnter(this.authority(), key, info)
   }
 
+  /** Deleted by somebody who could, and not made again since. A channel not heard of yet is not. */
+  wasDropped(name: string, voice = false): boolean {
+    return this.cached(voice ? 'voiceDropped' : 'textDropped', () => {
+      const auth = this.authority()
+      const gone = new Set<string>()
+      for (const e of this.all()) {
+        if (e.kind !== 'channel' || (e.body.voice === true) !== voice || !auth.can(e.author, 'channels')) continue
+        const channel = cleanChannel(String(e.body.name ?? ''))
+        if (e.body.gone === true) gone.add(channel)
+        else gone.delete(channel)
+      }
+      return gone
+    }).has(name)
+  }
+
   /** Every channel, those kept to some levels too. */
   everyChannel(voice = false): ChannelInfo[] {
     return this.cached(voice ? 'voiceChannels' : 'textChannels', () => this.foldChannels(voice))

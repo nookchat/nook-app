@@ -22,6 +22,7 @@ import { noteForUpdate } from './space/resume'
 import { isCallChannel, type SpaceRuntime } from './space/runtime'
 import { nameChosen, shortKey } from './store/identity'
 import { cleanChannel, DEFAULT_CHANNEL, type LogEvent } from './store/log'
+import { channelMuted } from './store/mute'
 import { newSpaceServer } from './store/server-spaces'
 import { findSpace } from './store/spaces'
 import { ask } from './ui/ask'
@@ -29,7 +30,7 @@ import { watchUnread } from './ui/badge'
 import { installCalls } from './ui/call'
 import { clear } from './ui/dom'
 import { HomeView, type DirectRef } from './ui/home-view'
-import { notify, notifyText, notifyWhat } from './ui/notify'
+import { notify, notifyText, notifyWhat, offerNotify } from './ui/notify'
 import { createWindow, type WindowChrome } from './ui/shell'
 import { chirpMessage, isNews } from './ui/sounds'
 import { spaceList } from './ui/space-list'
@@ -224,6 +225,7 @@ async function alertAbout(space: SpaceRuntime, events: LogEvent[]): Promise<void
         chirpMessage()
         toast(`${who} sent you a message`, 'info', 8000, { label: 'Read', run: open }, 'peek')
       }
+      offerNotify()
       await chat.readDirect()
       const text = notifyText() ? chat.directText(e.id) || 'Sent you a file' : 'Sent you a message'
       notify(who, text, open, { tag: e.id, picture })
@@ -231,8 +233,9 @@ async function alertAbout(space: SpaceRuntime, events: LogEvent[]): Promise<void
     }
     if (e.kind !== 'said') continue
     const channel = cleanChannel(String(e.body.channel ?? '')) || DEFAULT_CHANNEL
-    // A kept channel you may not see, or one they may not write in, says nothing.
+    // A kept channel you may not see, or one they may not write in, says nothing, and so does a muted one.
     if (!chat.mayEnter(chat.me, channel) || !chat.mayEnter(e.author, channel)) continue
+    if (channelMuted(space.room.id, channel)) continue
     const text = String(e.body.text ?? '')
     names ??= chat.log.names()
     const mention = mentionsMe(text, names, chat.me)
@@ -241,6 +244,7 @@ async function alertAbout(space: SpaceRuntime, events: LogEvent[]): Promise<void
       if (!onScreen) openSpace(space)
       active?.openChannelNamed?.(channel)
     }
+    if (mention) offerNotify()
     if (mention && !onScreen) {
       chirpMessage()
       toast(`${who} mentioned you in ${spaceName}`, 'info', 8000, { label: 'Go', run: () => openSpace(space) }, 'wiggle')
