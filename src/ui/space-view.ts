@@ -49,20 +49,8 @@ import { spaceFace, switcherButton } from './space-switcher'
 import { voiceDock } from './call'
 import { chirpMessage, isNews, speak } from './sounds'
 import type { LinkQuality } from '../net/voice'
-import {
-  CUSTOM,
-  CUSTOM_MAX_S,
-  decodeClip,
-  openSoundboard,
-  playClip,
-  playSound,
-  soundById,
-  soundByName,
-  SOUNDS,
-  type Sound,
-  warmSounds,
-} from './soundboard'
-import { ask, askChannel, pickSome } from './ask'
+import { CUSTOM, CUSTOM_MAX_S, decodeClip, openSoundboard, playClip, type Sound } from './soundboard'
+import { ask, askChannel, askSound, pickSome } from './ask'
 import { avatarOf, ChatPanel, imageLinks } from './chat-panel'
 import { clear, copyText, fmtKbps, h, onPress, roleInk } from './dom'
 import { forHowLong, gameCard } from './game-card'
@@ -75,7 +63,6 @@ import { placeNear } from './emoji'
 import { loadAvatar, squareThumb } from './avatar'
 import type { WindowChrome } from './shell'
 import { toast } from './toast'
-import { notify } from './notify'
 import { VideoSurface } from './video-surface'
 
 const RECENT_MS = 14 * 24 * 60 * 60 * 1000
@@ -346,6 +333,8 @@ export class SpaceView {
   private readonly voiceSince = new Map<string, number>()
   /** People reloading into a new version, by key: the session that said so, its voice channel, and how long to wait. */
   private readonly updatingBy = new Map<string, { session: string; channel: string | null; until: number }>()
+  /** Takes each "updating" away when its time is up. Set again each time somebody says it again. */
+  private readonly updatingTimers = new Map<string, number>()
   /** The game each session says it plays, and since when by our clock. */
   private readonly playingBy = new Map<string, Playing>()
   private readonly boardButton = h(
@@ -466,6 +455,20 @@ export class SpaceView {
     return this.capture ? this.space.room.id : null
   }
 
+  private stopUpdatingLater(key: string): void {
+    window.clearTimeout(this.updatingTimers.get(key))
+    this.updatingTimers.set(
+      key,
+      window.setTimeout(() => {
+        this.updatingTimers.delete(key)
+        const u = this.updatingBy.get(key)
+        if (!u || u.until > Date.now() || this.stopped) return
+        this.updatingBy.delete(key)
+        this.draw()
+      }, BACK_WITHIN_MS + 100),
+    )
+  }
+
   /** Reloading into a new version, and not back yet. */
   private updatingOf(key: string): { channel: string | null } | null {
     const u = this.updatingBy.get(key)
@@ -547,6 +550,8 @@ export class SpaceView {
     window.removeEventListener('keydown', this.onShortcut)
     for (const t of this.timers) window.clearInterval(t)
     this.timers = []
+    for (const t of this.updatingTimers.values()) window.clearTimeout(t)
+    this.updatingTimers.clear()
     this.stopSharing()
     this.stopWatching()
     this.dock.stop()
@@ -678,13 +683,15 @@ export class SpaceView {
     const wasUpdating = this.updatingBy.get(key)
     if (data.updating === true) {
       const channel = typeof data.voice === 'string' ? cleanChannel(data.voice) || null : null
-      if (!wasUpdating) window.setTimeout(() => !this.stopped && this.draw(), BACK_WITHIN_MS + 100)
       this.updatingBy.set(key, { session: from, channel, until: Date.now() + BACK_WITHIN_MS })
+      this.stopUpdatingLater(key)
       if (!wasUpdating) this.draw()
     } else if (wasUpdating && wasUpdating.session !== from && (!wasUpdating.channel || typeof data.voice === 'string')) {
       // A new session of theirs: back. One that was in voice is back when it is in voice again,
       // since it says hello before it has joined.
       this.updatingBy.delete(key)
+      window.clearTimeout(this.updatingTimers.get(key))
+      this.updatingTimers.delete(key)
       this.draw()
     }
 
@@ -762,19 +769,19 @@ export class SpaceView {
     this.chatPanel.setTyping([...people.values()])
   }
 
-  /** The board's own sounds and the ones people added here, by wire id. */
+  /** The sounds people added here, by wire id. */
   private allSounds(): Sound[] {
-    const added = (this.chat?.boardSounds() ?? []).map((b) => ({ id: CUSTOM + b.id, label: b.label, emoji: b.emoji }))
-    return [...SOUNDS, ...added]
+    return (this.chat?.boardSounds() ?? []).map((b) => ({ id: CUSTOM + b.id, label: b.label, emoji: b.emoji }))
   }
 
   private findSound(id: string): Sound | null {
-    return soundById(id) ?? this.allSounds().find((s) => s.id === id) ?? null
+    return this.allSounds().find((s) => s.id === id) ?? null
   }
 
   private findSoundByName(text: string): Sound | null {
     const want = text.trim().toLowerCase().replace(/\s+/g, '')
-    return soundByName(text) ?? this.allSounds().find((s) => s.label.toLowerCase().replace(/\s+/g, '') === want) ?? null
+    if (!want) return null
+    return this.allSounds().find((s) => s.label.toLowerCase().replace(/\s+/g, '') === want) ?? null
   }
 
   /** Decoded once, then kept: a sound somebody added is fetched and opened like any file. */
@@ -802,7 +809,7 @@ export class SpaceView {
 
   /** Resolves with how long it plays, or 0 when it does not play here. */
   private async play(id: string): Promise<number> {
-    if (!id.startsWith(CUSTOM)) return playSound(id)
+    if (!id.startsWith(CUSTOM)) return 0
     const buffer = await this.clip(id)
     return buffer ? playClip(id, buffer) : 0
   }
@@ -872,17 +879,17 @@ export class SpaceView {
       return
     }
     this.warmClips()
-    warmSounds()
     const chat = this.chat
     openSoundboard({
       anchor: button,
       onPick: (id) => this.sendSound(id),
-      custom: this.allSounds().filter((s) => s.id.startsWith(CUSTOM)),
+      sounds: this.allSounds(),
       onAdd: () => void this.addSound(),
-      canRemove: (id) => {
+      canChange: (id) => {
         const board = chat?.boardSounds().find((b) => CUSTOM + b.id === id)
         return !!board && !!chat && (board.maker === chat.me || chat.can('channels'))
       },
+      onEdit: (id) => void this.editSound(id),
       onRemove: (id) => {
         const sound = this.findSound(id)
         if (!sound || !window.confirm(`Take ${sound.label} off the soundboard for everybody?`)) return
@@ -915,19 +922,27 @@ export class SpaceView {
       toast(`A sound may be at most ${CUSTOM_MAX_S} seconds. That one is ${Math.round(length)}.`, 'warn')
       return
     }
-    const named = await ask('What is the sound called?', { value: file.name.replace(/\.[^.]+$/, '').slice(0, 24), ok: 'Next' })
-    if (named === null || !named.trim()) return
-    const emoji = (await ask('One emoji for it', { value: '🔊', ok: 'Add' })) ?? '🔊'
-    toast(`Adding ${named.trim()}...`, 'info', 2500)
+    const answer = await askSound('Add a sound', file.name.replace(/\.[^.]+$/, '').slice(0, 24), '🔊', 'Add')
+    const named = answer?.name.trim() ?? ''
+    if (!answer || !named) return
     try {
       const sent = await filesFor(this.space).send(file, () => undefined, new AbortController().signal)
       const bytes = crypto.getRandomValues(new Uint8Array(8))
       const id = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')
-      await this.publish((c) => c.addBoardSound(id, named.trim(), emoji.trim() || '🔊', sent))
-      toast(`${named.trim()} is on the soundboard.`, 'good', 3000)
+      await this.publish((c) => c.addBoardSound(id, named, answer.emoji || '🔊', sent))
     } catch (err) {
       toast(err instanceof Error ? err.message : 'That sound could not be added.', 'bad')
     }
+  }
+
+  private async editSound(id: string): Promise<void> {
+    const sound = this.findSound(id)
+    if (!sound) return
+    const answer = await askSound(`Change ${sound.label}`, sound.label, sound.emoji, 'Save')
+    if (!answer) return
+    const name = answer.name.trim() || sound.label
+    if (name === sound.label && answer.emoji === sound.emoji) return
+    await this.publish((c) => c.editBoardSound(id.slice(CUSTOM.length), name, answer.emoji))
   }
 
   private sendSpoken(arg: string): void {
@@ -974,7 +989,8 @@ export class SpaceView {
       if (!mentionsMe(text, names, chat.me)) continue
       const who = chat.nameOf(e.author) || shortKey(e.author)
       const where = cleanChannel(String(e.body.channel ?? '')) || DEFAULT_CHANNEL
-      notify(`${who} in #${where}`, text, () => this.openChannel(where))
+      // The system notification comes from main.ts, for every space alike.
+      if (!chat.mayEnter(chat.me, where) || !chat.mayEnter(e.author, where)) continue
       if (where === this.channel && !this.thread) continue
       toast(`${who} mentioned you in #${where}`, 'info', 8000, {
         label: 'Go',
@@ -2869,8 +2885,9 @@ export class SpaceView {
     }
 
     // Gone from the room for a reload, but here.
+    // Not you: this session is here, whatever another of your devices is doing.
     for (const key of this.updatingBy.keys()) {
-      if (this.updatingOf(key)) put(key, { name: rows.get(key)?.name || chat?.nameOf(key) || '', here: true, updating: true })
+      if (key !== chat?.me && this.updatingOf(key)) put(key, { name: rows.get(key)?.name || chat?.nameOf(key) || '', here: true, updating: true })
     }
 
     dropOtherDeviceRows(rows, chat?.displayName ?? '')
@@ -3133,6 +3150,11 @@ export class SpaceView {
     }
     if (pinned.length === 0) list.append(h('div', { class: 'pin-empty faint', text: 'Nothing is pinned here yet.' }))
     openMenu(this.pinsButton, [{ heading: `Pinned in #${this.channel}` }, { custom: list }], { className: 'pins-menu' })
+  }
+
+  /** For a notification's click. Only a channel you may see. */
+  openChannelNamed(name: string): void {
+    if (this.chat?.channels().includes(name)) this.openChannel(name)
   }
 
   private openChannel(name: string): void {

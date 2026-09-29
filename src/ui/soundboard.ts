@@ -16,35 +16,6 @@ export const CUSTOM = 'c:'
 /** Longest a sound that somebody added plays for. */
 export const CUSTOM_MAX_S = 10
 
-// The id is the wire payload: renaming one breaks older peers.
-export const SOUNDS: Sound[] = [
-  { id: 'airhorn', label: 'Airhorn', emoji: '📢' },
-  { id: 'rimshot', label: 'Rimshot', emoji: '🥁' },
-  { id: 'sadtrumpet', label: 'Sad trumpet', emoji: '🎺' },
-  { id: 'drumroll', label: 'Drum roll', emoji: '🪘' },
-  { id: 'applause', label: 'Applause', emoji: '👏' },
-  { id: 'fanfare', label: 'Fanfare', emoji: '🎉' },
-  { id: 'boing', label: 'Boing', emoji: '🌀' },
-  { id: 'coin', label: 'Coin', emoji: '🪙' },
-  { id: 'bell', label: 'Bell', emoji: '🔔' },
-  { id: 'buzzer', label: 'Buzzer', emoji: '⛔' },
-  { id: 'zap', label: 'Zap', emoji: '⚡' },
-  { id: 'pop', label: 'Pop', emoji: '🫧' },
-  { id: 'tada', label: 'Ta-da', emoji: '✨' },
-  { id: 'whoosh', label: 'Whoosh', emoji: '💨' },
-  { id: 'crickets', label: 'Crickets', emoji: '🦗' },
-]
-
-export function soundById(id: string): Sound | null {
-  return SOUNDS.find((s) => s.id === id) ?? null
-}
-
-export function soundByName(text: string): Sound | null {
-  const want = text.trim().toLowerCase().replace(/\s+/g, '')
-  if (!want) return null
-  return SOUNDS.find((s) => s.id === want || s.label.toLowerCase().replace(/\s+/g, '') === want) ?? null
-}
-
 const VOLUME_KEY = 'nook:board-volume'
 
 /** How loud the soundboard plays here, from 0 to 1. */
@@ -74,17 +45,10 @@ const levels = new WeakMap<BaseAudioContext, GainNode>()
 
 /** Each sound playing now, by id, so playing it again starts it over. */
 const playing = new Map<string, GainNode>()
-/** Where the voice being built right now sends its sound. */
-let target: AudioNode | null = null
-
-function into(ctx: BaseAudioContext): AudioNode {
-  return target ?? out(ctx)
-}
 
 /**
  * Every sound goes through one chain: a gentle top cut, a small room, and a
- * compressor, so the synthesised ones sound less like a test tone and a loud
- * sound somebody added cannot blow anybody's ears out.
+ * compressor, so a loud sound somebody added cannot blow anybody's ears out.
  */
 const chains = new WeakMap<BaseAudioContext, AudioNode>()
 
@@ -163,15 +127,12 @@ function freshPlay(ctx: AudioContext, id: string, seconds: number): GainNode {
 
 /**
  * Every sound is brought to this loudness, in LUFS, before the chain: the
- * broadcast level of EBU R128. A quiet clip somebody added is as loud as the
- * airhorn, and a loud one is no louder.
+ * broadcast level of EBU R128. A quiet clip is as loud as any other, and a
+ * loud one is no louder.
  */
 const TARGET_LUFS = -23
 /** A quiet recording is turned up this much at most (12 dB), so its hiss does not come up with it. */
 const CLIP_MOST_GAIN = 4
-/** A built-in sound is rendered this long, off the speakers, to measure it. */
-const RENDER_S = 3
-const RENDER_RATE = 48_000
 
 /** What one play needs: how far to turn it up or down, and how long it lasts. */
 interface Level {
@@ -179,7 +140,6 @@ interface Level {
   seconds: number
 }
 
-const voiceLevels = new Map<string, Promise<Level>>()
 const clipLevels = new WeakMap<AudioBuffer, Level>()
 
 function channelsOf(buffer: AudioBuffer, seconds: number): Float32Array[] {
@@ -198,53 +158,6 @@ function levelOf(buffer: AudioBuffer, seconds: number, most = Infinity): Level {
   return { gain: Math.min(most, 10 ** ((TARGET_LUFS - loudness) / 20), 1 / peak), seconds: lasts }
 }
 
-/** Measured once, the first time it is wanted. */
-function voiceLevel(id: string): Promise<Level> {
-  const had = voiceLevels.get(id)
-  if (had) return had
-  const voice = VOICES[id]
-  const Offline =
-    window.OfflineAudioContext ??
-    (window as unknown as { webkitOfflineAudioContext?: typeof OfflineAudioContext }).webkitOfflineAudioContext
-  const work = (async (): Promise<Level> => {
-    if (!voice || !Offline) return { gain: 1, seconds: RENDER_S }
-    const ctx = new Offline(1, RENDER_S * RENDER_RATE, RENDER_RATE)
-    target = ctx.destination
-    try {
-      voice(ctx, 0.01)
-    } finally {
-      target = null
-    }
-    return levelOf(await ctx.startRendering(), RENDER_S)
-  })().catch(() => ({ gain: 1, seconds: RENDER_S }))
-  voiceLevels.set(id, work)
-  return work
-}
-
-/** Measures the built-in sounds ahead, so the first play of each is not late. */
-export function warmSounds(): void {
-  for (const id of Object.keys(VOICES)) void voiceLevel(id)
-}
-
-/** One of the board's own sounds. Resolves with how long it plays, or 0 when it does not. */
-export async function playSound(id: string): Promise<number> {
-  const voice = VOICES[id]
-  if (!voice || !ready()) return 0
-  const level = await voiceLevel(id)
-  const ctx = ready()
-  if (!ctx) return 0
-  const bus = freshPlay(ctx, id, RENDER_S)
-  bus.gain.value = level.gain
-  target = bus
-  try {
-    voice(ctx, ctx.currentTime + 0.01)
-  } catch {
-    return 0
-  } finally {
-    target = null
-  }
-  return level.seconds
-}
 
 /** A sound somebody added, already decoded. Returns how long it plays, or 0 when it does not. */
 export function playClip(id: string, buffer: AudioBuffer): number {
@@ -280,308 +193,16 @@ export async function decodeClip(bytes: ArrayBuffer): Promise<AudioBuffer> {
   return buffer
 }
 
-function tone(
-  ctx: BaseAudioContext,
-  at: number,
-  opts: {
-    shape?: OscillatorType
-    from: number
-    to?: number
-    len: number
-    gain: number
-    attack?: number
-    unisonCents?: number
-    /** Low pass, in Hz: takes the fizz off a saw or a square. */
-    cut?: number
-    /** Vibrato: rate in Hz and depth in cents. */
-    wobble?: [number, number]
-  },
-): void {
-  const make = (cents: number): void => {
-    const osc = ctx.createOscillator()
-    const vol = ctx.createGain()
-    osc.type = opts.shape ?? 'sine'
-    osc.detune.value = cents
-    if (opts.wobble) {
-      const lfo = ctx.createOscillator()
-      const depth = ctx.createGain()
-      lfo.frequency.value = opts.wobble[0]
-      depth.gain.value = opts.wobble[1]
-      lfo.connect(depth)
-      depth.connect(osc.detune)
-      lfo.start(at)
-      lfo.stop(at + opts.len + 0.02)
-    }
-    osc.frequency.setValueAtTime(opts.from, at)
-    if (opts.to !== undefined && opts.to !== opts.from) {
-      osc.frequency.exponentialRampToValueAtTime(Math.max(20, opts.to), at + opts.len)
-    }
-    const rise = opts.attack ?? 0.008
-    vol.gain.setValueAtTime(0.0001, at)
-    vol.gain.linearRampToValueAtTime(opts.gain, at + rise)
-    vol.gain.exponentialRampToValueAtTime(0.0001, at + opts.len)
-    if (opts.cut) {
-      const filter = ctx.createBiquadFilter()
-      filter.type = 'lowpass'
-      filter.frequency.value = opts.cut
-      osc.connect(filter)
-      filter.connect(vol)
-    } else {
-      osc.connect(vol)
-    }
-    vol.connect(into(ctx))
-    osc.start(at)
-    osc.stop(at + opts.len + 0.02)
-  }
-  make(0)
-  if (opts.unisonCents) make(opts.unisonCents)
-}
-
-function hiss(
-  ctx: BaseAudioContext,
-  at: number,
-  opts: {
-    len: number
-    gain: number
-    type?: BiquadFilterType
-    freq: number
-    endFreq?: number
-    q?: number
-  },
-): void {
-  const frames = Math.max(1, Math.floor(ctx.sampleRate * opts.len))
-  const buffer = ctx.createBuffer(1, frames, ctx.sampleRate)
-  const data = buffer.getChannelData(0)
-  for (let i = 0; i < frames; i += 1) data[i] = Math.random() * 2 - 1
-  const src = ctx.createBufferSource()
-  src.buffer = buffer
-
-  const filter = ctx.createBiquadFilter()
-  filter.type = opts.type ?? 'highpass'
-  filter.frequency.setValueAtTime(opts.freq, at)
-  if (opts.endFreq !== undefined) filter.frequency.exponentialRampToValueAtTime(Math.max(40, opts.endFreq), at + opts.len)
-  if (opts.q !== undefined) filter.Q.value = opts.q
-
-  const vol = ctx.createGain()
-  vol.gain.setValueAtTime(0.0001, at)
-  vol.gain.linearRampToValueAtTime(opts.gain, at + 0.006)
-  vol.gain.exponentialRampToValueAtTime(0.0001, at + opts.len)
-
-  src.connect(filter)
-  filter.connect(vol)
-  vol.connect(into(ctx))
-  src.start(at)
-  src.stop(at + opts.len + 0.02)
-}
-
-type Voice = (ctx: BaseAudioContext, at: number) => void
-
-function blast(ctx: BaseAudioContext, at: number, len: number): void {
-  const base = 233
-  for (const [mult, gain] of [
-    [1, 0.11],
-    [1.5, 0.07],
-    [2.01, 0.05],
-    [3.02, 0.03],
-  ] as const) {
-    tone(ctx, at, {
-      shape: 'sawtooth',
-      from: base * mult * 0.94,
-      to: base * mult,
-      len,
-      gain,
-      attack: 0.02,
-      unisonCents: 7,
-      cut: 3800,
-      wobble: [6, 8],
-    })
-  }
-}
-
-function hit(ctx: BaseAudioContext, at: number, gain = 0.12): void {
-  tone(ctx, at, { shape: 'triangle', from: 220, to: 90, len: 0.13, gain })
-  hiss(ctx, at, { len: 0.11, gain: gain * 0.8, freq: 1400 })
-}
-
-const VOICES: Record<string, Voice> = {
-  airhorn: (ctx, at) => {
-    blast(ctx, at, 0.17)
-    blast(ctx, at + 0.24, 0.17)
-    blast(ctx, at + 0.5, 0.8)
-  },
-
-  rimshot: (ctx, at) => {
-    hit(ctx, at)
-    hit(ctx, at + 0.15)
-    hiss(ctx, at + 0.3, { len: 0.7, gain: 0.09, type: 'highpass', freq: 6000, endFreq: 3000 })
-  },
-
-  sadtrumpet: (ctx, at) => {
-    const steps: [number, number][] = [
-      [392, 0],
-      [349, 0.26],
-      [311, 0.52],
-      [262, 0.78],
-    ]
-    for (const [freq, delay] of steps) {
-      const long = delay > 0.7
-      tone(ctx, at + delay, {
-        shape: 'sawtooth',
-        from: freq,
-        to: freq * 0.94,
-        len: long ? 0.9 : 0.26,
-        gain: 0.09,
-        attack: 0.03,
-        unisonCents: 9,
-        cut: 2200,
-        wobble: long ? [5, 30] : undefined,
-      })
-    }
-  },
-
-  drumroll: (ctx, at) => {
-    let t = at
-    let gap = 0.055
-    while (t < at + 0.95) {
-      hiss(ctx, t, { len: 0.05, gain: 0.05 + (t - at) * 0.05, freq: 1800 })
-      gap = Math.max(0.028, gap * 0.96)
-      t += gap
-    }
-    hit(ctx, at + 1, 0.14)
-    hiss(ctx, at + 1, { len: 0.9, gain: 0.1, type: 'highpass', freq: 5000, endFreq: 2500 })
-  },
-
-  applause: (ctx, at) => {
-    hiss(ctx, at, { len: 1.9, gain: 0.018, type: 'bandpass', freq: 2200, q: 0.6 })
-    for (let i = 0; i < 110; i += 1) {
-      const when = at + Math.random() * 1.8
-      const swell = when - at < 0.25 ? 0.5 : when - at > 1.4 ? 0.6 : 1
-      hiss(ctx, when, {
-        len: 0.045,
-        gain: (0.012 + Math.random() * 0.02) * swell,
-        type: 'bandpass',
-        freq: 1400 + Math.random() * 2200,
-        q: 1.1,
-      })
-    }
-  },
-
-  fanfare: (ctx, at) => {
-    const notes: [number, number, number][] = [
-      [523, 0, 0.12],
-      [659, 0.1, 0.12],
-      [784, 0.2, 0.12],
-      [1047, 0.3, 0.5],
-    ]
-    for (const [freq, delay, len] of notes) {
-      tone(ctx, at + delay, { shape: 'triangle', from: freq, len, gain: 0.09 })
-      tone(ctx, at + delay, { shape: 'square', from: freq * 2, len: len * 0.6, gain: 0.02 })
-    }
-  },
-
-  boing: (ctx, at) => {
-    tone(ctx, at, { shape: 'sine', from: 700, to: 90, len: 0.45, gain: 0.13 })
-    const lfo = ctx.createOscillator()
-    const depth = ctx.createGain()
-    const carrier = ctx.createOscillator()
-    const vol = ctx.createGain()
-    lfo.frequency.value = 22
-    depth.gain.value = 60
-    carrier.type = 'sine'
-    carrier.frequency.setValueAtTime(520, at)
-    carrier.frequency.exponentialRampToValueAtTime(80, at + 0.45)
-    vol.gain.setValueAtTime(0.06, at)
-    vol.gain.exponentialRampToValueAtTime(0.0001, at + 0.45)
-    lfo.connect(depth)
-    depth.connect(carrier.frequency)
-    carrier.connect(vol)
-    vol.connect(into(ctx))
-    lfo.start(at)
-    carrier.start(at)
-    lfo.stop(at + 0.5)
-    carrier.stop(at + 0.5)
-  },
-
-  coin: (ctx, at) => {
-    tone(ctx, at, { shape: 'square', from: 988, len: 0.08, gain: 0.06, cut: 5000 })
-    tone(ctx, at + 0.08, { shape: 'square', from: 1319, len: 0.5, gain: 0.06, cut: 5000 })
-    tone(ctx, at + 0.08, { shape: 'sine', from: 2638, len: 0.35, gain: 0.02 })
-  },
-
-  bell: (ctx, at) => {
-    tone(ctx, at, { shape: 'sine', from: 660, len: 1.6, gain: 0.1, attack: 0.003 })
-    tone(ctx, at, { shape: 'sine', from: 660 * 2.76, len: 1, gain: 0.04, attack: 0.003 })
-    tone(ctx, at, { shape: 'sine', from: 660 * 5.4, len: 0.5, gain: 0.02, attack: 0.003 })
-  },
-
-  buzzer: (ctx, at) => {
-    for (const delay of [0, 0.3]) {
-      tone(ctx, at + delay, {
-        shape: 'square',
-        from: 140,
-        len: 0.22,
-        gain: 0.07,
-        attack: 0.004,
-        unisonCents: -18,
-        cut: 2600,
-      })
-      tone(ctx, at + delay, { shape: 'sawtooth', from: 70, len: 0.22, gain: 0.05 })
-    }
-  },
-
-  zap: (ctx, at) => {
-    tone(ctx, at, { shape: 'square', from: 1600, to: 110, len: 0.28, gain: 0.08 })
-    hiss(ctx, at, { len: 0.28, gain: 0.02, type: 'bandpass', freq: 2400, endFreq: 300, q: 3 })
-  },
-
-  tada: (ctx, at) => {
-    // A brass chord stabbed twice, the second held.
-    const chord = [523, 659, 784, 1047]
-    for (const [delay, len] of [
-      [0, 0.12],
-      [0.16, 0.9],
-    ] as const) {
-      for (const freq of chord) {
-        tone(ctx, at + delay, { shape: 'sawtooth', from: freq, len, gain: 0.035, attack: 0.012, unisonCents: 6, cut: 3200 })
-      }
-      tone(ctx, at + delay, { shape: 'triangle', from: 262, len, gain: 0.06 })
-    }
-    hiss(ctx, at + 0.16, { len: 0.8, gain: 0.05, type: 'highpass', freq: 7000, endFreq: 4000 })
-  },
-
-  whoosh: (ctx, at) => {
-    hiss(ctx, at, { len: 0.55, gain: 0.16, type: 'bandpass', freq: 300, endFreq: 3800, q: 2.5 })
-    hiss(ctx, at + 0.1, { len: 0.45, gain: 0.07, type: 'bandpass', freq: 3800, endFreq: 500, q: 3 })
-  },
-
-  crickets: (ctx, at) => {
-    for (const [start, freq] of [
-      [0, 4400],
-      [0.55, 4700],
-      [1.1, 4400],
-    ] as const) {
-      for (let i = 0; i < 4; i += 1) {
-        const t = at + start + i * 0.05
-        tone(ctx, t, { shape: 'sine', from: freq, len: 0.035, gain: 0.05, attack: 0.004, wobble: [55, 40] })
-      }
-    }
-  },
-
-  pop: (ctx, at) => {
-    tone(ctx, at, { shape: 'sine', from: 900, to: 180, len: 0.07, gain: 0.14, attack: 0.002 })
-    hiss(ctx, at, { len: 0.02, gain: 0.03, freq: 2000 })
-  },
-}
-
 interface BoardOptions {
   anchor: HTMLElement
   onPick(id: string): void
   /** Sounds people added, with ids that start with CUSTOM. */
-  custom?: Sound[]
+  sounds: Sound[]
   onAdd?(): void
-  /** Only called for sounds this person may take off. */
+  /** Only called for sounds this person may change: whoever added it, or a channel keeper. */
+  canChange?(id: string): boolean
+  onEdit?(id: string): void
   onRemove?(id: string): void
-  canRemove?(id: string): boolean
 }
 
 let open: { close(): void; anchor: HTMLElement } | null = null
@@ -634,11 +255,11 @@ export function openSoundboard(options: BoardOptions): void {
     foot,
   ])
 
-  const cell = (sound: Sound, mine: boolean): HTMLElement => {
+  const cell = (sound: Sound): HTMLElement => {
     const button = h(
       'button',
       {
-        class: `sound-cell${mine ? ' custom' : ''}`,
+        class: 'sound-cell custom',
         title: `Play ${sound.label} for everybody in voice`,
         ariaLabel: `Play ${sound.label} for everybody`,
         on: { click: () => options.onPick(sound.id) },
@@ -648,8 +269,15 @@ export function openSoundboard(options: BoardOptions): void {
         h('span', { class: 'sound-name', text: sound.label }),
       ],
     )
-    if (mine && options.onRemove && options.canRemove?.(sound.id)) {
+    if (options.canChange?.(sound.id)) {
       onContextMenu(button, () => [
+        {
+          label: 'Change the name or emoji',
+          run: () => {
+            close()
+            options.onEdit?.(sound.id)
+          },
+        },
         {
           label: `Take ${sound.label} off`,
           note: 'For everybody in this space',
@@ -661,30 +289,28 @@ export function openSoundboard(options: BoardOptions): void {
     return button
   }
 
-  for (const sound of SOUNDS) grid.append(cell(sound, false))
-  const custom = options.custom ?? []
-  if (custom.length || options.onAdd) {
-    grid.append(h('div', { class: 'sound-split eyebrow', text: 'Added here' }))
-    for (const sound of custom) grid.append(cell(sound, true))
-    if (options.onAdd) {
-      grid.append(
-        h(
-          'button',
-          {
-            class: 'sound-cell sound-add',
-            title: 'Add a sound for this space, up to 10 seconds',
-            ariaLabel: 'Add a sound',
-            on: {
-              click: () => {
-                close()
-                options.onAdd?.()
-              },
+  for (const sound of options.sounds) grid.append(cell(sound))
+  if (options.sounds.length === 0) {
+    grid.append(h('div', { class: 'sound-empty tiny faint', text: 'No sounds here yet. Add one of up to 10 seconds, with its own emoji.' }))
+  }
+  if (options.onAdd) {
+    grid.append(
+      h(
+        'button',
+        {
+          class: 'sound-cell sound-add',
+          title: 'Add a sound for this space, up to 10 seconds',
+          ariaLabel: 'Add a sound',
+          on: {
+            click: () => {
+              close()
+              options.onAdd?.()
             },
           },
-          [icon('plus', 20), h('span', { class: 'sound-name', text: 'Add a sound' })],
-        ),
-      )
-    }
+        },
+        [icon('plus', 20), h('span', { class: 'sound-name', text: 'Add a sound' })],
+      ),
+    )
   }
 
   const onKey = (ev: KeyboardEvent): void => {

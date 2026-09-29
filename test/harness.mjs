@@ -5,7 +5,8 @@ export const APP_URL = process.env.APP_URL ?? 'http://localhost:5173/'
 export const CHROME = process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 export const HEADLESS = process.env.HEADED !== '1'
 
-export const FAKE_MEDIA = ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream']
+// A fake speaker too: a real one that is busy or gone stops every AudioContext, and the voice checks with it.
+export const FAKE_MEDIA = ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--disable-audio-output']
 export const AUTOPLAY = '--autoplay-policy=no-user-gesture-required'
 
 export { wait }

@@ -14,7 +14,7 @@ import { openEmojiPicker, quickReactions, setQuickReactions } from './emoji'
 import { icon } from './icons'
 import { gameCard } from './game-card'
 import { enterLinkCode, lastBackup, showBackup, showLinkCode } from './link-device'
-import { askNotify, notifyState, stopNotify } from './notify'
+import { askNotify, notifyState, notifyText, notifyWhat, setNotifyText, setNotifyWhat, stopNotify } from './notify'
 import { setSounds, soundsOn } from './sounds'
 import { card, note, settingsShell, switchRow, toggle, type SettingsTab } from './settings-shell'
 import { shortcutSettings } from './shortcuts'
@@ -197,7 +197,7 @@ export function settingsView(actions: SettingsActions): HTMLElement {
     ]),
   ])
 
-  const notifyAbout = 'For mentions and direct messages, when the tab is behind'
+  const notifyAbout = 'Who said what, when Nook is in the background'
   const notifyButton = switchRow('Notifications', notifyAbout)
   const paintNotify = (): void => {
     const state = notifyState()
@@ -359,7 +359,17 @@ export function settingsView(actions: SettingsActions): HTMLElement {
         return h('div', { class: 'stack settings-stack' }, [
           card(
             'Alerts',
-            h('div', { class: 'switch-list' }, [notifyButton, toggle('Sounds', soundsOn, setSounds, 'A chirp for new messages')]),
+            h('div', { class: 'switch-list' }, [
+              notifyButton,
+              toggle(
+                'Every message',
+                () => notifyWhat() === 'all',
+                (on) => setNotifyWhat(on ? 'all' : 'mentions'),
+                'Off: only when somebody mentions you, and for direct messages',
+              ),
+              toggle('Show what they said', notifyText, setNotifyText, 'Off: only who, and where'),
+              toggle('Sounds', soundsOn, setSounds, 'A chirp for new messages'),
+            ]),
           ),
         ])
       },

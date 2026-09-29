@@ -100,6 +100,10 @@ export class RoomChat {
     return this.write('board', { id, label: label.slice(0, 24), emoji: oneEmoji(emoji), file })
   }
 
+  editBoardSound(id: string, label: string, emoji: string): Promise<LogEvent> {
+    return this.write('board', { id, label: label.slice(0, 24), emoji: oneEmoji(emoji) })
+  }
+
   dropBoardSound(id: string): Promise<LogEvent> {
     return this.write('board', { id, gone: true })
   }
@@ -388,6 +392,11 @@ export class RoomChat {
       }
     }
     if (fresh) this.onDirect?.()
+  }
+
+  /** What a direct message to or from you says, once readDirect has opened it. */
+  directText(id: string): string {
+    return this.opened.get(id) ?? ''
   }
 
   directs(): { key: string; name: string; last: number; unread: number }[] {

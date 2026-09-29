@@ -2,8 +2,8 @@ import { spaces } from '../space/registry'
 import { ROOMS_CHANGED } from '../store/notes'
 
 /**
- * The count of unread messages, in every space and direct message, on the tab's icon
- * and, in the desktop app, on the Dock or taskbar icon.
+ * What waits for you, on the tab's icon and, in the desktop app, on the Dock or taskbar
+ * icon: the unread messages that mention you, in every space, and unread direct messages.
  */
 
 const RED = '#C22E48'
@@ -22,7 +22,7 @@ function unreadNow(): number {
   let total = 0
   for (const space of spaces.all()) {
     const u = space.unread()
-    total += u.count + u.direct
+    total += u.mentions + u.direct
   }
   return total
 }

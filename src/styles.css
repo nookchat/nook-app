@@ -2371,6 +2371,26 @@ button.start {
   background: var(--fg-faint);
 }
 
+.sound-fields {
+  gap: 8px;
+}
+
+.sound-fields .ask-input {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+}
+
+.sound-face {
+  flex: 0 0 auto;
+  width: 46px;
+  min-width: 46px;
+  height: 46px;
+  padding: 0;
+  font-size: 24px;
+  border-radius: var(--radius-md);
+}
+
 .ask-buttons {
   justify-content: flex-end;
   gap: 8px;
@@ -5025,9 +5045,9 @@ input[type="text"].gif-search {
   font-variant-numeric: tabular-nums;
 }
 
-.sound-split {
+.sound-empty {
   grid-column: 1 / -1;
-  padding: 6px 2px 0;
+  padding: 6px 2px 2px;
 }
 
 .sound-add {

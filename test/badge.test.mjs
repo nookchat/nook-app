@@ -1,6 +1,6 @@
 import { APP_URL, answer, check, finish, launch, poll, stoppedEarly, wait } from './harness.mjs'
 
-// The unread count goes on the tab's icon, and to the desktop app for its Dock or taskbar icon.
+// Unread mentions and direct messages go on the tab's icon, and to the desktop app for its Dock or taskbar icon.
 const browser = await launch()
 const BOX = '[aria-label="Write a message"]'
 
@@ -43,10 +43,11 @@ try {
   check('nothing unread: the plain icon', !(await favicon(bob)).startsWith('data:'), await favicon(bob))
   check('and no count for the desktop app', (await badge(bob)) === 0, String(await badge(bob)))
 
-  await say(alice, 'one')
-  await say(alice, 'two')
+  await say(alice, 'nothing for Bob here')
+  await say(alice, '@Bob one')
+  await say(alice, '@Bob two')
   const two = await poll(async () => (await badge(bob)) === 2, 20_000)
-  check('two unread messages: the desktop app is told 2', two, String(await badge(bob)))
+  check('two mentions: the desktop app is told 2, not 3', two, String(await badge(bob)))
   check('with a picture for the Windows taskbar', (await bob.evaluate(() => window.overlaySeen)).startsWith('data:image/png'))
   check('and the tab icon has the count on it', (await favicon(bob)).startsWith('data:image/png'))
 

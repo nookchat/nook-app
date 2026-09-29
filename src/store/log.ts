@@ -561,7 +561,7 @@ export class RoomLog {
     })
   }
 
-  /** Sounds people added to the soundboard. The adder or a channel keeper may take one off. */
+  /** Sounds people added to the soundboard. The adder or a channel keeper may rename one or take it off. */
   boardSounds(): BoardSound[] {
     return this.cached('board', () => {
       const auth = this.authority()
@@ -578,7 +578,14 @@ export class RoomLog {
           gone.add(id)
           continue
         }
-        if (had) continue
+        if (had) {
+          // A new name or emoji, from whoever added it or a channel keeper. The sound stays.
+          if (e.author !== had.maker && !auth.can(e.author, 'channels')) continue
+          const label = String(e.body.label ?? '').replace(/\s+/g, ' ').trim().slice(0, 24)
+          const emoji = oneEmoji(String(e.body.emoji ?? ''))
+          sounds.set(id, { ...had, label: label || had.label, emoji: emoji || had.emoji })
+          continue
+        }
         const file = cleanFiles([e.body.file])[0]
         if (!file || sounds.size >= MAX_BOARD_SOUNDS) continue
         const label = String(e.body.label ?? '').replace(/\s+/g, ' ').trim().slice(0, 24) || 'Sound'

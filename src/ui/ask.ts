@@ -1,4 +1,5 @@
 import { h } from './dom'
+import { openEmojiPicker } from './emoji'
 import { icon } from './icons'
 
 interface AskOptions {
@@ -161,5 +162,63 @@ export function askChannel(voice: boolean, choices: Choice[]): Promise<{ name: s
     window.addEventListener('keydown', onKey, true)
     document.body.append(scrim)
     input.focus()
+  })
+}
+
+/** A sound's name and its emoji. Null when it is closed or cancelled. */
+export function askSound(title: string, name: string, emoji: string, ok: string): Promise<{ name: string; emoji: string } | null> {
+  return new Promise((resolve) => {
+    const was = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    let chosen = emoji
+    const input = h('input', { type: 'text', class: 'ask-input grow', ariaLabel: 'The sound\'s name', value: name, placeholder: 'Its name' })
+    input.autocomplete = 'off'
+    const face = h('button', { class: 'sound-face', ariaLabel: 'Its emoji', title: 'Pick its emoji', text: chosen })
+    face.addEventListener('click', () =>
+      openEmojiPicker({
+        anchor: face,
+        title: 'The sound\'s emoji',
+        onPick: (picked) => {
+          chosen = picked
+          face.textContent = picked
+          input.focus()
+        },
+      }),
+    )
+    const done = (): void => finish({ name: input.value, emoji: chosen })
+    const finish = (answer: { name: string; emoji: string } | null): void => {
+      if (document.querySelector('.emoji-pop')) return
+      scrim.remove()
+      window.removeEventListener('keydown', onKey, true)
+      was?.focus()
+      resolve(answer)
+    }
+    const onKey = (ev: KeyboardEvent): void => {
+      // The emoji picker takes its own Escape and Enter while it is open.
+      if (document.querySelector('.emoji-pop')) return
+      if (ev.key === 'Escape') {
+        ev.stopPropagation()
+        finish(null)
+      } else if (ev.key === 'Enter' && !ev.isComposing && document.activeElement === input) {
+        ev.preventDefault()
+        done()
+      }
+    }
+    const scrim = h('div', { class: 'scrim', on: { click: (ev) => ev.target === scrim && finish(null) } }, [
+      h('div', { class: 'modal ask-modal', role: 'dialog', ariaLabel: title }, [
+        h('div', { class: 'invite-head' }, [
+          h('div', { class: 'invite-words' }, [h('div', { class: 'invite-title', text: title })]),
+          h('button', { class: 'ghost icon-only', ariaLabel: 'Close', on: { click: () => finish(null) } }, [icon('close', 18)]),
+        ]),
+        h('div', { class: 'row sound-fields' }, [face, input]),
+        h('div', { class: 'row ask-buttons' }, [
+          h('button', { class: 'ghost', text: 'Cancel', on: { click: () => finish(null) } }),
+          h('button', { class: 'primary', text: ok, on: { click: done } }),
+        ]),
+      ]),
+    ])
+    window.addEventListener('keydown', onKey, true)
+    document.body.append(scrim)
+    input.focus()
+    input.select()
   })
 }

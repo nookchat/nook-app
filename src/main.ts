@@ -21,6 +21,7 @@ import { spaces } from './space/registry'
 import { noteForUpdate } from './space/resume'
 import { isCallChannel, type SpaceRuntime } from './space/runtime'
 import { nameChosen, shortKey } from './store/identity'
+import { cleanChannel, DEFAULT_CHANNEL, type LogEvent } from './store/log'
 import { newSpaceServer } from './store/server-spaces'
 import { findSpace } from './store/spaces'
 import { ask } from './ui/ask'
@@ -28,7 +29,7 @@ import { watchUnread } from './ui/badge'
 import { installCalls } from './ui/call'
 import { clear } from './ui/dom'
 import { HomeView, type DirectRef } from './ui/home-view'
-import { notify } from './ui/notify'
+import { notify, notifyText, notifyWhat } from './ui/notify'
 import { createWindow, type WindowChrome } from './ui/shell'
 import { chirpMessage, isNews } from './ui/sounds'
 import { spaceList } from './ui/space-list'
@@ -97,6 +98,8 @@ interface Screen {
   readonly secret?: string
   readonly locked?: boolean
   readonly server?: string
+  /** Opens a text channel of the space on screen. */
+  openChannelNamed?(name: string): void
 }
 
 let active: Screen | null = null
@@ -195,36 +198,57 @@ async function enter(
   openSpace(space)
 }
 
-spaces.fresh.add((space, events) => {
+spaces.fresh.add((space, events) => void alertAbout(space, events))
+
+/**
+ * A notification for what came in, as Discord does: who, where, and what they said.
+ * Mentions and direct messages always, and every message if you asked for that.
+ * The toast and the chirp are for mentions in a space you are not looking at.
+ */
+async function alertAbout(space: SpaceRuntime, events: LogEvent[]): Promise<void> {
   const chat = space.chat
   if (!chat) return
   const onScreen = active instanceof SpaceView && active.space === space
   const reading = active instanceof HomeView ? active.showing : null
+  const spaceName = chat.spaceName() || 'a space'
   let names: Map<string, string> | null = null
   for (const e of events) {
     if (e.author === chat.me || !isNews(e.at)) continue
     const who = chat.nameOf(e.author) || shortKey(e.author)
+    const picture = chat.avatarOf(e.author) || undefined
     if (e.kind === 'dm') {
       if (String(e.body.to ?? '') !== chat.me) continue
       const open = (): void => void showHome({ room: space.room.id, key: e.author })
-      if (reading?.room === space.room.id && reading.key === e.author && !document.hidden) continue
-      chirpMessage()
-      toast(`${who} sent you a message`, 'info', 8000, { label: 'Read', run: open }, 'peek')
-      // Say who, not what: a private message is not for a lock screen.
-      notify(who, 'Sent you a private message', open)
+      const looking = reading?.room === space.room.id && reading.key === e.author && !document.hidden
+      if (!looking) {
+        chirpMessage()
+        toast(`${who} sent you a message`, 'info', 8000, { label: 'Read', run: open }, 'peek')
+      }
+      await chat.readDirect()
+      const text = notifyText() ? chat.directText(e.id) || 'Sent you a file' : 'Sent you a message'
+      notify(who, text, open, { tag: e.id, picture })
       continue
     }
-    if (onScreen || e.kind !== 'said') continue
+    if (e.kind !== 'said') continue
+    const channel = cleanChannel(String(e.body.channel ?? '')) || DEFAULT_CHANNEL
+    // A kept channel you may not see, or one they may not write in, says nothing.
+    if (!chat.mayEnter(chat.me, channel) || !chat.mayEnter(e.author, channel)) continue
     const text = String(e.body.text ?? '')
     names ??= chat.log.names()
-    if (!mentionsMe(text, names, chat.me)) continue
-    const where = chat.spaceName() || 'a space'
-    const open = (): void => openSpace(space)
-    chirpMessage()
-    toast(`${who} mentioned you in ${where}`, 'info', 8000, { label: 'Go', run: open }, 'wiggle')
-    notify(`${who} in ${where}`, text, open)
+    const mention = mentionsMe(text, names, chat.me)
+    if (!mention && notifyWhat() !== 'all') continue
+    const open = (): void => {
+      if (!onScreen) openSpace(space)
+      active?.openChannelNamed?.(channel)
+    }
+    if (mention && !onScreen) {
+      chirpMessage()
+      toast(`${who} mentioned you in ${spaceName}`, 'info', 8000, { label: 'Go', run: () => openSpace(space) }, 'wiggle')
+    }
+    const body = notifyText() ? text : mention ? 'Mentioned you' : 'Sent a message'
+    notify(`${who} (#${channel}, ${spaceName})`, body, open, { tag: e.id, picture })
   }
-})
+}
 
 const linked = window.location.hash.startsWith(DEVICE_LINK_PREFIX) ? null : readLink()
 

@@ -332,14 +332,48 @@ try {
   check('it sits in the voice bar, bottom left', true)
   await alice.click('button[aria-label="Soundboard"]')
   await alice.waitForSelector('.sound-pop')
-  const cells = await alice.$$eval('.sound-cell', (els) => els.length)
-  check('the board opens with something on it', cells >= 12, `${cells} sounds`)
+  const builtIn = await alice.$$eval('.sound-cell:not(.sound-add)', (els) => els.length)
+  check('the board has no built-in sounds, only a way to add one', builtIn === 0, `${builtIn} sounds`)
 
-  await alice.click('button[aria-label="Play Airhorn for everybody"]')
+  // Half a second of a tone, as a WAV file, to add.
+  const rate = 22050
+  const frames = rate / 2
+  const wav = Buffer.alloc(44 + frames * 2)
+  wav.write('RIFF', 0)
+  wav.writeUInt32LE(36 + frames * 2, 4)
+  wav.write('WAVEfmt ', 8)
+  wav.writeUInt32LE(16, 16)
+  wav.writeUInt16LE(1, 20)
+  wav.writeUInt16LE(1, 22)
+  wav.writeUInt32LE(rate, 24)
+  wav.writeUInt32LE(rate * 2, 28)
+  wav.writeUInt16LE(2, 32)
+  wav.writeUInt16LE(16, 34)
+  wav.write('data', 36)
+  wav.writeUInt32LE(frames * 2, 40)
+  for (let i = 0; i < frames; i++) wav.writeInt16LE(Math.round(Math.sin((i / rate) * 2 * Math.PI * 440) * 12000), 44 + i * 2)
+  const chooser = alice.waitForEvent('filechooser')
+  await alice.click('button[aria-label="Add a sound"]')
+  await (await chooser).setFiles({ name: 'honk.wav', mimeType: 'audio/wav', buffer: wav })
+  await alice.waitForSelector('.ask-modal .sound-face')
+  await alice.fill('.ask-modal .ask-input', 'Honk')
+  await alice.click('.ask-modal .sound-face')
+  await alice.fill('.emoji-search', 'duck')
+  await alice.locator('.emoji-pop .emoji-cell').first().click()
+  const face = await alice.textContent('.ask-modal .sound-face')
+  check('a sound gets its own emoji, from the picker', face && face !== '🔊', face)
+  await alice.click('.ask-modal button:text-is("Add")')
+  await alice.waitForTimeout(1500)
+  await alice.click('button[aria-label="Soundboard"]')
+  await alice.waitForSelector('button[aria-label="Play Honk for everybody"]', { timeout: 15_000 })
+  const shown = await alice.textContent('button[aria-label="Play Honk for everybody"] .sound-emoji')
+  check('and the board shows it with that emoji', shown === face, shown)
+
+  await alice.click('button[aria-label="Play Honk for everybody"]')
   // No toast: the ring round the face of whoever played it says who.
   const outside = await bob
     .waitForFunction(
-      () => [...document.querySelectorAll('.voice-member.talking.sounding')].some((m) => m.dataset.sound === 'Airhorn' && m.textContent.includes('Alice')),
+      () => [...document.querySelectorAll('.voice-member.talking.sounding')].some((m) => m.dataset.sound === 'Honk' && m.textContent.includes('Alice')),
       null,
       { timeout: 3000 },
     )
@@ -350,10 +384,10 @@ try {
   await bob.click('.rail-left .rail-item:has-text("lounge")')
   await bob.waitForSelector('.voice-head.on', { timeout: 10_000 })
   await bob.waitForTimeout(2000)
-  await alice.click('button[aria-label="Play Airhorn for everybody"]')
+  await alice.click('button[aria-label="Play Honk for everybody"]')
   const heard = await bob
     .waitForFunction(
-      () => [...document.querySelectorAll('.voice-member.talking.sounding')].some((m) => m.dataset.sound === 'Airhorn' && m.textContent.includes('Alice')),
+      () => [...document.querySelectorAll('.voice-member.talking.sounding')].some((m) => m.dataset.sound === 'Honk' && m.textContent.includes('Alice')),
       null,
       { timeout: 15_000 },
     )
@@ -362,7 +396,7 @@ try {
   check('somebody in the voice channel hears it, with the ring round Alice', heard)
   check(
     'and no toast says so',
-    !(await bob.$$eval('.toast', (els) => els.some((t) => t.textContent.includes('played Airhorn')))),
+    !(await bob.$$eval('.toast', (els) => els.some((t) => t.textContent.includes('played Honk')))),
   )
   const ringGoes = await bob
     .waitForFunction(() => !document.querySelector('.voice-member.sounding'), null, { timeout: 5000 })
@@ -370,22 +404,33 @@ try {
     .catch(() => false)
   check('the ring goes when the sound ends', ringGoes)
 
-  const wrote = await bob.$$eval('.chat-text', (els) =>
-    els.some((e) => e.textContent.includes('Airhorn')),
-  )
+  const wrote = await bob.$$eval('.chat-text', (els) => els.some((e) => e.textContent.includes('Honk')))
   check('and nothing is written into the channel', !wrote)
 
   check(
     'the board stays open, so it can be played',
     await alice.$eval('.sound-pop', () => true).catch(() => false),
   )
-  await alice.keyboard.press('Escape')
+
+  await alice.click('button[aria-label="Play Honk for everybody"]', { button: 'right' })
+  await alice.click('.menu-item:has-text("Change the name or emoji")')
+  await alice.waitForSelector('.ask-modal .sound-face')
+  await alice.fill('.ask-modal .ask-input', 'Quack')
+  await alice.click('.ask-modal button:text-is("Save")')
+  const renamed = await bob
+    .waitForFunction(async () => {
+      const { spaces } = await import('/src/space/registry.ts')
+      return spaces.all()[0]?.chat.boardSounds().some((b) => b.label === 'Quack')
+    }, null, { timeout: 15_000 })
+    .then(() => true)
+    .catch(() => false)
+  check('whoever added it can rename it, for everybody', renamed)
 
   await bob.waitForTimeout(1600)
-  await say(alice, '/sound rimshot')
+  await say(alice, '/sound quack')
   const byName = await bob
     .waitForFunction(
-      () => [...document.querySelectorAll('.voice-member.talking.sounding')].some((m) => m.dataset.sound === 'Rimshot' && m.textContent.includes('Alice')),
+      () => [...document.querySelectorAll('.voice-member.talking.sounding')].some((m) => m.dataset.sound === 'Quack' && m.textContent.includes('Alice')),
       null,
       { timeout: 15_000 },
     )
