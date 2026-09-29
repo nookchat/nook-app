@@ -40,7 +40,8 @@ function runOne(name) {
       late = true
       child.kill('SIGKILL')
     }, CHECK_MOST_MS)
-    child.on('close', (status) => {
+    // 'exit', not 'close': a server or a page a check started, and left running, can hold the pipes open.
+    child.on('exit', (status) => {
       clearTimeout(timer)
       const seconds = (Date.now() - started) / 1000
       const why = late ? ` (stopped after ${CHECK_MOST_MS / 60_000} minutes)` : ''

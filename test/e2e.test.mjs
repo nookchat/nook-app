@@ -101,6 +101,8 @@ try {
 
   await host.fill('input[aria-label="Space name"]', 'test space')
   await host.getByRole('button', { name: 'New space' }).click()
+  // The space, not home: both have a title button, and home's is there until the space opens.
+  await host.waitForSelector('[aria-label="Write a message"]', { timeout: 15_000 })
   await host.click('.space-title-button')
   await host.click('.menu-item:has-text("Invite")')
   const codeBox = host.locator('.share-code')

@@ -10,7 +10,9 @@ const SERVER = `localhost:${PORT}`
 const server = await startServer(PORT)
 const vite = spawn('npx', ['vite', '--port', String(PAGE_PORT), '--strictPort'], {
   env: { ...process.env, VITE_NOOK_SERVER: '' },
-  stdio: ['ignore', 'pipe', 'inherit'],
+  stdio: ['ignore', 'pipe', 'pipe'],
+  // Its own group, so the stop below takes Vite and not only npx.
+  detached: true,
 })
 // "ready in", not "Local:": Vite colours the word Local on a CI machine, which splits it from its colon.
 await new Promise((ready, fail) => {
@@ -99,7 +101,11 @@ try {
   stoppedEarly(err)
 } finally {
   await browser.close()
-  vite.kill()
+  try {
+    process.kill(-vite.pid, 'SIGTERM')
+  } catch {
+    vite.kill()
+  }
   server.child.kill()
 }
 
