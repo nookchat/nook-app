@@ -7,19 +7,15 @@ const CHECK_MS = 10 * 60 * 1000
 
 /** How long a swap may take before the page reloads by itself. */
 const SWAP_WAIT_MS = 8000
-/** How often a wait for the end of a call looks again. */
-const CALL_LOOK_MS = 2000
 
 export interface UpdateHooks {
-  /** In a voice channel or a call now. */
-  inCall: () => boolean
   /** Nothing a reload would lose: no call, no share, nothing half written. */
   idle: () => boolean
   /** Just before the reload: notes the call, so the new version joins it again. `restart` is the desktop app's. */
   beforeReload: (restart?: boolean) => Promise<void>
 }
 
-let hooks: UpdateHooks = { inCall: () => false, idle: () => false, beforeReload: async () => undefined }
+let hooks: UpdateHooks = { idle: () => false, beforeReload: async () => undefined }
 /** Offers a worker that has its files. Set once the service worker is ready. `asked` is a check from About. */
 let offerWorker: ((worker: ServiceWorker, asked?: boolean) => void) | null = null
 /**
@@ -48,8 +44,6 @@ export function watchForUpdates(given: UpdateHooks): void {
   if (!('serviceWorker' in navigator) || !window.isSecureContext) return
   let asked = false
   let offered: ServiceWorker | null = null
-  /** Update when I leave the call was pressed: no more offers, the update is on its way. */
-  let waiting = false
 
   // The first worker also takes over the page, so only a swap that was asked for reloads.
   navigator.serviceWorker.addEventListener('controllerchange', () => {
@@ -61,7 +55,7 @@ export function watchForUpdates(given: UpdateHooks): void {
     const offerNow = async (worker: ServiceWorker, askedFor: boolean): Promise<void> => {
       // With no worker in charge, this is the first visit: nothing is old yet.
       if (!navigator.serviceWorker.controller) return
-      if (waiting || (offered === worker && document.querySelector('.update-pop'))) return
+      if (offered === worker && document.querySelector('.update-pop')) return
       if (offered === worker && snoozed && !askedFor) return
       offered = worker
       const update = async (): Promise<void> => {
@@ -90,31 +84,8 @@ export function watchForUpdates(given: UpdateHooks): void {
         return
       }
       if (snoozed && !askedFor) return
-      const inCall = hooks.inCall()
-      showOffer(
-        {
-          title: 'A new version of Nook is ready',
-          about: inCall
-            ? 'It has downloaded. Update now, and you are back in your call in a moment. Or update when you leave it.'
-            : 'It has downloaded. Update to reload into it, which takes a second.',
-          button: 'Update now',
-          busy: 'Updating…',
-        },
-        update,
-        inCall
-          ? {
-              label: 'When I leave the call',
-              run: () => {
-                waiting = true
-                const look = (): void => {
-                  if (hooks.inCall()) window.setTimeout(look, CALL_LOOK_MS)
-                  else void update()
-                }
-                look()
-              },
-            }
-          : null,
-      )
+      // In a call, Update now is back in it a moment later.
+      showOffer({ title: 'A new version of Nook is ready', button: 'Update now', busy: 'Updating…' }, update)
     }
 
     offerWorker = offer
@@ -136,7 +107,7 @@ export function watchForUpdates(given: UpdateHooks): void {
         return
       }
       // Put in the background with an update waiting: take it now, if nothing would be lost.
-      if (webWaiting && !desktopFirst && !waiting && !asked && hooks.idle()) {
+      if (webWaiting && !desktopFirst && !asked && hooks.idle()) {
         document.querySelector('.update-pop')?.remove()
         void webWaiting.update()
       }
@@ -243,12 +214,8 @@ export function watchForDesktopUpdates(): void {
   if (!shell.onUpdate || !shell.installUpdate) {
     if (offeredLately()) return
     showOffer(
-      {
-        title: 'A new Nook desktop app is out',
-        about: 'This one cannot update itself. The new one can, so this is the last time you download it.',
-        button: 'Download',
-        busy: 'Opening…',
-      },
+      // This one cannot update itself. The new one can, so this is the last download by hand.
+      { title: 'A new Nook desktop app is out', button: 'Download', busy: 'Opening…' },
       async () => {
         window.open(RELEASES, '_blank', 'noopener')
         document.querySelector('.update-pop')?.remove()
@@ -258,22 +225,12 @@ export function watchForDesktopUpdates(): void {
   }
   const install = shell.installUpdate
   shell.onUpdate(({ version, ready }) => {
+    // A waiting web version comes with it, so there is one restart, back on this screen and in the call.
     desktopFirst = () => {
-      const alsoWeb = webWaiting ? ' The newest web version comes with it.' : ''
       showOffer(
         ready
-          ? {
-              title: `Nook ${version} for the desktop is ready`,
-              about: `It has downloaded. Restart to use it, and you are back on this screen, and in your call.${alsoWeb}`,
-              button: 'Restart',
-              busy: 'Restarting…',
-            }
-          : {
-              title: `Nook ${version} for the desktop is out`,
-              about: `Download it and open it in place of this one. Your spaces stay as they are.${alsoWeb}`,
-              button: 'Download',
-              busy: 'Opening…',
-            },
+          ? { title: `Nook ${version} is ready`, button: 'Update now', busy: 'Restarting…' }
+          : { title: `Nook ${version} is out`, button: 'Download', busy: 'Opening…' },
         async () => {
           if (ready) {
             // The call is noted, to join again after, and the new worker takes charge first,
@@ -310,41 +267,21 @@ async function takeWebQuietly(): Promise<void> {
 
 interface OfferWords {
   title: string
-  about: string
   button: string
   /** On the button once it is pressed. */
   busy: string
 }
 
-/**
- * The popup that offers the new version. Later puts it away until the next
- * check finds it again. `other` is a second choice, beside the first.
- */
-function showOffer(
-  words: OfferWords,
-  update: () => Promise<void>,
-  other: { label: string; run: () => void } | null = null,
-): void {
+/** The popup that offers the new version. Later puts it away until the next start. */
+function showOffer(words: OfferWords, update: () => Promise<void>): void {
   document.querySelector('.update-pop')?.remove()
   const now = h('button', { class: 'primary', text: words.button })
   const pop = h('div', { class: 'update-pop', role: 'alertdialog', ariaLabel: words.title }, [
     h('span', { class: 'update-icon' }, [icon('download', 20)]),
     h('div', { class: 'update-words' }, [
       h('strong', { text: words.title }),
-      h('span', { class: 'tiny faint', text: words.about }),
       h('div', { class: 'row wrap update-actions' }, [
         now,
-        other
-          ? h('button', {
-              text: other.label,
-              on: {
-                click: () => {
-                  pop.remove()
-                  other.run()
-                },
-              },
-            })
-          : null,
         h('button', {
           class: 'ghost',
           text: 'Later',

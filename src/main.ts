@@ -63,7 +63,6 @@ watchUnread()
 warmSounds()
 startStreaming()
 watchForUpdates({
-  inCall: () => spaces.all().some((space) => !!space.voice?.state.channel),
   // Nothing a reload would lose: no call, no share, no half-written message or unsaved note.
   idle: () =>
     !spaces.all().some((space) => !!space.voice?.state.channel) &&

@@ -104,11 +104,11 @@ with voice does it.
   picture, so copy and find see it. The message box draws them too: a copy
   of its text sits behind it, with each picture over an emoji of the same
   width. Code keeps the device's own.
-- **A new version** of the site downloads by itself, and a popup offers it. In
-  a call, Update now reloads and joins the same voice channel again, muted or
-  deafened as you were, with no click; the others see Updating Nook, keep
-  your place in the channel, and hear no leave or join sound. When I leave
-  the call waits and updates then. If the browser holds the sound back after
+- **A new version** of the site downloads by itself, and a popup offers it,
+  with Update now and Later. In a call, Update now reloads and joins the same
+  voice channel again, muted or deafened as you were, with no click; the
+  others see Updating Nook, keep your place in the channel, and hear no leave
+  or join sound. If the browser holds the sound back after
   the reload, one click anywhere lets it go. A screen share needs a click to
   start again, and a toast offers it. A private call is not joined again.
 - **The soundboard** is in the voice bar. A sound plays for the people in your
