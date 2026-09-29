@@ -106,7 +106,7 @@ a direct message or a mention in any of them reaches you wherever you are.
 | Messages, channels, levels, reactions | Postgres on the server, and on every server of its cluster |
 | Files | On the server's disk, sealed, and on every server of its cluster. The key is in the message |
 | Your list of spaces and read marks | The server, in one record per person, sealed with a key made from your identity |
-| Who is here | The server holds it in memory, and says when it changes |
+| Who is here, and in which voice channel | The server holds each live session in memory, sealed, and says when it changes. Its list is the truth: each page checks against it every minute |
 | Picture and sound | Straight between browsers, or through the server's TURN relay when it has one, encrypted with DTLS-SRTP |
 | Your preferences: quick reactions, volumes, sounds, showing your game, space order | This device, and a copy in your sealed record on your servers, so they follow you to every device |
 | Your identity key | Your devices only, and only the ones you link or restore. It signs everything you write |

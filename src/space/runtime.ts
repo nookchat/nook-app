@@ -30,6 +30,11 @@ const RING_TIMEOUT_MS = 30_000
 /** After a reconnect, how long the others get to say hello before the silent ones count as gone. */
 const EVERYONE_WAIT_MS = 25_000
 const STILL_HERE_MS = 60_000
+/**
+ * Everybody says they are here each minute. Somebody not heard for three has gone, even if the
+ * server never said so, as an old one may not: its list of who is here is the better answer.
+ */
+const SILENT_GONE_MS = 3 * STILL_HERE_MS
 
 type NotePatch = Partial<{
   founder: string
@@ -116,6 +121,10 @@ export class SpaceRuntime {
   /** Set while a mute or deafen is put back after an update, which plays no sound. */
   private hushVoice = false
   private stillHere = 0
+  /** When the minute's check last ran. A page that slept has heard nobody, and drops nobody for it. */
+  private lastLook = 0
+  /** The server keeps a list of who is here. Only an old one does not, and silence is the clue then. */
+  private serverLists = false
   /** People who said they are updating, by key: their voice comes back in a moment, with no sound. */
   private readonly comingBack = new Map<string, number>()
   private stopped = false
@@ -150,8 +159,8 @@ export class SpaceRuntime {
 
     const channel = new Channel(connectionTo(this.server), this.room, serverTag(this.server))
     channel.onEvents = (events) => void this.take(events)
-    channel.onLeft = (session) =>
-      this.bus.deliver({ v: 1, id: `left:${session}:${Date.now()}`, from: session, t: Date.now(), type: 'bye' })
+    channel.onLeft = (session) => this.drop(session, 'left')
+    channel.onHere = (ids, up) => void this.checkHere(ids, up, Date.now())
     // The others reconnect too after a server restart, some later than us, so they get a while to say hello.
     channel.onEveryone = (since) => window.setTimeout(() => void this.dropSilent(since), EVERYONE_WAIT_MS)
     channel.onRefused = (why) => console.warn(`[nook] the server would not keep a write: ${why}`)
@@ -242,7 +251,8 @@ export class SpaceRuntime {
     document.addEventListener('visibilitychange', this.announceAgain)
     window.addEventListener(PLAYING_CHANGED, this.announceAgain)
     // Now and then, so anybody who counted us gone by mistake after a reconnect has us back.
-    this.stillHere = window.setInterval(this.announceAgain, STILL_HERE_MS)
+    this.lastLook = Date.now()
+    this.stillHere = window.setInterval(this.lookAround, STILL_HERE_MS)
 
     await Promise.race([channel.loaded, new Promise((r) => window.setTimeout(r, HISTORY_WAIT_MS))])
     if (this.stopped) return
@@ -315,8 +325,42 @@ export class SpaceRuntime {
     for (const peer of this.mesh?.peers() ?? []) {
       // A call with sound going both ways is proof enough that they are there.
       if (peer.lastSeen >= since || this.voice?.inCallWith(peer.id)) continue
-      this.bus?.deliver({ v: 1, id: `gone:${peer.id}:${Date.now()}`, from: peer.id, t: Date.now(), type: 'bye' })
+      this.drop(peer.id, 'gone')
     }
+  }
+
+  /**
+   * The server's list of who is here is the truth: a session it does not hold has gone, even if
+   * its "left" never came. Just after the server starts, the others are still on their way back.
+   */
+  private async checkHere(ids: Set<string>, up: number, at: number): Promise<void> {
+    this.serverLists = true
+    await this.bus?.settled()
+    if (this.stopped || up < EVERYONE_WAIT_MS) return
+    for (const peer of this.mesh?.peers() ?? []) {
+      // Heard after the list was made, or in a call with sound going both ways: here.
+      if (ids.has(peer.id) || peer.lastSeen > at || this.voice?.inCallWith(peer.id)) continue
+      this.drop(peer.id, 'not-here')
+    }
+  }
+
+  /** Each minute: say we are here, ask the server who else is, and let go of the long silent. */
+  private readonly lookAround = (): void => {
+    this.mesh.announce()
+    this.channel.askWho()
+    const now = Date.now()
+    const slept = now - this.lastLook > 2 * STILL_HERE_MS
+    this.lastLook = now
+    if (slept || this.serverLists) return
+    for (const peer of this.mesh.peers()) {
+      if (now - peer.lastSeen < SILENT_GONE_MS || this.voice?.inCallWith(peer.id)) continue
+      this.drop(peer.id, 'silent')
+    }
+  }
+
+  /** As if the session had said goodbye: off the list of people, out of voice, its calls closed. */
+  private drop(session: string, why: string): void {
+    this.bus?.deliver({ v: 1, id: `${why}:${session}:${Date.now()}`, from: session, t: Date.now(), type: 'bye' })
   }
 
   private readonly announceAgain = (): void => {

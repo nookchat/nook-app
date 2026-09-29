@@ -18,7 +18,11 @@ export class SignalBus {
   private readonly guard = new ReplayGuard()
   private started = false
   private readonly health = new Map<Transport, RelayHealth>()
-  private readonly opening = new Set<Promise<void>>()
+  /**
+   * Messages are opened at once but handled in the order they came. A "left" that overtook
+   * the last announce of the same session would have it back, standing where it was, for good.
+   */
+  private inOrder: Promise<void> = Promise.resolve()
 
   constructor(room: Room, selfId: string, transports: Transport[]) {
     this.room = room
@@ -30,7 +34,11 @@ export class SignalBus {
   /** For a message made here rather than received, such as a server saying somebody left. */
   deliver(env: Envelope): void {
     if (env.from === this.selfId) return
-    this.onMessage?.(env)
+    this.after(() => this.onMessage?.(env))
+  }
+
+  private after(work: () => void | Promise<void>): void {
+    this.inOrder = this.inOrder.then(work).catch((err) => console.error('[nook]', err))
   }
 
   get healthList(): RelayHealth[] {
@@ -46,8 +54,8 @@ export class SignalBus {
   private open(t: Transport): void {
     t.connect({
       onWire: (wire) => {
-        const done = this.receive(wire).finally(() => this.opening.delete(done))
-        this.opening.add(done)
+        const opened = open(this.room.key, wire)
+        this.after(async () => this.receive(await opened))
       },
       onStatus: (transport, status, detail) => {
         this.health.set(transport, { name: transport.name, status, detail })
@@ -68,7 +76,7 @@ export class SignalBus {
 
   /** Once every message that has come in so far has been opened and handled. */
   async settled(): Promise<void> {
-    await Promise.all([...this.opening])
+    await this.inOrder
   }
 
   stop(): void {
@@ -76,8 +84,7 @@ export class SignalBus {
     for (const t of this.transports) t.close()
   }
 
-  private async receive(wire: string): Promise<void> {
-    const env = await open(this.room.key, wire)
+  private receive(env: Envelope | null): void {
     if (!env) return
     if (env.from === this.selfId) return
     if (env.to && env.to !== this.selfId) return

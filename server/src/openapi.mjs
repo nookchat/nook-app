@@ -88,7 +88,7 @@ export const openapi = {
       get: {
         summary: 'WebSocket: history, writes, live lines, signals and presence for every space on a device',
         description:
-          'JSON messages, each with the room it is about. In: hello {room, from}, get {room, from}, leave {room}, put {room, id, lines, w}, sig {room, d}, state {room, id, d}. Out: page {room, at, lines, more}, live {room, at}, ev {room, at, lines}, ack {room, id, at}, nack {room, id, code, message}, sig {room, d}, left {room, id}.',
+          'JSON messages, each with the room it is about. In: hello {room, from}, get {room, from}, leave {room}, put {room, id, lines, w}, sig {room, d}, state {room, id, d}, who {room}. Out: page {room, at, lines, more}, live {room, at}, ev {room, at, lines}, ack {room, id, at}, nack {room, id, code, message}, sig {room, d}, left {room, id}, here {room, ids, up}.',
         responses: { 101: { description: 'Switching protocols' } },
       },
     },
@@ -96,7 +96,7 @@ export const openapi = {
       get: {
         summary: 'WebSocket: the same as /api/v1/socket, for one space',
         description:
-          'JSON messages without room. In: hello {from}, get {from}, put {id, lines, w}, sig {d}, state {id, d}. Out: page {at, lines, more}, live {at}, ev {at, lines}, ack {id, at}, nack {id, code, message}, sig {d}, left {id}.',
+          'JSON messages without room. In: hello {from}, get {from}, put {id, lines, w}, sig {d}, state {id, d}, who. Out: page {at, lines, more}, live {at}, ev {at, lines}, ack {id, at}, nack {id, code, message}, sig {d}, left {id}, here {ids, up}.',
         parameters: [room],
         responses: { 101: { description: 'Switching protocols' } },
       },

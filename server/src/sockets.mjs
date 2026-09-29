@@ -15,6 +15,28 @@ const roomMembers = new Map()
 const sockets = new Set()
 const remoteSessions = new Map()
 
+/** Whether a socket here still holds this session. */
+function holdsHere(room, id) {
+  for (const member of roomMembers.get(room) ?? []) if (member.state?.id === id) return true
+  return false
+}
+
+/** Whether a socket here, or a peer, still holds this session. */
+function holds(room, id) {
+  if (holdsHere(room, id)) return true
+  for (const session of remoteSessions.get(room)?.values() ?? []) if (session.id === id) return true
+  return false
+}
+
+/** Every live session in the room, here and on the peers: the truth about who is here. */
+function hereNow(room) {
+  const ids = new Set()
+  for (const member of roomMembers.get(room) ?? []) if (member.state) ids.add(member.state.id)
+  for (const session of remoteSessions.get(room)?.values() ?? []) ids.add(session.id)
+  // How long this server has been up: just after a start, the others are still coming back.
+  return { t: 'here', ids: [...ids], up: Math.round(process.uptime() * 1000) }
+}
+
 export function localStates() {
   const out = []
   for (const [room, members] of roomMembers) {
@@ -87,8 +109,10 @@ export function fromPeerLive(peer, event) {
   } else if (event.kind === 'left') {
     const sessions = remoteSessions.get(event.room)
     if (!sessions) return
-    if (sessions.delete(key)) toRoom(event.room, { t: 'left', id: event.id })
+    const had = sessions.delete(key)
     if (sessions.size === 0) remoteSessions.delete(event.room)
+    // A session that moved here from that peer has not left.
+    if (had && !holds(event.room, event.id)) toRoom(event.room, { t: 'left', id: event.id })
   }
 }
 
@@ -97,13 +121,15 @@ export function peerGone(peer) {
     for (const [key, session] of sessions) {
       if (session.peer !== peer) continue
       sessions.delete(key)
-      toRoom(room, { t: 'left', id: session.id })
+      if (!holds(room, session.id)) toRoom(room, { t: 'left', id: session.id })
     }
     if (sessions.size === 0) remoteSessions.delete(room)
   }
 }
 
 function join(socket, room, single) {
+  // A socket that has gone must never come back as a member: nothing would ever take it away.
+  if (socket.nookGone || socket.destroyed) return null
   let member = socket.nookRooms.get(room)
   if (member) return member
   let members = roomMembers.get(room)
@@ -120,9 +146,14 @@ function part(member) {
   members?.delete(member)
   if (members?.size === 0) roomMembers.delete(member.room)
   member.socket.nookRooms.delete(member.room)
-  if (!member.state) return
-  toRoom(member.room, { t: 'left', id: member.state.id })
-  emitLive({ room: member.room, kind: 'left', id: member.state.id })
+  if (member.state) gone(member.room, member.state.id)
+}
+
+/** A session has no socket here any more. It has left unless another socket here still holds it. */
+function gone(room, id) {
+  if (holdsHere(room, id)) return
+  if (!holds(room, id)) toRoom(room, { t: 'left', id })
+  emitLive({ room, kind: 'left', id })
 }
 
 async function stream(member, from, live) {
@@ -145,6 +176,7 @@ async function stream(member, from, live) {
       for (const session of remoteSessions.get(member.room)?.values() ?? []) {
         deliver(member, { t: 'sig', d: session.d }, false)
       }
+      deliver(member, hereNow(member.room), false)
       deliver(member, { t: 'live', at: Math.max(cursor, await newest(member.room)) }, false)
     }
   } finally {
@@ -155,6 +187,8 @@ async function stream(member, from, live) {
 }
 
 async function onMessage(socket, single, payload) {
+  // Frames that came in with the close are handled after it, and the socket is gone by then.
+  if (socket.nookGone || socket.destroyed) return
   let message
   try {
     message = JSON.parse(payload.toString('utf8'))
@@ -208,9 +242,15 @@ async function onMessage(socket, single, payload) {
     case 'state': {
       if (typeof message.d !== 'string' || message.d.length > MAX_SIGNAL) return
       if (typeof message.id !== 'string' || !SESSION_ID.test(message.id)) return
+      const was = member.state?.id
       member.state = { id: message.id, d: message.d }
+      if (was && was !== message.id) gone(room, was)
       toRoom(room, { t: 'sig', d: message.d }, member)
       emitLive({ room, kind: 'state', id: message.id, d: message.d })
+      return
+    }
+    case 'who': {
+      deliver(member, hereNow(room))
       return
     }
     default:
@@ -237,10 +277,9 @@ function open(req, socket, single) {
   socket.nookRooms = new Map()
   sockets.add(socket)
 
-  let gone = false
   const away = () => {
-    if (gone) return
-    gone = true
+    if (socket.nookGone) return
+    socket.nookGone = true
     sockets.delete(socket)
     for (const member of socket.nookRooms.values()) part(member)
   }

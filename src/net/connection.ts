@@ -18,6 +18,7 @@ type Incoming =
   | { t: 'nack'; room: string; id?: string; code?: string; message?: string }
   | { t: 'sig'; room: string; d: string }
   | { t: 'left'; room: string; id: string }
+  | { t: 'here'; room: string; ids: unknown; up: number }
 
 type Outgoing = Record<string, unknown> & { t: string }
 
@@ -177,6 +178,11 @@ export class Channel implements Transport {
    * left while the socket was down never gets a "left", so whoever it did not send is gone.
    */
   onEveryone: ((since: number) => void) | null = null
+  /**
+   * The server's list of every live session in the space, and how long the server has been up.
+   * It comes with each hello, and after askWho. An old server never sends it.
+   */
+  onHere: ((ids: Set<string>, up: number) => void) | null = null
   onRefused: ((why: string) => void) | null = null
   readonly loaded: Promise<void>
 
@@ -235,6 +241,11 @@ export class Channel implements Transport {
     this.send({ t: 'state', ...this.state })
   }
 
+  /** Asks the server who is here. The answer comes as onHere. */
+  askWho(): void {
+    this.send({ t: 'who' })
+  }
+
   close(): void {
     this.signals = []
     this.connection.remove(this.room.id, this)
@@ -285,6 +296,10 @@ export class Channel implements Transport {
         return
       case 'left':
         if (typeof message.id === 'string') this.onLeft?.(message.id)
+        return
+      case 'here':
+        if (!Array.isArray(message.ids)) return
+        this.onHere?.(new Set(message.ids.filter((id): id is string => typeof id === 'string')), Number(message.up) || 0)
         return
       case 'page':
       case 'ev': {
