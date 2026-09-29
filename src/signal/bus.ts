@@ -1,4 +1,4 @@
-import type { Room } from '../room'
+import { tagged, untag, type SpaceKeys } from '../space/keys'
 import { buildEnvelope, open, ReplayGuard, seal, type Envelope, type OutgoingEnvelope } from './envelope'
 import type { Transport, TransportStatus } from './transport'
 
@@ -13,7 +13,7 @@ export class SignalBus {
   onHealth: ((health: RelayHealth[]) => void) | null = null
 
   private readonly transports: Transport[]
-  private readonly room: Room
+  private readonly keys: SpaceKeys
   private readonly selfId: string
   private readonly guard = new ReplayGuard()
   private started = false
@@ -24,8 +24,8 @@ export class SignalBus {
    */
   private inOrder: Promise<void> = Promise.resolve()
 
-  constructor(room: Room, selfId: string, transports: Transport[]) {
-    this.room = room
+  constructor(keys: SpaceKeys, selfId: string, transports: Transport[]) {
+    this.keys = keys
     this.selfId = selfId
     this.transports = [...transports]
     for (const t of this.transports) this.health.set(t, { name: t.name, status: 'idle' })
@@ -54,7 +54,11 @@ export class SignalBus {
   private open(t: Transport): void {
     t.connect({
       onWire: (wire) => {
-        const opened = open(this.room.key, wire)
+        // A signal under a key this device does not hold is not for it.
+        const { tag, wire: sealed } = untag(wire)
+        const key = this.keys.key(tag)
+        if (!key) return
+        const opened = open(key, sealed)
         this.after(async () => this.receive(await opened))
       },
       onStatus: (transport, status, detail) => {
@@ -66,7 +70,8 @@ export class SignalBus {
 
   async send(msg: OutgoingEnvelope): Promise<void> {
     const env = buildEnvelope(this.selfId, msg)
-    const wire = await seal(this.room.key, env)
+    const { tag, key } = this.keys.writing
+    const wire = tagged(tag, await seal(key, env))
     const state = msg.type === 'announce' && !msg.to
     for (const t of this.transports) {
       if (state && t.publishState) t.publishState(wire, this.selfId)

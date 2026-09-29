@@ -9,6 +9,13 @@ const OFFERED_KEY = 'nook.notify.offered.v1'
 /** After the first mention's own toast, so the two do not land at once. */
 const OFFER_AFTER_MS = 2500
 
+/** Said on window when notifications are turned on or off, or what they are for changes. */
+export const NOTIFY_CHANGED = 'nook:notify'
+
+function changed(): void {
+  window.dispatchEvent(new Event(NOTIFY_CHANGED))
+}
+
 /** What gets a notification: mentions and direct messages, or every message too. */
 export type NotifyWhat = 'mentions' | 'all'
 
@@ -45,6 +52,7 @@ export async function askNotify(): Promise<NotifyState> {
   } catch {
     /* storage blocked */
   }
+  changed()
   return 'on'
 }
 
@@ -54,6 +62,7 @@ export function stopNotify(): void {
   } catch {
     /* storage blocked */
   }
+  changed()
 }
 
 function read(key: string): string | null {
@@ -78,6 +87,7 @@ export function notifyWhat(): NotifyWhat {
 
 export function setNotifyWhat(what: NotifyWhat): void {
   write(WHAT_KEY, what)
+  changed()
 }
 
 /** Whether a notification shows what was said, or only who. */
@@ -87,6 +97,7 @@ export function notifyText(): boolean {
 
 export function setNotifyText(on: boolean): void {
   write(TEXT_KEY, on ? 'on' : 'off')
+  changed()
 }
 
 /**

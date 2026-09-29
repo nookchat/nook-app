@@ -1931,6 +1931,11 @@ button.voice-bar-state:hover:not(:disabled) {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.voice-tools.five {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+}
+
 /* Circles, not the width of their column: an icon button is round. */
 button.voice-tool {
   justify-self: center;
@@ -2592,6 +2597,50 @@ input[type="text"].space-search {
   gap: 8px;
 }
 
+/* A row of cameras from your voice channel, above any shared screen. */
+.camera-strip {
+  flex: 0 0 auto;
+  height: 168px;
+  margin: 10px 12px 0;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.camera-tile {
+  position: relative;
+  flex: 0 0 auto;
+  height: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--video-bg);
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.camera-tile.talking {
+  box-shadow: 0 0 0 2px var(--good);
+}
+
+.camera-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Your own picture as a mirror, the way every video call shows it. */
+.camera-tile.mine .camera-video {
+  transform: scaleX(-1);
+}
+
+.camera-tile .camera-tag {
+  top: auto;
+  bottom: 8px;
+  left: 8px;
+}
+
 .stage-tile {
   position: relative;
   display: flex;
@@ -2721,6 +2770,11 @@ input[type="text"].space-search {
   .stage {
     margin: 8px 8px 6px;
     height: 36%;
+  }
+
+  .camera-strip {
+    margin: 8px 8px 0;
+    height: 112px;
   }
 
   .chat-compose {

@@ -69,6 +69,7 @@ export type IconName =
   | 'image'
   | 'camera'
   | 'video'
+  | 'video-off'
   | 'check-double'
   | 'arrow-down'
   | 'arrow-up'
@@ -113,6 +114,7 @@ const ICONS: Record<IconName, string | Drawing> = {
   camera: `M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z${circle(12, 13, 3.5)}`,
   image: `${rect(3, 4, 18, 16, 2)}${circle(9, 10, 1.8)}M21 16l-5-5-9 9`,
   video: `${rect(3, 6, 13, 12, 2)}M16 10l5-3v10l-5-3z`,
+  'video-off': `${rect(3, 6, 13, 12, 2)}M16 10l5-3v10l-5-3zM3 3l18 18`,
   phone: 'M5 4h3.5l1.5 4.5-2.2 1.3a11 11 0 0 0 6.4 6.4l1.3-2.2L20 15.5V19a1 1 0 0 1-1 1A16 16 0 0 1 4 5a1 1 0 0 1 1-1z',
   'phone-off':
     'M3.5 14.5c4.8-4.4 12.2-4.4 17 0l-1.8 2.3a1 1 0 0 1-1.3.2l-2.2-1.3a1 1 0 0 1-.5-.9V13a10 10 0 0 0-5.4 0v1.8a1 1 0 0 1-.5.9L6.6 17a1 1 0 0 1-1.3-.2z',

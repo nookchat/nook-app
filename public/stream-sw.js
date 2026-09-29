@@ -55,6 +55,49 @@ self.addEventListener('activate', (ev) => {
   )
 })
 
+// A notification while Nook is closed. The page that sent the message sealed it for this
+// browser (src/net/push.ts), and the browser has opened it by now.
+self.addEventListener('push', (ev) => {
+  let data = {}
+  try {
+    data = ev.data?.json() ?? {}
+  } catch {
+    /* not one of ours: it still has to show something */
+  }
+  const title = typeof data.t === 'string' && data.t ? data.t.slice(0, 120) : 'Nook'
+  const body = typeof data.b === 'string' ? data.b.slice(0, 300) : ''
+  ev.waitUntil(
+    self.registration.showNotification(title, {
+      body,
+      tag: typeof data.tag === 'string' ? data.tag : undefined,
+      icon: new URL('icons/app-icon-rounded-192.png', self.registration.scope).href,
+      data: { room: data.room, ch: data.ch, dm: data.dm },
+    }),
+  )
+})
+
+// A click on it goes to the space and channel, or the direct message, in a window that is open or a new one.
+self.addEventListener('notificationclick', (ev) => {
+  ev.notification.close()
+  const { room, ch, dm } = ev.notification.data ?? {}
+  ev.waitUntil(
+    (async () => {
+      const open = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+      const client = open.find((c) => c.focused) ?? open[0]
+      if (client) {
+        await client.focus().catch(() => undefined)
+        if (typeof room === 'string') client.postMessage({ type: 'nook-open', room, ch, dm })
+        return
+      }
+      const url = new URL('./', self.registration.scope)
+      if (typeof room === 'string') url.searchParams.set('room', room)
+      if (typeof ch === 'string') url.searchParams.set('ch', ch)
+      if (typeof dm === 'string') url.searchParams.set('dm', dm)
+      await self.clients.openWindow(url.href)
+    })(),
+  )
+})
+
 self.addEventListener('fetch', (ev) => {
   const url = new URL(ev.request.url)
   if (url.origin !== self.location.origin || ev.request.method !== 'GET') return

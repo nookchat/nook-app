@@ -47,6 +47,8 @@ export const GIPHY_KEY = env.NOOK_GIPHY_KEY ?? ''
 export const PREVIEWS = env.NOOK_PREVIEWS !== '0'
 // Tests only: lets link cards fetch from localhost.
 export const PREVIEW_LOCAL = env.NOOK_PREVIEW_LOCAL === '1'
+// Tests only: lets a push go to a fake push service on localhost.
+export const PUSH_LOCAL = env.NOOK_PUSH_LOCAL === '1'
 
 export const PUBLIC_URL = list(env.NOOK_PUBLIC_URL)[0] ?? (DOMAIN ? `https://${DOMAIN}` : '')
 export const PEERS = list(env.NOOK_PEERS).filter((p) => p !== PUBLIC_URL)

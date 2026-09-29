@@ -19,11 +19,18 @@ const EVENT_KINDS = [
   'dm',
   'note',
   'board',
+  'key',
+  'push',
 ] as const
 
 export type EventKind = (typeof EVENT_KINDS)[number]
 
 const KNOWN_KINDS = new Set<string>(EVENT_KINDS)
+
+/** The id of a space key after the first: see src/space/keys.ts. */
+export const KEY_ID = /^[0-9a-f]{32}$/
+const PERSON_KEY = /^[0-9a-f]{64}$/
+const KEY_COVERS_MS = 24 * 60 * 60 * 1000
 
 /** A level's id, or 'kicked'. */
 export type Role = string
@@ -804,6 +811,87 @@ export class RoomLog {
     return [root, ...all.filter((m) => m.inThread && m.replyTo === rootId)]
   }
 
+  /**
+   * Where each person's devices take a notification while Nook is closed, and what they want
+   * one for. The newest word from each device stands. Somebody removed gets none.
+   */
+  pushTargets(): Map<string, PushTarget[]> {
+    return this.cached('pushTargets', () => {
+      const auth = this.authority()
+      const devices = new Map<string, PushTarget | null>()
+      for (const e of this.all()) {
+        if (e.kind !== 'push') continue
+        const id = cleanNoteId(e.body.id)
+        if (!id) continue
+        devices.set(`${e.author}:${id}`, e.body.gone === true ? null : cleanPushTarget(e.author, id, e.body))
+      }
+      const out = new Map<string, PushTarget[]>()
+      for (const target of devices.values()) {
+        if (!target || auth.isKicked(target.person)) continue
+        out.set(target.person, [...(out.get(target.person) ?? []), target])
+      }
+      return out
+    })
+  }
+
+  /** The space's newer keys, oldest first: each made by somebody who may remove people. */
+  keyEpochs(): { id: string; lamport: number; covers: number }[] {
+    return this.cached('keyEpochs', () => {
+      const auth = this.authority()
+      const out: { id: string; lamport: number; covers: number }[] = []
+      const seen = new Set<string>()
+      for (const e of this.all()) {
+        if (e.kind !== 'key' || e.body.new !== true || !auth.can(e.author, 'remove')) continue
+        const id = String(e.body.id ?? '')
+        if (!KEY_ID.test(id) || seen.has(id)) continue
+        seen.add(id)
+        // The removal it was made for, which a clock ahead of this one can put after it. Within a
+        // day, so a key cannot claim to cover removals still to come.
+        const after = Math.min(Number(e.body.after) || 0, e.lamport + KEY_COVERS_MS)
+        out.push({ id, lamport: e.lamport, covers: Math.max(e.lamport, after) })
+      }
+      return out
+    })
+  }
+
+  /** Every copy of a key sealed for this person. Whoever sealed it, it opens only to the key its id names. */
+  keyBoxes(person: string): { id: string; author: string; sealed: string }[] {
+    return this.cached(`keyBoxes:${person}`, () => {
+      const out: { id: string; author: string; sealed: string }[] = []
+      for (const e of this.all()) {
+        if (e.kind !== 'key') continue
+        const id = String(e.body.id ?? '')
+        const boxes = e.body.boxes as Record<string, unknown> | undefined
+        const sealed = boxes && typeof boxes === 'object' ? boxes[person] : undefined
+        if (KEY_ID.test(id) && typeof sealed === 'string' && sealed.length < 200) out.push({ id, author: e.author, sealed })
+      }
+      return out
+    })
+  }
+
+  /** Who has a copy of this key. */
+  keyHolders(id: string): Set<string> {
+    return this.cached(`keyHolders:${id}`, () => {
+      const out = new Set<string>()
+      for (const e of this.all()) {
+        if (e.kind !== 'key' || e.body.id !== id) continue
+        const boxes = e.body.boxes
+        if (boxes && typeof boxes === 'object') for (const person of Object.keys(boxes)) out.add(person)
+      }
+      return out
+    })
+  }
+
+  /** Everybody in the space who is not removed: whoever made it, and whoever has written in it. */
+  keyMembers(): string[] {
+    return this.cached('keyMembers', () => {
+      const auth = this.authority()
+      const people = new Set<string>(this.founder ? [this.founder] : [])
+      for (const key of this.lastSeen().keys()) people.add(key)
+      return [...people].filter((p) => PERSON_KEY.test(p) && !auth.isKicked(p))
+    })
+  }
+
   lastProfileAt(author: string): number {
     const events = this.all()
     for (let i = events.length - 1; i >= 0; i--) {
@@ -929,6 +1017,57 @@ export interface BoardSound {
   emoji: string
   file: Attachment
   maker: string
+}
+
+export interface PushTarget {
+  person: string
+  /** This device's own id, so a new address takes the place of its old one. */
+  id: string
+  endpoint: string
+  /** The browser's P-256 key and auth secret, base64url, that a notification is sealed to (RFC 8291). */
+  p256dh: string
+  auth: string
+  /** The server that signs for the push service. */
+  via: string
+  what: 'mentions' | 'all'
+  /** Whether a notification shows what was said. */
+  text: boolean
+  /** The whole space is muted. */
+  muted: boolean
+  /** Text channels muted on their own. */
+  mute: string[]
+}
+
+function cleanPushTarget(person: string, id: string, body: Record<string, unknown>): PushTarget | null {
+  const endpoint = typeof body.endpoint === 'string' ? body.endpoint : ''
+  const via = typeof body.via === 'string' ? body.via : ''
+  const web = (raw: string): boolean => {
+    try {
+      const url = new URL(raw)
+      const local = url.protocol === 'http:' && /^(localhost|127\.0\.0\.1)$/.test(url.hostname)
+      return raw.length <= 1024 && (url.protocol === 'https:' || local) && !url.username && !url.password
+    } catch {
+      return false
+    }
+  }
+  if (!web(endpoint) || !web(via)) return null
+  const p256dh = String(body.p256dh ?? '')
+  const secret = String(body.auth ?? '')
+  // 65 bytes of an uncompressed point, and 16 of secret.
+  if (!/^[A-Za-z0-9_-]{87}$/.test(p256dh) || !/^[A-Za-z0-9_-]{22}$/.test(secret)) return null
+  const mute = Array.isArray(body.mute) ? cleanOrder(body.mute) : []
+  return {
+    person,
+    id,
+    endpoint,
+    p256dh,
+    auth: secret,
+    via: via.replace(/\/+$/, ''),
+    what: body.what === 'all' ? 'all' : 'mentions',
+    text: body.text !== false,
+    muted: body.muted === true,
+    mute,
+  }
 }
 
 export interface NoteInfo {

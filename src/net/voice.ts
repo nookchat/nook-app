@@ -9,6 +9,24 @@ import { playOrHold, watchContext } from './unlock'
 
 const RETRY_MS = 5000
 const STALE_CALL_MS = 8000
+/** Small enough to send to each person in the channel at once: voice calls are one link per person. */
+const CAMERA: MediaTrackConstraints = {
+  width: { ideal: 640 },
+  height: { ideal: 360 },
+  frameRate: { ideal: 24, max: 30 },
+  facingMode: 'user',
+}
+const CAMERA_BITRATE = 600_000
+
+function explainCameraRefusal(err: unknown): string {
+  const name = err instanceof DOMException ? err.name : ''
+  if (name === 'NotAllowedError' || name === 'SecurityError') {
+    return 'Nook may not use the camera. Allow it in the settings of the browser for this site, then try again.'
+  }
+  if (name === 'NotFoundError' || name === 'OverconstrainedError') return 'There is no camera on this device.'
+  if (name === 'NotReadableError' || name === 'AbortError') return 'Another program is using the camera. Close it, then try again.'
+  return 'The camera did not start.'
+}
 
 export interface VoiceState {
   channel: string | null
@@ -44,6 +62,7 @@ export class Voice {
   private readonly talking = new Talking()
   private mic: MediaStream | null = null
   private rawMic: MediaStream | null = null
+  private camera: MediaStream | null = null
   private cleaner: Denoiser | null = null
   private shaper: Shaped | null = null
   private channel: string | null = null
@@ -189,6 +208,7 @@ export class Voice {
     this.mic?.getTracks().forEach((t) => t.stop())
     this.rawMic = null
     this.mic = null
+    this.stopCamera()
     this.channel = null
     this.muted = false
     this.deafened = false
@@ -213,6 +233,55 @@ export class Voice {
     this.deafened = deafened
     for (const call of this.calls.values()) call.setDeaf(deafened)
     this.setMuted(deafened ? true : this.mutedBeforeDeaf)
+  }
+
+  /** Your own camera, while it is on. */
+  get cameraTrack(): MediaStreamTrack | null {
+    return this.camera?.getVideoTracks()[0] ?? null
+  }
+
+  get cameraOn(): boolean {
+    return this.cameraTrack !== null
+  }
+
+  /** What somebody in the channel sends from their camera. Frames come only while theirs is on. */
+  videoOf(peerId: string): MediaStreamTrack | null {
+    return this.calls.get(peerId)?.remoteVideo ?? null
+  }
+
+  /** Must run from a click to turn it on: the browser opens the camera only after one. */
+  async setCamera(on: boolean): Promise<void> {
+    if (!on) {
+      if (!this.camera) return
+      this.stopCamera()
+      for (const call of this.calls.values()) await call.useCamera(null)
+      this.onChange?.()
+      return
+    }
+    if (!this.channel || this.camera) return
+    let stream: MediaStream
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: CAMERA, audio: false })
+    } catch (err) {
+      throw new Error(explainCameraRefusal(err))
+    }
+    if (!this.channel || this.camera) {
+      stream.getTracks().forEach((t) => t.stop())
+      return
+    }
+    this.camera = stream
+    const track = stream.getVideoTracks()[0]
+    // Unplugged, or taken by the system: off, as if clicked.
+    track.addEventListener('ended', () => {
+      if (this.camera === stream) void this.setCamera(false)
+    })
+    for (const call of this.calls.values()) await call.useCamera(track)
+    this.onChange?.()
+  }
+
+  private stopCamera(): void {
+    this.camera?.getTracks().forEach((t) => t.stop())
+    this.camera = null
   }
 
   /** The microphone before any cleaning, which names the device. */
@@ -320,7 +389,7 @@ export class Voice {
   private call(peerId: string, weOffer: boolean): Call {
     const existing = this.calls.get(peerId)
     if (existing) return existing
-    const call = new Call(this.mic!, weOffer, this.config(), {
+    const call = new Call(this.mic!, this.cameraTrack, weOffer, this.config(), {
       send: (type, data) => void this.bus.send({ type, to: peerId, data }),
       onChange: () => this.onChange?.(),
       onAudio: (stream) => this.talking.add(peerId, stream),
@@ -364,6 +433,8 @@ interface CallHooks {
 
 class Call {
   live = false
+  /** What their camera sends, once the call is up. */
+  remoteVideo: MediaStreamTrack | null = null
 
   private readonly startedAt = Date.now()
   private readonly pc: RTCPeerConnection
@@ -378,9 +449,12 @@ class Call {
   private deaf = false
   private boost: Boost | null = null
 
-  constructor(mic: MediaStream, weOffer: boolean, config: RTCConfiguration, hooks: CallHooks) {
+  private camera: MediaStreamTrack | null
+
+  constructor(mic: MediaStream, camera: MediaStreamTrack | null, weOffer: boolean, config: RTCConfiguration, hooks: CallHooks) {
     this.hooks = hooks
     this.mic = mic
+    this.camera = camera
     this.pc = new RTCPeerConnection(config)
 
     // Only the caller: an answerer's own transceiver adds an m-line the answer cannot carry.
@@ -388,6 +462,11 @@ class Call {
       for (const track of mic.getAudioTracks()) {
         this.pc.addTransceiver(track, { direction: 'sendrecv', streams: [mic] })
       }
+      // Always a line for the camera, empty while it is off, so turning it on needs no new handshake.
+      this.pc.addTransceiver(camera ?? 'video', {
+        direction: 'sendrecv',
+        sendEncodings: [{ maxBitrate: CAMERA_BITRATE }],
+      })
     }
 
     // In the page, hidden: a detached audio element is not reliably played.
@@ -398,6 +477,11 @@ class Call {
     playOn(this.sink)
 
     this.pc.ontrack = (ev) => {
+      if (ev.track.kind === 'video') {
+        this.remoteVideo = ev.track
+        hooks.onChange()
+        return
+      }
       const stream = ev.streams[0] ?? new MediaStream([ev.track])
       this.unboost()
       this.stream = stream
@@ -468,6 +552,31 @@ class Call {
     const track = mic.getAudioTracks()[0]
     const audio = this.pc.getTransceivers().find((t) => t.sender.track?.kind === 'audio' || t.receiver.track?.kind === 'audio')
     if (track && audio && !this.closed) await audio.sender.replaceTrack(track).catch(() => undefined)
+  }
+
+  private videoLine(): RTCRtpTransceiver | undefined {
+    return this.pc.getTransceivers().find((t) => t.receiver.track?.kind === 'video')
+  }
+
+  /** Puts the camera on the line to them, or takes it off. The line stays, so no new handshake. */
+  async useCamera(track: MediaStreamTrack | null): Promise<void> {
+    this.camera = track
+    const line = this.videoLine()
+    if (!line || this.closed) return
+    await line.sender.replaceTrack(track).catch(() => undefined)
+    if (track) await this.capBitrate(line)
+  }
+
+  private async capBitrate(line: RTCRtpTransceiver): Promise<void> {
+    try {
+      const params = line.sender.getParameters()
+      if (!params.encodings?.length) return
+      if (params.encodings[0].maxBitrate === CAMERA_BITRATE) return
+      params.encodings[0].maxBitrate = CAMERA_BITRATE
+      await line.sender.setParameters(params)
+    } catch {
+      /* the browser picks the rate */
+    }
   }
 
   speakers(): void {
@@ -563,9 +672,16 @@ class Call {
         await audio.sender.replaceTrack(track)
         audio.direction = 'sendrecv'
       }
+      // A caller from before cameras has no line for one.
+      const video = this.videoLine()
+      if (video) {
+        video.direction = 'sendrecv'
+        if (this.camera) await video.sender.replaceTrack(this.camera)
+      }
 
       await this.pc.setLocalDescription(await this.pc.createAnswer())
       this.hooks.send('vanswer', { sdp: this.pc.localDescription?.sdp, type: 'answer' })
+      if (video && this.camera) await this.capBitrate(video)
     } catch {
       this.close()
     }
@@ -600,6 +716,7 @@ class Call {
     this.pc.onconnectionstatechange = null
     this.unboost()
     this.stream = null
+    this.remoteVideo = null
     this.sink.srcObject = null
     this.sink.remove()
     try {

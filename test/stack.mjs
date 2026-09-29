@@ -1,7 +1,8 @@
 import { spawn } from 'node:child_process'
 import { startServer } from './pg.mjs'
 
-const server = await startServer(8787)
+// Push goes to a fake push service on localhost in push.test.mjs.
+const server = await startServer(8787, { NOOK_PUSH_LOCAL: '1' })
 console.log(`server on ${server.url}, database ${server.database}`)
 
 const vite = spawn('npx', ['vite', '--port', '5173', '--strictPort'], {

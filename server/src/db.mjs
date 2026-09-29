@@ -68,6 +68,12 @@ const MIGRATIONS = [
     at    timestamptz not null default now()
   );
   `,
+  `
+  create table push_key (
+    id  int primary key,
+    d   text not null
+  );
+  `,
 ]
 
 export async function migrate() {

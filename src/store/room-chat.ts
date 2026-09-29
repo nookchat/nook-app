@@ -223,6 +223,16 @@ export class RoomChat {
     return this.write('level', { id, gone: true })
   }
 
+  /** Where this device takes notifications while Nook is closed, or `gone`: see src/net/push.ts. */
+  setPushTarget(body: Record<string, unknown>): Promise<LogEvent> {
+    return this.write('push', body)
+  }
+
+  /** A space key, or copies of one: see src/space/keys.ts. */
+  passKey(body: Record<string, unknown>): Promise<LogEvent> {
+    return this.write('key', body)
+  }
+
   private async write(kind: EventKind, body: Record<string, unknown>): Promise<LogEvent> {
     const event = await makeEvent(this.log.room, this.me, this.log.nextLamport(), kind, body)
     this.log.add(event)

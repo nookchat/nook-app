@@ -161,6 +161,34 @@ export const openapi = {
         responses: { 200: { description: 'OK' }, 404: { description: 'No key' }, ...errors },
       },
     },
+    '/api/v1/push': {
+      get: {
+        summary: 'This server’s Web Push key (VAPID), which a browser subscribes with',
+        responses: { 200: { description: 'OK' }, ...errors },
+      },
+      post: {
+        summary: 'Passes a notification, sealed for the browser (RFC 8291), on to its push service',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['endpoint', 'body'],
+                properties: {
+                  endpoint: { type: 'string' },
+                  body: { type: 'string', description: 'base64url, at most 4096 bytes' },
+                  ttl: { type: 'integer' },
+                  urgency: { type: 'string', enum: ['high', 'normal'] },
+                  topic: { type: 'string' },
+                },
+              },
+            },
+          },
+        },
+        responses: { 200: { description: 'OK, or gone' }, 429: { description: 'That device has had enough for now' }, ...errors },
+      },
+    },
     '/api/v1/cluster/lines': {
       get: {
         summary: 'Between servers: every line after a number, waiting for new ones',

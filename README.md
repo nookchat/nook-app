@@ -46,7 +46,7 @@ with voice does it.
   foot of the channels says where you are talking, with mute and leave. You
   are in one call at a time, and joining and leaving make a sound.
 - **Voice**: click a voice channel to join it. The voice bar has the
-  microphone, Share screen, and Leave. Somebody who is sharing has a LIVE badge
+  microphone, the camera, Share screen, and Leave. Somebody who is sharing has a LIVE badge
   in the voice channel, and a click on it watches them. A share that starts
   makes a sound, for whoever shares and for the others in their voice channel.
 - **Channel order**: somebody whose level has Channels drags a text or voice
@@ -59,6 +59,11 @@ with voice does it.
   menu. Somebody in voice goes there; somebody who is not is asked to join,
   since a browser opens the microphone only on a click. Their own device
   checks the mover's level and that they may go in that channel.
+- **Camera**: the camera button in the voice bar turns yours on, for the
+  people in your voice channel and in a call. Each camera that is on in your
+  channel is a tile in a row above the conversation, yours too, as a mirror.
+  A call has a line for the camera from the start, so turning it on or off
+  sets nothing up again. Leaving voice turns it off.
 - **Video controls** show while the pointer moves over a playing video or a
   stream, and go when it rests.
 - **Files**: the clip in the box, a file dropped on the conversation, or one
@@ -76,6 +81,22 @@ with voice does it.
   somebody on a level from their menu in the list of people. You change only
   the levels below yours, and you give nobody a power you do not have. Every
   device checks each change in the log, so a button is never the rule.
+- **The list of people** on the right has the people who are here in groups
+  by level, the highest level first, as Discord groups people by role. The
+  people who are away are last, in one group.
+- **Removing somebody** changes the key of the space, with no click. The
+  code in the old invite still lets a person in, but what is written after
+  the removal is sealed with a new key that only the people still in the
+  space have. Somebody who joins later gets the new key from whoever is
+  online, in a few seconds. See
+  [Encryption in server/README.md](server/README.md#encryption).
+- **Notifications while Nook is closed**: with notifications on, a browser
+  also gets them when no Nook page is open, through the browser's own push
+  service. The device that sends a message seals the notification for your
+  browser, so neither the server nor the push service can read it. Somebody
+  with Nook open gets no push: the open page shows its own. On an iPhone this
+  works once Nook is on the home screen. The desktop app has no push service,
+  so it notifies only while it runs.
 - **Emoji on their own**, in a message or a reply, are drawn large.
 - **Emoji look the same on every device**: Nook draws each one with
   [Twemoji](https://github.com/jdecked/twemoji), the set Discord uses, in
@@ -123,6 +144,8 @@ a direct message or a mention in any of them reaches you wherever you are.
 | Picture and sound | Straight between browsers, or through the server's TURN relay when it has one, encrypted with DTLS-SRTP |
 | Your preferences: quick reactions, volumes, sounds, showing your game, space order | This device, and a copy in your sealed record on your servers, so they follow you to every device |
 | Your identity key | Your devices only, and only the ones you link or restore. It signs everything you write |
+| A space's newer keys, after somebody was removed | The log of the space, one copy sealed for each person |
+| Where a device takes notifications while Nook is closed | The log of each space it is in, sealed, so only the people in the space see it |
 | Your microphone and speaker | This device only: they are its hardware |
 
 Nothing about a space is written to IndexedDB or local storage.
@@ -144,7 +167,8 @@ and direct messages. What travels is sealed with a key made from the code,
 waits on your server for ten minutes, and can be taken once.
 
 Everything is sealed with AES-GCM under a key made from the space code (and its
-password, if it has one) before it leaves the browser. Every event is signed
+password, if it has one) before it leaves the browser, or under a newer key
+after somebody was removed. Every event is signed
 by its writer, and every device checks each signature, so a server can neither
 read a message nor forge one. See
 [Encryption in server/README.md](server/README.md#encryption) for exactly what
@@ -172,6 +196,13 @@ public page.
 
 To run your own, follow [docs/self-hosting.md](docs/self-hosting.md). It takes
 one `docker compose up`. `server/README.md` has every setting and the API.
+
+**A restart** of a server, for an update, needs nothing from anybody. Each
+page tries again every few seconds while its server is gone, and at once when
+the network or the screen comes back. What somebody writes meanwhile waits in
+the page and goes out when the server is back, and voice and screen shares
+keep going, since they go between the browsers. `node test/restart.test.mjs`
+restarts a server under two people in voice.
 
 **A cluster.** Several servers that name each other in `NOOK_PEERS` and share
 a `NOOK_CLUSTER_SECRET` keep every space on all of them. When the one a page
@@ -276,6 +307,7 @@ src/
   space/
     registry.ts       every space you are in, started at once
     runtime.ts        one space: its log, its connection, who is here
+    keys.ts           a new space key after a removal, and a copy for each person
   net/
     connection.ts     one WebSocket per server, carrying every space on it
     cluster.ts        the servers of a cluster, and moving to the next
@@ -285,6 +317,7 @@ src/
     mesh.ts           who is here, from what the server passes on
     voice.ts          voice channels, mic.ts denoise.ts talking.ts around them
     uplink.ts         how much upload Nook may use, guessed then measured
+    push.ts           notifications while Nook is closed: subscribe, seal, send
   signal/
     bus.ts            signals in and out of a space, de-duplicated
     envelope.ts       AES-GCM seal and open, replay guard

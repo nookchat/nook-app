@@ -68,6 +68,8 @@ migration runs once, in a transaction.
 | `people` | One sealed record per person: their list of spaces and how far they have read |
 | `peers` | How far this server has read from each other server in its cluster |
 | `files` | Every uploaded file: its space, its id (the SHA-256 of its sealed bytes), and its size |
+| `gif_cache` | GIF search answers, so a popular term asks the service once |
+| `push_key` | This server's Web Push key. A cluster makes one key from its secret instead |
 | `schema_version` | Which migrations have run |
 
 Every line is ciphertext. A copy of this database is a pile of noise with
@@ -116,6 +118,8 @@ Version 1, under `/api/v1`. A running server describes it at
 | `PUT /api/v1/people/:id` | Replaces it. Needs `x-nook-write`. The first write claims it |
 | `GET /api/v1/preview?url=U` | The title, description and picture behind a public link |
 | `GET /api/v1/gifs?q=term` | GIF search with this server's key, when one is set. No term: what is popular now. Answers `{ "gifs", "from" }` |
+| `GET /api/v1/push` | This server's Web Push key (VAPID), `{ "key" }`, which a browser subscribes with |
+| `POST /api/v1/push` | Passes `{ "endpoint", "body", "ttl", "urgency", "topic" }` on to the push service at `endpoint`, signed with that key. `body` is a notification already sealed for that browser. Answers `{ "ok" }`, or `{ "gone": true }` when the device no longer takes them |
 | `GET /api/v1/cluster/lines`, `/rooms`, `/people`, `/files`, `/live` | Between servers in a cluster only. Needs the cluster secret |
 
 The socket speaks JSON, one message per frame. Every message carries the
@@ -211,10 +215,11 @@ relays it, and cannot open it.
 
 | What | Sealed with | Who can open it |
 | --- | --- | --- |
-| Every event in a space (messages, edits, reactions, names, channels) | AES-GCM, with a key made from the space code and its password | Anybody holding the invite link |
+| Every event in a space (messages, edits, reactions, names, channels) | AES-GCM, with a key made from the space code and its password, until somebody is removed. Then a new space key, below | Anybody holding the invite link, or after a removal, the people still in the space |
 | Private messages | Also sealed with a key only the two people can work out | The two people |
 | Files | AES-GCM, with a key made for each file, which travels only inside its sealed message | Whoever can read that message |
-| Signals (handshakes, presence, typing) | AES-GCM, the same space key | Anybody holding the invite link |
+| Signals (handshakes, presence, typing) | AES-GCM, the same space key | The same people |
+| Notifications while Nook is closed | Web Push encryption (RFC 8291), by the device that wrote the message, for the browser that shows it | That browser. The server and the push service pass on bytes they cannot open |
 | Your list of spaces and read marks | AES-GCM, with a key made from your identity key | Your devices |
 | Calls and screen shares | DTLS-SRTP, negotiated between the browsers | The people in the call. TURN relays packets it cannot open |
 
@@ -222,6 +227,29 @@ The space code never reaches a server: it sits after the `#` in the link, and
 a browser never sends that part anywhere. Every event is also signed with its
 author's identity key, and checked by every device when it arrives, so a
 server that alters or invents an event produces one that is dropped.
+
+**A new space key after a removal.** Somebody who is removed still has the
+code, and the code opens everything sealed with the code's key. So when
+somebody is removed, the device of whoever removed them makes a new random
+key at once. It seals a copy for each person still in the space, with a key
+that only that person and the sealer can work out (the same kind as private
+messages), and puts the copies in the log. Each device opens its own copy,
+and from then on seals what it writes, and its signals, with the new key. A
+line under a newer key starts with that key's id, so a device knows which key
+to use, and keeps a line it cannot open yet until its copy comes.
+
+- **Nobody clicks anything.** A reload finds the copies in the log again.
+- **Somebody new** joins with the code, as before. The first device that is
+  online and holds the newest key seals a copy for them, a few seconds after
+  they arrive. Until then they see the messages from before the removal.
+- **What the removed person keeps**: what they could read before, and the
+  copies of the key, which they cannot open. They can still join again as a
+  new person with the code, as they could on Discord with a new account, and
+  the others see them arrive.
+- **A key is trusted** only when somebody whose level may remove people made
+  it, and a copy only when it opens to the key its id names. If the one who
+  removed somebody was offline and nobody made a key, the next person online
+  who may remove people makes one.
 
 What a server can see, because it has to:
 
@@ -232,6 +260,8 @@ What a server can see, because it has to:
 - Which links are previewed, if link cards are on. Set `NOOK_PREVIEWS=0`
   to turn them off.
 - What is searched for, if GIF search is on.
+- Which push addresses get a notification, and when, if somebody has
+  notifications on. Not who sent it, or what it says.
 
 ## Put it behind TLS
 

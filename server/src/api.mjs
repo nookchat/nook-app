@@ -7,6 +7,7 @@ import { LINK_ID, MAX_LINK, putLink, takeLink } from './links.mjs'
 import { liveFor } from './live.mjs'
 import { openapi } from './openapi.mjs'
 import { preview, previewImage } from './preview.mjs'
+import { push, pushKey } from './push.mjs'
 import { localStates } from './sockets.mjs'
 import {
   append,
@@ -55,6 +56,7 @@ function health() {
     previews: PREVIEWS,
     gifs: hasGifs(),
     gifService: gifService(),
+    push: true,
     files: { max: MAX_FILE_BYTES },
     cluster: clusterUrls(),
     peers: peerHealth(),
@@ -183,6 +185,13 @@ export async function handle(req, res) {
       if (a === 'preview' && method === 'GET') {
         limited(req)
         return reply(res, 200, await linkCard(url))
+      }
+      if (a === 'push' && !b) {
+        if (method === 'GET') return reply(res, 200, await pushKey())
+        if (method === 'POST') {
+          limited(req)
+          return reply(res, 200, await push(await readJson(req, 16 * 1024)))
+        }
       }
       if (a === 'gifs' && method === 'GET') {
         limited(req)

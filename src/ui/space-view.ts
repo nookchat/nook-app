@@ -334,6 +334,11 @@ export class SpaceView {
   private readonly away = new Set<string>()
   /** Sessions in voice that have muted or deafened themselves. */
   private readonly quiet = new Map<string, 'muted' | 'deafened'>()
+  /** Sessions in voice with their camera on. */
+  private readonly filming = new Set<string>()
+  private cameras!: HTMLDivElement
+  private cameraButton!: HTMLButtonElement
+  private readonly cameraTiles = new Map<string, { tile: HTMLElement; video: HTMLVideoElement; tag: HTMLElement; track: MediaStreamTrack | null }>()
   /** The newest look at the voice connection, taken every few seconds while in voice. */
   private link: {
     peers: LinkQuality[]
@@ -591,6 +596,7 @@ export class SpaceView {
       ...this.sharers.keys(),
       ...this.away,
       ...this.quiet.keys(),
+      ...this.filming,
       ...this.typing.keys(),
       ...this.watchingBy.keys(),
       ...this.playingBy.keys(),
@@ -603,6 +609,7 @@ export class SpaceView {
     this.sharers.delete(id)
     this.away.delete(id)
     this.quiet.delete(id)
+    this.filming.delete(id)
     this.voiceSince.delete(id)
     this.typing.delete(id)
     this.watchingBy.delete(id)
@@ -691,6 +698,11 @@ export class SpaceView {
     const quiet = data.deafened === true ? 'deafened' : data.muted === true ? 'muted' : null
     if (quiet) this.quiet.set(from, quiet)
     else this.quiet.delete(from)
+
+    const wasFilming = this.filming.has(from)
+    if (data.camera === true && typeof data.voice === 'string') this.filming.add(from)
+    else this.filming.delete(from)
+    if (wasFilming !== this.filming.has(from)) this.draw()
 
     const sharing =
       data.sharing === true ? NO_VOICE : typeof data.sharing === 'string' ? cleanChannel(data.sharing) : ''
@@ -1785,6 +1797,10 @@ export class SpaceView {
     this.peopleList = h('div', { class: 'rail-list' })
     this.voiceBar = h('div', { class: 'voice-bar voice-panel hidden' })
     this.stage = h('div', { class: 'stage hidden' })
+    this.cameras = h('div', { class: 'camera-strip hidden', role: 'region', ariaLabel: 'Cameras' })
+    for (const t of this.cameraTiles.values()) t.video.srcObject = null
+    this.cameraTiles.clear()
+    this.cameraButton = h('button', { class: 'voice-tool camera-button', on: { click: () => void this.toggleCamera() } })
     this.streamBar = h('div', { class: 'stream-bar hidden' })
     // No server answers: the ghost sleeps until one does.
     const offline = h('div', { class: 'offline-bar hidden', role: 'status' }, [
@@ -1857,6 +1873,7 @@ export class SpaceView {
         offline,
         this.searchResults,
         this.streamBar,
+        this.cameras,
         this.stage,
         this.chatPanel.root,
         this.noteEditor.root,
@@ -2573,6 +2590,74 @@ export class SpaceView {
       this.voiceList.append(row)
     }
     this.renderVoiceBar()
+    this.renderCameras()
+  }
+
+  /** A tile for each camera that is on in your voice channel, yours too. */
+  private renderCameras(): void {
+    const voice = this.voice
+    const here = voice?.state.channel ?? null
+    const want = new Map<string, MediaStreamTrack>()
+    if (voice && here) {
+      for (const id of voice.membersOf(here)) {
+        const track = id === this.selfId ? voice.cameraTrack : this.filming.has(id) ? voice.videoOf(id) : null
+        if (track) want.set(id, track)
+      }
+    }
+    for (const [id, t] of this.cameraTiles) {
+      if (want.has(id)) continue
+      t.video.srcObject = null
+      t.tile.remove()
+      this.cameraTiles.delete(id)
+    }
+    const peers = this.peersById()
+    for (const [id, track] of want) {
+      let t = this.cameraTiles.get(id)
+      if (!t) {
+        const video = document.createElement('video')
+        video.autoplay = true
+        video.muted = true
+        video.playsInline = true
+        video.className = 'camera-video'
+        const tag = h('div', { class: 'stage-tag camera-tag' })
+        const tile = h('div', { class: `camera-tile${id === this.selfId ? ' mine' : ''}` }, [video, tag])
+        t = { tile, video, tag, track: null }
+        this.cameraTiles.set(id, t)
+        this.cameras.append(tile)
+      }
+      if (t.track !== track) {
+        t.track = track
+        t.video.srcObject = new MediaStream([track])
+        void t.video.play().catch(() => undefined)
+      }
+      const key = id === this.selfId ? this.chat?.me ?? '' : peers.get(id)?.key ?? ''
+      const name = id === this.selfId ? 'You' : (key && this.chat?.nameOf(key)) || peers.get(id)?.name || shortKey(key || id)
+      if (t.tag.textContent !== name) t.tag.textContent = name
+      t.tile.classList.toggle('talking', !!voice?.isTalking(id))
+    }
+    this.cameras.classList.toggle('hidden', this.cameraTiles.size === 0)
+  }
+
+  private async toggleCamera(): Promise<void> {
+    const voice = this.voice
+    if (!voice?.state.channel) return
+    try {
+      await voice.setCamera(!voice.cameraOn)
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'The camera did not start.', 'bad', 8000)
+    }
+    this.draw()
+  }
+
+  private renderCameraButton(): void {
+    const on = this.voice?.cameraOn === true
+    const label = on ? 'Turn off camera' : 'Turn on camera'
+    if (this.cameraButton.getAttribute('aria-label') === label) return
+    clear(this.cameraButton)
+    this.cameraButton.setAttribute('aria-label', label)
+    this.cameraButton.title = on ? 'Turn off your camera' : 'Turn on your camera for this voice channel'
+    this.cameraButton.classList.toggle('on', on)
+    this.cameraButton.append(icon(on ? 'video' : 'video-off', 19))
   }
 
   private sessionsByPerson(members: string[], peers: Map<string, MeshPeer>): Map<string, string[]> {
@@ -2634,6 +2719,9 @@ export class SpaceView {
           deaf ? icon('headphones-off', 14) : null,
         ]),
       )
+    }
+    if (mine ? this.voice?.cameraOn : ids.some((i) => this.filming.has(i))) {
+      member.append(h('span', { class: 'voice-game voice-camera', title: 'Camera on' }, [icon('video', 14)]))
     }
     const game = mine ? playingNow() : (ids.map((i) => this.playingBy.get(i)).find(Boolean) ?? null)
     if (game) member.append(h('span', { class: 'voice-game', title: `Playing ${game.name}` }, [icon('game', 14)]))
@@ -2782,6 +2870,32 @@ export class SpaceView {
         if (!this.link) void this.sampleLink()
         openMenu(signal, [{ custom: this.linkDetails() }])
       })
+      this.renderCameraButton()
+      const tools = [
+        h(
+          'button',
+          {
+            class: `voice-tool${state.muted ? ' danger on' : ''}`,
+            title: state.muted ? 'Unmute' : 'Mute',
+            ariaLabel: state.muted ? 'Unmute' : 'Mute',
+            on: { click: () => this.voice?.setMuted(!state.muted) },
+          },
+          [icon(state.muted ? 'mic-off' : 'mic', 19)],
+        ),
+        h(
+          'button',
+          {
+            class: `voice-tool${state.deafened ? ' danger on' : ''}`,
+            title: state.deafened ? 'Undeafen' : 'Deafen: hear nobody, and mute yourself',
+            ariaLabel: state.deafened ? 'Undeafen' : 'Deafen',
+            on: { click: () => this.voice?.setDeafened(!state.deafened) },
+          },
+          [icon(state.deafened ? 'headphones-off' : 'headphones', 19)],
+        ),
+        this.cameraButton,
+        ...(call || !this.chat?.can('soundboard') ? [] : [this.boardButton]),
+        this.shareButton,
+      ]
       this.voiceBar.append(
         h('div', { class: 'voice-bar-top' }, [
           // The signal shows how good the link is, in place of a dot, and opens the details.
@@ -2806,30 +2920,7 @@ export class SpaceView {
             [icon('phone-off', 19)],
           ),
         ]),
-        h('div', { class: `voice-tools${call ? ' three' : ''}` }, [
-          h(
-            'button',
-            {
-              class: `voice-tool${state.muted ? ' danger on' : ''}`,
-              title: state.muted ? 'Unmute' : 'Mute',
-              ariaLabel: state.muted ? 'Unmute' : 'Mute',
-              on: { click: () => this.voice?.setMuted(!state.muted) },
-            },
-            [icon(state.muted ? 'mic-off' : 'mic', 19)],
-          ),
-          h(
-            'button',
-            {
-              class: `voice-tool${state.deafened ? ' danger on' : ''}`,
-              title: state.deafened ? 'Undeafen' : 'Deafen: hear nobody, and mute yourself',
-              ariaLabel: state.deafened ? 'Undeafen' : 'Deafen',
-              on: { click: () => this.voice?.setDeafened(!state.deafened) },
-            },
-            [icon(state.deafened ? 'headphones-off' : 'headphones', 19)],
-          ),
-          ...(call || !this.chat?.can('soundboard') ? [] : [this.boardButton]),
-          this.shareButton,
-        ]),
+        h('div', { class: `voice-tools${tools.length === 3 ? ' three' : tools.length === 5 ? ' five' : ''}` }, tools),
       )
     }
   }
@@ -3161,23 +3252,29 @@ export class SpaceView {
     const avatars = chat?.log.avatars() ?? new Map<string, string>()
 
     const visible = order.filter((r) => (roles.get(r.key) ?? 'member') !== 'kicked' || r.you)
-    const hereCount = visible.filter((r) => r.here).length
-    const awayCount = visible.length - hereCount
-    this.peopleList.append(
-      h('div', { class: 'rail-head' }, [h('span', { class: 'eyebrow', text: `Here · ${hereCount}` })]),
-    )
-    let drawnOffline = false
-    for (const row of order) {
-      if (!row.here && !drawnOffline) {
-        drawnOffline = true
-        this.peopleList.append(
-          h('div', { class: 'rail-head' }, [h('span', { class: 'eyebrow', text: `Away · ${awayCount}` })]),
-        )
-      }
-      const role = roles.get(row.key) ?? 'member'
-      if (role === 'kicked' && !row.you) continue
-      this.peopleList.append(this.personRow(row, role, avatars.get(row.key) ?? ''))
+    const head = (text: string): HTMLElement => h('div', { class: 'rail-head' }, [h('span', { class: 'eyebrow', text })])
+    const draw = (row: PersonRow): void => {
+      this.peopleList.append(this.personRow(row, roles.get(row.key) ?? 'member', avatars.get(row.key) ?? ''))
     }
+
+    // Who is here, under their level, the highest first, as Discord groups people by role.
+    const groups = new Map<string, { name: string; rank: number; rows: PersonRow[] }>()
+    for (const row of visible) {
+      if (!row.here) continue
+      const level = chat?.levelOf(row.key)
+      const id = level?.id ?? MEMBER
+      const group = groups.get(id) ?? { name: level?.name ?? 'Member', rank: level?.rank ?? 0, rows: [] }
+      group.rows.push(row)
+      groups.set(id, group)
+    }
+    for (const group of [...groups.values()].sort((a, b) => b.rank - a.rank || a.name.localeCompare(b.name))) {
+      this.peopleList.append(head(`${group.name} · ${group.rows.length}`))
+      for (const row of group.rows) draw(row)
+    }
+
+    const away = visible.filter((r) => !r.here)
+    if (away.length) this.peopleList.append(head(`Away · ${away.length}`))
+    for (const row of away) draw(row)
   }
 
   private personRow(row: PersonRow, role: string, avatar: string): HTMLElement {

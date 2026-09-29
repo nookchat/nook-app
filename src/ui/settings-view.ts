@@ -197,7 +197,7 @@ export function settingsView(actions: SettingsActions): HTMLElement {
     ]),
   ])
 
-  const notifyAbout = 'Who said what, when Nook is in the background'
+  const notifyAbout = 'Who said what, when Nook is in the background or closed'
   const notifyButton = switchRow('Notifications', notifyAbout)
   const paintNotify = (): void => {
     const state = notifyState()

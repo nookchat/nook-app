@@ -12,6 +12,7 @@ import './styles.css'
 import { mentionsMe } from './chat'
 import { checkSupport } from './diagnostics'
 import { startStreaming } from './net/files'
+import { watchPush } from './net/push'
 import { watchPlaying } from './net/playing'
 import { SOUND_HELD } from './net/unlock'
 import { watchForDesktopUpdates, watchForUpdates } from './net/updates'
@@ -24,6 +25,7 @@ import { nameChosen, shortKey } from './store/identity'
 import { cleanChannel, DEFAULT_CHANNEL, type LogEvent } from './store/log'
 import { channelMuted } from './store/mute'
 import { newSpaceServer } from './store/server-spaces'
+import { ROOMS_CHANGED } from './store/notes'
 import { findSpace } from './store/spaces'
 import { lastScreen } from './store/screen'
 import { ask } from './ui/ask'
@@ -261,6 +263,40 @@ async function alertAbout(space: SpaceRuntime, events: LogEvent[]): Promise<void
 
 const linked = window.location.hash.startsWith(DEVICE_LINK_PREFIX) ? null : readLink()
 
+interface NotificationTarget {
+  room: string
+  ch?: string
+  dm?: string
+}
+
+/** A notification opened with Nook closed: the service worker puts where it was for in the address. */
+function notificationTarget(): NotificationTarget | null {
+  const query = new URLSearchParams(window.location.search)
+  const room = query.get('room') ?? ''
+  if (!/^[0-9a-f]{32}$/.test(room)) return null
+  history.replaceState(null, '', window.location.pathname + window.location.hash)
+  const ch = cleanChannel(query.get('ch') ?? '')
+  const dm = query.get('dm') ?? ''
+  return { room, ch: ch || undefined, dm: /^[0-9a-f]{64}$/.test(dm) ? dm : undefined }
+}
+
+/** The space and channel, or the direct message, a notification was about. */
+async function openFromNotification(target: NotificationTarget): Promise<void> {
+  const space = spaces.get(target.room)
+  if (!space) return showHome()
+  if (target.dm) return showHome({ room: space.room.id, key: target.dm })
+  if (!(active instanceof SpaceView && active.space === space)) openSpace(space)
+  if (target.ch) active?.openChannelNamed?.(target.ch)
+}
+
+// A notification clicked while a Nook window is open: the service worker hands it over.
+navigator.serviceWorker?.addEventListener('message', (ev: MessageEvent) => {
+  const data = ev.data as { type?: string } & Partial<NotificationTarget>
+  if (data?.type !== 'nook-open' || typeof data.room !== 'string') return
+  window.focus()
+  void spaces.load().then(() => openFromNotification({ room: data.room!, ch: data.ch, dm: data.dm }))
+})
+
 installCalls((space, key) => void showHome({ room: space.room.id, key }))
 
 drawEmojiAsArt()
@@ -289,9 +325,16 @@ async function start(): Promise<void> {
   }
   bootStep(50, 'Opening your spaces')
   const loaded = spaces.load()
+  void loaded.then(() => watchPush(() => spaces.all(), ROOMS_CHANGED))
   // A slow server does not keep the window blank: past this, home opens as usual.
   const listed = Promise.race([loaded, new Promise<void>((done) => window.setTimeout(done, RESUME_WAIT_MS))])
   const last = lastScreen()
+  const tapped = notificationTarget()
+  if (tapped && !linked) {
+    await listed
+    await openFromNotification(tapped)
+    return void settle()
+  }
   if (linked) {
     bootStep(65, 'Opening the space')
     await enter(linked.secret, linked.locked, '', false, '', linked.server)

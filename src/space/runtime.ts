@@ -3,10 +3,12 @@ import { Channel, connectionTo } from '../net/connection'
 import { SpaceFiles } from '../net/files'
 import { Mesh } from '../net/mesh'
 import { PLAYING_CHANGED, playingNow } from '../net/playing'
+import { pushAbout } from '../net/push'
 import { Voice } from '../net/voice'
 import { heardAt } from '../net/volume'
 import { deriveRoom, newPeerId, type Room } from '../room'
 import { rtcConfig } from '../rtc/config'
+import { KeyKeeper, SpaceKeys } from './keys'
 import { BACK_WITHIN_MS, takeVoiceNote, updatingNow } from './resume'
 import { channelMuted } from '../store/mute'
 import { SignalBus } from '../signal/bus'
@@ -91,6 +93,7 @@ export class SpaceRuntime {
   readonly selfId = newPeerId()
 
   room!: Room
+  keys!: SpaceKeys
   chat!: RoomChat
   channel!: Channel
   bus!: SignalBus
@@ -128,6 +131,8 @@ export class SpaceRuntime {
   /** People who said they are updating, by key: their voice comes back in a moment, with no sound. */
   private readonly comingBack = new Map<string, number>()
   private stopped = false
+  private keeper: KeyKeeper | null = null
+  private keyQueue: Promise<void> = Promise.resolve()
   private rememberQueue: Promise<void> = Promise.resolve()
 
   constructor(open: OpenSpace) {
@@ -145,19 +150,23 @@ export class SpaceRuntime {
 
   private async start(open: OpenSpace): Promise<void> {
     this.room = await deriveRoom(this.secret, this.password)
+    this.keys = new SpaceKeys(this.room.key)
     this.note = await this.book.get(this.room.id)
     // First, so the space is on your list even if the tab closes at once.
     await this.remember({})
 
     const identity = loadIdentity()
     const chat = new RoomChat(this.room.id, this.note?.founder ?? '')
-    chat.onChange = () => this.emit('changed')
+    chat.onChange = () => {
+      this.emit('changed')
+      this.keysChanged()
+    }
     chat.onDirect = () => this.emit('changed')
     chat.onFounder = (pubkey) => void this.remember({ founder: pubkey })
     chat.setDirectRead({ ...(this.note?.readDm ?? {}) })
     this.chat = chat
 
-    const channel = new Channel(connectionTo(this.server), this.room, serverTag(this.server))
+    const channel = new Channel(connectionTo(this.server), this.room, serverTag(this.server), this.keys)
     channel.onEvents = (events) => void this.take(events)
     channel.onLeft = (session) => this.drop(session, 'left')
     channel.onHere = (ids, up) => void this.checkHere(ids, up, Date.now())
@@ -166,7 +175,7 @@ export class SpaceRuntime {
     channel.onRefused = (why) => console.warn(`[nook] the server would not keep a write: ${why}`)
     this.channel = channel
 
-    const bus = new SignalBus(this.room, this.selfId, [channel])
+    const bus = new SignalBus(this.keys, this.selfId, [channel])
     const mesh = new Mesh(bus, this.selfId, identity.name)
     mesh.extra = () => ({
       key: identity.pubkey,
@@ -174,6 +183,7 @@ export class SpaceRuntime {
       voice: this.voice?.state.channel ?? undefined,
       muted: this.voice?.state.channel && this.voice.state.muted ? true : undefined,
       deafened: this.voice?.state.channel && this.voice.state.deafened ? true : undefined,
+      camera: this.voice?.state.channel && this.voice.cameraOn ? true : undefined,
       // How long, not since when: the clocks of two devices differ.
       voiceFor: this.voice?.state.channel ? Math.max(0, Date.now() - this.voice.state.since) : undefined,
       updating: updatingNow() ? true : undefined,
@@ -206,9 +216,14 @@ export class SpaceRuntime {
       this.emit('signal', env)
     }
     bus.onHealth = () => this.emit('status')
-    chat.onLocal = (event) => void channel.put([event])
+    chat.onLocal = (event) => {
+      void channel.put([event])
+      pushAbout(this, event)
+    }
     this.bus = bus
     this.mesh = mesh
+    // What we say about ourselves is sealed with the key in use, so a new one says it again.
+    this.keys.changed.add(this.announceAgain)
 
     this.iceReady = fetchIce(this.server).then((ice) => {
       this.ice = ice
@@ -231,7 +246,7 @@ export class SpaceRuntime {
     voice.volumeOf = (peer) => heardAt(this.keyOf(peer))
     voice.onChange = () => {
       const { channel: now, muted, deafened } = voice.state
-      const said = `${now}:${muted}:${deafened}`
+      const said = `${now}:${muted}:${deafened}:${voice.cameraOn}`
       // Your own mute and deafen, in the same channel: each has its sound, as Discord's do.
       const was = this.voiceWas?.split(':')
       if (was && now && was[0] === now && !this.hushVoice) {
@@ -256,6 +271,12 @@ export class SpaceRuntime {
 
     await Promise.race([channel.loaded, new Promise((r) => window.setTimeout(r, HISTORY_WAIT_MS))])
     if (this.stopped) return
+    // Only once the history is in: a device part way through it could think a key is missing.
+    void channel.loaded.then(() => {
+      if (this.stopped) return
+      this.keeper = new KeyKeeper(this.keys, chat.log, chat.me, (body) => chat.passKey(body))
+      this.keysChanged()
+    })
     void chat.readDirect()
 
     if (open.fresh && !chat.founder) {
@@ -365,6 +386,14 @@ export class SpaceRuntime {
 
   private readonly announceAgain = (): void => {
     this.mesh.announce()
+  }
+
+  /** Opens any new copy of a space key, then sees whether one needs making or passing on. */
+  private keysChanged(): void {
+    this.keyQueue = this.keyQueue
+      .then(() => this.keys.learn(this.chat.log, this.chat.me))
+      .then(() => this.keeper?.consider())
+      .catch((err) => console.warn('[nook] a space key did not open', err))
   }
 
   private async take(events: unknown[]): Promise<void> {
@@ -629,6 +658,8 @@ export class SpaceRuntime {
     this.stopped = true
     runningSpaces.delete(this)
     window.removeEventListener(PREFS_CHANGED, this.onPrefs)
+    this.keeper?.stop()
+    this.keys?.changed.delete(this.announceAgain)
     this.endCall()
     this.voice?.dispose()
     document.removeEventListener('visibilitychange', this.announceAgain)

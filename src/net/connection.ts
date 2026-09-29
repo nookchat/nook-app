@@ -1,5 +1,6 @@
 import { serverUrl } from '../backend'
 import type { Room } from '../room'
+import { tagged, untag, type SpaceKeys } from '../space/keys'
 import type { LogEvent } from '../store/log'
 import { backoffDelay, type Transport, type TransportEvents, type TransportStatus } from '../signal/transport'
 import { answered, discover, endpoints } from './cluster'
@@ -10,6 +11,8 @@ const HELD_SIGNAL_TTL_MS = 20_000
 /** Well under the largest frame the server accepts. */
 const PUT_BATCH_BYTES = 600_000
 const FAILURES_BEFORE_NEXT_SERVER = 2
+/** Lines sealed with a key this device does not hold yet, kept to open once it does. */
+const HELD_LINES_LIMIT = 20_000
 
 type Incoming =
   | { t: 'page' | 'ev'; room: string; at: number; lines: unknown[] }
@@ -35,6 +38,16 @@ export class Connection {
   constructor(base: string) {
     this.base = serverUrl(base)
     void discover(this.base)
+    // Back on the network, or back at the screen: try now, not at the end of the wait.
+    window.addEventListener('online', this.now)
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) this.now()
+    })
+  }
+
+  private readonly now = (): void => {
+    if (this.retryTimer === null || this.channels.size === 0) return
+    this.dial()
   }
 
   get open(): boolean {
@@ -170,6 +183,7 @@ export function connectionTo(server: string): Connection {
 export class Channel implements Transport {
   readonly name: string
   readonly room: Room
+  readonly keys: SpaceKeys
 
   onEvents: ((events: unknown[]) => void) | null = null
   onLeft: ((session: string) => void) | null = null
@@ -199,12 +213,45 @@ export class Channel implements Transport {
   private markLoaded: () => void = () => undefined
   private helloAt = 0
   private openInOrder: Promise<void> = Promise.resolve()
+  private waiting: string[] = []
 
-  constructor(connection: Connection, room: Room, name: string) {
+  constructor(connection: Connection, room: Room, name: string, keys: SpaceKeys) {
     this.connection = connection
     this.room = room
     this.name = name
+    this.keys = keys
     this.loaded = new Promise((done) => (this.markLoaded = done))
+    keys.changed.add(this.openWaiting)
+  }
+
+  /** A key event goes out under the code's own key, so somebody who has only the code can find their copy. */
+  private sealLine(event: LogEvent): Promise<string> {
+    const { tag, key } = event.kind === 'key' ? { tag: '', key: this.keys.base } : this.keys.writing
+    return sealEvent(key, event).then((wire) => tagged(tag, wire))
+  }
+
+  private async openOne(line: unknown): Promise<unknown> {
+    if (typeof line !== 'string') return null
+    const { tag, wire } = untag(line)
+    const key = this.keys.key(tag)
+    if (key) return openLine(key, wire)
+    if (this.waiting.length >= HELD_LINES_LIMIT) this.waiting.shift()
+    this.waiting.push(line)
+    return null
+  }
+
+  /** A key has come: the lines kept for it open now. */
+  private readonly openWaiting = (): void => {
+    const ready = this.waiting.filter((line) => this.keys.key(untag(line).tag))
+    if (ready.length === 0) return
+    this.waiting = this.waiting.filter((line) => !this.keys.key(untag(line).tag))
+    this.openInOrder = this.openInOrder.then(() => this.deliverLines(ready))
+  }
+
+  private async deliverLines(lines: unknown[]): Promise<void> {
+    const opened = await Promise.all(lines.map((line) => this.openOne(line)))
+    const events = opened.filter((e) => e !== null)
+    if (events.length) this.onEvents?.(events)
   }
 
   get serving(): string {
@@ -248,13 +295,15 @@ export class Channel implements Transport {
 
   close(): void {
     this.signals = []
+    this.waiting = []
+    this.keys.changed.delete(this.openWaiting)
     this.connection.remove(this.room.id, this)
     this.statusChanged('idle')
   }
 
   async put(events: LogEvent[]): Promise<void> {
     if (events.length === 0) return
-    const lines = await Promise.all(events.map((e) => sealEvent(this.room.key, e)))
+    const lines = await Promise.all(events.map((e) => this.sealLine(e)))
     let batch: string[] = []
     let size = 0
     const flush = (): void => {
@@ -307,11 +356,7 @@ export class Channel implements Transport {
         if (!Array.isArray(lines)) return
         // Lines arrive in order, so the highest number seen covers everything below it.
         if (at > this.at) this.at = at
-        this.openInOrder = this.openInOrder.then(async () => {
-          const opened = await Promise.all(lines.map((line) => openLine(this.room.key, line)))
-          const events = opened.filter((e) => e !== null)
-          if (events.length) this.onEvents?.(events)
-        })
+        this.openInOrder = this.openInOrder.then(() => this.deliverLines(lines))
         return
       }
       case 'live': {
