@@ -217,6 +217,7 @@ function tellUpdate(offer) {
 
 ipcMain.handle('update:now', (ev) => (isHome(ev.sender.getURL()) ? (updates?.now() ?? null) : null))
 ipcMain.handle('app:version', () => app.getVersion())
+ipcMain.handle('update:check', (ev) => (isHome(ev.sender.getURL()) && updates ? updates.check() : { state: 'failed' }))
 ipcMain.on('update:install', (ev) => {
   if (!isHome(ev.sender.getURL()) || !updates) return
   if (updates.now()?.ready) installing = true

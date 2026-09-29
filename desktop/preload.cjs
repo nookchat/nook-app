@@ -33,6 +33,8 @@ contextBridge.exposeInMainWorld('nookDesktop', {
     void ipcRenderer.invoke('update:now').then((offer) => heard(null, offer))
     return () => ipcRenderer.removeListener('update:offer', heard)
   },
+  /** Looks for a newer desktop app now: { state: newest | available | downloading | ready | failed | dev, version? }. */
+  checkUpdate: () => ipcRenderer.invoke('update:check'),
   /** Restarts into the update when it has downloaded, or opens the download page. */
   installUpdate: () => ipcRenderer.send('update:install'),
   /** The unread count on the Dock or taskbar icon. `overlay` is a PNG data URL, for Windows. */

@@ -49,7 +49,7 @@ function watchUpdates(tell) {
     tell(offer)
   }
 
-  if (!app.isPackaged) return { now: () => null, install: () => undefined }
+  if (!app.isPackaged) return { now: () => null, install: () => undefined, check: async () => ({ state: 'dev' }) }
 
   if (process.platform === 'darwin') {
     const look = async () => {
@@ -58,7 +58,14 @@ function watchUpdates(tell) {
     }
     setTimeout(look, FIRST_CHECK_MS)
     setInterval(look, CHECK_MS)
-    return { now: () => offer, install: () => shell.openExternal(RELEASES) }
+    const check = async () => {
+      const newest = await newestRelease()
+      if (!newest) return { state: 'failed' }
+      if (compareVersions(newest, app.getVersion()) <= 0) return { state: 'newest' }
+      say({ version: newest, ready: false })
+      return { state: 'available', version: newest }
+    }
+    return { now: () => offer, install: () => shell.openExternal(RELEASES), check }
   }
 
   const { autoUpdater } = require('electron-updater')
@@ -69,8 +76,21 @@ function watchUpdates(tell) {
   const look = () => void autoUpdater.checkForUpdates().catch(() => undefined)
   setTimeout(look, FIRST_CHECK_MS)
   setInterval(look, CHECK_MS)
+  // From the About page: what the look found. A newer version downloads by itself.
+  const check = async () => {
+    if (offer?.ready) return { state: 'ready', version: offer.version }
+    try {
+      const found = await autoUpdater.checkForUpdates()
+      const version = found?.updateInfo?.version
+      if (version && compareVersions(version, app.getVersion()) > 0) return { state: 'downloading', version }
+      return { state: 'newest' }
+    } catch {
+      return { state: 'failed' }
+    }
+  }
   return {
     now: () => offer,
+    check,
     // Silent, and opened again after: the page asked, so no installer screens.
     install: () => (offer?.ready ? autoUpdater.quitAndInstall(true, true) : shell.openExternal(RELEASES)),
   }

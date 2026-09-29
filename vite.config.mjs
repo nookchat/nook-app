@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -89,10 +90,27 @@ function emojiArt() {
   }
 }
 
+/** The commit this is built from, for the About page. Vercel says it; a local build asks git. */
+function commit() {
+  const sha = process.env.VERCEL_GIT_COMMIT_SHA
+  if (sha) return sha.slice(0, 7)
+  try {
+    return execFileSync('git', ['rev-parse', '--short=7', 'HEAD'], { encoding: 'utf8' }).trim()
+  } catch {
+    return ''
+  }
+}
+
+const VERSION = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version
+
 export default defineConfig({
   // Relative, so the build works from any sub path on a static host.
   base: './',
   plugins: [emojiArt(), keepTheApp()],
+  define: {
+    __NOOK_VERSION__: JSON.stringify(VERSION),
+    __NOOK_COMMIT__: JSON.stringify(commit()),
+  },
   server: {
     host: true,
     port: 5173,

@@ -6,6 +6,7 @@ import { PLAYING_CHANGED, playingNow, seesGames, setShowsPlaying, showsPlaying }
 import { loadIdentity, saveDisplayName } from '../store/identity'
 import { spaces } from '../space/registry'
 import { addServer, knownServers, newSpaceServer, ownServers } from '../store/server-spaces'
+import { aboutSettings } from './about'
 import { saveAvatar, squareThumb } from './avatar'
 import { avatarOf } from './chat-panel'
 import { clear, copyText, h } from './dom'
@@ -450,6 +451,12 @@ export function settingsView(actions: SettingsActions): HTMLElement {
         drawServers()
         return h('div', { class: 'stack settings-stack' }, [card('Your servers', serverList, addOpen, addRow, own)])
       },
+    },
+    {
+      id: 'about',
+      label: 'About',
+      icon: 'info',
+      build: () => aboutSettings(),
     },
   ]
 

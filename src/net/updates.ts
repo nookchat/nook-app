@@ -17,6 +17,8 @@ export interface UpdateHooks {
 }
 
 let hooks: UpdateHooks = { inCall: () => false, beforeReload: async () => undefined }
+/** Offers a worker that has its files. Set once the service worker is ready. */
+let offerWorker: ((worker: ServiceWorker) => void) | null = null
 
 /**
  * A new version downloads in the background, as a new service worker. When it
@@ -73,6 +75,7 @@ export function watchForUpdates(given: UpdateHooks): void {
       )
     }
 
+    offerWorker = offer
     if (reg.waiting) offer(reg.waiting)
     reg.addEventListener('updatefound', () => {
       const worker = reg.installing
@@ -89,6 +92,25 @@ export function watchForUpdates(given: UpdateHooks): void {
       if (document.visibilityState === 'visible') check()
     })
   })
+}
+
+export type WebCheck = 'newest' | 'ready' | 'unsupported' | 'failed'
+
+/** Check for updates, from the About page. A new version is offered as usual. */
+export async function checkForUpdate(): Promise<WebCheck> {
+  if (!('serviceWorker' in navigator) || !window.isSecureContext) return 'unsupported'
+  const reg = await navigator.serviceWorker.getRegistration()
+  if (!reg) return 'unsupported'
+  try {
+    await reg.update()
+  } catch {
+    return 'failed'
+  }
+  if (reg.installing) await settled(reg.installing)
+  if (!reg.waiting || !navigator.serviceWorker.controller) return 'newest'
+  document.querySelector('.update-pop')?.remove()
+  offerWorker?.(reg.waiting)
+  return 'ready'
 }
 
 /**

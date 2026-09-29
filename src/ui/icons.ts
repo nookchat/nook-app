@@ -59,6 +59,7 @@ export type IconName =
   | 'phone'
   | 'device'
   | 'keyboard'
+  | 'info'
   | 'ghost'
   | 'vanish'
   | 'sun'
@@ -173,6 +174,7 @@ const ICONS: Record<IconName, string | Drawing> = {
   file: 'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5',
   music: 'M9 18V6l10-2v12M9 18a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0zM19 16a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z',
   device: `${rect(7, 3, 10, 18, 2)}M11 18h2`,
+  info: { line: `${circle(12, 12, 9)}M12 11v5.5`, solid: circle(12, 7.8, 1.1) },
   keyboard: `${rect(3, 6, 18, 12, 2)}M7 10h.01M11 10h.01M15 10h.01M17 10h.01M7 14h.01M17 14h.01M10 14h4`,
 }
 
