@@ -121,8 +121,6 @@ export class SpaceRuntime {
   private stillHere = 0
   /** When the minute's check last ran. A page that slept has heard nobody, and drops nobody for it. */
   private lastLook = 0
-  /** The server keeps a list of who is here. Only an old one does not, and silence is the clue then. */
-  private serverLists = false
   private stopped = false
   private keeper: KeyKeeper | null = null
   private keyQueue: Promise<void> = Promise.resolve()
@@ -307,7 +305,6 @@ export class SpaceRuntime {
    * its "left" never came. Just after the server starts, the others are still on their way back.
    */
   private async checkHere(ids: Set<string>, up: number, at: number): Promise<void> {
-    this.serverLists = true
     await this.bus?.settled()
     if (this.stopped || up < EVERYONE_WAIT_MS) return
     for (const peer of this.mesh?.peers() ?? []) {
@@ -317,14 +314,19 @@ export class SpaceRuntime {
     }
   }
 
-  /** Each minute: say we are here, ask the server who else is, and let go of the long silent. */
+  /**
+   * Each minute: say we are here, ask the server who else is, and let go of the long silent.
+   * Everybody here says so each minute, so three silent minutes is gone even when the server
+   * still lists them: an old server can keep a session that left. A mistake comes back with
+   * their next announce.
+   */
   private readonly lookAround = (): void => {
     this.mesh.announce()
     this.channel.askWho()
     const now = Date.now()
     const slept = now - this.lastLook > 2 * STILL_HERE_MS
     this.lastLook = now
-    if (slept || this.serverLists) return
+    if (slept) return
     for (const peer of this.mesh.peers()) {
       if (now - peer.lastSeen < SILENT_GONE_MS || this.voice?.inCallWith(peer.id)) continue
       this.drop(peer.id, 'silent')

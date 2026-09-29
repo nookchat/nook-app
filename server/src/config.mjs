@@ -61,4 +61,4 @@ export const MAX_ROOM_SOCKETS = Number(env.NOOK_MAX_ROOM_SOCKETS ?? 200)
 export const RATE_PER_S = Number(env.NOOK_RATE ?? 30)
 export const RATE_BURST = Number(env.NOOK_RATE_BURST ?? 120)
 
-export const VERSION = '1.5.0'
+export const VERSION = '1.5.1'

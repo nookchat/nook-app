@@ -228,6 +228,8 @@ export class Channel implements Transport {
   private helloAt = 0
   private openInOrder: Promise<void> = Promise.resolve()
   private waiting: string[] = []
+  /** Closed: it has said it left, and a last announce on its way must not have it back. */
+  private closed = false
 
   constructor(connection: Connection, room: Room, name: string, keys: SpaceKeys) {
     this.connection = connection
@@ -281,6 +283,7 @@ export class Channel implements Transport {
   }
 
   private send(message: Outgoing): boolean {
+    if (this.closed) return false
     return this.connection.send({ ...message, room: this.room.id })
   }
 
@@ -308,6 +311,7 @@ export class Channel implements Transport {
   }
 
   close(): void {
+    this.closed = true
     this.signals = []
     this.waiting = []
     this.keys.changed.delete(this.openWaiting)

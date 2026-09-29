@@ -10,6 +10,11 @@ const MAX_ROOMS_PER_SOCKET = 500
 // A peer that dies silently is dropped within two pings.
 const PING_MS = 10_000
 const SESSION_ID = /^[0-9a-f]{1,32}$/
+/**
+ * Every page says it is here once a minute. A session not heard from for this long has gone,
+ * whatever its socket says: it is taken off the list, and the others are told it left.
+ */
+const STATE_STALE_MS = Number(process.env.NOOK_STATE_STALE_MS) || 210_000
 
 const roomMembers = new Map()
 const sockets = new Set()
@@ -28,11 +33,13 @@ function holds(room, id) {
   return false
 }
 
+const fresh = (state, now = Date.now()) => now - state.at < STATE_STALE_MS
+
 /** Every live session in the room, here and on the peers: the truth about who is here. */
 function hereNow(room) {
   const ids = new Set()
-  for (const member of roomMembers.get(room) ?? []) if (member.state) ids.add(member.state.id)
-  for (const session of remoteSessions.get(room)?.values() ?? []) ids.add(session.id)
+  for (const member of roomMembers.get(room) ?? []) if (member.state && fresh(member.state)) ids.add(member.state.id)
+  for (const session of remoteSessions.get(room)?.values() ?? []) if (fresh(session)) ids.add(session.id)
   // How long this server has been up: just after a start, the others are still coming back.
   return { t: 'here', ids: [...ids], up: Math.round(process.uptime() * 1000) }
 }
@@ -40,7 +47,9 @@ function hereNow(room) {
 export function localStates() {
   const out = []
   for (const [room, members] of roomMembers) {
-    for (const member of members) if (member.state) out.push({ room, kind: 'state', id: member.state.id, d: member.state.d })
+    for (const member of members) {
+      if (member.state && fresh(member.state)) out.push({ room, kind: 'state', id: member.state.id, d: member.state.d })
+    }
   }
   return out
 }
@@ -104,7 +113,7 @@ export function fromPeerLive(peer, event) {
   if (event.kind === 'state' && typeof event.d === 'string') {
     let sessions = remoteSessions.get(event.room)
     if (!sessions) remoteSessions.set(event.room, (sessions = new Map()))
-    sessions.set(key, { peer, id: event.id, d: event.d })
+    sessions.set(key, { peer, id: event.id, d: event.d, at: Date.now() })
     toRoom(event.room, { t: 'sig', d: event.d })
   } else if (event.kind === 'left') {
     const sessions = remoteSessions.get(event.room)
@@ -171,10 +180,10 @@ async function stream(member, from, live) {
     }
     if (live) {
       for (const other of roomMembers.get(member.room) ?? []) {
-        if (other !== member && other.state) deliver(member, { t: 'sig', d: other.state.d }, false)
+        if (other !== member && other.state && fresh(other.state)) deliver(member, { t: 'sig', d: other.state.d }, false)
       }
       for (const session of remoteSessions.get(member.room)?.values() ?? []) {
-        deliver(member, { t: 'sig', d: session.d }, false)
+        if (fresh(session)) deliver(member, { t: 'sig', d: session.d }, false)
       }
       deliver(member, hereNow(member.room), false)
       deliver(member, { t: 'live', at: Math.max(cursor, await newest(member.room)) }, false)
@@ -200,10 +209,15 @@ async function onMessage(socket, single, payload) {
   const isSingle = single !== null
 
   if (message.t === 'leave') {
+    socket.nookLeft.add(room)
     const member = socket.nookRooms.get(room)
     if (member) part(member)
     return
   }
+  // After a leave, only a hello comes back in. A last announce that was on its way would
+  // have the session back, on a socket that stays open, and nothing would take it away.
+  if (message.t === 'hello' || message.t === 'get') socket.nookLeft.delete(room)
+  else if (socket.nookLeft.has(room)) return
 
   const member = join(socket, room, isSingle)
   if (!member) {
@@ -243,7 +257,7 @@ async function onMessage(socket, single, payload) {
       if (typeof message.d !== 'string' || message.d.length > MAX_SIGNAL) return
       if (typeof message.id !== 'string' || !SESSION_ID.test(message.id)) return
       const was = member.state?.id
-      member.state = { id: message.id, d: message.d }
+      member.state = { id: message.id, d: message.d, at: Date.now() }
       if (was && was !== message.id) gone(room, was)
       toRoom(room, { t: 'sig', d: message.d }, member)
       emitLive({ room, kind: 'state', id: message.id, d: message.d })
@@ -275,6 +289,7 @@ function open(req, socket, single) {
   socket.setNoDelay(true)
   socket.nookAlive = true
   socket.nookRooms = new Map()
+  socket.nookLeft = new Set()
   sockets.add(socket)
 
   const away = () => {
@@ -383,7 +398,29 @@ export function closeAll() {
   for (const socket of sockets) socket.destroy()
 }
 
+/** Takes off every session that has not said it is here for a while, here and from the peers. */
+function dropStale() {
+  const now = Date.now()
+  for (const [room, members] of roomMembers) {
+    for (const member of members) {
+      if (!member.state || fresh(member.state, now)) continue
+      const { id } = member.state
+      member.state = null
+      gone(room, id)
+    }
+  }
+  for (const [room, sessions] of remoteSessions) {
+    for (const [key, session] of sessions) {
+      if (fresh(session, now)) continue
+      sessions.delete(key)
+      if (!holds(room, session.id)) toRoom(room, { t: 'left', id: session.id })
+    }
+    if (sessions.size === 0) remoteSessions.delete(room)
+  }
+}
+
 setInterval(() => {
+  dropStale()
   for (const socket of sockets) {
     if (!socket.nookAlive) {
       socket.destroy()

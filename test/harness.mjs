@@ -56,7 +56,30 @@ export async function answer(page, text) {
 
 export async function launch({ args = [], named = true, ...options } = {}) {
   const browser = await chromium.launch({ executablePath: CHROME, headless: HEADLESS, args: [...args, FAKE_SPEAKER], ...options })
+  silenceEveryone(browser)
   return named ? nameEveryone(browser) : browser
+}
+
+/**
+ * No check ever speaks. Text to speech goes through the computer's own voice, not the browser's
+ * sound, so the fake speaker does not stop it: every page gets a speechSynthesis that says nothing.
+ */
+export function silenceEveryone(browser) {
+  const newContext = browser.newContext.bind(browser)
+  browser.newContext = async (...args) => {
+    const context = await newContext(...args)
+    await context.addInitScript(() => {
+      const quiet = { speak: () => undefined, cancel: () => undefined, pause: () => undefined, resume: () => undefined, getVoices: () => [] }
+      try {
+        Object.defineProperty(window, 'speechSynthesis', { value: quiet, configurable: false })
+      } catch {
+        /* already quiet */
+      }
+    })
+    return context
+  }
+  browser.newPage = async (...args) => (await browser.newContext(...args)).newPage()
+  return browser
 }
 
 export function nameEveryone(browser) {

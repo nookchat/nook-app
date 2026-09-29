@@ -98,26 +98,9 @@ try {
   await say(alice, '//not a command')
   check('two slashes says one', (await texts(alice)).includes('/not a command'))
 
-  // The voice is stubbed: a test rig has no speakers worth trusting.
-  await bob.evaluate(() => {
-    window.__spoken = []
-    window.speechSynthesis.speak = (u) => window.__spoken.push(u.text)
-  })
-  await say(alice, '/tts hello out there')
-  const bobHeard = await bob
-    .waitForFunction(() => window.__spoken.includes('hello out there'), null, { timeout: 15_000 })
-    .then(() => true)
-    .catch(() => false)
-  check('/tts is read aloud on the other side', bobHeard)
-  check('and the line is written down too', (await texts(alice)).includes('hello out there'))
-
-  await alice.fill(BOX, '/tts too soon')
-  await alice.press(BOX, 'Enter')
-  await alice.waitForTimeout(400)
-  const ttsRationed = await alice.evaluate(() =>
-    [...document.querySelectorAll('.toast')].some((t) => t.textContent.includes('Easy')),
-  )
-  check('a second spoken line straight after is rationed', ttsRationed)
+  // No check ever speaks out loud: every page the harness opens has a voice that says nothing.
+  const quiet = await bob.evaluate(() => !/native code/.test(String(window.speechSynthesis.speak)))
+  check('no page in a check can speak out loud', quiet)
 
   await say(alice, '/topic what we are doing today')
   await alice.waitForTimeout(500)
