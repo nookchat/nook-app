@@ -162,6 +162,7 @@ try {
   const scanned = await host.evaluate(async () => {
     const svg = document.querySelector('.qr-frame svg')
     if (!svg) return { error: 'no QR was drawn' }
+    if (!window.BarcodeDetector) return { skipped: true }
     const blob = new Blob([new XMLSerializer().serializeToString(svg)], { type: 'image/svg+xml' })
     const url = URL.createObjectURL(blob)
     try {
@@ -187,7 +188,9 @@ try {
       URL.revokeObjectURL(url)
     }
   })
-  check('the QR code decodes back to the link', scanned.value === link, scanned.error ?? scanned.value ?? 'nothing')
+  // Chrome reads QR codes on macOS, Android and ChromeOS only: elsewhere qr.test.mjs checks the code.
+  if (scanned.skipped) console.log('SKIP  the QR code decodes back to the link  (no BarcodeDetector here)')
+  else check('the QR code decodes back to the link', scanned.value === link, scanned.error ?? scanned.value ?? 'nothing')
   await host.keyboard.press('Escape')
 
   // A second profile, because two tabs of one profile are one person with two windows.

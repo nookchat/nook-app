@@ -6394,3 +6394,15 @@ input.invalid:focus {
   margin-left: -6px;
   color: var(--good);
 }
+
+/* The desktop app's window buttons, drawn by desktop/preload.cjs. A shell from before
+   0.3.2 left them to the page's button style, which rounded them into an egg. */
+#nook-titlebar .controls button {
+  min-height: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+#nook-titlebar .controls button:active {
+  transform: none;
+}

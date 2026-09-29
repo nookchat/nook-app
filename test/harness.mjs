@@ -1,5 +1,9 @@
+import { mkdirSync } from 'node:fs'
 import { setTimeout as wait } from 'node:timers/promises'
 import { chromium } from 'playwright-core'
+
+// Screenshots go here. It is not in git, so a fresh checkout has to make it.
+mkdirSync(new URL('../test-output/', import.meta.url), { recursive: true })
 
 export const APP_URL = process.env.APP_URL ?? 'http://localhost:5173/'
 export const CHROME = process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'

@@ -1,4 +1,4 @@
-import { APP_URL, check, finish, hostAndShare, joinAndWatch, launch, stoppedEarly } from './harness.mjs'
+import { APP_URL, FAKE_MEDIA, check, finish, hostAndShare, joinAndWatch, launch, stoppedEarly } from './harness.mjs'
 
 const STUB = `(() => {
   const c = document.createElement('canvas')
@@ -35,7 +35,8 @@ const GAME_SETTINGS = `localStorage.setItem('nook.settings.v1', ${JSON.stringify
   }),
 )})`
 
-const hostBrowser = await launch({ args: ['--use-fake-ui-for-media-stream'] })
+// A fake microphone too: joining the voice channel opens one, and a CI machine has none.
+const hostBrowser = await launch({ args: FAKE_MEDIA })
 // A viewer with no HEVC at all, the way an older or a Linux machine looks.
 const viewerBrowser = await launch({ args: ['--disable-features=PlatformHEVCDecoderSupport,WebRtcAllowH265Receive'] })
 

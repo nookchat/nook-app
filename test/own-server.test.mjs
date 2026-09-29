@@ -12,7 +12,15 @@ const vite = spawn('npx', ['vite', '--port', String(PAGE_PORT), '--strictPort'],
   env: { ...process.env, VITE_NOOK_SERVER: '' },
   stdio: ['ignore', 'pipe', 'inherit'],
 })
-await new Promise((ready) => vite.stdout.on('data', (b) => /Local:/.test(String(b)) && ready()))
+// "ready in", not "Local:": Vite colours the word Local on a CI machine, which splits it from its colon.
+await new Promise((ready, fail) => {
+  const late = setTimeout(() => fail(new Error('Vite did not start')), 30_000)
+  vite.stdout.on('data', (b) => {
+    if (!/ready in/.test(String(b))) return
+    clearTimeout(late)
+    ready()
+  })
+})
 
 const browser = await launch()
 

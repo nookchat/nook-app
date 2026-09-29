@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process'
 import { readdirSync } from 'node:fs'
 
 const dir = new URL('.', import.meta.url).pathname
+const CHECK_MOST_MS = 5 * 60 * 1000
 const wanted = process.argv.slice(2)
 const checks = readdirSync(dir)
   .filter((file) => file.endsWith('.test.mjs'))
@@ -12,8 +13,10 @@ const failed = []
 for (const name of checks) {
   console.log(`\n# ${name}`)
   const started = Date.now()
-  const { status } = spawnSync(process.execPath, [`${dir}${name}.test.mjs`], { stdio: 'inherit' })
-  console.log(`# ${name}: ${status === 0 ? 'ok' : 'FAILED'} in ${((Date.now() - started) / 1000).toFixed(0)} s`)
+  // One check that hangs must not hold up the rest.
+  const { status, error } = spawnSync(process.execPath, [`${dir}${name}.test.mjs`], { stdio: 'inherit', timeout: CHECK_MOST_MS })
+  const why = error?.code === 'ETIMEDOUT' ? ` (stopped after ${CHECK_MOST_MS / 60_000} minutes)` : ''
+  console.log(`# ${name}: ${status === 0 ? 'ok' : 'FAILED'} in ${((Date.now() - started) / 1000).toFixed(0)} s${why}`)
   if (status !== 0) failed.push(name)
 }
 
