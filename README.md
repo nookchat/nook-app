@@ -352,10 +352,14 @@ trackpad pinch, zooms anywhere.
   the running programs every 15 seconds, while Settings lets it.
 - **Desktop updates:** the desktop app looks for a newer version in the
   [GitHub releases](https://github.com/nookchat/nook-app/releases) at start
-  and every 4 hours (`desktop/updates.cjs`). On Windows and Linux it
-  downloads it, and the page offers Restart; if nobody restarts, it installs
-  on the next quit. macOS installs only an update signed by a known
-  developer, which this build is not, so there the page offers the download.
+  and every 4 hours (`desktop/updates.cjs`), and downloads it. The page offers
+  Restart, which also takes a waiting web update, so both go in at once and
+  you come back to the same screen and call; a web update found while a
+  desktop one downloads waits for it. Later means this start: the update
+  goes in on the next quit. Windows and Linux use electron-updater. macOS
+  installs only updates signed by a known developer, which this build is
+  not, so there the shell checks the download against `SHA256SUMS.txt` and
+  puts the new app in place itself.
 
 To release, raise `version` in `package.json` and `desktop/package.json`,
 commit, and push a tag of that version:
@@ -385,4 +389,9 @@ Set `NOOK_URL` to point the shell at another home.
 
 The emoji pictures are [Twemoji](https://github.com/jdecked/twemoji), by
 Twitter and its contributors, under [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+
+The app's sounds (joining, leaving, a message, a mention, a call ringing, mute
+and deafen) are from [Interface Sounds](https://kenney.nl/assets/interface-sounds)
+by Kenney, under [CC0](https://creativecommons.org/publicdomain/zero/1.0/). They
+are in `public/sounds`, with Kenney's licence.
 They are Twemoji 17, from its GitHub release, as the `twemoji-art` package.

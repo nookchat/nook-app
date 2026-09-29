@@ -297,6 +297,9 @@ if (!app.requestSingleInstanceLock()) {
     })
   })
 
+  // A quit from outside, as a shutdown sends, is a quit like any other: an update goes in on it.
+  process.on('SIGTERM', () => app.quit())
+
   app.on('window-all-closed', () => {
     games?.stop()
     games = null

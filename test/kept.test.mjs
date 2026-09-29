@@ -99,6 +99,20 @@ try {
   await alice.click('.ask-modal button:text-is("Save")')
   const back = await poll(async () => (await textRail(carol)).includes('staff'), 20_000)
   check('opened up again, the member sees staff', back)
+
+  // The soundboard is a level's to have: a moderator has it, a member does not.
+  await bob.click('.voice-channel .rail-item:has-text("lounge")')
+  await carol.click('.voice-channel .rail-item:has-text("lounge")')
+  await bob.waitForSelector('.voice-bar:not(.hidden)', { timeout: 15_000 })
+  await carol.waitForSelector('.voice-bar:not(.hidden)', { timeout: 15_000 })
+  check('a moderator in voice has the soundboard', (await bob.locator('.voice-bar button[aria-label="Soundboard"]').count()) === 1)
+  check('a member in voice does not', (await carol.locator('.voice-bar button[aria-label="Soundboard"]').count()) === 0)
+  await carol.click('[aria-label="Write a message"]')
+  await carol.keyboard.type('/sound')
+  await carol.keyboard.press('Escape')
+  await carol.keyboard.press('Enter')
+  const told = await poll(() => carol.$$eval('.toast', (els) => els.some((t) => t.textContent.includes('cannot use the soundboard'))), 5000)
+  check('and /sound says so', told)
 } catch (err) {
   stoppedEarly(err)
 } finally {

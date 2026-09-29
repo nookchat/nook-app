@@ -28,7 +28,7 @@ const KNOWN_KINDS = new Set<string>(EVENT_KINDS)
 /** A level's id, or 'kicked'. */
 export type Role = string
 
-export type Permission = 'channels' | 'pin' | 'delete' | 'remove' | 'move' | 'levels' | 'space'
+export type Permission = 'channels' | 'pin' | 'delete' | 'remove' | 'move' | 'soundboard' | 'levels' | 'space'
 
 export const PERMISSIONS: { id: Permission; label: string; about: string }[] = [
   { id: 'channels', label: 'Channels', about: 'Make, rename and delete channels' },
@@ -36,6 +36,7 @@ export const PERMISSIONS: { id: Permission; label: string; about: string }[] = [
   { id: 'delete', label: 'Delete messages', about: 'Take down what anybody wrote' },
   { id: 'remove', label: 'Remove people', about: 'Remove somebody, or let them back in' },
   { id: 'move', label: 'Move people', about: 'Move somebody into your voice channel' },
+  { id: 'soundboard', label: 'Soundboard', about: 'Play sounds in a voice channel, and add them' },
   { id: 'levels', label: 'Levels', about: 'Change levels below theirs, and put people on them' },
   { id: 'space', label: 'The space', about: 'Rename it, clear its history, or delete it' },
 ]
@@ -58,7 +59,7 @@ const OWNER_RANK = 1000
 const STARTING_LEVELS: Level[] = [
   { id: OWNER, name: 'Owner', colour: '#f0b232', rank: OWNER_RANK, can: ALL },
   { id: 'admin', name: 'Admin', colour: '#f25f5c', rank: 100, can: ALL },
-  { id: 'mod', name: 'Moderator', colour: '#3ddc84', rank: 50, can: ['pin', 'delete', 'remove', 'move'] },
+  { id: 'mod', name: 'Moderator', colour: '#3ddc84', rank: 50, can: ['pin', 'delete', 'remove', 'move', 'soundboard'] },
   { id: MEMBER, name: 'Member', colour: '', rank: 0, can: [] },
 ]
 
@@ -584,6 +585,8 @@ export class RoomLog {
       const gone = new Set<string>()
       for (const e of this.all()) {
         if (e.kind !== 'board' || auth.isKicked(e.author)) continue
+        // Only somebody whose level has the soundboard adds to it, or changes a sound on it.
+        if (e.body.gone !== true && !auth.can(e.author, 'soundboard')) continue
         const id = cleanNoteId(e.body.id)
         if (!id || gone.has(id)) continue
         const had = sounds.get(id)

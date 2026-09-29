@@ -158,6 +158,13 @@ async function stageMac(version) {
 
 /** The new app in place of this one, then it starts. The old one goes on its next start. */
 function swapAndRelaunch(staged) {
+  swapIn(staged)
+  app.relaunch()
+  app.exit(0)
+}
+
+/** The new app in place of this one, which keeps running from where it was until it quits. */
+function swapIn(staged) {
   const bundle = bundlePath()
   const old = path.join(path.dirname(bundle), '.Nook-old.app')
   fs.rmSync(old, { recursive: true, force: true })
@@ -172,8 +179,6 @@ function swapAndRelaunch(staged) {
     fs.renameSync(old, bundle)
     throw err
   }
-  app.relaunch()
-  app.exit(0)
 }
 
 function watchMac(say, now) {
@@ -204,6 +209,16 @@ function watchMac(say, now) {
   }
   setTimeout(() => void look(), FIRST_CHECK_MS)
   setInterval(() => void look(), CHECK_MS)
+  // As Windows does: an update that has downloaded goes in on quit, so the next start is new.
+  app.on('will-quit', () => {
+    if (!staged) return
+    try {
+      swapIn(staged.app)
+    } catch {
+      /* it stays for the next quit, or the next start downloads it again */
+    }
+    staged = null
+  })
 
   return {
     now,

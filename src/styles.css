@@ -1281,6 +1281,8 @@ details.adv[open] > summary {
 .surface-bar button.icon-only {
   width: 30px;
   min-width: 30px;
+  height: 30px;
+  min-height: 30px;
 }
 
 .surface-bar .divider {
@@ -1929,12 +1931,16 @@ button.voice-bar-state:hover:not(:disabled) {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+/* Circles, not the width of their column: an icon button is round. */
 button.voice-tool {
-  min-width: 0;
-  min-height: 36px;
+  justify-self: center;
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  min-height: 40px;
   padding: 0;
   border: 0;
-  border-radius: var(--radius-pill);
+  border-radius: 50%;
   background: var(--surface-1);
   box-shadow: none;
   color: var(--fg-dim);
@@ -4145,7 +4151,8 @@ input[type="range"].vp-volume {
 }
 
 /* Back to the newest message: a round arrow at the bottom right of the conversation. */
-.to-bottom {
+/* button.to-bottom, not .to-bottom: button.icon-only would narrow it into an oval. */
+button.to-bottom {
   position: absolute;
   right: 20px;
   bottom: 12px;
@@ -4163,7 +4170,7 @@ input[type="range"].vp-volume {
   font-size: var(--size-small);
 }
 
-.to-bottom:hover:not(:disabled) {
+button.to-bottom:hover:not(:disabled) {
   background: var(--beam-hover);
   border-color: transparent;
 }

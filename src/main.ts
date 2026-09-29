@@ -34,7 +34,7 @@ import { clear } from './ui/dom'
 import { HomeView, type DirectRef } from './ui/home-view'
 import { notify, notifyText, notifyWhat, offerNotify } from './ui/notify'
 import { createWindow, type WindowChrome } from './ui/shell'
-import { chirpMessage, isNews } from './ui/sounds'
+import { chirpMention, isNews, warmSounds } from './ui/sounds'
 import { spaceList } from './ui/space-list'
 import { SpaceView } from './ui/space-view'
 import { watchTheme } from './ui/theme'
@@ -58,6 +58,7 @@ bootStep(30, 'Loading Nook')
 
 watchTheme()
 watchUnread()
+warmSounds()
 startStreaming()
 watchForUpdates({
   inCall: () => spaces.all().some((space) => !!space.voice?.state.channel),
@@ -226,7 +227,7 @@ async function alertAbout(space: SpaceRuntime, events: LogEvent[]): Promise<void
       const open = (): void => void showHome({ room: space.room.id, key: e.author })
       const looking = reading?.room === space.room.id && reading.key === e.author && !document.hidden
       if (!looking) {
-        chirpMessage()
+        chirpMention()
         toast(`${who} sent you a message`, 'info', 8000, { label: 'Read', run: open }, 'peek')
       }
       offerNotify()
@@ -250,7 +251,7 @@ async function alertAbout(space: SpaceRuntime, events: LogEvent[]): Promise<void
     }
     if (mention) offerNotify()
     if (mention && !onScreen) {
-      chirpMessage()
+      chirpMention()
       toast(`${who} mentioned you in ${spaceName}`, 'info', 8000, { label: 'Go', run: () => openSpace(space) }, 'wiggle')
     }
     const body = notifyText() ? text : mention ? 'Mentioned you' : 'Sent a message'

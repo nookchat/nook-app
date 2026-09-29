@@ -47,7 +47,7 @@ import { filesFor, isCallChannel, type SpaceRuntime } from '../space/runtime'
 import { spaces } from '../space/registry'
 import { spaceFace, switcherButton } from './space-switcher'
 import { voiceDock } from './call'
-import { chirpMessage, isNews, speak } from './sounds'
+import { chirpMention, chirpMessage, isNews, speak } from './sounds'
 import type { LinkQuality } from '../net/voice'
 import { CUSTOM, CUSTOM_MAX_S, decodeClip, openSoundboard, playClip, type Sound } from './soundboard'
 import { ask, askChannel, askSound, pickSome } from './ask'
@@ -730,8 +730,18 @@ export class SpaceView {
   }
 
   private noticeFresh(fresh: LogEvent[]): void {
-    if (fresh.some((e) => e.kind === 'said' && e.author !== this.chat?.me && isNews(e.at))) {
-      chirpMessage()
+    const chat = this.chat
+    if (!chat) return
+    // Only what you can read, from a channel you have not muted: a mention of you has its own sound.
+    const heard = fresh.filter((e) => {
+      if (e.kind !== 'said' || e.author === chat.me || !isNews(e.at)) return false
+      const where = cleanChannel(String(e.body.channel ?? '')) || DEFAULT_CHANNEL
+      return chat.mayEnter(chat.me, where) && chat.mayEnter(e.author, where) && !channelMuted(this.space.room.id, where)
+    })
+    if (heard.length) {
+      const names = this.everybody()
+      if (heard.some((e) => mentionsMe(String(e.body.text ?? ''), names, chat.me))) chirpMention()
+      else chirpMessage()
     }
     this.noticeMentions(fresh)
   }
@@ -842,6 +852,10 @@ export class SpaceView {
   }
 
   private sendSound(id: string): void {
+    if (!this.chat?.can('soundboard')) {
+      toast('Your level cannot use the soundboard.', 'warn')
+      return
+    }
     const sound = this.findSound(id)
     if (!sound) return
     const here = this.voice?.state.channel
@@ -869,6 +883,8 @@ export class SpaceView {
     if (!note) return false
     const sound = typeof note.s === 'string' ? this.findSound(note.s) : null
     if (!sound) return true
+    // Played by somebody whose level has no soundboard: a changed app, so nobody hears it.
+    if (!this.chat?.log.can(this.keyOf(from), 'soundboard')) return true
     // Only for the people standing in the same voice channel as the one who played it.
     const here = this.voice?.state.channel
     if (!here || note.v !== here || this.voice?.whereIs(from) !== here) return true
@@ -882,6 +898,10 @@ export class SpaceView {
   }
 
   private openBoard(anchor: HTMLElement | null): void {
+    if (!this.chat?.can('soundboard')) {
+      toast('Your level cannot use the soundboard.', 'warn')
+      return
+    }
     const button = anchor ?? this.voiceList.querySelector<HTMLElement>('button[aria-label="Soundboard"]')
     if (!button) {
       toast('Join a voice channel to play sounds.', 'warn')
@@ -2662,7 +2682,7 @@ export class SpaceView {
             },
             [icon(state.deafened ? 'headphones-off' : 'headphones', 19)],
           ),
-          ...(call ? [] : [this.boardButton]),
+          ...(call || !this.chat?.can('soundboard') ? [] : [this.boardButton]),
           this.shareButton,
         ]),
       )

@@ -20,8 +20,15 @@ export interface UpdateHooks {
 }
 
 let hooks: UpdateHooks = { inCall: () => false, idle: () => false, beforeReload: async () => undefined }
-/** Offers a worker that has its files. Set once the service worker is ready. */
-let offerWorker: ((worker: ServiceWorker) => void) | null = null
+/** Offers a worker that has its files. Set once the service worker is ready. `asked` is a check from About. */
+let offerWorker: ((worker: ServiceWorker, asked?: boolean) => void) | null = null
+/**
+ * Later puts an update away until the next start, which takes it in anyway: the web one when
+ * the last window goes, the desktop one on quit. Nothing asks again in between.
+ */
+let snoozed = false
+/** How long a web update waits for a desktop one that is downloading, to go in one restart. */
+const DESKTOP_WAIT_MS = 15 * 60 * 1000
 /**
  * In the desktop app, a newer desktop app goes first: its offer stands in for the web
  * one, and taking it takes the new web version too, so there is one restart, not two.
@@ -50,11 +57,12 @@ export function watchForUpdates(given: UpdateHooks): void {
   })
 
   void navigator.serviceWorker.ready.then((reg) => {
-    const offer = (worker: ServiceWorker): void => {
+    const offer = (worker: ServiceWorker, askedFor = false): void => void offerNow(worker, askedFor)
+    const offerNow = async (worker: ServiceWorker, askedFor: boolean): Promise<void> => {
       // With no worker in charge, this is the first visit: nothing is old yet.
       if (!navigator.serviceWorker.controller) return
-      // Later hid it: the next check shows it again, but not while it is up.
       if (waiting || (offered === worker && document.querySelector('.update-pop'))) return
+      if (offered === worker && snoozed && !askedFor) return
       offered = worker
       const update = async (): Promise<void> => {
         asked = true
@@ -64,9 +72,16 @@ export function watchForUpdates(given: UpdateHooks): void {
         await swapToNewest(reg)
       }
       webWaiting = { worker, update }
+      // In the desktop app, a desktop update on its way goes first, and takes this one with it.
+      if (!desktopFirst && (await desktopComing())) {
+        window.setTimeout(() => {
+          if (!desktopFirst && webWaiting?.worker === worker) void offerNow(worker, true)
+        }, DESKTOP_WAIT_MS)
+        return
+      }
       if (desktopFirst) {
         // Said again, so its words say the new web version comes with it.
-        if (!document.querySelector('.update-pop button:disabled')) desktopFirst()
+        if ((!snoozed || askedFor) && !document.querySelector('.update-pop button:disabled')) desktopFirst()
         return
       }
       // Nobody is looking and nothing would be lost: update now, with no question. The same screen comes back.
@@ -74,6 +89,7 @@ export function watchForUpdates(given: UpdateHooks): void {
         void update()
         return
       }
+      if (snoozed && !askedFor) return
       const inCall = hooks.inCall()
       showOffer(
         {
@@ -143,7 +159,7 @@ export async function checkForUpdate(): Promise<WebCheck> {
   if (reg.installing) await settled(reg.installing)
   if (!reg.waiting || !navigator.serviceWorker.controller) return 'newest'
   document.querySelector('.update-pop')?.remove()
-  offerWorker?.(reg.waiting)
+  offerWorker?.(reg.waiting, true)
   return 'ready'
 }
 
@@ -200,6 +216,19 @@ function offeredLately(): boolean {
 interface DesktopShell {
   onUpdate?: (fn: (offer: { version: string; ready: boolean }) => void) => () => void
   installUpdate?: () => void
+  checkUpdate?: () => Promise<{ state: string; version?: string }>
+}
+
+/** Whether the desktop app has a newer version downloading, which will be offered once it is in. */
+async function desktopComing(): Promise<boolean> {
+  const shell = (window as Window & { nookDesktop?: DesktopShell }).nookDesktop
+  if (!shell?.checkUpdate) return false
+  const found = await Promise.race([
+    shell.checkUpdate().catch(() => ({ state: 'failed' })),
+    new Promise<{ state: string }>((done) => window.setTimeout(() => done({ state: 'failed' }), 15_000)),
+  ])
+  // Ready or out already: the shell has said so, and its offer stands in for this one.
+  return found.state === 'downloading' || found.state === 'ready' || found.state === 'available'
 }
 
 /**
@@ -262,7 +291,8 @@ export function watchForDesktopUpdates(): void {
         },
       )
     }
-    desktopFirst()
+    // Later means this start: it goes in on quit anyway.
+    if (!snoozed) desktopFirst()
   })
 }
 
@@ -315,7 +345,16 @@ function showOffer(
               },
             })
           : null,
-        h('button', { class: 'ghost', text: 'Later', on: { click: () => pop.remove() } }),
+        h('button', {
+          class: 'ghost',
+          text: 'Later',
+          on: {
+            click: () => {
+              snoozed = true
+              pop.remove()
+            },
+          },
+        }),
       ]),
     ]),
   ])

@@ -18,7 +18,7 @@ import { PREFS_CHANGED } from '../store/prefs'
 import { RoomChat } from '../store/room-chat'
 import { bookFor, stable } from '../store/server-spaces'
 import { adoptAvatar, avatarKnown, avatarSavedAt, loadAvatar } from '../ui/avatar'
-import { chirpJoin, chirpLeave } from '../ui/sounds'
+import { chirpDeafen, chirpHangup, chirpJoin, chirpLeave, chirpMute } from '../ui/sounds'
 
 const LAST_SEEN_REFRESH_MS = 60 * 60 * 1000
 const HISTORY_WAIT_MS = 6000
@@ -113,6 +113,8 @@ export class SpaceRuntime {
   private iceReady: Promise<void> = Promise.resolve()
   private ringTimer = 0
   private voiceWas: string | null = null
+  /** Set while a mute or deafen is put back after an update, which plays no sound. */
+  private hushVoice = false
   private stillHere = 0
   /** People who said they are updating, by key: their voice comes back in a moment, with no sound. */
   private readonly comingBack = new Map<string, number>()
@@ -221,6 +223,12 @@ export class SpaceRuntime {
     voice.onChange = () => {
       const { channel: now, muted, deafened } = voice.state
       const said = `${now}:${muted}:${deafened}`
+      // Your own mute and deafen, in the same channel: each has its sound, as Discord's do.
+      const was = this.voiceWas?.split(':')
+      if (was && now && was[0] === now && !this.hushVoice) {
+        if (String(deafened) !== was[2]) chirpDeafen(deafened)
+        else if (String(muted) !== was[1]) chirpMute(muted)
+      }
       if (said !== this.voiceWas) {
         this.voiceWas = said
         mesh.announce()
@@ -265,8 +273,11 @@ export class SpaceRuntime {
         // The microphone asked again and was refused: the channel is a click away, as before.
         return false
       }
+      // Muted or deafened as you were, with no sound: nothing changed for you.
+      this.hushVoice = true
       if (note.deafened) this.voice.setDeafened(true)
       else if (note.muted) this.voice.setMuted(true)
+      this.hushVoice = false
       return true
     }
     if (!(await join())) return
@@ -507,7 +518,8 @@ export class SpaceRuntime {
     }
     if (this.voice?.state.channel === call.channel) {
       this.voice.leave()
-      chirpLeave()
+      if (call.live) chirpHangup()
+      else chirpLeave()
     }
     callNews({ kind: 'ended', space: this, reason })
   }
