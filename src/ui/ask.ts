@@ -82,17 +82,7 @@ export function pickSome(title: string, about: string, choices: Choice[], chosen
       ev.stopPropagation()
       finish(null)
     }
-    const rows = choices.map((choice) => {
-      const box = h('input', { type: 'checkbox', ariaLabel: choice.name })
-      box.checked = picked.has(choice.id)
-      box.addEventListener('change', () => {
-        if (box.checked) picked.add(choice.id)
-        else picked.delete(choice.id)
-      })
-      const dot = h('i', { class: 'pick-dot' })
-      if (choice.colour) dot.style.background = choice.colour
-      return h('label', { class: 'pick-row' }, [box, dot, h('span', { class: 'truncate', text: choice.name })])
-    })
+    const rows = pickRows(choices, picked)
     const save = h('button', { class: 'primary', text: 'Save', on: { click: () => finish(choices.map((c) => c.id).filter((id) => picked.has(id))) } })
     const scrim = h('div', { class: 'scrim', on: { click: (ev) => ev.target === scrim && finish(null) } }, [
       h('div', { class: 'modal ask-modal', role: 'dialog', ariaLabel: title }, [
@@ -107,5 +97,69 @@ export function pickSome(title: string, about: string, choices: Choice[], chosen
     window.addEventListener('keydown', onKey, true)
     document.body.append(scrim)
     save.focus()
+  })
+}
+
+function pickRows(choices: Choice[], picked: Set<string>): HTMLElement[] {
+  return choices.map((choice) => {
+    const box = h('input', { type: 'checkbox', ariaLabel: choice.name })
+    box.checked = picked.has(choice.id)
+    box.addEventListener('change', () => {
+      if (box.checked) picked.add(choice.id)
+      else picked.delete(choice.id)
+    })
+    const dot = h('i', { class: 'pick-dot' })
+    if (choice.colour) dot.style.background = choice.colour
+    return h('label', { class: 'pick-row' }, [box, dot, h('span', { class: 'truncate', text: choice.name })])
+  })
+}
+
+/** A name for a new channel, and the levels it is kept to: none is everybody. */
+export function askChannel(voice: boolean, choices: Choice[]): Promise<{ name: string; levels: string[] } | null> {
+  return new Promise((resolve) => {
+    const was = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const question = voice ? 'Name the voice channel' : 'Name the channel'
+    const picked = new Set<string>()
+    const input = h('input', { type: 'text', class: 'ask-input', ariaLabel: question, placeholder: voice ? 'lounge' : 'general' })
+    input.autocomplete = 'off'
+    const done = (): void => finish({ name: input.value, levels: choices.map((c) => c.id).filter((id) => picked.has(id)) })
+    const finish = (answer: { name: string; levels: string[] } | null): void => {
+      scrim.remove()
+      window.removeEventListener('keydown', onKey, true)
+      was?.focus()
+      resolve(answer)
+    }
+    const onKey = (ev: KeyboardEvent): void => {
+      if (ev.key === 'Escape') {
+        ev.stopPropagation()
+        finish(null)
+      } else if (ev.key === 'Enter' && !ev.isComposing && document.activeElement === input) {
+        ev.preventDefault()
+        done()
+      }
+    }
+    const scrim = h('div', { class: 'scrim', on: { click: (ev) => ev.target === scrim && finish(null) } }, [
+      h('div', { class: 'modal ask-modal', role: 'dialog', ariaLabel: question }, [
+        h('div', { class: 'invite-head' }, [
+          h('div', { class: 'invite-words' }, [h('div', { class: 'invite-title', text: question })]),
+          h('button', { class: 'ghost icon-only', ariaLabel: 'Close', on: { click: () => finish(null) } }, [icon('close', 18)]),
+        ]),
+        input,
+        choices.length
+          ? h('div', { class: 'stack tight' }, [
+              h('div', { class: 'eyebrow', text: voice ? 'Who can see and join it' : 'Who can see it' }),
+              h('div', { class: 'tiny faint', text: 'Tick nobody for everybody. The owner, and whoever can change channels, always get in.' }),
+              h('div', { class: 'pick-list' }, pickRows(choices, picked)),
+            ])
+          : null,
+        h('div', { class: 'row ask-buttons' }, [
+          h('button', { class: 'ghost', text: 'Cancel', on: { click: () => finish(null) } }),
+          h('button', { class: 'primary', text: 'Make', on: { click: done } }),
+        ]),
+      ]),
+    ])
+    window.addEventListener('keydown', onKey, true)
+    document.body.append(scrim)
+    input.focus()
   })
 }

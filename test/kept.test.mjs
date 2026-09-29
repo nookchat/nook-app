@@ -77,12 +77,21 @@ try {
 
   await poll(async () => (await voiceRail(carol)).includes('backroom'), 10_000)
   await alice.click('.voice-channel .voice-head:has-text("backroom")', { button: 'right' })
-  await alice.click('.menu-item:has-text("Who can join")')
+  await alice.click('.menu-item:has-text("Who can see and join")')
   await alice.check('.pick-row input[aria-label="Moderator"]')
   await alice.click('.ask-modal button:text-is("Save")')
   const noRoom = await poll(async () => !(await voiceRail(carol)).includes('backroom'), 20_000)
   check('a member no longer sees the kept voice channel', noRoom, (await voiceRail(carol)).join(', '))
   check('a moderator does', (await voiceRail(bob)).includes('backroom'))
+
+  await alice.click('.rail-left button[title="Make a text channel"]')
+  await alice.fill('.ask-modal .ask-input', 'secret')
+  await alice.check('.pick-row input[aria-label="Moderator"]')
+  await alice.click('.ask-modal button:text-is("Make")')
+  await poll(async () => (await textRail(bob)).includes('secret'), 20_000)
+  check('a channel kept at its making shows to a moderator', (await textRail(bob)).includes('secret'))
+  const carolHasIt = await poll(() => chatOf(carol, (chat) => chat.log.everyChannel().some((c) => c.name === 'secret')), 20_000)
+  check('and never to a member, who has the channel in the log', carolHasIt && !(await textRail(carol)).includes('secret'), (await textRail(carol)).join(', '))
 
   await alice.click('.rail-left .rail-row:has-text("staff")', { button: 'right' })
   await alice.click('.menu-item:has-text("Who can see it")')

@@ -260,8 +260,12 @@ export class RoomChat {
     return thread
   }
 
-  makeChannel(name: string, voice = false): Promise<LogEvent> {
-    return this.write('channel', voice ? { name: cleanChannel(name), voice: true } : { name: cleanChannel(name) })
+  /** `levels` keeps it to those levels from the start. None is everybody. */
+  makeChannel(name: string, voice = false, levels: string[] = []): Promise<LogEvent> {
+    const body: Record<string, unknown> = { name: cleanChannel(name) }
+    if (voice) body.voice = true
+    if (levels.length) body.levels = levels
+    return this.write('channel', body)
   }
 
   labelChannel(name: string, label: string, voice = false): Promise<LogEvent> {

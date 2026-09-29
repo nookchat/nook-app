@@ -62,7 +62,7 @@ import {
   type Sound,
   warmSounds,
 } from './soundboard'
-import { ask, pickSome } from './ask'
+import { ask, askChannel, pickSome } from './ask'
 import { avatarOf, ChatPanel, imageLinks } from './chat-panel'
 import { clear, copyText, fmtKbps, h, onPress, roleInk } from './dom'
 import { forHowLong, gameCard } from './game-card'
@@ -1030,12 +1030,12 @@ export class SpaceView {
     const levels = this.chat?.levels() ?? []
     const names = channel.levels.map((id) => levels.find((l) => l.id === id)?.name).filter(Boolean)
     return {
-      label: voice ? 'Who can join' : 'Who can see it',
+      label: voice ? 'Who can see and join' : 'Who can see it',
       note: names.length ? `Only ${names.join(', ')}` : 'Everybody',
       run: async () => {
         const choices = levels.filter((l) => l.id !== OWNER).map((l) => ({ id: l.id, name: l.name, colour: l.colour }))
         const picked = await pickSome(
-          voice ? `Who can join ${channel.label}` : `Who can see ${channel.label}`,
+          voice ? `Who can see and join ${channel.label}` : `Who can see ${channel.label}`,
           'Tick nobody for everybody. The owner, and whoever can change channels, always get in.',
           choices,
           channel.levels,
@@ -3194,17 +3194,15 @@ export class SpaceView {
       toast('Your level cannot make channels.', 'warn')
       return
     }
-    const raw = await ask(voice ? 'Name the voice channel' : 'Name the channel', {
-      placeholder: voice ? 'lounge' : 'general',
-      ok: 'Make',
-    })
-    if (raw === null) return
-    const name = cleanChannel(raw)
+    const levels = this.chat.levels().filter((l) => l.id !== OWNER).map((l) => ({ id: l.id, name: l.name, colour: l.colour }))
+    const answer = await askChannel(voice, levels)
+    if (answer === null) return
+    const name = cleanChannel(answer.name)
     if (!name) {
       toast('A channel name needs a letter or a number in it.', 'warn')
       return
     }
-    await this.publish((c) => c.makeChannel(name, voice))
+    await this.publish((c) => c.makeChannel(name, voice, answer.levels))
     if (!voice) this.openChannel(name)
     else this.draw()
   }

@@ -1,9 +1,10 @@
 // Nook for the desktop. The window loads the web app from its home, so invite
 // links point at the same place as on the web and the service worker works.
 // The shell adds what a browser tab cannot: a picker for a screen or a window,
-// the system sound on Windows, the game you are playing, and updates of itself.
+// the system sound on Windows, the game you are playing, the unread count on
+// its icon, and updates of itself.
 
-const { app, BrowserWindow, desktopCapturer, ipcMain, nativeTheme, session, shell } = require('electron')
+const { app, BrowserWindow, desktopCapturer, ipcMain, nativeImage, nativeTheme, session, shell } = require('electron')
 const path = require('node:path')
 const { watchGames } = require('./games.cjs')
 const { watchUpdates } = require('./updates.cjs')
@@ -220,6 +221,21 @@ ipcMain.on('update:install', (ev) => {
   if (!isHome(ev.sender.getURL()) || !updates) return
   if (updates.now()?.ready) installing = true
   updates.install()
+})
+
+// The unread count: a number on the Dock on macOS, and on Linux where the launcher
+// shows one; a small red circle over the taskbar button on Windows.
+ipcMain.on('badge:set', (ev, count, overlay) => {
+  if (!isHome(ev.sender.getURL())) return
+  const n = Number.isInteger(count) && count > 0 ? Math.min(count, 9999) : 0
+  if (process.platform === 'win32') {
+    const win = BrowserWindow.fromWebContents(ev.sender)
+    if (!win) return
+    const ok = n > 0 && typeof overlay === 'string' && overlay.startsWith('data:image/png;base64,') && overlay.length < 20_000
+    win.setOverlayIcon(ok ? nativeImage.createFromDataURL(overlay) : null, ok ? `${n} unread` : '')
+    return
+  }
+  app.setBadgeCount(n)
 })
 
 ipcMain.on('window:control', (ev, action) => {

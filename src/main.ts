@@ -24,6 +24,7 @@ import { nameChosen, shortKey } from './store/identity'
 import { newSpaceServer } from './store/server-spaces'
 import { findSpace } from './store/spaces'
 import { ask } from './ui/ask'
+import { watchUnread } from './ui/badge'
 import { installCalls } from './ui/call'
 import { clear } from './ui/dom'
 import { HomeView, type DirectRef } from './ui/home-view'
@@ -57,6 +58,7 @@ if (boot) {
 }
 
 watchTheme()
+watchUnread()
 startStreaming()
 watchForUpdates({
   inCall: () => spaces.all().some((space) => !!space.voice?.state.channel),

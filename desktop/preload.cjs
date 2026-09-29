@@ -1,5 +1,5 @@
 // Tells the web app it runs in the desktop shell, what game is running, and
-// when a newer desktop app is out.
+// when a newer desktop app is out. The page gives it the unread count for the icon.
 // It also draws the title bar in place of the system one: a plain strip to drag
 // the window by, in the page colour, and on Windows and Linux the window buttons
 // on the right. On macOS the system keeps its own three buttons, over the left
@@ -35,6 +35,8 @@ contextBridge.exposeInMainWorld('nookDesktop', {
   },
   /** Restarts into the update when it has downloaded, or opens the download page. */
   installUpdate: () => ipcRenderer.send('update:install'),
+  /** The unread count on the Dock or taskbar icon. `overlay` is a PNG data URL, for Windows. */
+  setBadge: (count, overlay) => ipcRenderer.send('badge:set', Number(count) || 0, typeof overlay === 'string' ? overlay : ''),
 })
 
 const BAR_HEIGHT = 32
