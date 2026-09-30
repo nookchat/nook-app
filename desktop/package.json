@@ -2,7 +2,7 @@
   "name": "nook-desktop",
   "productName": "Nook",
   "private": true,
-  "version": "0.3.12",
+  "version": "0.3.13",
   "description": "Nook for the desktop: chat, voice and screen sharing.",
   "main": "main.cjs",
   "author": "Nook",
