@@ -5389,18 +5389,16 @@ button.quick-slot.empty {
   padding: 1px 2px 0;
 }
 
+/* As much room under the search as the list has under it: the picker's own padding. */
 input[type="text"].emoji-search {
   font-size: var(--size-small);
+  margin-bottom: 2px;
 }
 
 .emoji-grid {
   height: 300px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-sm);
-  background: var(--field-bg);
-  padding: 2px;
 }
 
 /* Same width as the grid in an open picker, so the groups keep their layout when they move in. */
