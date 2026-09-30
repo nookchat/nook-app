@@ -6687,7 +6687,6 @@ input.invalid:focus {
   padding: 0 20px 20px;
 }
 
-.recordings-filters:empty,
 .recordings-games:empty {
   display: none;
 }
@@ -6735,18 +6734,6 @@ button.recordings-game.on {
   font-size: 11px;
   color: var(--fg-faint);
   font-variant-numeric: tabular-nums;
-}
-
-.chip-toggle {
-  min-height: 30px;
-  padding: 0 12px;
-  font-size: var(--size-small);
-  background: var(--select);
-}
-
-.chip-toggle.on {
-  background: var(--brand);
-  color: var(--on-brand);
 }
 
 .recordings-grid {
@@ -7045,17 +7032,12 @@ button.recordings-game.on {
   overflow-wrap: anywhere;
 }
 
-/* The first look for recordings: cards and filters the size of the real ones, so nothing moves. */
-.chip-toggle.waiting,
+/* The first look for recordings: cards and tabs the size of the real ones, so nothing moves. */
 .recording-card.waiting .recording-face,
 .recordings-game.waiting::before,
 .waiting-line::before {
   background: var(--select);
   animation: waiting-glow 1.2s ease-in-out infinite alternate;
-}
-
-.chip-toggle.waiting {
-  pointer-events: none;
 }
 
 /* A bar where the game's name will be, in a tab as tall as the real one. */
@@ -7103,7 +7085,6 @@ button.recordings-game.waiting {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .chip-toggle.waiting,
   .recording-card.waiting .recording-face,
   .recordings-game.waiting::before,
   .waiting-line::before {

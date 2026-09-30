@@ -47,6 +47,8 @@ const BIG_STEP_S = 5
 const NO_GAME = '\u0000'
 /** The game tab picked last, kept while Nook is open. */
 let pickedGame = ''
+/** Recordings whose picture could not be read: the video is broken, so they are left out. */
+const broken = new Set<string>()
 
 function gameOf(rec: Recording): string {
   return rec.game?.trim() || NO_GAME
@@ -75,10 +77,9 @@ export function openRecordings(options: RecordingsOptions): void {
   }
 
   let all: Recording[] = []
-  let only = ''
+  const working = (): Recording[] => all.filter((r) => !broken.has(r.id))
   const head = h('div', { class: 'recordings-head' })
   const games = h('div', { class: 'recordings-games', role: 'tablist', ariaLabel: 'Games' })
-  const filters = h('div', { class: 'row wrap recordings-filters' })
   const grid = h('div', { class: 'recordings-grid' })
   const folders = h('div', { class: 'recordings-folders hidden' })
 
@@ -105,23 +106,40 @@ export function openRecordings(options: RecordingsOptions): void {
       }, [icon('settings', 17)]),
       h('button', { class: 'ghost icon-only', ariaLabel: 'Close', title: 'Close', on: { click: () => close() } }, [icon('close', 18)]),
     )
-    body.replaceChildren(folders, games, filters, grid)
+    body.replaceChildren(folders, games, grid)
   }
 
   const paintGrid = (): void => {
     clear(grid)
     grid.removeAttribute('aria-busy')
     delete grid.dataset.waiting
-    const shown = all.filter((r) => (!only || r.source === only) && (!pickedGame || gameOf(r) === pickedGame))
-    for (const rec of shown) grid.append(card(rec, () => openClip(rec)))
-    if (shown.length === 0) grid.append(h('div', { class: 'tiny faint', text: 'Nothing from here for this game.' }))
+    const shown = working().filter((r) => !pickedGame || gameOf(r) === pickedGame)
+    for (const rec of shown) {
+      const el = card(rec, () => openClip(rec), () => {
+        el.remove()
+        leaveOut(rec)
+      })
+      grid.append(el)
+    }
+    if (shown.length === 0) grid.append(h('div', { class: 'tiny faint', text: 'Nothing here for this game.' }))
+  }
+
+  /** A card whose picture failed is gone, and the tabs count again without it. */
+  const leaveOut = (rec: Recording): void => {
+    if (broken.has(rec.id)) return
+    broken.add(rec.id)
+    const emptied = pickedGame !== '' && !working().some((r) => gameOf(r) === pickedGame)
+    if (emptied) pickedGame = ''
+    paintGames()
+    if (emptied || !grid.querySelector('.recording-card')) paintGrid()
   }
 
   /** A tab for each game, the one played last first, when there is a game to tell apart. */
   const paintGames = (): void => {
     clear(games)
     const count = new Map<string, { n: number; last: number }>()
-    for (const r of all) {
+    const list = working()
+    for (const r of list) {
       const was = count.get(gameOf(r)) ?? { n: 0, last: 0 }
       count.set(gameOf(r), { n: was.n + 1, last: Math.max(was.last, r.at) })
     }
@@ -131,7 +149,7 @@ export function openRecordings(options: RecordingsOptions): void {
     const tabs = ['', ...named, ...(count.has(NO_GAME) ? [NO_GAME] : [])]
     for (const g of tabs) {
       const label = g === '' ? 'All' : g === NO_GAME ? 'Other' : g
-      const n = g === '' ? all.length : count.get(g)!.n
+      const n = g === '' ? list.length : count.get(g)!.n
       const tab = h('button', {
         class: `recordings-game${pickedGame === g ? ' on' : ''}`,
         role: 'tab',
@@ -157,27 +175,6 @@ export function openRecordings(options: RecordingsOptions): void {
     on: { click: () => void load() },
   }, [icon('refresh', 17)])
 
-  const paintFilters = (): void => {
-    clear(filters)
-    const sources = [...new Set(all.map((r) => r.source))]
-    if (sources.length === 0) return
-    for (const source of ['', ...sources]) {
-      const chip = h('button', {
-        class: `chip-toggle${only === source ? ' on' : ''}`,
-        text: source || 'All',
-        on: {
-          click: () => {
-            only = source
-            paintFilters()
-            paintGrid()
-          },
-        },
-      })
-      chip.setAttribute('aria-pressed', String(only === source))
-      filters.append(chip)
-    }
-  }
-
   /** What a card shows, so a look that finds the same recordings draws nothing again. */
   let shown = ''
   const show = (list: Recording[]): void => {
@@ -185,10 +182,8 @@ export function openRecordings(options: RecordingsOptions): void {
     if (key === shown) return
     shown = key
     all = list
-    if (only && !all.some((r) => r.source === only)) only = ''
-    if (pickedGame && !all.some((r) => gameOf(r) === pickedGame)) pickedGame = ''
+    if (pickedGame && !working().some((r) => gameOf(r) === pickedGame)) pickedGame = ''
     paintGames()
-    paintFilters()
     paintGrid()
   }
 
@@ -197,7 +192,7 @@ export function openRecordings(options: RecordingsOptions): void {
     if (!shown) {
       const kept = keptRecordings()
       if (kept?.length) show(kept)
-      else waiting(games, filters, grid)
+      else waiting(games, grid)
     }
     lookAgain.classList.add('busy')
     lookAgain.disabled = true
@@ -209,7 +204,6 @@ export function openRecordings(options: RecordingsOptions): void {
       shown = ''
       all = []
       clear(games)
-      clear(filters)
       grid.replaceChildren(await emptyState(() => void load()))
       return
     }
@@ -242,15 +236,12 @@ export function openRecordings(options: RecordingsOptions): void {
   void load()
 }
 
-/** Cards and filters the size of the real ones, while the first look is on its way. */
-function waiting(games: HTMLElement, filters: HTMLElement, grid: HTMLElement): void {
+/** Cards and tabs the size of the real ones, while the first look is on its way. */
+function waiting(games: HTMLElement, grid: HTMLElement): void {
   games.replaceChildren(
     ...[48, 120, 90].map((w) =>
       h('button', { class: 'recordings-game waiting', tabIndex: -1, ariaLabel: 'Looking', style: { width: `${w}px` } }),
     ),
-  )
-  filters.replaceChildren(
-    ...[44, 64, 56].map((w) => h('button', { class: 'chip-toggle waiting', tabIndex: -1, ariaLabel: 'Looking', style: { width: `${w}px` } })),
   )
   grid.replaceChildren(
     ...Array.from({ length: WAITING_CARDS }, () =>
@@ -350,10 +341,11 @@ export async function paintFolders(into: HTMLElement, changed?: () => void): Pro
   draw(await recordingFolders(), false)
 }
 
-function card(rec: Recording, open: () => void): HTMLElement {
+function card(rec: Recording, open: () => void, fail: () => void): HTMLElement {
   const face = h('div', { class: 'recording-face' })
   if (rec.thumb) {
     const img = h('img', { class: 'recording-picture' })
+    img.onerror = () => fail()
     img.src = rec.thumb
     img.alt = ''
     face.append(img)
@@ -364,7 +356,7 @@ function card(rec: Recording, open: () => void): HTMLElement {
     img.onerror = () => img.remove()
     face.append(img)
   } else if (!isSteam(rec)) {
-    face.append(frameOf(rec))
+    face.append(frameOf(rec, fail))
   }
   face.append(icon('play', 26))
   if (rec.duration) face.append(h('span', { class: 'recording-length', text: timeLabel(rec.duration) }))
@@ -422,7 +414,7 @@ async function forgetThumbs(ids: string[]): Promise<void> {
  * A frame from a plain video: the one kept from last time, or one read from the video once its
  * card is in view, a little way in, since the first frame is often black. It is kept for next time.
  */
-function frameOf(rec: Recording): HTMLElement {
+function frameOf(rec: Recording, fail: () => void): HTMLElement {
   const img = h('img', { class: 'recording-picture' })
   img.alt = ''
   img.decoding = 'async'
@@ -440,7 +432,10 @@ function frameOf(rec: Recording): HTMLElement {
       if (!entries.some((e) => e.isIntersecting)) return
       seen.disconnect()
       void readFrame(rec.url).then((frame) => {
-        if (!frame) return
+        if (!frame) {
+          fail()
+          return
+        }
         showBlob(frame)
         void keepThumb(rec.id, frame)
       })

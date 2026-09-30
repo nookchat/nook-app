@@ -80,6 +80,20 @@ const items = [
     type: 'video/mp4',
     url: `${FAKE}hevc`,
   },
+  // A file that cannot be read: no picture comes of it, so it is left out of the list.
+  {
+    id: 'gone',
+    kind: 'file',
+    title: 'gone',
+    game: 'Broken Game',
+    source: 'Videos',
+    folder: '/Videos',
+    at: now - 7_200_000,
+    duration: 12,
+    size: 1000,
+    type: 'video/mp4',
+    url: `${FAKE}gone`,
+  },
 ]
 
 /** The desktop app's range answers, for the page's fetches and its video element. */
@@ -208,25 +222,24 @@ try {
   const top = (sel) => page.locator(sel).first().evaluate((el) => Math.round(el.getBoundingClientRect().top))
   const waitingGrid = await top('.recordings-grid')
   await page.screenshot({ path: 'test-output/recordings-waiting.png' })
-  check('while it looks, the dialog shows waiting cards and filters', (await page.locator('.recordings-filters .chip-toggle.waiting').count()) > 0)
+  check('while it looks, the dialog shows waiting cards and tabs', (await page.locator('.recordings-game.waiting').count()) > 0)
   await page.waitForSelector('.recording-card:not(.waiting)')
   check('a real card takes the place of a waiting one exactly', (await box('.recording-card')) === waitingCard, `${waitingCard} -> ${await box('.recording-card')}`)
   check('and the list does not move', (await top('.recordings-grid')) === waitingGrid, `${waitingGrid} -> ${await top('.recordings-grid')}`)
   await page.waitForFunction(() => document.querySelector('.recording-card img.recording-picture')?.src.startsWith('blob:'), null, { timeout: 10_000 })
   const keptPictures = await page.evaluate(async () => (await (await caches.open('nook-recording-pictures-v1')).keys()).length)
   check('the picture of a plain video is kept on this device', keptPictures >= 1, `${keptPictures}`)
-  check('the dialog lists the recordings, newest first', (await page.locator('.recording-title').allTextContents()).join('|') === 'Counter-Strike 2|Counter-Strike 2|hevc')
-  check('with a filter for each source', (await page.locator('.recordings-filters .chip-toggle').allTextContents()).join('|') === 'All|NVIDIA|Steam|Videos')
+  await poll(() => page.evaluate(() => !document.querySelector('.recordings-grid')?.textContent.includes('gone')), 10_000)
+  const listed = (await page.locator('.recording-title').allTextContents()).join('|')
+  check('the dialog lists the recordings, newest first, and leaves out one it cannot read', listed === 'Counter-Strike 2|Counter-Strike 2|hevc', listed)
+  check('with no filter for the source', (await page.locator('.recordings-filters, .chip-toggle').count()) === 0)
   const tabs = () => page.locator('.recordings-game').allTextContents()
   check('a tab for each game, then the ones with no game', (await tabs()).join('|') === 'All3|Counter-Strike 22|Other1', (await tabs()).join('|'))
   await page.click('.recordings-game:has-text("Counter-Strike 2")')
   const titles = () => page.locator('.recording-title').allTextContents()
   check('a game tab shows only that game', (await titles()).join('|') === 'Counter-Strike 2|Counter-Strike 2', (await titles()).join('|'))
-  await page.click('.recordings-filters .chip-toggle:has-text("Steam")')
-  check('and the source filter works with it', (await titles()).join('|') === 'Counter-Strike 2')
   await page.click('.recordings-game:has-text("Other")')
-  check('a game and a source with nothing says so', (await titles()).length === 0 && (await page.locator('.recordings-grid').textContent()).includes('Nothing'))
-  await page.click('.recordings-filters .chip-toggle:has-text("All")')
+  check('the tab for no game shows the rest', (await titles()).join('|') === 'hevc', (await titles()).join('|'))
   await page.click('.recordings-game:has-text("All")')
   await page.screenshot({ path: 'test-output/recordings-list.png' })
 
