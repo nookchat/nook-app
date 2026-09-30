@@ -232,16 +232,24 @@ function createWindow() {
 /** The clear space round the picker for its shadow, the same as the margin in picker.html. */
 const PICKER_MARGIN = 24
 
-/** Shows the picker window and resolves with the chosen source, or null. */
+/** A screen or a window as the picker shows it. */
+const asItem = (s) => ({ id: s.id, name: s.name, kind: s.id.startsWith('screen:') ? 'screen' : 'window' })
+
+/** The theme the page has picked ("light" or "dark"), or "" to follow the device. */
+async function themeOf(win) {
+  if (!win || win.isDestroyed()) return ''
+  const asked = win.webContents.executeJavaScript('document.documentElement.dataset.theme || ""', true).catch(() => '')
+  const theme = await Promise.race([asked, new Promise((ok) => setTimeout(() => ok(''), 150))])
+  return theme === 'light' || theme === 'dark' ? theme : ''
+}
+
+/**
+ * Shows the picker window and resolves with the chosen source, or null. The window opens at once:
+ * the names come first, as a list with no pictures is quick to get, and the pictures follow.
+ */
 async function pickSource(parent) {
-  const sources = await desktopCapturer.getSources({
-    types: ['screen', 'window'],
-    // Twice the size a card shows them at, so they are sharp on a high density screen.
-    thumbnailSize: { width: 640, height: 360 },
-    fetchWindowIcons: true,
-  })
-  if (sources.length === 0) return null
-  if (sources.length === 1) return { source: sources[0], audio: false }
+  const names = desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 0, height: 0 } })
+  const theme = await themeOf(parent)
 
   const size = { width: 880 + PICKER_MARGIN * 2, height: 640 + PICKER_MARGIN * 2 }
   // Over the main window, on its screen: with Nook on a second screen, the picker is there too.
@@ -269,16 +277,9 @@ async function pickSource(parent) {
     },
   })
 
-  const list = sources.map((s) => ({
-    id: s.id,
-    name: s.name,
-    kind: s.id.startsWith('screen:') ? 'screen' : 'window',
-    thumb: s.thumbnail.toDataURL(),
-    icon: s.appIcon ? s.appIcon.toDataURL() : null,
-  }))
-
   return new Promise((resolve) => {
     let done = false
+    let sources = []
     const finish = (value) => {
       if (done) return
       done = true
@@ -287,14 +288,40 @@ async function pickSource(parent) {
       if (!picker.isDestroyed()) picker.close()
       resolve(value)
     }
-    ipcMain.handle('picker:list', () => ({ sources: list, canShareAudio: process.platform === 'win32' }))
+    const send = (channel, value) => !done && !picker.isDestroyed() && picker.webContents.send(channel, value)
+
+    const listed = names.then((found) => {
+      sources = found
+      // Nothing to pick from, or only one thing: no picker.
+      if (found.length === 0) finish(null)
+      else if (found.length === 1) finish({ source: found[0], audio: false })
+      return found.map(asItem)
+    })
+    listed.catch(() => finish(null))
+
+    // The pictures: twice the size a card shows them at, so they are sharp on a high density screen.
+    listed
+      .then(() => {
+        if (done) return
+        return desktopCapturer.getSources({ types: ['screen', 'window'], thumbnailSize: { width: 640, height: 360 }, fetchWindowIcons: true })
+      })
+      .then((found) => {
+        if (!found) return
+        send(
+          'picker:pictures',
+          found.map((s) => ({ id: s.id, thumb: s.thumbnail.toDataURL(), icon: s.appIcon ? s.appIcon.toDataURL() : null })),
+        )
+      })
+      .catch(() => {})
+
+    ipcMain.handle('picker:list', () => listed.then((list) => ({ sources: list, canShareAudio: process.platform === 'win32' })))
     ipcMain.on('picker:choose', (_ev, choice) => {
       const source = choice && sources.find((s) => s.id === choice.id)
       finish(source ? { source, audio: !!choice.audio } : null)
     })
     picker.on('closed', () => finish(null))
-    picker.once('ready-to-show', () => picker.show())
-    picker.loadFile(path.join(__dirname, 'picker.html'))
+    picker.once('ready-to-show', () => !done && picker.show())
+    picker.loadFile(path.join(__dirname, 'picker.html'), theme ? { query: { theme } } : undefined)
   })
 }
 

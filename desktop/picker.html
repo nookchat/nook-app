@@ -7,6 +7,13 @@
       content="default-src 'none'; img-src data:; font-src file:; style-src 'unsafe-inline'; script-src 'unsafe-inline'"
     />
     <title>Share your screen</title>
+    <script>
+      // The theme goes on before the first paint, so the picker never flashes the wrong one.
+      ;(function () {
+        var theme = new URLSearchParams(location.search).get('theme')
+        if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme
+      })()
+    </script>
     <style>
       /* The fonts come with the app, so the picker looks the same with no network. */
       @font-face { font-family: 'DM Sans'; font-weight: 400; src: url(fonts/dm-sans-latin-400-normal.woff2) format('woff2'); }
@@ -14,7 +21,8 @@
       @font-face { font-family: 'DM Sans'; font-weight: 600; src: url(fonts/dm-sans-latin-600-normal.woff2) format('woff2'); }
       @font-face { font-family: 'Bricolage Grotesque'; font-weight: 700; src: url(fonts/bricolage-grotesque-latin-700-normal.woff2) format('woff2'); }
 
-      /* The Nook brand tokens (src/brand/tokens.css): cream in light, near-black charcoal in dark. */
+      /* The Nook brand tokens (src/brand/tokens.css): cream in light, near-black charcoal in dark.
+         The app passes the theme it has picked as ?theme=; with none, the picker follows the device. */
       :root {
         color-scheme: light;
         --surface-0: #FDF6F3; --surface-1: #FFFEFD; --surface-2: #F6EBE7; --border: #ECDFDA; --border-strong: #8F837E;
@@ -22,8 +30,15 @@
         --accent: #FF8A5B; --on-accent: #191412; --focus: #B83E10;
         --shadow-1: 0 1px 2px rgba(25, 20, 18, 0.06), 0 2px 8px rgba(25, 20, 18, 0.06);
       }
+      :root[data-theme='dark'] {
+        color-scheme: dark;
+        --surface-0: #100C0B; --surface-1: #1A1513; --surface-2: #26201D; --border: #312A27; --border-strong: #736965;
+        --text: #F8EDE9; --text-2: #B6ADA9; --brand: #FDF6F3; --on-brand: #191412;
+        --accent: #FF8A5B; --on-accent: #191412; --focus: #FF9E78;
+        --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.45);
+      }
       @media (prefers-color-scheme: dark) {
-        :root {
+        :root:not([data-theme='light']) {
           color-scheme: dark;
           --surface-0: #100C0B; --surface-1: #1A1513; --surface-2: #26201D; --border: #312A27; --border-strong: #736965;
           --text: #F8EDE9; --text-2: #B6ADA9; --brand: #FDF6F3; --on-brand: #191412;
@@ -85,6 +100,9 @@
         border-radius: 14px; background: #000;
       }
       .frame img { width: 100%; height: 100%; object-fit: contain; display: block; }
+      /* Until its picture comes, a card's frame is a quiet block. */
+      .frame.bare { background: var(--surface-2); }
+      .frame.bare img { display: none; }
       /* The one you picked has a tick in its corner. */
       .tick {
         position: absolute; top: 8px; right: 8px; display: none; place-items: center; width: 26px; height: 26px;
@@ -198,9 +216,9 @@
             card.tabIndex = s.id === chosen || (!chosen && s === shown[0]) ? 0 : -1
             card.dataset.id = s.id
             const frame = document.createElement('div')
-            frame.className = 'frame'
+            frame.className = s.thumb ? 'frame' : 'frame bare'
             const thumb = document.createElement('img')
-            thumb.src = s.thumb
+            if (s.thumb) thumb.src = s.thumb
             thumb.alt = ''
             const tick = document.createElement('span')
             tick.className = 'tick'
@@ -264,9 +282,25 @@
         if (e.key === 'Enter' && chosen && !(e.target instanceof HTMLButtonElement && e.target !== go)) choose(chosen)
       })
 
+      // The pictures come after the names. The cards draw again with them, and the focus stays.
+      const pictures = new Map()
+      const withPictures = () => {
+        for (const s of sources) Object.assign(s, pictures.get(s.id))
+      }
+      window.picker.onPictures((list) => {
+        for (const p of list) pictures.set(p.id, { thumb: p.thumb, icon: p.icon })
+        withPictures()
+        if (grid.querySelector('.item[data-id]')) {
+          const focused = document.activeElement?.dataset?.id
+          render()
+          if (focused) grid.querySelector(`[data-id="${CSS.escape(focused)}"]`)?.focus()
+        }
+      })
+
       waiting()
       window.picker.list().then(({ sources: list, canShareAudio }) => {
         sources = list
+        withPictures()
         document.getElementById('audio-wrap').hidden = !canShareAudio
         for (const k of ['screen', 'window']) {
           document.querySelector(`[data-count="${k}"]`).textContent = String(sources.filter((s) => s.kind === k).length)
