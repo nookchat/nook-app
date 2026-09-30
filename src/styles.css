@@ -11,13 +11,39 @@
   }
 }
 
+/* The colours of code in a ``` block (src/ui/highlight.ts): the brand's ember for keywords, and
+   hues each dark enough on the code block's --field-bg to read, in both themes. */
+:root {
+  --code-kw: #B83E10;
+  --code-str: #2A7447;
+  --code-num: #8A5510;
+  --code-com: #6F6561;
+  --code-fn: #1F5C9E;
+  --code-type: #7A3A9A;
+  --code-lit: #B02A50;
+}
+
 :root[data-theme="dark"] {
   --who-keep: 100%;
+  --code-kw: #FF9E78;
+  --code-str: #8FD19A;
+  --code-num: #F2C14E;
+  --code-com: #938A87;
+  --code-fn: #82B8F2;
+  --code-type: #D4A8F2;
+  --code-lit: #FF8FA3;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --who-keep: 100%;
+    --code-kw: #FF9E78;
+    --code-str: #8FD19A;
+    --code-num: #F2C14E;
+    --code-com: #938A87;
+    --code-fn: #82B8F2;
+    --code-type: #D4A8F2;
+    --code-lit: #FF8FA3;
   }
 }
 
@@ -4650,6 +4676,39 @@ input[type="range"].vp-volume {
 .chat-code code {
   background: transparent;
   padding: 0;
+}
+
+.tk-kw,
+.tk-tag {
+  color: var(--code-kw);
+}
+
+.tk-str {
+  color: var(--code-str);
+}
+
+.tk-num {
+  color: var(--code-num);
+}
+
+.tk-com {
+  color: var(--code-com);
+  font-style: italic;
+}
+
+.tk-fn,
+.tk-attr {
+  color: var(--code-fn);
+}
+
+.tk-type,
+.tk-prop {
+  color: var(--code-type);
+}
+
+.tk-lit,
+.tk-meta {
+  color: var(--code-lit);
 }
 
 .chat-quote {

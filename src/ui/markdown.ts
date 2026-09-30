@@ -1,4 +1,5 @@
 import { h } from './dom'
+import { familyOf, highlight } from './highlight'
 
 /**
  * Markdown to DOM nodes, for notes. Builds elements, never HTML strings, so what
@@ -33,7 +34,8 @@ function blocks(lines: string[]): Node[] {
       i++
       while (i < lines.length && !lines[i].trim().startsWith(fence[1])) body.push(lines[i++])
       i++
-      const code = h('code', { text: body.join('\n') })
+      const text = body.join('\n')
+      const code = h('code', {}, highlight(text, familyOf(fence[2], text)))
       if (fence[2]) code.dataset.lang = fence[2]
       out.push(h('pre', {}, [code]))
       continue

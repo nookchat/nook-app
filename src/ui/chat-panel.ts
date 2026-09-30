@@ -17,6 +17,7 @@ import {
   withEmoji,
 } from './emoji'
 import { ghost, typingWords } from './ghost'
+import { familyOf, highlight } from './highlight'
 import { icon } from './icons'
 import { quietKeyboard } from './keyboard'
 import { closeMenu, onContextMenu, type MenuEntry } from './menu'
@@ -2073,7 +2074,8 @@ function formatText(text: string, names: Map<string, string>, me: string, colour
       i += 1
     }
     i += 1
-    const block = h('pre', { class: 'chat-code' }, [h('code', { text: body.join('\n') })])
+    const code = body.join('\n')
+    const block = h('pre', { class: 'chat-code' }, [h('code', {}, highlight(code, familyOf(language, code)))])
     if (language) block.dataset.language = language
     out.push(block)
   }
