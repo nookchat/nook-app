@@ -282,6 +282,10 @@ function createWindow() {
   main.webContents.on('will-prevent-unload', (ev) => {
     if (installing) ev.preventDefault()
   })
+  // A page that loads again was not restarted: the update did not go in, and a call holds the window again.
+  main.webContents.on('did-navigate', () => {
+    installing = false
+  })
   const tell = (channel, value) => main && main.webContents.send(channel, value)
   main.on('maximize', () => tell('window:maximized', true))
   main.on('unmaximize', () => tell('window:maximized', false))

@@ -21,6 +21,16 @@ const CHECK_MS = 4 * 60 * 60 * 1000
 /** Past the start, so the first look does not slow the window down. */
 const FIRST_CHECK_MS = 10_000
 
+/** What went wrong with an update, in userData/update.log, since the page only ever hears that it failed. */
+function note(what, err) {
+  try {
+    const line = `${new Date().toISOString()} ${app.getVersion()} ${what}: ${err?.stack || err}\n`
+    fs.appendFileSync(path.join(app.getPath('userData'), 'update.log'), line)
+  } catch {
+    /* nowhere to write it */
+  }
+}
+
 /** 1 when a is newer than b, -1 when older, 0 when the same. Plain x.y.z. */
 function compareVersions(a, b) {
   const pa = String(a).replace(/^v/, '').split('.').map((n) => parseInt(n, 10) || 0)
@@ -65,7 +75,7 @@ function watchUpdates(tell) {
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
   autoUpdater.on('update-downloaded', (info) => say({ version: info.version, ready: true }))
-  autoUpdater.on('error', () => undefined)
+  autoUpdater.on('error', (err) => note('electron-updater', err))
   const look = () => void autoUpdater.checkForUpdates().catch(() => undefined)
   setTimeout(look, FIRST_CHECK_MS)
   setInterval(look, CHECK_MS)
@@ -201,7 +211,10 @@ function watchMac(say, now) {
         staged = { version: newest, app: where }
         say({ version: newest, ready: true })
       })
-      .catch(() => say({ version: newest, ready: false }))
+      .catch((err) => {
+        note(`stage ${newest}`, err)
+        say({ version: newest, ready: false })
+      })
       .finally(() => {
         staging = null
       })
@@ -214,8 +227,9 @@ function watchMac(say, now) {
     if (!staged) return
     try {
       swapIn(staged.app)
-    } catch {
-      /* it stays for the next quit, or the next start downloads it again */
+    } catch (err) {
+      // It stays for the next quit, or the next start downloads it again.
+      note(`swap on quit to ${staged.version}`, err)
     }
     staged = null
   })
@@ -225,10 +239,14 @@ function watchMac(say, now) {
     check: look,
     install: () => {
       if (!staged) return shell.openExternal(RELEASES)
+      const { version } = staged
       try {
         swapAndRelaunch(staged.app)
-      } catch {
+      } catch (err) {
+        // The page waits on its loading screen for a restart that will not come. It now offers the download.
+        note(`swap to ${version}`, err)
         staged = null
+        say({ version, ready: false })
         shell.openExternal(RELEASES)
       }
     },

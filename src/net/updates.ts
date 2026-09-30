@@ -7,6 +7,8 @@ const CHECK_MS = 10 * 60 * 1000
 
 /** How long a swap may take before the page reloads by itself. */
 const SWAP_WAIT_MS = 8000
+/** How long the desktop app may take to restart into its update before the page gives up on it. */
+const RESTART_WAIT_MS = 20_000
 
 export interface UpdateHooks {
   /** Nothing a reload would lose: no call, no share, nothing half written. */
@@ -239,6 +241,9 @@ export function watchForDesktopUpdates(): void {
             await hooks.beforeReload()
             await takeWebQuietly()
             install()
+            // Still here: the restart did not happen. A reload takes the loading screen away, on the
+            // new web version, and the shell offers the download if its own update failed.
+            window.setTimeout(() => window.location.reload(), RESTART_WAIT_MS)
             return
           }
           install()
