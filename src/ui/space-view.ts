@@ -1004,7 +1004,6 @@ export class SpaceView {
       ? { label: 'Muted with the space', note: 'Unmute the space to hear from it', run: () => muteSpace(room, false) }
       : {
           label: mutedItself ? 'Unmute' : 'Mute',
-          note: mutedItself ? 'Notifications and counts again' : 'No notifications or counts from it, for you',
           lead: h('span', { class: 'menu-icon' }, [icon(mutedItself ? 'bell' : 'bell-off', 16)]),
           run: () => muteChannel(room, channel.name, !mutedItself),
         }
