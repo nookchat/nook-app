@@ -1784,6 +1784,7 @@ button.rail-add {
   align-items: center;
   gap: 5px;
   font-size: 12px;
+  font-weight: 500;
   color: var(--fg-faint);
   white-space: nowrap;
   overflow: hidden;
