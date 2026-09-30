@@ -134,8 +134,12 @@ try {
 
   await page.click('button[aria-label="Emoji"]')
   await page.waitForSelector('.emoji-pop')
-  const firstHead = await page.$eval('.emoji-head', (el) => el.textContent)
-  check('the full picker opens on the emoji, with no Recent row', firstHead !== 'Recent', firstHead)
+  const picker = await page.$eval('.emoji-pop', (el) => ({
+    heads: el.querySelectorAll('.emoji-head, .emoji-tabs').length,
+    first: el.querySelector('.emoji-cell')?.textContent,
+    cells: el.querySelectorAll('.emoji-cell').length,
+  }))
+  check('the full picker is one big list, with no tabs, headings or Recent row', picker.heads === 0 && picker.first === '😀' && picker.cells > 500, JSON.stringify(picker))
   await page.keyboard.press('Escape')
 
   const link = page.url()

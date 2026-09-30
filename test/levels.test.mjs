@@ -99,10 +99,11 @@ try {
     const chat = spaces.all()[0].chat
     for (let i = 0; i < 40 && chat.levelOf(chat.log.founder).name !== 'Captain'; i++) await new Promise((r) => setTimeout(r, 250))
     const level = chat.levelOf(chat.log.founder)
-    return { name: level.name, all: level.can.length, rank: level.rank }
+    const { PERMISSIONS } = await import('/src/store/log.ts')
+    return { name: level.name, all: level.can.length === PERMISSIONS.length, rank: level.rank }
   })
   check('the owner renames their own level, for everybody', captain.name === 'Captain', JSON.stringify(captain))
-  check('and it can still do everything, at the top', captain.all === 8 && captain.rank === 1000, JSON.stringify(captain))
+  check('and it can still do everything, at the top', captain.all && captain.rank === 1000, JSON.stringify(captain))
   await alice.click('.level.open button[aria-label^="Change the level"]').catch(() => undefined)
   await alice.click('.levels button:has-text("New level")')
   await alice.waitForSelector('.level.open input[aria-label="The name of the level"]')
