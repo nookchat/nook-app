@@ -64,7 +64,7 @@ import { actionFor, type Action } from './shortcuts'
 import { NoteEditor } from './notes-view'
 import { placeNear } from './emoji'
 import { loadAvatar, squareThumb } from './avatar'
-import type { WindowChrome } from './shell'
+import { setTitleFace, type WindowChrome } from './shell'
 import { toast } from './toast'
 import { VideoSurface } from './video-surface'
 
@@ -548,6 +548,7 @@ export class SpaceView {
     useServedIce()
     void bookFor(this.server).flush()
     document.title = 'Nook'
+    setTitleFace(null)
   }
 
   // Only the cosmetic maps: a relay outage empties the roster while media keeps flowing.
@@ -1692,7 +1693,13 @@ export class SpaceView {
         ? 'Watching a shared screen'
         : `#${this.channel}`
     const name = this.capture ? 'Sharing your screen' : `#${this.channel}`
-    this.chrome.setTitle(`Nook | ${this.mentions ? `(${this.mentions}) ` : ''}${name}`)
+    const named = this.chat?.spaceName() ?? ''
+    const picture = this.chat?.spacePicture() ?? ''
+    const room = this.space.room.id
+    this.chrome.setTitle(`Nook | ${this.mentions ? `(${this.mentions}) ` : ''}${name}`, {
+      key: `space|${room}|${named}|${picture.length}|${picture.slice(-24)}`,
+      make: () => spaceFace(room, named, 18, picture),
+    })
     const serving = serverTag(this.space.channel?.serving ?? this.server)
     this.chrome.setStatus([what, ...(up ? [] : [`cannot reach ${serving}`])])
     this.chrome.status.title = up ? `Connected to ${serving}` : `Cannot reach ${serving}`

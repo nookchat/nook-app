@@ -2,9 +2,11 @@
 // when a newer desktop app is out. The page gives it the unread count for the icon.
 // It lets the page list your game recordings and play them from nook-rec:// links.
 // It also draws the title bar in place of the system one: a strip to drag the
-// window by, in the page colour, with the Nook icon and the window's title on the
-// left, and on Windows and Linux the window buttons on the right. On macOS the
-// system keeps its own three buttons, over the left end of the bar.
+// window by, in the page colour, with the Nook icon on the left, the window's
+// title in the middle with the space's icon before it, as Discord does, and on
+// Windows and Linux the window buttons on the right. On macOS the system keeps
+// its own three buttons, over the left end of the bar. The page puts the
+// space's icon in #nook-title-face.
 
 const { contextBridge, ipcRenderer } = require('electron')
 
@@ -79,11 +81,16 @@ const CSS = `
     font: 600 12px/1 var(--sans, system-ui, sans-serif);
     user-select: none; -webkit-user-select: none; -webkit-app-region: drag;
   }
+  #nook-titlebar .brand { flex: 1; min-width: 0; display: flex; align-items: center; padding-left: 12px; }
+  #nook-titlebar .brand img { width: 16px; height: 16px; border-radius: 4px; flex: 0 0 auto; }
+  /* In the middle of the window, clear of the buttons at either end. */
   #nook-titlebar .title {
-    flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; padding-left: 12px;
+    position: absolute; top: 0; left: 50%; height: 100%; transform: translateX(-50%);
+    max-width: calc(100% - 320px); display: flex; align-items: center; gap: 6px; pointer-events: none;
   }
-  #nook-titlebar .title img { width: 16px; height: 16px; border-radius: 4px; flex: 0 0 auto; }
-  #nook-titlebar .title span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  #nook-titlebar .title-face { flex: 0 0 auto; display: inline-flex; }
+  #nook-titlebar .title-face:empty { display: none; }
+  #nook-titlebar .title-words { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   #nook-titlebar .controls { display: flex; height: 100%; -webkit-app-region: no-drag; }
   /* Square, as Windows draws them: the page's own button style must not reach in. */
   #nook-titlebar .controls button {
@@ -120,20 +127,28 @@ function mount() {
   const bar = document.createElement('div')
   bar.id = 'nook-titlebar'
 
-  const title = document.createElement('div')
-  title.className = 'title'
+  const brand = document.createElement('div')
+  brand.className = 'brand'
   const mark = document.createElement('img')
   mark.alt = ''
   mark.src = new URL('icons/app-icon.svg', location.href).href
+  brand.append(mark)
+
+  const title = document.createElement('div')
+  title.className = 'title'
+  const face = document.createElement('span')
+  face.className = 'title-face'
+  face.id = 'nook-title-face'
   const words = document.createElement('span')
+  words.className = 'title-words'
   // "Nook | Night Shift": the icon says Nook, so the words say the rest.
   const sayTitle = () => {
     words.textContent = document.title.replace(/^Nook \| /, '')
   }
   sayTitle()
   new MutationObserver(sayTitle).observe(document.head, { subtree: true, childList: true, characterData: true })
-  title.append(mark, words)
-  bar.append(title)
+  title.append(face, words)
+  bar.append(brand, title)
 
   if (!MAC) {
     const max = button('maximize', 'Maximize', 'maximize')

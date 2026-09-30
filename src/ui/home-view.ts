@@ -225,7 +225,11 @@ export class HomeView {
       const marks = space.note?.readDm ?? {}
       if (top > (marks[ref.key] ?? 0)) void space.remember({ readDm: { ...marks, [ref.key]: top } })
     }
-    this.chrome.setTitle(`Nook | ${name}`)
+    const picture = chat.log.avatars().get(ref.key) ?? ''
+    this.chrome.setTitle(`Nook | ${name}`, {
+      key: `person|${ref.key}|${name}|${picture.length}|${picture.slice(-24)}`,
+      make: () => avatarOf(ref.key, name, picture, 18),
+    })
   }
 
   get showing(): DirectRef | null {
