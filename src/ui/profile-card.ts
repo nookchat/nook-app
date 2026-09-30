@@ -18,7 +18,6 @@ export interface ProfileData {
   /** Their level when it is not the plain one, with its colour. */
   level: { name: string; colour: string } | null
   owner: boolean
-  voice: string | null
   sharing: boolean
   playing: Playing | null
   listening: Listening | null
@@ -73,7 +72,6 @@ export function profileCard(data: ProfileData): HTMLElement {
     body.append(section('Level', chip))
   }
   if (data.sharing) body.append(section('Now', h('span', { class: 'person-doing live' }, [h('i', { class: 'live-dot' }), 'Sharing their screen'])))
-  else if (data.voice) body.append(section('In voice', h('span', { class: 'profile-line' }, [icon('volume-low', 14), data.voice])))
   // The cards say what they are themselves.
   if (data.listening) body.append(h('section', { class: 'profile-section' }, [songCard(data.listening)]))
   if (data.playing) body.append(h('section', { class: 'profile-section' }, [gameCard(data.playing)]))

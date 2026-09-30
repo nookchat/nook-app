@@ -18,6 +18,7 @@ import {
 } from './emoji'
 import { ghost, typingWords } from './ghost'
 import { icon } from './icons'
+import { quietKeyboard } from './keyboard'
 import { closeMenu, onContextMenu, type MenuEntry } from './menu'
 import { fitNear } from './place'
 import { toast } from './toast'
@@ -346,6 +347,7 @@ export class ChatPanel {
         blur: () => this.closeSuggestions(),
       },
     })
+    quietKeyboard(this.textInput)
 
     this.sendButton = h(
       'button',

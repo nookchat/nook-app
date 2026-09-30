@@ -324,8 +324,6 @@ export class SpaceView {
   private shareButtonSharing: boolean | null = null
   private channelTitle!: HTMLDivElement
   private channelTitleSig = ''
-  /** The row with the channel's name, search and the people button. Up in the desktop app's title bar when it has one. */
-  private spaceHead: HTMLElement | null = null
   /**
    * A press on a side bar, until the click it makes has landed. The lists there are drawn anew
    * on every change, and one drawn between the press and the release takes the click with it,
@@ -335,8 +333,6 @@ export class SpaceView {
   private missedDraw = false
   private pressTimer = 0
   private pressWired = false
-  /** Keeps the row in the title bar over the column of messages, as that column moves. */
-  private headWatch: ResizeObserver | null = null
   private searchInput!: HTMLInputElement
   private searchWrap!: HTMLDivElement
   private searchResults!: HTMLDivElement
@@ -571,7 +567,6 @@ export class SpaceView {
   destroy(): void {
     if (this.stopped) return
     this.stopped = true
-    this.headUp(false)
     document.removeEventListener('visibilitychange', this.onVisible)
     window.removeEventListener(PLAYING_CHANGED, this.onPlaying)
     window.removeEventListener(LISTENING_CHANGED, this.onPlaying)
@@ -1834,8 +1829,6 @@ export class SpaceView {
   }
 
   private renderShell(): void {
-    // A row from before is up in the title bar: it goes, and the new one takes its place.
-    this.headUp(false)
     clear(this.root)
     this.dock.stop()
     this.dock = voiceDock(this.space)
@@ -1922,14 +1915,14 @@ export class SpaceView {
       scrim,
       left,
       h('div', { class: 'space-main' }, [
-        (this.spaceHead = h('div', { class: 'space-head row' }, [
+        h('div', { class: 'space-head row' }, [
           this.channelsButton,
           this.channelTitle,
           // Search first, then the actions.
           this.searchWrap,
           this.pinsButton,
           this.peopleButton,
-        ])),
+        ]),
         offline,
         this.searchResults,
         this.streamBar,
@@ -1942,7 +1935,6 @@ export class SpaceView {
     ])
 
     this.root.append(h('main', {}, [this.shell]))
-    this.headUp(true)
     this.holdRailsWhilePressed()
   }
 
@@ -1982,37 +1974,6 @@ export class SpaceView {
     if (!this.pressing) return false
     this.missedDraw = true
     return true
-  }
-
-  /**
-   * In the desktop app, the channel's name, search and the people button go up into the title
-   * bar, so the messages have its height. They come down while settings are open, and when the
-   * space closes. In a browser there is no title bar, and they stay over the messages.
-   */
-  private headUp(up: boolean): void {
-    const bar = document.getElementById('nook-titlebar')
-    const head = this.spaceHead
-    if (!bar || !head) return
-    document.documentElement.classList.toggle('nook-head-up', up)
-    this.headWatch?.disconnect()
-    this.headWatch = null
-    if (!up) {
-      if (bar.contains(head)) head.remove()
-      return
-    }
-    bar.append(head)
-    // Straight over the messages: the name where they start, the buttons where they end.
-    const main = this.shell.querySelector<HTMLElement>('.space-main')
-    if (!main) return
-    const place = (): void => {
-      const at = main.getBoundingClientRect()
-      head.style.left = `${Math.round(at.left)}px`
-      head.style.width = `${Math.round(at.width)}px`
-    }
-    this.headWatch = new ResizeObserver(place)
-    this.headWatch.observe(main)
-    this.headWatch.observe(this.shell)
-    place()
   }
 
   private makeChatPanel(): ChatPanel {
@@ -2279,14 +2240,12 @@ export class SpaceView {
     this.settingsOpen = null
     clear(this.root)
     this.root.append(h('main', {}, [this.shell]))
-    this.headUp(true)
     this.drawNow()
   }
 
   private async openSettings(start?: string): Promise<void> {
     const { settingsView } = await import('./settings-view')
     if (this.stopped) return
-    this.headUp(false)
     clear(this.root)
     this.settingsOpen = 'user'
     this.root.append(
@@ -2389,7 +2348,6 @@ export class SpaceView {
     }
     const { spaceSettingsView } = await import('./space-settings')
     if (this.stopped) return
-    this.headUp(false)
     clear(this.root)
     this.settingsOpen = 'space'
     this.root.append(
@@ -3366,7 +3324,6 @@ export class SpaceView {
     const you = key === chat.me
     const level = chat.levelOf(key)
     const role = chat.roles().get(key) ?? MEMBER
-    const voice = row?.voice ? (chat.channelInfo(true).find((c) => c.name === row.voice)?.label ?? row.voice) : null
     const card = profileCard({
       key,
       name: you ? chat.displayName : row?.name || chat.nameOf(key),
@@ -3376,7 +3333,6 @@ export class SpaceView {
       statusText: row?.statusText ?? '',
       level: level.id === MEMBER ? null : { name: level.name, colour: level.colour },
       owner: key === chat.founder,
-      voice: voice && isCallChannel(voice) ? 'A call' : voice,
       sharing: row?.sharing === true,
       playing: row?.playing ?? null,
       listening: row?.listening ?? null,

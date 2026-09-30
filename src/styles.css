@@ -168,7 +168,8 @@ body {
 }
 
 #app {
-  height: 100dvh;
+  /* While a phone's keyboard is open, the height it leaves: see src/ui/keyboard.ts. */
+  height: var(--app-height, 100dvh);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -182,6 +183,11 @@ body {
   background: var(--bg);
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* The keyboard covers the home bar, so its inset is not kept above the keyboard as well. */
+html.keyboard-open .app-shell {
+  padding-bottom: 0;
 }
 
 .app-body {
@@ -2764,58 +2770,6 @@ button.start {
 }
 
 
-/*
- * In the desktop app, the row goes up into the title bar, straight over the messages: the
- * channel's name where they start, search and the buttons where they end, sized to the bar.
- * Only the buttons and the search box take clicks; the rest of the bar still drags the window.
- */
-html.nook-head-up #nook-titlebar .title {
-  display: none;
-}
-
-/* Over the column of messages, where it was: the page sets its left and its width. */
-#nook-titlebar .space-head {
-  position: absolute;
-  top: 0;
-  height: 100%;
-  min-height: 0;
-  gap: 2px;
-  color: var(--fg);
-  font: 400 13px/1 var(--sans);
-}
-
-#nook-titlebar .space-head button,
-#nook-titlebar .space-head .search-box {
-  -webkit-app-region: no-drag;
-}
-
-#nook-titlebar .space-head button.icon-only {
-  width: 28px;
-  min-width: 28px;
-  height: 26px;
-  min-height: 26px;
-  padding: 0;
-}
-
-#nook-titlebar .space-head .channel-name {
-  font-size: 13px;
-  font-weight: 600;
-}
-
-#nook-titlebar .space-head .search-box {
-  width: 180px;
-}
-
-#nook-titlebar .space-head .search-box:focus-within {
-  width: 240px;
-}
-
-#nook-titlebar .space-head input[type="text"].space-search {
-  height: 24px;
-  min-height: 24px;
-  font-size: 12.5px;
-}
-
 .channel-head {
   flex: 1 1 auto;
   min-width: 0;
@@ -3082,8 +3036,9 @@ input[type="text"].space-search {
     height: 112px;
   }
 
+  /* The shell already keeps clear of the home bar: the box adds only its own room. */
   .chat-compose {
-    padding-bottom: max(10px, env(safe-area-inset-bottom));
+    padding-bottom: 10px;
   }
 }
 
@@ -5008,13 +4963,6 @@ button.to-bottom:hover:not(:disabled) {
   height: 9px;
   border-radius: 50%;
   background: var(--level);
-}
-
-.profile-line {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13.5px;
 }
 
 .profile-section .song-card,
