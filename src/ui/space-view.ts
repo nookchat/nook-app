@@ -4225,8 +4225,8 @@ export class SpaceView {
             },
           },
     })
-    // Your own screen has no tag: the tab above it says who is watching.
-    const tag = h('div', { class: `stage-tag${mine ? ' hidden' : ''}` })
+    // Your own screen's tag says what goes out: the tab above it says who is watching.
+    const tag = h('div', { class: 'stage-tag', text: mine ? 'You' : '' })
     const tile = h('div', { class: 'stage-tile' }, [surface.root, tag])
     this.stage.append(tile)
     const entry: StageTile = { peer: null, surface, tile, tag }
@@ -4424,6 +4424,7 @@ export class SpaceView {
       const plan = this.plan(peers.length)
       await Promise.all(peers.map((peer) => peer.setPlan(plan)))
     }
+    this.showOwnStats(peers)
     // Each stream's stats at once, not one after the other.
     await Promise.all(
       [...this.watched].map(async ([id, entry]) => {
@@ -4434,6 +4435,31 @@ export class SpaceView {
         entry.tile.title = `${s.width}x${s.height}, ${s.fps} fps, ${fmtKbps(s.kbps)}${s.codec ? `, ${s.codec}` : ''}`
       }),
     )
+  }
+
+  /** Your own screen's tag: what the others get of it, as the encoder sends it, and what was captured. */
+  private showOwnStats(peers: HostPeer[]): void {
+    const entry = this.watched.get(this.selfId)
+    if (!entry) return
+    const s = this.capture?.video.getSettings()
+    const captured = s?.width && s.height ? `Captured at ${s.width}x${s.height}` : ''
+    const live = peers.filter((p) => p.state === 'connected' && p.stats.height > 0)
+    if (live.length === 0) {
+      entry.tag.textContent = s?.height ? `You · ${Math.min(s.height, s.width ?? s.height)}p` : 'You'
+      entry.tile.title = [captured, 'Nobody is watching yet, so nothing is sent.'].filter(Boolean).join('. ')
+      return
+    }
+    const best = live.reduce((a, b) => (b.stats.height > a.stats.height ? b : a)).stats
+    const total = live.reduce((n, p) => n + p.stats.kbps, 0)
+    entry.tag.textContent = `You · ${Math.min(best.width, best.height)}p · ${best.fps} fps · ${fmtKbps(total)}`
+    const each = live.map((p) => `${p.stats.width}x${p.stats.height}, ${p.stats.fps} fps, ${fmtKbps(p.stats.kbps)}`)
+    entry.tile.title = [
+      `Sending to ${live.length} ${live.length === 1 ? 'viewer' : 'viewers'}${best.codec ? `, ${best.codec}` : ''}`,
+      ...each,
+      captured,
+    ]
+      .filter(Boolean)
+      .join('\n')
   }
 
   private qualityMenu(): HTMLElement {
