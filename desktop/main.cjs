@@ -19,6 +19,7 @@ const {
   screen,
   session,
   shell,
+  WebContentsView,
 } = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -53,8 +54,27 @@ const ALLOWED = new Set(['media', 'display-capture', 'notifications', 'clipboard
 
 let main = null
 
+/** Where the theme the page picked is kept: "light", "dark", or "" to follow the device. */
+const THEME_FILE = () => path.join(app.getPath('userData'), 'theme.txt')
+let theme = null
+
+function savedTheme() {
+  if (theme === null) {
+    try {
+      theme = fs.readFileSync(THEME_FILE(), 'utf8').trim()
+    } catch {
+      theme = ''
+    }
+    if (theme !== 'light' && theme !== 'dark') theme = ''
+  }
+  return theme
+}
+
 /** The page colour of the Nook brand (surface-0), shown before the page paints. */
-const pageColour = () => (nativeTheme.shouldUseDarkColors ? '#100C0B' : '#FDF6F3')
+const pageColour = () => {
+  const picked = savedTheme()
+  return (picked ? picked === 'dark' : nativeTheme.shouldUseDarkColors) ? '#100C0B' : '#FDF6F3'
+}
 /** A link the OS gave before the window was there. */
 let pendingLink = null
 
@@ -152,6 +172,54 @@ function rememberPlace(win, saved) {
   })
 }
 
+/** However the page's start goes, the splash is gone by then. */
+const SPLASH_MOST_MS = 20_000
+/** Takes the splash away. Null when there is none. */
+let hideSplash = null
+
+/**
+ * Shows desktop/splash.html over the window at once: the page's loading screen, which comes
+ * from the network and needs a few seconds on a cold start. It goes when the page says it has
+ * painted its own (boot:shown), when the page has loaded or failed, or after SPLASH_MOST_MS.
+ */
+function showSplash(win) {
+  const view = new WebContentsView()
+  view.setBackgroundColor(pageColour())
+  const fit = () => {
+    if (win.isDestroyed()) return
+    const [width, height] = win.getContentSize()
+    view.setBounds({ x: 0, y: 0, width, height })
+  }
+  const SIZE_EVENTS = ['resize', 'maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen']
+  fit()
+  for (const ev of SIZE_EVENTS) win.on(ev, fit)
+  win.contentView.addChildView(view)
+  const picked = savedTheme()
+  view.webContents.loadFile(path.join(__dirname, 'splash.html'), picked ? { query: { theme: picked } } : undefined)
+
+  const failed = (_ev, code, _desc, _url, mainFrame) => {
+    // -3 is a load stopped by another, such as an invite link opened at the start.
+    if (mainFrame && code !== -3) hide()
+  }
+  const hide = () => {
+    if (hideSplash !== hide) return
+    hideSplash = null
+    clearTimeout(timer)
+    if (!win.isDestroyed()) {
+      for (const ev of SIZE_EVENTS) win.removeListener(ev, fit)
+      win.webContents.removeListener('did-finish-load', hide)
+      win.webContents.removeListener('did-fail-load', failed)
+      win.contentView.removeChildView(view)
+    }
+    if (!view.webContents.isDestroyed()) view.webContents.close()
+  }
+  const timer = setTimeout(hide, SPLASH_MOST_MS)
+  win.webContents.on('did-finish-load', hide)
+  win.webContents.on('did-fail-load', failed)
+  win.once('closed', hide)
+  hideSplash = hide
+}
+
 function createWindow() {
   const saved = readPlace()
   const place = restoreBounds(saved, screen.getAllDisplays(), MIN_SIZE)
@@ -224,6 +292,7 @@ function createWindow() {
     tell('window:fullscreen', main.isFullScreen())
   })
 
+  showSplash(main)
   const start = pendingLink || process.argv.map(appLink).find(Boolean)
   pendingLink = null
   main.loadURL(start || HOME)
@@ -436,6 +505,24 @@ ipcMain.handle('youtube:audio', (ev, url) =>
     ? youtubeAudio(path.join(app.getPath('userData'), 'yt-dlp'), url)
     : { error: 'Not from Nook.' },
 )
+
+// The page has painted its loading screen: the splash over it goes.
+ipcMain.on('boot:shown', (ev) => {
+  if (main && ev.sender === main.webContents) hideSplash?.()
+})
+
+// The theme the page picked, for the splash and the window colour on the next start.
+ipcMain.on('theme:is', (ev, picked) => {
+  if (!isHome(ev.sender.getURL())) return
+  const next = picked === 'light' || picked === 'dark' ? picked : ''
+  if (next === savedTheme()) return
+  theme = next
+  try {
+    fs.writeFileSync(THEME_FILE(), next)
+  } catch {
+    /* no place to keep it: the next start follows the device */
+  }
+})
 
 ipcMain.on('window:control', (ev, action) => {
   const win = BrowserWindow.fromWebContents(ev.sender)

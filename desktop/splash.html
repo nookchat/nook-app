@@ -2,54 +2,19 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=5, interactive-widget=resizes-content"
-    />
-    <meta name="color-scheme" content="light dark" />
-    <meta name="theme-color" content="#FDF6F3" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
+    <title>Nook</title>
     <script>
-      // The saved theme goes on before the first paint, so the page never flashes the wrong one.
+      // The theme the app picked last goes on before the first paint, as in index.html.
       ;(function () {
-        var root = document.documentElement
-        try {
-          var saved = localStorage.getItem('nook.theme.v1')
-          if (saved === 'light' || saved === 'dark') root.dataset.theme = saved
-        } catch (e) {}
-        var dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches
-        document.querySelector('meta[name="theme-color"]').content = dark ? '#100C0B' : '#FDF6F3'
-        // The desktop app showed the same screen while the page came, so it does not come in again.
-        if (window.nookDesktop && window.nookDesktop.splash) root.classList.add('boot-held')
+        var theme = new URLSearchParams(location.search).get('theme')
+        if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme
       })()
     </script>
-    <meta
-      name="description"
-      content="Spaces with text channels, voice and screen sharing. Run them on your own server, or peer to peer with no server at all. End to end encrypted either way."
-    />
-    <!-- The room secret is in the URL fragment: send no referrer. -->
-    <meta name="referrer" content="no-referrer" />
-    <link rel="canonical" href="https://cathode.video/" />
-    <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="Nook" />
-    <meta property="og:url" content="https://cathode.video/" />
-    <meta property="og:title" content="Nook: chat, voice and screen sharing" />
-    <meta
-      property="og:description"
-      content="Text channels, voice and screen sharing in one place. Host it on your own server, or go peer to peer with no server at all. No account, and end to end encrypted."
-    />
-    <meta name="twitter:card" content="summary" />
-    <link rel="manifest" href="./manifest.webmanifest" />
-    <link rel="icon" href="./favicon.ico" sizes="32x32" />
-    <link rel="icon" href="./icons/app-icon.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="./icons/app-icon-180.png" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="Nook" />
     <style>
-      /* The loading screen: plain CSS in the page, so it shows before any script or stylesheet arrives.
-         The colours are the brand tokens (src/brand/tokens.css) for each theme. The ghost does the
-         moving, as the brand's motion rules say: it peeks in, then floats and blinks. src/ui/boot.ts
-         moves the bar through the real steps of the start, and takes the screen away. */
+      /* The loading screen of index.html, word for word but for what is marked. It shows before the
+         page has come, and the page's own screen takes its place with no jump: the ghost holds still
+         once it has peeked in, and the bar stays empty, as they are when the page's screen starts. */
       :root { --boot-page: #FDF6F3; --boot-brand: #191412; --boot-on-brand: #FDF6F3; --boot-track: #ECDFDA; --boot-words: #6F6561; }
       :root[data-theme="dark"] { --boot-page: #100C0B; --boot-brand: #FDF6F3; --boot-on-brand: #191412; --boot-track: #312A27; --boot-words: #A89F9C; }
       @media (prefers-color-scheme: dark) {
@@ -65,7 +30,7 @@
       #boot .boot-stage { position: relative; width: 104px; height: 104px; }
       #boot .boot-ghost {
         position: absolute; left: 0; top: 0; width: 104px; height: 104px; overflow: visible;
-        animation: boot-peek 0.56s cubic-bezier(0.34, 1.56, 0.64, 1) both, boot-float 2.8s cubic-bezier(0.45, 0, 0.55, 1) 0.56s infinite;
+        animation: boot-peek 0.56s cubic-bezier(0.34, 1.56, 0.64, 1) both;
       }
       #boot .boot-body { fill: var(--boot-brand); }
       #boot .boot-eyes { fill: var(--boot-on-brand); transform-box: fill-box; transform-origin: center; animation: boot-blink 5.2s ease-in-out 1.2s infinite; }
@@ -73,7 +38,7 @@
       #boot .boot-shadow {
         position: absolute; left: 28px; bottom: 4px; width: 48px; height: 7px; border-radius: 50%;
         background: var(--boot-brand); opacity: 0.12;
-        animation: boot-fade 0.56s ease both, boot-shadow 2.8s cubic-bezier(0.45, 0, 0.55, 1) 0.56s infinite;
+        animation: boot-fade 0.56s ease both;
       }
       #boot .boot-word { height: 26px; margin-top: 18px; fill: var(--boot-brand); animation: boot-rise 0.4s ease 0.22s both; }
       #boot .boot-bar {
@@ -85,8 +50,6 @@
         background: var(--boot-brand); transition: width 0.45s cubic-bezier(0.22, 1, 0.36, 1);
         overflow: hidden;
       }
-      /* Before the script takes over, the bar creeps on by itself, so it never looks stuck. */
-      #boot .boot-fill.creep { animation: boot-creep 2.4s cubic-bezier(0.1, 0.8, 0.3, 1) 0.3s both; }
       #boot .boot-fill::after {
         content: ""; position: absolute; top: 0; bottom: 0; width: 48px;
         background: linear-gradient(90deg, transparent, var(--boot-page), transparent); opacity: 0.35;
@@ -96,26 +59,17 @@
         min-height: 18px; margin-top: 12px; font: 500 13px/18px system-ui, -apple-system, "Segoe UI", sans-serif;
         color: var(--boot-words); animation: boot-fade 0.4s ease 0.38s both; transition: opacity 0.18s ease;
       }
-      #boot .boot-say.swap { opacity: 0; }
       @keyframes boot-peek { from { transform: translateY(45%) scale(0.9); opacity: 0; } to { transform: none; opacity: 1; } }
-      @keyframes boot-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5%); } }
-      @keyframes boot-shadow { 0%, 100% { transform: scaleX(1); opacity: 0.12; } 50% { transform: scaleX(0.8); opacity: 0.07; } }
       @keyframes boot-blink { 0%, 90%, 100% { transform: scaleY(1); } 93% { transform: scaleY(0.12); } 96% { transform: scaleY(1); } }
       @keyframes boot-fade { from { opacity: 0; } }
       @keyframes boot-rise { from { opacity: 0; transform: translateY(6px); } }
-      @keyframes boot-creep { from { width: 0; } to { width: 22%; } }
       @keyframes boot-shine { from { left: -48px; } to { left: 100%; } }
-      /* After the desktop app's splash (desktop/splash.html): the ghost floats from where it rests, and nothing fades in. */
-      .boot-held #boot .boot-ghost, .boot-held #boot .boot-shadow, .boot-held #boot .boot-word, .boot-held #boot .boot-bar, .boot-held #boot .boot-say { animation: none; }
-      @media (prefers-reduced-motion: no-preference) {
-        .boot-held #boot .boot-ghost { animation: boot-float 2.8s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
-        .boot-held #boot .boot-shadow { animation: boot-shadow 2.8s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
-      }
       @media (prefers-reduced-motion: reduce) {
         #boot .boot-ghost, #boot .boot-eyes, #boot .boot-shadow, #boot .boot-word, #boot .boot-fill::after { animation: none; }
       }
+      /* The whole screen drags the window, as the page's title bar does once it is there. */
+      html, body { height: 100%; -webkit-app-region: drag; user-select: none; -webkit-user-select: none; }
     </style>
-    <title>Nook: chat, voice and screen sharing</title>
   </head>
   <body>
     <div id="boot" role="status" aria-live="polite">
@@ -130,20 +84,8 @@
         <div class="boot-shadow"></div>
       </div>
       <svg class="boot-word" viewBox="0.6 10.4 272.7 99.4" aria-label="Nook" role="img"><path d="M4.60 104.0V65.72V36.41H22.14V63.93H23.16Q23.93 53.95 26.49 47.48Q29.05 41.02 33.79 37.82Q38.52 34.62 45.82 34.62Q56.83 34.62 62.40 41.92Q67.96 49.21 67.96 63.68V104.0H47.23V66.36Q47.23 59.45 45.12 56.0Q43.00 52.54 38.4 52.54Q34.56 52.54 31.61 55.23Q28.67 57.92 27.00 63.93Q25.34 69.95 25.34 80.06V104.0ZM102.91 105.79Q93.18 105.79 85.63 101.88Q78.08 97.98 73.85 90.11Q69.63 82.24 69.63 70.33Q69.63 57.92 74.04 50.04Q78.46 42.17 86.08 38.4Q93.69 34.62 103.29 34.62Q113.28 34.62 120.76 38.52Q128.25 42.43 132.41 50.30Q136.57 58.17 136.57 70.20Q136.57 82.62 132.16 90.49Q127.74 98.36 120.12 102.08Q112.51 105.79 102.91 105.79ZM103.42 90.56Q107.39 90.56 110.08 88.32Q112.76 86.08 114.17 81.72Q115.58 77.37 115.58 71.36Q115.58 64.70 114.04 60.16Q112.51 55.61 109.63 53.18Q106.75 50.75 102.65 50.75Q98.81 50.75 96.12 52.99Q93.44 55.23 92.03 59.58Q90.62 63.93 90.62 70.08Q90.62 79.80 94.01 85.18Q97.40 90.56 103.42 90.56ZM170.36 105.79Q160.64 105.79 153.08 101.88Q145.53 97.98 141.31 90.11Q137.08 82.24 137.08 70.33Q137.08 57.92 141.50 50.04Q145.92 42.17 153.53 38.4Q161.15 34.62 170.75 34.62Q180.73 34.62 188.22 38.52Q195.71 42.43 199.87 50.30Q204.03 58.17 204.03 70.20Q204.03 82.62 199.61 90.49Q195.2 98.36 187.58 102.08Q179.96 105.79 170.36 105.79ZM170.88 90.56Q174.84 90.56 177.53 88.32Q180.22 86.08 181.63 81.72Q183.04 77.37 183.04 71.36Q183.04 64.70 181.50 60.16Q179.96 55.61 177.08 53.18Q174.20 50.75 170.11 50.75Q166.27 50.75 163.58 52.99Q160.89 55.23 159.48 59.58Q158.07 63.93 158.07 70.08Q158.07 79.80 161.47 85.18Q164.86 90.56 170.88 90.56ZM206.33 104.0V14.39H226.56V61.88Q230.91 59.58 234.04 56.64Q237.18 53.69 239.36 50.30Q241.53 46.91 242.88 43.39Q244.22 39.87 245.12 36.41H268.92Q267.52 41.53 264.89 46.33Q262.27 51.13 258.43 55.29Q254.59 59.45 249.53 62.78Q244.48 66.11 238.33 68.28V69.31Q246.27 68.03 251.32 68.99Q256.38 69.95 259.32 72.57Q262.27 75.2 263.87 79.16Q265.47 83.13 266.36 88.0L269.31 104.0H246.91L245.50 92.73Q244.99 88.64 244.09 85.05Q243.20 81.47 240.64 79.23Q238.08 76.99 232.57 76.99H226.56V104.0Z" /></svg>
-      <div class="boot-bar"><div class="boot-fill creep"></div></div>
+      <div class="boot-bar"><div class="boot-fill"></div></div>
       <div class="boot-say">Loading Nook</div>
     </div>
-    <script>
-      // A reload into an update says so from the first paint.
-      ;(function () {
-        try {
-          var at = Number(sessionStorage.getItem('nook.updating.v1') || localStorage.getItem('nook.updating.v1'))
-          if (at && Date.now() - at < 120000) document.querySelector('#boot .boot-say').textContent = 'Updating Nook'
-        } catch (e) {}
-      })()
-    </script>
-    <div id="app"></div>
-    <noscript>Nook needs JavaScript, because the whole app runs in your browser.</noscript>
-    <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

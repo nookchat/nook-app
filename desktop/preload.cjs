@@ -14,6 +14,8 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('nookDesktop', {
   platform: process.platform,
+  /** The shell showed desktop/splash.html while the page came: the page's loading screen does not come in again. */
+  splash: true,
   /** On: the shell looks for a running game and tells `onPlaying`. Off: it stops looking. */
   watchGames: (on) => ipcRenderer.send('games:watch', !!on),
   /** Called with { name, steam?, since } or null. Returns a function that stops it. */
@@ -180,7 +182,29 @@ function mount() {
   })
 
   document.body.prepend(bar)
+
+  // The theme the page picked, so the next start shows the splash and the window in it at once.
+  const root = document.documentElement
+  const tellTheme = () => ipcRenderer.send('theme:is', root.dataset.theme || '')
+  tellTheme()
+  new MutationObserver(tellTheme).observe(root, { attributes: true, attributeFilter: ['data-theme'] })
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount)
 else mount()
+
+// The shell's splash stays over the window until the page has painted its own loading screen,
+// which is the same, or the page has come with none. The frame after the one that finds it has
+// painted it.
+function whenShown() {
+  const look = () => {
+    if (!document.querySelector('#boot .boot-say') && document.readyState === 'loading') {
+      requestAnimationFrame(look)
+      return
+    }
+    requestAnimationFrame(() => requestAnimationFrame(() => ipcRenderer.send('boot:shown')))
+  }
+  requestAnimationFrame(look)
+}
+whenShown()
+
