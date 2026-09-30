@@ -3304,7 +3304,14 @@ export class SpaceView {
             closeMenu()
             this.openDirect(key)
           },
-      more: you ? undefined : (button) => openMenu(button, this.personMenu(key, role, false, row?.here === true)),
+      // The profile closes as the menu opens, and takes the button with it: so the menu opens
+      // where the button was, under it.
+      more: you
+        ? undefined
+        : (button) => {
+            const at = button.getBoundingClientRect()
+            openMenu(anchor, this.personMenu(key, role, false, row?.here === true), { at: { x: at.left, y: at.bottom + 6 } })
+          },
       edit: you
         ? () => {
             closeMenu()
