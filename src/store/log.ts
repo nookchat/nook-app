@@ -24,6 +24,7 @@ const EVENT_KINDS = [
   'invite',
   'join',
   'relocate',
+  'hook',
 ] as const
 
 export type EventKind = (typeof EVENT_KINDS)[number]
@@ -33,6 +34,8 @@ const KNOWN_KINDS = new Set<string>(EVENT_KINDS)
 /** The id of a space key after the first: see src/space/keys.ts. */
 export const KEY_ID = /^[0-9a-f]{32}$/
 const PERSON_KEY = /^[0-9a-f]{64}$/
+/** A webhook's id: digits, as Discord's are, so a tool that checks the link's shape takes it. */
+export const HOOK_ID = /^[1-9][0-9]{16,19}$/
 const KEY_COVERS_MS = 24 * 60 * 60 * 1000
 
 /** A level's id, or 'kicked'. */
@@ -47,6 +50,7 @@ export type Permission =
   | 'move'
   | 'soundboard'
   | 'levels'
+  | 'webhooks'
   | 'space'
 
 export const PERMISSIONS: { id: Permission; label: string; about: string }[] = [
@@ -57,6 +61,7 @@ export const PERMISSIONS: { id: Permission; label: string; about: string }[] = [
   { id: 'remove', label: 'Remove people', about: 'Remove somebody, or let them back in' },
   { id: 'move', label: 'Move people', about: 'Move somebody into a voice channel' },
   { id: 'soundboard', label: 'Soundboard', about: 'Play sounds in a voice channel, and add them' },
+  { id: 'webhooks', label: 'Webhooks', about: 'Make and delete webhooks, and copy their links' },
   { id: 'levels', label: 'Levels', about: 'Change levels below theirs, and put people on them' },
   { id: 'space', label: 'The space', about: 'Rename it, clear its history, or delete it' },
 ]
@@ -534,7 +539,10 @@ export class RoomLog {
       if (!ok) return raw
       const auth = this.authority()
       // A removed person's own events stay: the removal already decides what of theirs is shown.
-      return raw.filter((e) => ok.has(e.author) || auth.isKicked(e.author) || e.kind === 'key' || e.kind === 'join')
+      const hooks = new Set(this.hooks().map((hook) => hook.pub))
+      return raw.filter(
+        (e) => ok.has(e.author) || auth.isKicked(e.author) || hooks.has(e.author) || e.kind === 'key' || e.kind === 'join',
+      )
     })
   }
 
@@ -862,6 +870,10 @@ export class RoomLog {
     const removed = this.deletedChannels()
     const kept = this.keptChannels()
     const moved = this.moved(auth, kicked)
+    const hookBy = new Map(this.hooks().map((hook) => [hook.pub, hook]))
+    // What a webhook posts after it stopped, or after it was deleted, is not shown.
+    const hookLate = (e: LogEvent, hook: HookInfo): boolean =>
+      (hook.stoppedAt !== null && e.lamport > hook.stoppedAt) || (hook.goneAt !== null && e.lamport > hook.goneAt)
     // A thread's replies go where their first message goes.
     const placeOf = (e: LogEvent): string =>
       moved.get(e.id) ??
@@ -871,11 +883,15 @@ export class RoomLog {
     // key can still open these lines; the app only keeps them out of sight.
     const shut = (e: LogEvent): boolean => {
       const info = kept.get(placeOf(e))
-      return !!info && (!mayEnter(auth, this.me, info) || !mayEnter(auth, e.author, info))
+      // A webhook posts only into its own channel, so it counts as let in there.
+      return !!info && (!mayEnter(auth, this.me, info) || (!hookBy.has(e.author) && !mayEnter(auth, e.author, info)))
     }
 
     for (const e of this.all()) {
       if (e.lamport < cleared && CLEARABLE.has(e.kind)) continue
+      const hook = hookBy.get(e.author)
+      if (hook && (hookLate(e, hook) || (e.kind !== 'said' && e.kind !== 'edit' && e.kind !== 'retract'))) continue
+      if (hook && e.kind === 'said' && channelOf(e) !== hook.channel) continue
       const removedAt = kicked.get(e.author)
       if (removedAt !== undefined && e.lamport > removedAt) continue
       if (e.kind === 'profile') {
@@ -940,6 +956,12 @@ export class RoomLog {
           retracted: false,
           reactions: new Map(),
         }
+        if (hook) {
+          message.hook = { id: hook.id, avatar: cleanWebAddress(e.body.avatar) }
+          message.name = cleanHookName(e.body.name) || hook.name
+          const embeds = cleanEmbeds(e.body.embeds)
+          if (embeds.length) message.embeds = embeds
+        }
         index.set(e.id, message)
         out.push(message)
         continue
@@ -949,8 +971,14 @@ export class RoomLog {
       if (!target) continue
       if (e.kind === 'edit') {
         if (e.author !== target.author) continue
-        target.text = String(e.body.text ?? '')
+        // A webhook's edit that leaves out the words keeps them, as Discord's does.
+        if (!hook || e.body.text !== undefined) target.text = String(e.body.text ?? '')
         target.edited = true
+        if (hook && Array.isArray(e.body.embeds)) {
+          const embeds = cleanEmbeds(e.body.embeds)
+          if (embeds.length) target.embeds = embeds
+          else delete target.embeds
+        }
       } else if (e.kind === 'retract') {
         if (e.author !== target.author && !auth.can(e.author, 'delete')) continue
         target.retracted = true
@@ -971,7 +999,7 @@ export class RoomLog {
     const pins = this.pinned()
     const replies = new Map<string, number>()
     for (const m of out) {
-      m.name = names.get(m.author) ?? ''
+      if (!m.hook) m.name = names.get(m.author) ?? ''
       m.pinned = pins.has(m.id)
       if (m.inThread && m.replyTo && !m.retracted) replies.set(m.replyTo, (replies.get(m.replyTo) ?? 0) + 1)
       if (!m.poll) continue
@@ -1045,6 +1073,53 @@ export class RoomLog {
   }
 
   /** The space's newer keys, oldest first: each made by somebody who may remove people. */
+  /**
+   * The webhooks: each posts as its own key, into one channel. Whoever may manage webhooks
+   * makes, renames and deletes them, and a webhook may delete itself. When somebody is removed,
+   * the space gets a new key and every webhook made before that stops: what it posts after the
+   * removal is not shown. Its link has to be made again.
+   */
+  hooks(): HookInfo[] {
+    return this.cached('hooks', () => {
+      const auth = this.authority()
+      const epochs = this.keyEpochs()
+      const byId = new Map<string, HookInfo>()
+      for (const e of this.everything()) {
+        if (e.kind !== 'hook') continue
+        const id = String(e.body.id ?? '')
+        if (!HOOK_ID.test(id)) continue
+        const held = byId.get(id)
+        const manager = auth.can(e.author, 'webhooks')
+        if (!held) {
+          if (!manager) continue
+          const pub = String(e.body.pub ?? '')
+          const key = String(e.body.key ?? '')
+          const seed = String(e.body.seed ?? '')
+          const channel = cleanChannel(String(e.body.channel ?? ''))
+          if (!PERSON_KEY.test(pub) || !/^[A-Za-z0-9+/]{43}=$/.test(key) || !/^[0-9a-f]{64}$/.test(seed) || !channel) continue
+          const stop = epochs.find((k) => k.covers > e.lamport)
+          byId.set(id, {
+            id,
+            pub,
+            key,
+            seed,
+            channel,
+            name: cleanHookName(e.body.name) || 'Webhook',
+            maker: e.author,
+            made: e.lamport,
+            stoppedAt: stop ? stop.covers : null,
+            goneAt: null,
+          })
+          continue
+        }
+        if (held.goneAt !== null || !(manager || e.author === held.pub)) continue
+        if (e.body.gone === true) held.goneAt = e.lamport
+        else if (manager && typeof e.body.name === 'string') held.name = cleanHookName(e.body.name) || held.name
+      }
+      return [...byId.values()]
+    })
+  }
+
   keyEpochs(): { id: string; lamport: number; covers: number }[] {
     return this.cached('keyEpochs', () => {
       const auth = this.authority()
@@ -1098,6 +1173,8 @@ export class RoomLog {
       const auth = this.authority()
       const people = new Set<string>(this.founder ? [this.founder] : [])
       for (const e of this.everything()) people.add(e.author)
+      // A webhook is not a person. It never gets the space's key: its link would open the space.
+      for (const hook of this.hooks()) people.delete(hook.pub)
       return [...people].filter((p) => PERSON_KEY.test(p) && !auth.isKicked(p))
     })
   }
@@ -1414,7 +1491,109 @@ export interface Message {
   retracted: boolean
   pinned?: boolean
   poll?: Poll
+  /** Posted by a webhook: its id, and the picture it asked for, a web address. */
+  hook?: { id: string; avatar: string }
+  embeds?: Embed[]
   reactions: Map<string, Set<string>>
+}
+
+export interface HookInfo {
+  id: string
+  /** The key it signs with. */
+  pub: string
+  /** Its own key, base64: what it posts is sealed with it. Everybody in the space has it. */
+  key: string
+  /** The secret half of `pub`, hex. It is in the link. */
+  seed: string
+  channel: string
+  name: string
+  maker: string
+  made: number
+  /** The removal after which it stopped, as a lamport time. Null while it works. */
+  stoppedAt: number | null
+  goneAt: number | null
+}
+
+/** A Discord embed, the parts Nook shows. */
+export interface Embed {
+  title?: string
+  description?: string
+  url?: string
+  /** `#rrggbb`. */
+  colour?: string
+  author?: { name: string; url?: string; icon?: string }
+  fields?: { name: string; value: string; inline: boolean }[]
+  footer?: string
+  image?: string
+  thumbnail?: string
+  /** Epoch milliseconds. */
+  at?: number
+}
+
+export function cleanHookName(raw: unknown): string {
+  return typeof raw === 'string' ? raw.replace(/\s+/g, ' ').trim().slice(0, 80) : ''
+}
+
+/** An http or https address, or ''. */
+export function cleanWebAddress(raw: unknown): string {
+  if (typeof raw !== 'string' || raw.length > 2048) return ''
+  try {
+    const url = new URL(raw)
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : ''
+  } catch {
+    return ''
+  }
+}
+
+const words = (raw: unknown, most: number): string => (typeof raw === 'string' ? raw.trim().slice(0, most) : '')
+
+/** At most ten, with Discord's limits on each part. */
+export function cleanEmbeds(raw: unknown): Embed[] {
+  if (!Array.isArray(raw)) return []
+  const out: Embed[] = []
+  for (const item of raw.slice(0, 10)) {
+    if (!item || typeof item !== 'object') continue
+    const e = item as Record<string, unknown>
+    const embed: Embed = {}
+    const title = words(e.title, 256)
+    if (title) embed.title = title
+    const description = words(e.description, 4096)
+    if (description) embed.description = description
+    const url = cleanWebAddress(e.url)
+    if (url) embed.url = url
+    if (typeof e.color === 'number' && Number.isInteger(e.color) && e.color >= 0 && e.color <= 0xffffff) {
+      embed.colour = `#${e.color.toString(16).padStart(6, '0')}`
+    }
+    const author = e.author as Record<string, unknown> | undefined
+    const authorName = words(author?.name, 256)
+    if (authorName) {
+      embed.author = { name: authorName }
+      const link = cleanWebAddress(author?.url)
+      if (link) embed.author.url = link
+      const icon = cleanWebAddress(author?.icon_url)
+      if (icon) embed.author.icon = icon
+    }
+    if (Array.isArray(e.fields)) {
+      const fields = e.fields
+        .slice(0, 25)
+        .map((f) => f as Record<string, unknown>)
+        .map((f) => ({ name: words(f?.name, 256), value: words(f?.value, 1024), inline: f?.inline === true }))
+        .filter((f) => f.name || f.value)
+      if (fields.length) embed.fields = fields
+    }
+    const footer = words((e.footer as Record<string, unknown> | undefined)?.text, 2048)
+    if (footer) embed.footer = footer
+    const image = cleanWebAddress((e.image as Record<string, unknown> | undefined)?.url)
+    if (image) embed.image = image
+    const thumbnail = cleanWebAddress((e.thumbnail as Record<string, unknown> | undefined)?.url)
+    if (thumbnail) embed.thumbnail = thumbnail
+    if (typeof e.timestamp === 'string') {
+      const at = Date.parse(e.timestamp)
+      if (Number.isFinite(at)) embed.at = at
+    }
+    if (Object.keys(embed).length) out.push(embed)
+  }
+  return out
 }
 
 export interface Poll {

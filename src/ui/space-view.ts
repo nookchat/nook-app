@@ -37,6 +37,7 @@ import {
   OWNER,
   cleanChannel,
   type ChannelInfo,
+  type HookInfo,
   type LogEvent,
   type Message,
   type NoteInfo,
@@ -62,7 +63,8 @@ import { icon, type IconName } from './icons'
 import { myStatusDot, openStatusMenu } from './status-menu'
 import { closeMenu, onContextMenu, openMenu, type MenuItem, type MenuEntry } from './menu'
 import { viewArea } from './place'
-import type { MemberRow } from './space-settings'
+import type { HookActions, MemberRow } from './space-settings'
+import { hookUrl } from '../space/webhook'
 import { actionFor, type Action } from './shortcuts'
 import { NoteEditor } from './notes-view'
 import { placeNear } from './emoji'
@@ -1477,7 +1479,7 @@ export class SpaceView {
     this.chatPanel.relocateTargets = (m) =>
       chat.channelInfo().filter((c) => c.name !== m.channel && chat.mayEnter(m.author, c.name))
     this.chatPanel.personMenu = (key) => {
-      if (key === chat.me) return []
+      if (key === chat.me || chat.log.hooks().some((hook) => hook.pub === key)) return []
       const role = chat.roles().get(key) ?? 'member'
       const here = this.roster().some((r) => r.key === key && r.here)
       return this.personMenu(key, role, false, here)
@@ -1939,6 +1941,9 @@ export class SpaceView {
       rename: (name) => this.rename(name),
     }
     panel.previewFor = (url) => preview(this.server, url)
+    // Through the server, as a link card's pictures are, so the reader's address stays with it.
+    panel.pictureFor = (url) =>
+      this.server ? `${this.server.replace(/\/+$/, '')}/api/v1/preview/image?url=${encodeURIComponent(url)}` : ''
     panel.setEnabled(true)
     return panel
   }
@@ -2185,11 +2190,88 @@ export class SpaceView {
   }
 
   /** What your level lets you change in this space's settings. */
-  private spaceRights(): { space: boolean; levels: boolean; remove: boolean; any: boolean } {
+  private spaceRights(): { space: boolean; levels: boolean; remove: boolean; webhooks: boolean; any: boolean } {
     const space = this.chat?.can('space') === true
     const levels = this.chat?.can('levels') === true
     const remove = this.chat?.can('remove') === true
-    return { space, levels, remove, any: space || levels || remove }
+    const webhooks = this.chat?.can('webhooks') === true
+    return { space, levels, remove, webhooks, any: space || levels || remove || webhooks }
+  }
+
+  /** Said before somebody is removed, when that stops the space's webhooks. */
+  private hooksStopNote(): string {
+    const live = this.chat?.hooks().filter((hook) => hook.stoppedAt === null).length ?? 0
+    if (live === 0) return ''
+    return live === 1
+      ? '\n\nThis also stops the space\'s webhook. Somebody who may manage webhooks makes a new link for it, in Space settings, under Webhooks.'
+      : `\n\nThis also stops the space's ${live} webhooks. Somebody who may manage webhooks makes new links for them, in Space settings, under Webhooks.`
+  }
+
+  /** The webhooks, for the space settings. */
+  private hookActions(): HookActions {
+    const server = this.server
+    const room = this.room
+    const reopen = (): void => {
+      if (this.settingsOpen === 'space') void this.openSpaceSettings('webhooks')
+    }
+    const find = (id: string): HookInfo | undefined => this.chat?.hooks().find((hook) => hook.id === id)
+    const labelOf = (name: string): string => this.chat?.channelInfo().find((c) => c.name === name)?.label || name
+    const linkOf = (hook: HookInfo): string => (room && server ? hookUrl(server, room.id, room.write, hook) : '')
+    return {
+      server: room ? server : '',
+      channels: this.chat?.channelInfo().map((c) => ({ name: c.name, label: c.label })) ?? [],
+      list: () =>
+        (this.chat?.hooks() ?? []).map((hook) => ({
+          id: hook.id,
+          name: hook.name,
+          channel: labelOf(hook.channel),
+          stopped: hook.stoppedAt !== null,
+          url: linkOf(hook),
+        })),
+      make: async (name, channel) => {
+        const chat = this.chat
+        if (!chat || !channel) return
+        const id = await chat.addHook(name.trim() || 'Webhook', channel)
+        const made = find(id)
+        if (made) {
+          await navigator.clipboard.writeText(linkOf(made)).then(
+            () => toast('Webhook made. Its link is copied: paste it where the app asks for a Discord webhook URL.'),
+            () => toast('Webhook made. Copy its link from the list.'),
+          )
+        }
+        reopen()
+      },
+      renew: async (id) => {
+        const chat = this.chat
+        const old = find(id)
+        if (!chat || !old) return
+        const fresh = await chat.addHook(old.name, old.channel)
+        await chat.dropHook(old.id)
+        const made = find(fresh)
+        if (made) {
+          await navigator.clipboard.writeText(linkOf(made)).then(
+            () => toast('New link copied. Paste it into every app that used the old one.'),
+            () => toast('New link made. Copy it from the list, and paste it into every app that used the old one.'),
+          )
+        }
+        reopen()
+      },
+      rename: async (id) => {
+        const hook = find(id)
+        if (!hook) return
+        const name = (await ask('Name the webhook', { value: hook.name, ok: 'Rename' }))?.trim()
+        if (!name) return
+        await this.publish((c) => c.renameHook(id, name))
+        reopen()
+      },
+      drop: async (id) => {
+        const hook = find(id)
+        if (!hook) return
+        if (!window.confirm(`Delete the webhook ${hook.name}?\n\nIts link stops working at once. What it posted stays.`)) return
+        await this.publish((c) => c.dropHook(id))
+        reopen()
+      },
+    }
   }
 
   private async openSpaceSettings(start?: string): Promise<void> {
@@ -2209,10 +2291,11 @@ export class SpaceView {
         picture: this.chat?.spacePicture() ?? '',
         can: rights,
         levels: () => this.levelsEditor(),
+        hooks: this.hookActions(),
         members: () => this.memberRows(),
         setLevel: (key, level) => this.setRole(key, level),
         kick: async (key) => {
-          if (!window.confirm(`Remove ${this.chat?.nameOf(key) || shortKey(key)} from this space?`)) return
+          if (!window.confirm(`Remove ${this.chat?.nameOf(key) || shortKey(key)} from this space?${this.hooksStopNote()}`)) return
           await this.setRole(key, 'kicked')
         },
         ban: (key) => this.ban(key),
@@ -2371,7 +2454,7 @@ export class SpaceView {
   private async ban(key: string): Promise<void> {
     const name = this.chat?.nameOf(key) || shortKey(key)
     const sure = window.confirm(
-      `Ban ${name} from this space?\n\nThey are removed, and the old invite links stop letting anybody new in. Send new people a new link from Invite people.`,
+      `Ban ${name} from this space?\n\nThey are removed, and the old invite links stop letting anybody new in. Send new people a new link from Invite people.${this.hooksStopNote()}`,
     )
     if (sure) await this.setRole(key, 'kicked', true)
   }
@@ -3277,7 +3360,7 @@ export class SpaceView {
           note: 'Everything they write after this is ignored by everybody',
           danger: true,
           run: () => {
-            if (!window.confirm(`Remove ${name} from this space?`)) return
+            if (!window.confirm(`Remove ${name} from this space?${this.hooksStopNote()}`)) return
             void this.setRole(key, 'kicked')
           },
         })

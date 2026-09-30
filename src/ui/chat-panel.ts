@@ -1,4 +1,4 @@
-import { MAX_DM_BYTES, MAX_TEXT, type Attachment, type Message } from '../store/log'
+import { MAX_DM_BYTES, MAX_TEXT, type Attachment, type Embed, type Message } from '../store/log'
 import type { SpaceFiles } from '../net/files'
 import type { LinkPreview } from '../net/server-api'
 import { seesRecordings } from '../net/recordings'
@@ -235,6 +235,8 @@ export class ChatPanel {
   canRelocate = false
   /** The channels a message may go to: not its own, and only ones its writer may enter. */
   relocateTargets: ((m: Message) => { name: string; label: string }[]) | null = null
+  /** A picture a webhook names, through the space's server. '' when there is no way to show it. */
+  pictureFor: ((url: string) => string) | null = null
   /** What a right click on a name or a picture in the chat offers. */
   personMenu: ((key: string) => MenuEntry[]) | null = null
   colourOf: ColourOf = () => ''
@@ -1054,8 +1056,10 @@ export class ChatPanel {
       }
 
       // A new person, or five quiet minutes, starts a new group under a face and a name.
-      const first = m.author !== lastAuthor || m.at - lastAt > GROUP_GAP
-      lastAuthor = m.replyTo ? '' : m.author
+      // A webhook posts under any name it likes, so each name is a person of its own here.
+      const writer = m.hook ? `${m.author}:${m.name ?? ''}:${m.hook.avatar}` : m.author
+      const first = writer !== lastAuthor || m.at - lastAt > GROUP_GAP
+      lastAuthor = m.replyTo ? '' : writer
       lastAt = m.at
       const parent = parentOf(m)
       const callsMe = m.text.includes('@') && mentionsMe(m.text, this.names, this.me)
@@ -1103,6 +1107,8 @@ export class ChatPanel {
       `${m.files?.map((f) => f.id.slice(0, 8)).join(',') ?? ''}${this.files ? '+' : ''}`,
       m.name ?? '',
       this.avatars.get(m.author) ?? '',
+      m.hook ? `hook:${m.hook.avatar}` : '',
+      m.embeds ? JSON.stringify(m.embeds) : '',
       m.at,
       m.edited ? 'e' : '',
       m.pinned ? 'p' : '',
@@ -1245,8 +1251,9 @@ export class ChatPanel {
       row.classList.add('first')
       line.append(
         h('div', { class: 'chat-who' }, [
-          avatarOf(m.author, m.name ?? '', this.avatars.get(m.author) ?? '', 40),
+          this.faceOf(m),
           name,
+          m.hook ? h('span', { class: 'chat-hook-mark', text: 'Webhook', title: 'Posted by an app, through a webhook' }) : null,
           at,
           m.pinned ? pinMark() : null,
         ]),
@@ -1258,6 +1265,7 @@ export class ChatPanel {
     }
 
     this.drawBody(m, line, who, true)
+    if (m.embeds) for (const embed of m.embeds) line.append(this.embedCard(embed))
 
     if (live) {
       line.append(
@@ -1323,6 +1331,71 @@ export class ChatPanel {
 
     line.append(this.rowActions(m, mine, who))
     return row
+  }
+
+  /** The face next to a name: a webhook's comes from the address it gave, through the server. */
+  private faceOf(m: Message): HTMLElement {
+    const picture = m.hook?.avatar ? this.pictureFor?.(m.hook.avatar) ?? '' : ''
+    const face = avatarOf(m.author, m.name ?? '', picture || this.avatars.get(m.author) || '', 40)
+    face.querySelector('img')?.addEventListener('error', () => face.replaceWith(avatarOf(m.author, m.name ?? '', '', 40)), { once: true })
+    return face
+  }
+
+  /** A Discord embed, drawn as a link card is: a bar in its colour, its words, and its pictures. */
+  private embedCard(embed: Embed): HTMLElement {
+    const box = h('div', { class: 'link-card embed-card' })
+    if (embed.colour) box.style.setProperty('--site', embed.colour)
+    const picture = (url: string | undefined, cls: string): HTMLImageElement | null => {
+      const src = url ? this.pictureFor?.(url) ?? '' : ''
+      if (!src) return null
+      const img = h('img', { class: cls })
+      img.alt = ''
+      img.loading = 'lazy'
+      img.referrerPolicy = 'no-referrer'
+      img.src = src
+      img.addEventListener('error', () => img.remove())
+      return img
+    }
+    const out = (url: string | undefined, child: HTMLElement): HTMLElement => {
+      if (!url) return child
+      const a = h('a', {}, [child])
+      a.href = url
+      a.target = '_blank'
+      a.rel = 'noreferrer noopener'
+      return a
+    }
+    const body = h('div', { class: 'link-card-body' })
+    if (embed.author) {
+      body.append(
+        h('div', { class: 'link-card-site' }, [
+          picture(embed.author.icon, 'link-card-icon'),
+          out(embed.author.url, h('span', { class: 'truncate', text: embed.author.name })),
+        ]),
+      )
+    }
+    if (embed.title) body.append(out(embed.url, h('span', { class: 'link-card-title', text: embed.title })))
+    if (embed.description) {
+      const words = h('div', { class: 'link-card-desc embed-desc' })
+      words.append(...formatText(embed.description, this.names, this.me, this.colourOf))
+      body.append(words)
+    }
+    if (embed.fields?.length) {
+      const fields = h('div', { class: 'embed-fields' })
+      for (const f of embed.fields) {
+        const value = h('div', { class: 'embed-field-value' })
+        value.append(...formatText(f.value, this.names, this.me, this.colourOf))
+        fields.append(h('div', { class: `embed-field${f.inline ? ' inline' : ''}` }, [h('div', { class: 'embed-field-name', text: f.name }), value]))
+      }
+      body.append(fields)
+    }
+    const hero = picture(embed.image, 'link-card-hero embed-image')
+    if (hero) body.append(hero)
+    const foot = [embed.footer, embed.at ? CLOCK.format(embed.at) : ''].filter(Boolean).join(' · ')
+    if (foot) body.append(h('div', { class: 'embed-footer tiny faint', text: foot }))
+    box.append(body)
+    const thumb = picture(embed.thumbnail, 'link-card-thumb')
+    if (thumb) box.append(h('div', { class: 'link-card-side' }, [thumb]))
+    return box
   }
 
   /** The words, the pictures and the files of a message, as the log and the pinned list show them. */

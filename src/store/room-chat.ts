@@ -2,6 +2,7 @@ import { fromBase64, toBase64 } from '../bytes'
 import { mentionsMe } from '../chat'
 import { loadIdentity, sharedKey } from './identity'
 import { openEvents } from './verify-pool'
+import { makeHook } from '../space/webhook'
 import {
   cleanAvatar,
   cleanSpacePicture,
@@ -9,6 +10,7 @@ import {
   cleanOrder,
   cleanNoteTitle,
   cleanFiles,
+  cleanHookName,
   DEFAULT_CHANNEL,
   makeEvent,
   MAX_DM_BYTES,
@@ -23,6 +25,7 @@ import {
   type NoteInfo,
   type BoardSound,
   type EventKind,
+  type HookInfo,
   type Level,
   type LogEvent,
   type Message,
@@ -337,6 +340,33 @@ export class RoomChat {
 
   edit(target: string, text: string): Promise<LogEvent> {
     return this.write('edit', { target, text: trimToWire(text, MAX_TEXT) })
+  }
+
+  /** The webhooks there are, stopped ones too, and not deleted ones. */
+  hooks(): HookInfo[] {
+    return this.log.hooks().filter((hook) => hook.goneAt === null)
+  }
+
+  /** A new webhook for a channel. Its link is made from what the event holds. */
+  async addHook(name: string, channel: string): Promise<string> {
+    const hook = await makeHook()
+    await this.write('hook', {
+      id: hook.id,
+      name: cleanHookName(name) || 'Webhook',
+      channel: cleanChannel(channel) || DEFAULT_CHANNEL,
+      pub: hook.pub,
+      key: hook.key,
+      seed: hook.seed,
+    })
+    return hook.id
+  }
+
+  renameHook(id: string, name: string): Promise<LogEvent> {
+    return this.write('hook', { id, name: cleanHookName(name) || 'Webhook' })
+  }
+
+  dropHook(id: string): Promise<LogEvent> {
+    return this.write('hook', { id, gone: true })
   }
 
   /** Puts a message, and its thread, in another channel. It keeps its time. */

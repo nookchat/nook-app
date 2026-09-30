@@ -9,7 +9,8 @@ one server going down.
 **It cannot read anything it keeps.** Every event is sealed on the device that
 wrote it, with a key made from the space code, before it is sent. The code
 lives in the part of a link that a browser never sends to anybody. See
-[Encryption](#encryption).
+[Encryption](#encryption). The one exception is what a [webhook](#webhooks)
+posts: another app sends it as plain words, and the server seals it.
 
 A step by step guide for somebody who has not done this before is in
 [docs/self-hosting.md](../docs/self-hosting.md).
@@ -121,6 +122,7 @@ Version 1, under `/api/v1`. A running server describes it at
 | `GET /api/v1/push` | This server's Web Push key (VAPID), `{ "key" }`, which a browser subscribes with |
 | `POST /api/v1/push` | Passes `{ "endpoint", "body", "ttl", "urgency", "topic" }` on to the push service at `endpoint`, signed with that key. `body` is a notification already sealed for that browser. Answers `{ "ok" }`, or `{ "gone": true }` when the device no longer takes them |
 | `GET /api/v1/cluster/lines`, `/rooms`, `/people`, `/files`, `/live` | Between servers in a cluster only. Needs the cluster secret |
+| `/api/webhooks/:id/:token` | A webhook, as Discord's. See [Webhooks](#webhooks) |
 
 The socket speaks JSON, one message per frame. Every message carries the
 `room` it is about, so one connection carries every space a device is in:
@@ -157,6 +159,48 @@ whose network dropped is gone within 20 seconds.
 `at` is always the number of the newest line a message brings the reader to.
 The server sends a space's lines in order, so a reader that keeps the highest
 `at` it has seen can reconnect with `hello` from there and miss nothing.
+
+## Webhooks
+
+A webhook lets another app post into a channel. It takes what a Discord
+webhook takes, at the same paths, so an app that posts to Discord posts here
+when you give it the Nook link in place of the Discord one. Somebody whose
+level may manage webhooks makes one in the space settings, under Webhooks,
+and copies its link: `https://<server>/api/webhooks/<id>/<token>`.
+
+| Route | Does |
+| --- | --- |
+| `POST /api/webhooks/:id/:token` | Posts `{ content, username, avatar_url, embeds }`, as JSON, a form, or a multipart form with `payload_json`. Answers 204, or the message with `?wait=true` |
+| `GET /api/webhooks/:id/:token` | The webhook: `{ id, type, channel_id, token }` |
+| `DELETE /api/webhooks/:id/:token` | Deletes the webhook. What it posted stays |
+| `PATCH /api/webhooks/:id/:token/messages/:message` | Changes a message it posted: `{ content, embeds }` |
+| `DELETE /api/webhooks/:id/:token/messages/:message` | Deletes a message it posted |
+
+Errors have Discord's shape, `{ "message", "code" }`, with Discord's codes: a
+wrong token is 401 with `50027`, an empty message 400 with `50006`. A
+webhook may post five times in two seconds; after that it gets 429 with
+`retry_after`, in seconds. `content` is at most 2000 characters. Files are
+not taken.
+
+**How it works.** The token holds the space id, its write token, the
+webhook's own AES key, the secret key it signs with, and its channel. The
+server signs the message as the webhook, seals it with the webhook's key,
+keeps it as a line, and forgets the token. The webhook's key is in the space's
+log, sealed like everything else, so everybody in the space opens what it
+posts. Nothing else is sealed with that key, and the webhook never gets a copy
+of the space's key, so the link opens only what the webhook itself posted.
+
+**What that costs.**
+
+- The server reads what a webhook posts, while it posts it. It keeps only
+  the sealed line.
+- Anybody with the link can post as the webhook, and can read what it
+  posted. Anybody in the space can work the link out from the log.
+- **Removing or banning somebody stops every webhook made before it.** The
+  removed person could have seen a webhook's key, so every device ignores
+  what an old webhook posts after the removal. Make a new link in the space
+  settings, and put it into every app that used the old one. People who join
+  or leave by themselves change nothing.
 
 ## A cluster
 

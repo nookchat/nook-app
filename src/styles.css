@@ -2343,6 +2343,58 @@ button.start {
   width: 100%;
 }
 
+.hook-new {
+  gap: 8px;
+}
+
+.hook-new .hook-name {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+.hook-new .hook-channel {
+  flex: 0 1 180px;
+  min-width: 0;
+}
+
+.hook-row {
+  gap: 8px;
+}
+
+.hook-row.stopped .switch-about {
+  color: var(--warn);
+}
+
+/* Webhooks stopped by a removal: said at the top, before anything else on the page. */
+.hook-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, transparent);
+  background: color-mix(in srgb, var(--warning) 12%, var(--surface));
+  color: var(--fg);
+  font-size: var(--size-small);
+  line-height: 1.45;
+}
+
+.hook-warning .icon {
+  color: var(--warn);
+  margin-top: 1px;
+}
+
+.hook-rules {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: var(--size-small);
+  line-height: 1.5;
+  color: var(--fg-dim);
+}
+
 .action-row + .action-row {
   border-top: 1px solid var(--line-soft);
 }
@@ -3046,6 +3098,20 @@ input[type="text"].space-search {
   font-size: 15px;
   line-height: 20px;
   color: var(--fg);
+}
+
+/* Posted by an app through a webhook, as Discord marks an app. */
+.chat-hook-mark {
+  align-self: center;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--brand);
+  color: var(--on-brand);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 14px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
 }
 
 /* A message that names you: a soft ember wash and an ember bar at the left. */
@@ -5348,6 +5414,52 @@ input[type="text"].gif-search {
 
 .link-card.large {
   grid-template-columns: minmax(0, 1fr);
+}
+
+/* A webhook's embed. Its description keeps its lines, and runs longer than a link card's. */
+.embed-card .embed-desc {
+  display: block;
+  -webkit-line-clamp: unset;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.embed-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px 12px;
+  margin-top: 4px;
+}
+
+.embed-field {
+  grid-column: 1 / -1;
+  min-width: 0;
+  font-size: var(--size-small);
+}
+
+.embed-field.inline {
+  grid-column: auto;
+}
+
+.embed-field-name {
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.embed-field-value {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--fg-dim);
+}
+
+.embed-card .embed-image {
+  max-width: 100%;
+  margin-top: 6px;
+  border-radius: var(--radius-sm);
+}
+
+.embed-footer {
+  margin-top: 4px;
 }
 
 .link-card-body {

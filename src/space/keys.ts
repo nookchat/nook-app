@@ -79,6 +79,8 @@ export class SpaceKeys {
   readonly changed = new Set<() => void>()
 
   private readonly held = new Map<string, CryptoKey>()
+  /** Each webhook's own key, by its id. Lines open with it; nothing is written with it here. */
+  private readonly hookKeys = new Map<string, CryptoKey>()
   /** Raw bytes of each key held, to seal copies for somebody new. */
   private readonly raw = new Map<string, Uint8Array>()
   private readonly tried = new Set<string>()
@@ -90,7 +92,21 @@ export class SpaceKeys {
 
   /** The key a tag names, or undefined when this device does not hold it yet. */
   key(tag: string): CryptoKey | undefined {
-    return tag ? this.held.get(tag) : this.base
+    return tag ? this.held.get(tag) ?? this.hookKeys.get(tag) : this.base
+  }
+
+  /** Takes the key of each webhook in the log, so what they post opens. */
+  async learnHooks(keys: string[]): Promise<void> {
+    let learned = false
+    for (const key of keys) {
+      const raw = fromBase64(key)
+      if (raw.length !== 32) continue
+      const id = await idOf(raw)
+      if (this.hookKeys.has(id)) continue
+      this.hookKeys.set(id, await importKey(raw))
+      learned = true
+    }
+    if (learned) for (const fn of this.changed) fn()
   }
 
   has(tag: string): boolean {

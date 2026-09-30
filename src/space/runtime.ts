@@ -352,6 +352,7 @@ export class SpaceRuntime {
   private keysChanged(): void {
     this.keyQueue = this.keyQueue
       .then(() => this.keys.learn(this.chat.log, this.chat.me))
+      .then(() => this.keys.learnHooks(this.chat.log.hooks().map((hook) => hook.key)))
       .then(() => this.keys.hearOnly(this.chat.log.keysSinceBan()))
       .then(() => this.keeper?.consider())
       .catch((err) => console.warn('[nook] a space key did not open', err))

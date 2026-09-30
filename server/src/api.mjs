@@ -22,6 +22,7 @@ import {
   since,
 } from './store.mjs'
 import { iceServers } from './turn.mjs'
+import { handleWebhook } from './webhooks.mjs'
 
 const int = (value) => {
   const n = Math.floor(Number(value))
@@ -135,6 +136,11 @@ export async function handle(req, res) {
     const cross = req.headers.origin !== undefined && !originAllowed(req.headers.origin)
     const isHealth = url.pathname === '/api/v1/health'
     if (cross && !isHealth) throw new ApiError(403, 'origin', 'This server does not answer that page.')
+
+    // Other servers post to a webhook, and they send no Origin.
+    if (parts[0] === 'api' && parts[1] === 'webhooks') {
+      if (await handleWebhook(req, res, parts, url)) return
+    }
 
     if (parts[0] === 'api' && parts[1] === 'v1') {
       const [, , a, b, c] = parts
