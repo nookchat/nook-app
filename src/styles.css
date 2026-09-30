@@ -5415,6 +5415,19 @@ button.quick-slot.empty {
   min-height: 38px;
   padding: 0 6px;
   font-size: 22px;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.emoji-quick .chat-react:hover {
+  background: var(--hover);
+  border-color: var(--border);
+}
+
+.emoji-quick .chat-react.on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
 }
 
 .emoji-quick .chat-react.add {
