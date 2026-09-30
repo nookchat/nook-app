@@ -71,15 +71,19 @@
   --btn-border: transparent;
   --btn-border-hover: transparent;
   --btn-fg: var(--text-primary);
-  --btn-radius: var(--radius-pill);
+  /* Rounded squares, never pills: a button with words is as round as one with an icon. */
+  --btn-radius: var(--icon-btn-radius);
   --btn-shadow: none;
   --btn-h: 40px;
   --btn-weight: 500;
 
-  --pill-radius: var(--radius-pill);
+  --pill-radius: var(--tag-radius);
   /* A button with only an icon is a rounded square, never a circle. Smaller for the small ones. */
   --icon-btn-radius: var(--radius-sm);
   --icon-btn-radius-small: 8px;
+  /* A chip you press, such as a reaction or a tab, and a small badge, such as Live. */
+  --chip-radius: 8px;
+  --tag-radius: var(--radius-xs);
   --panel-radius: var(--radius-lg);
   --pane-radius: var(--radius-lg);
   /* A shape inside a rounded one takes its radius less the gap between them, so the curves run side by side. */
@@ -323,7 +327,7 @@ main {
   place-items: center;
   width: 40px;
   height: 40px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--icon-btn-radius);
   background: var(--accent-soft);
   color: var(--text-primary);
 }
@@ -545,7 +549,7 @@ main {
   width: auto;
   height: 20px;
   padding: 0 6px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--tag-radius);
   background: var(--accent);
   color: var(--on-accent);
   font-size: 12px;
@@ -779,7 +783,7 @@ button.big {
   min-height: 44px;
   padding: 0 24px;
   font-size: var(--size);
-  border-radius: var(--radius-pill);
+  border-radius: var(--btn-radius);
 }
 
 button.small,
@@ -1954,7 +1958,7 @@ button.voice-bar-state:hover:not(:disabled) {
   min-height: 18px;
   height: 18px;
   padding: 0 7px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--tag-radius);
   background: var(--live);
   color: var(--on-live);
   font-size: 11px;
@@ -2712,7 +2716,7 @@ input[type="text"].space-search {
   font-size: var(--size-small);
   background: var(--surface-2);
   border-color: transparent;
-  border-radius: var(--radius-pill);
+  border-radius: var(--field-radius);
   transition: border-color 120ms var(--ease), box-shadow 120ms var(--ease);
 }
 
@@ -2790,7 +2794,7 @@ input[type="text"].space-search {
   align-items: center;
   gap: 6px;
   padding: 4px 10px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--tag-radius);
   background: var(--media-chip);
   color: var(--on-media);
   font-size: 12px;
@@ -3211,7 +3215,7 @@ input[type="text"].space-search {
   padding: 0 10px;
   gap: 6px;
   font-size: 14px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--chip-radius);
   background: var(--surface);
   border: 1px solid var(--border);
   font-variant-numeric: tabular-nums;
@@ -3815,7 +3819,7 @@ button.attach-remove {
   top: 50%;
   height: 4px;
   margin-top: -2px;
-  border-radius: var(--pill-radius);
+  border-radius: var(--radius-pill);
   background: var(--line);
   overflow: hidden;
   transition: height 120ms var(--ease), margin 120ms var(--ease);
@@ -3942,7 +3946,7 @@ input[type="range"].vp-volume {
   place-items: center;
   width: 38px;
   height: 38px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--icon-btn-radius-small);
   background: var(--accent-soft);
   color: var(--text-primary);
 }
@@ -4058,7 +4062,7 @@ input[type="range"].vp-volume {
   gap: 8px;
   margin: 10px 12px 0;
   padding: 6px 6px 6px 14px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--in-pane-radius);
   background: var(--surface-2);
 }
 
@@ -4423,7 +4427,7 @@ button.to-bottom:hover:not(:disabled) {
   padding: 0 10px;
   font-size: var(--size-small);
   font-weight: 600;
-  border-radius: var(--pill-radius);
+  border-radius: var(--chip-radius);
   background: transparent;
   color: var(--accent-text);
 }
@@ -4437,7 +4441,7 @@ button.to-bottom:hover:not(:disabled) {
   min-height: 36px;
   padding: 0 16px;
   font-size: var(--size-small);
-  border-radius: var(--radius-pill);
+  border-radius: var(--chip-radius);
 }
 
 /* What a reply answers, over the reply. */
@@ -4919,7 +4923,7 @@ input[type="text"].emoji-search {
   font-size: calc(var(--size-small) - 1px);
   color: var(--fg-faint);
   background: var(--surface-2);
-  border-radius: var(--radius-pill);
+  border-radius: var(--chip-radius);
   padding: 2px 4px 2px 12px;
 }
 
@@ -5458,7 +5462,7 @@ input[type="text"].gif-search {
   white-space: nowrap;
   flex: 0 0 auto;
   border: 1px solid var(--line-soft);
-  border-radius: var(--pill-radius);
+  border-radius: var(--chip-radius);
   background: var(--surface);
   color: var(--fg-dim);
 }
@@ -6037,7 +6041,9 @@ input[type="text"].gif-search {
 }
 
 /* Screen shares in the left rail: one click swaps the stage to that screen. */
-button.rail-add.danger {
+/* Share your screen, under the ones who share: red while it stops yours. */
+.rail-item.share-start.danger,
+.rail-item.share-start.danger:hover:not(:disabled) {
   color: var(--bad);
 }
 
@@ -6061,7 +6067,7 @@ button.rail-add.danger {
 .share-live {
   flex: 0 0 auto;
   padding: 2px 7px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--tag-radius);
   background: var(--live);
   color: var(--on-live);
   font-size: 11px;
@@ -6420,7 +6426,7 @@ input.invalid:focus {
   place-items: center;
   width: 36px;
   height: 36px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--icon-btn-radius);
   background: var(--accent-soft);
   color: var(--text-primary);
 }
@@ -6532,7 +6538,7 @@ input.invalid:focus {
   height: 15px;
   vertical-align: -2px;
   border: 1.25px solid currentColor;
-  border-radius: var(--radius-pill);
+  border-radius: var(--tag-radius);
   font-size: 10px;
   font-weight: 600;
   line-height: 1;
@@ -6755,7 +6761,7 @@ button.recordings-game.on {
   position: absolute;
   z-index: 1;
   padding: 2px 7px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--tag-radius);
   background: var(--media-chip);
   color: var(--on-media);
   font-size: 11px;
@@ -6824,7 +6830,7 @@ button.recordings-game.on {
 .folder-kind {
   flex: 0 0 auto;
   padding: 2px 8px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--tag-radius);
   background: var(--select);
   font-size: 12px;
   font-weight: 600;

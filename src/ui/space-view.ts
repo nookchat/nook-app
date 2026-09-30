@@ -312,6 +312,8 @@ export class SpaceView {
   private stage!: HTMLDivElement
   private shareButton!: HTMLButtonElement
   private railShareButton!: HTMLButtonElement
+  /** Where Share your screen goes, once the space is open. */
+  private shareStart!: HTMLDivElement
   private shareList!: HTMLDivElement
   private shareButtonSharing: boolean | null = null
   private channelTitle!: HTMLDivElement
@@ -1830,9 +1832,8 @@ export class SpaceView {
     this.channelTitleSig = ''
 
     this.shareList = h('div', { class: 'rail-list share-list' })
-    this.railShareButton = h('button', { class: 'ghost icon-only rail-add', on: { click: () => void this.toggleShare() } }, [
-      icon('monitor', 17),
-    ])
+    this.railShareButton = h('button', { class: 'rail-item share-start', on: { click: () => void this.toggleShare() } })
+    this.shareStart = h('div', { class: 'rail-list' })
     this.shareButton = h('button', { class: 'voice-tool share-button' }, [icon('monitor', 19)])
     this.shareButton.addEventListener('click', () => void this.toggleShare())
     this.shareButtonSharing = null
@@ -2024,9 +2025,9 @@ export class SpaceView {
         this.voiceList,
         h('div', { class: 'rail-head' }, [
           h('span', { class: 'eyebrow', text: 'Screen', title: 'Anybody here can share, in voice or not.' }),
-          this.railShareButton,
         ]),
         this.shareList,
+        this.shareStart,
         h('div', { class: 'rail-head' }, [
           h('span', { class: 'eyebrow', text: 'Notes', title: 'Notes in markdown that everybody here can read and change.' }),
           h(
@@ -2471,6 +2472,8 @@ export class SpaceView {
       if (canEdit) this.orderByHand(railRow, name, false)
       this.channelList.append(railRow)
     }
+    // Share your screen comes with the channels, never before them.
+    if (chat && !this.railShareButton.isConnected) this.shareStart.append(this.railShareButton)
     this.mentions = mentions
   }
 
@@ -3897,11 +3900,13 @@ export class SpaceView {
 
   private renderShareList(live: LiveStream[], peers: Map<string, MeshPeer>): void {
     const sharing = this.capture !== null
-    this.railShareButton.title = sharing ? 'Stop sharing your screen' : 'Share your screen'
-    this.railShareButton.setAttribute('aria-label', this.railShareButton.title)
+    // A row like a channel's: what it does, in words.
+    this.railShareButton.title = sharing ? 'Stop sharing your screen' : 'Anybody here can share, in voice or not'
     this.railShareButton.classList.toggle('danger', sharing)
-    clear(this.railShareButton)
-    this.railShareButton.append(icon(sharing ? 'stop' : 'monitor', sharing ? 14 : 17))
+    this.railShareButton.replaceChildren(
+      icon(sharing ? 'stop' : 'monitor', 16),
+      h('span', { class: 'truncate grow', text: sharing ? 'Stop sharing' : 'Share your screen' }),
+    )
 
     clear(this.shareList)
     if (live.length === 0) return

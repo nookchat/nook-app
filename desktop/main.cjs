@@ -29,6 +29,10 @@ const recordings = require('./recordings.cjs')
 
 app.setName('Nook')
 
+// Windows shows a notification only for an app whose id matches its Start menu shortcut, and the
+// installer names that shortcut with the appId in package.json. Without this, every one is dropped.
+if (process.platform === 'win32') app.setAppUserModelId(app.isPackaged ? 'app.nook.desktop' : process.execPath)
+
 // The page plays a recording from a nook-rec:// link. The scheme needs its rights before the app is ready.
 protocol.registerSchemesAsPrivileged([
   {
