@@ -2,6 +2,7 @@ import { cleanName } from '../chat'
 import { SELF_HOSTING_URL, checkServer, serverTag, serverUrl, setDefaultServer } from '../backend'
 import { health } from '../net/server-api'
 import { micSettings, setMicSettings } from '../net/mic'
+import { LISTENING_CHANGED, listeningNow, seesSpotify, setShowsListening, showsListening } from '../net/listening'
 import { PLAYING_CHANGED, playingNow, seesGames, setShowsPlaying, showsPlaying } from '../net/playing'
 import { seesRecordings } from '../net/recordings'
 import { loadIdentity, saveDisplayName } from '../store/identity'
@@ -14,6 +15,7 @@ import { clear, copyText, h } from './dom'
 import { openEmojiPicker, quickReactions, setQuickReactions } from './emoji'
 import { icon } from './icons'
 import { gameCard } from './game-card'
+import { songCard } from './song-card'
 import { enterLinkCode, lastBackup, showBackup, showLinkCode } from './link-device'
 import { paintFolders } from './recordings'
 import { askNotify, notifyState, notifyText, notifyWhat, setNotifyText, setNotifyWhat, stopNotify } from './notify'
@@ -460,6 +462,28 @@ export function settingsView(actions: SettingsActions): HTMLElement {
         }
         window.addEventListener(PLAYING_CHANGED, onPlaying)
         paintNow()
+
+        const song = h('div', { class: 'tiny faint settings-game' })
+        const paintSong = (): void => {
+          const playing = listeningNow()
+          clear(song)
+          // What the others see, the same card as in your menu for them.
+          if (seesSpotify() && showsListening() && playing) song.append(songCard(playing))
+          else {
+            song.textContent = !seesSpotify()
+              ? 'Nook finds the song in the desktop app. A browser cannot see Spotify.'
+              : !showsListening()
+                ? 'Nobody sees what you listen to.'
+                : 'Spotify is not playing now.'
+          }
+        }
+        const onSong = (): void => {
+          if (song.isConnected) paintSong()
+          else window.removeEventListener(LISTENING_CHANGED, onSong)
+        }
+        window.addEventListener(LISTENING_CHANGED, onSong)
+        paintSong()
+
         return h('div', { class: 'stack settings-stack' }, [
           card(
             'What you are playing',
@@ -468,6 +492,16 @@ export function settingsView(actions: SettingsActions): HTMLElement {
               toggle('Show what you are playing', showsPlaying, setShowsPlaying, 'Everybody in your spaces sees it'),
             ]),
             now,
+          ),
+          card(
+            'What you listen to',
+            note(
+              'The desktop app asks the Spotify app on this computer which song it plays, and puts it under your name, the way Discord does. You need no Spotify login. On a Mac, the first time, macOS asks if Nook may control Spotify.',
+            ),
+            h('div', { class: 'switch-list' }, [
+              toggle('Show what you listen to on Spotify', showsListening, setShowsListening, 'Everybody in your spaces sees the song'),
+            ]),
+            song,
           ),
         ])
       },

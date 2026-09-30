@@ -14,6 +14,7 @@ import { checkSupport } from './diagnostics'
 import { closeConnections } from './net/connection'
 import { startStreaming } from './net/files'
 import { watchPush } from './net/push'
+import { watchListening } from './net/listening'
 import { watchPlaying } from './net/playing'
 import { SOUND_HELD } from './net/unlock'
 import { watchForDesktopUpdates, watchForUpdates } from './net/updates'
@@ -288,6 +289,7 @@ installCalls((space, key) => void showHome({ room: space.room.id, key }))
 
 drawEmojiAsArt()
 watchPlaying()
+watchListening()
 
 /** The loading screen goes once the space on screen has its messages, or a little later at most. */
 async function settle(): Promise<void> {

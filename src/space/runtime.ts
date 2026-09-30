@@ -2,6 +2,7 @@ import { fetchIce, serverTag } from '../backend'
 import { Channel, connectionTo } from '../net/connection'
 import { SpaceFiles } from '../net/files'
 import { Mesh } from '../net/mesh'
+import { LISTENING_CHANGED, listeningNow, listeningWire } from '../net/listening'
 import { PLAYING_CHANGED, playingNow } from '../net/playing'
 import { loadStatus, STATUS_CHANGED } from '../store/status'
 import { pushAbout } from '../net/push'
@@ -184,6 +185,7 @@ export class SpaceRuntime {
       playing: playingNow()?.name,
       steam: playingNow()?.steam,
       playingFor: playingNow() ? Math.max(0, Date.now() - playingNow()!.since) : undefined,
+      listening: listeningNow() ? listeningWire(listeningNow()!) : undefined,
       ...this.extras(),
     })
     mesh.onData = (from, raw) => this.emit('data', from, raw)
@@ -251,6 +253,7 @@ export class SpaceRuntime {
     mesh.start()
     document.addEventListener('visibilitychange', this.announceAgain)
     window.addEventListener(PLAYING_CHANGED, this.announceAgain)
+    window.addEventListener(LISTENING_CHANGED, this.announceAgain)
     window.addEventListener(STATUS_CHANGED, this.announceAgain)
     // Now and then, so anybody who counted us gone by mistake after a reconnect has us back.
     this.lastLook = Date.now()
@@ -648,6 +651,7 @@ export class SpaceRuntime {
     this.voice?.dispose()
     document.removeEventListener('visibilitychange', this.announceAgain)
     window.removeEventListener(PLAYING_CHANGED, this.announceAgain)
+    window.removeEventListener(LISTENING_CHANGED, this.announceAgain)
     window.removeEventListener(STATUS_CHANGED, this.announceAgain)
     window.clearInterval(this.stillHere)
     this.mesh?.stop()

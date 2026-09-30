@@ -9,6 +9,7 @@ const SYNCED = [
   'nook.volume.v1',
   'nook.sounds.v1',
   'nook.activity.v1',
+  'nook.listening.v1',
   'nook.rail.v1',
   'nook.keys.v1',
   'nook.muted.v1',

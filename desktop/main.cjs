@@ -22,6 +22,7 @@ const {
 const fs = require('node:fs')
 const path = require('node:path')
 const { watchGames } = require('./games.cjs')
+const { watchSpotify } = require('./spotify.cjs')
 const { editMenu } = require('./edit-menu.cjs')
 const { pickerBounds, restoreBounds, screenOf } = require('./placement.cjs')
 const { watchUpdates } = require('./updates.cjs')
@@ -310,6 +311,25 @@ ipcMain.on('games:watch', (ev, on) => {
   }
 })
 
+// The page asks for the song while you let it show what you listen to.
+let spotify = null
+
+function tellSong(now) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (isHome(win.webContents.getURL())) win.webContents.send('spotify:listening', now)
+  }
+}
+
+ipcMain.on('spotify:watch', (ev, on) => {
+  if (!isHome(ev.sender.getURL())) return
+  if (on && !spotify) spotify = watchSpotify(tellSong)
+  else if (on) ev.sender.send('spotify:listening', spotify.now())
+  else if (spotify) {
+    spotify.stop()
+    spotify = null
+  }
+})
+
 // A newer desktop app: the page offers it, and says when to restart into it.
 let updates = null
 let installing = false
@@ -444,6 +464,8 @@ if (!app.requestSingleInstanceLock()) {
   app.on('window-all-closed', () => {
     games?.stop()
     games = null
+    spotify?.stop()
+    spotify = null
     if (process.platform !== 'darwin') app.quit()
   })
 }

@@ -1,5 +1,6 @@
-// Tells the web app it runs in the desktop shell, what game is running, and
-// when a newer desktop app is out. The page gives it the unread count for the icon.
+// Tells the web app it runs in the desktop shell, what game is running, what
+// song Spotify plays, and when a newer desktop app is out. The page gives it the
+// unread count for the icon.
 // It lets the page list your game recordings and play them from nook-rec:// links.
 // It also draws the title bar in place of the system one: a strip to drag the
 // window by, in the page colour, with the Nook icon on the left, the window's
@@ -20,6 +21,14 @@ contextBridge.exposeInMainWorld('nookDesktop', {
       fn(now && typeof now.name === 'string' ? { name: now.name, steam: now.steam, since: now.since } : null)
     ipcRenderer.on('games:playing', heard)
     return () => ipcRenderer.removeListener('games:playing', heard)
+  },
+  /** On: the shell asks Spotify on this computer what it plays, and tells `onListening`. Off: it stops. */
+  watchSpotify: (on) => ipcRenderer.send('spotify:watch', !!on),
+  /** Called with { title, artist, album?, track?, art?, duration?, position?, at } or null. Returns a function that stops it. */
+  onListening: (fn) => {
+    const heard = (_ev, now) => fn(now && typeof now === 'object' && typeof now.title === 'string' ? { ...now } : null)
+    ipcRenderer.on('spotify:listening', heard)
+    return () => ipcRenderer.removeListener('spotify:listening', heard)
   },
   /** This desktop app's version. */
   version: () => ipcRenderer.invoke('app:version'),

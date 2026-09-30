@@ -49,7 +49,8 @@
       "extendInfo": {
         "NSMicrophoneUsageDescription": "Nook uses the microphone for voice channels.",
         "NSCameraUsageDescription": "Nook uses the camera when you turn it on.",
-        "NSScreenCaptureUsageDescription": "Nook shares your screen when you ask it to."
+        "NSScreenCaptureUsageDescription": "Nook shares your screen when you ask it to.",
+        "NSAppleEventsUsageDescription": "Nook asks Spotify which song it plays, to show it to the people in your spaces when you turn that on."
       },
       "identity": "-"
     },

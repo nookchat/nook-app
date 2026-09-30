@@ -4,6 +4,7 @@ import { AudioMixer } from '../media/mixer'
 import type { Mesh, MeshPeer } from '../net/mesh'
 import type { Voice } from '../net/voice'
 import { UplinkMeter } from '../net/uplink'
+import { LISTENING_CHANGED, cleanListening, listeningNow, type Listening } from '../net/listening'
 import { PLAYING_CHANGED, cleanGameName, cleanSteamId, playingNow, type Playing } from '../net/playing'
 import { LOUDEST, mutedFor, setMutedFor, setVolumeFor, volumeFor } from '../net/volume'
 import { gifs as serverGifs, preview, serverHasGifs } from '../net/server-api'
@@ -58,6 +59,7 @@ import { avatarOf, ChatPanel, imageLinks } from './chat-panel'
 import { clear, copyText, fmtKbps, h, onPress, roleInk } from './dom'
 import { desktopOffer } from './desktop-offer'
 import { forHowLong, gameCard } from './game-card'
+import { songCard } from './song-card'
 import { ghost } from './ghost'
 import { icon, type IconName } from './icons'
 import { myStatusDot, openStatusMenu } from './status-menu'
@@ -113,6 +115,7 @@ interface PersonRow {
   you: boolean
   away: boolean
   playing: Playing | null
+  listening: Listening | null
   status: Presence
   statusText: string
 }
@@ -359,6 +362,8 @@ export class SpaceView {
   private readonly voiceSince = new Map<string, number>()
   /** The game each session says it plays, and since when by our clock. */
   private readonly playingBy = new Map<string, Playing>()
+  /** The song each session plays on Spotify, when they show it. */
+  private readonly listeningBy = new Map<string, Listening>()
   private readonly boardButton = h(
     'button',
     {
@@ -470,6 +475,7 @@ export class SpaceView {
     this.boardButton.addEventListener('click', () => this.openBoard(this.boardButton))
     document.addEventListener('visibilitychange', this.onVisible)
     window.addEventListener(PLAYING_CHANGED, this.onPlaying)
+    window.addEventListener(LISTENING_CHANGED, this.onPlaying)
     window.addEventListener(MUTED_CHANGED, this.onPlaying)
     window.addEventListener(STATUS_CHANGED, this.onPlaying)
     window.addEventListener('keydown', this.onShortcut)
@@ -553,6 +559,7 @@ export class SpaceView {
     this.stopped = true
     document.removeEventListener('visibilitychange', this.onVisible)
     window.removeEventListener(PLAYING_CHANGED, this.onPlaying)
+    window.removeEventListener(LISTENING_CHANGED, this.onPlaying)
     window.removeEventListener(MUTED_CHANGED, this.onPlaying)
     window.removeEventListener(STATUS_CHANGED, this.onPlaying)
     window.removeEventListener('keydown', this.onShortcut)
@@ -584,6 +591,7 @@ export class SpaceView {
       ...this.typing.keys(),
       ...this.watchingBy.keys(),
       ...this.playingBy.keys(),
+      ...this.listeningBy.keys(),
       ...this.sounding.keys(),
     ])
     for (const id of known) if (!alive.has(id)) this.forgetSession(id)
@@ -599,6 +607,7 @@ export class SpaceView {
     this.typing.delete(id)
     this.watchingBy.delete(id)
     this.playingBy.delete(id)
+    this.listeningBy.delete(id)
     this.sounding.delete(id)
   }
 
@@ -712,6 +721,12 @@ export class SpaceView {
     } else {
       this.playingBy.delete(from)
     }
+
+    const song = cleanListening(data.listening)
+    const hadSong = this.listeningBy.get(from)
+    if (song) this.listeningBy.set(from, song)
+    else this.listeningBy.delete(from)
+    if (`${hadSong?.title}|${hadSong?.artist}` !== `${song?.title}|${song?.artist}`) this.draw()
 
     const eyes = watchedSessions(data.watching)
     const hadEyes = (this.watchingBy.get(from) ?? []).join()
@@ -2949,6 +2964,8 @@ export class SpaceView {
     }
     const game = mine ? playingNow() : (ids.map((i) => this.playingBy.get(i)).find(Boolean) ?? null)
     if (game) member.append(h('span', { class: 'voice-game', title: `Playing ${game.name}` }, [icon('game', 14)]))
+    const song = mine ? listeningNow() : (ids.map((i) => this.listeningBy.get(i)).find(Boolean) ?? null)
+    if (song) member.append(h('span', { class: 'voice-game voice-song', title: `Listening to ${song.title} on Spotify` }, [icon('music', 14)]))
     if (sharing !== null) {
       member.append(
         h('button', {
@@ -3242,9 +3259,23 @@ export class SpaceView {
   private personMenu(key: string, role: string, you: boolean, here: boolean): MenuEntry[] {
     const actions = this.actionsFor(key, role, you, here)
     const game = you ? null : this.gameOf(key)
+    const song = you ? null : this.songOf(key)
     // A person's volume is set in the voice channel on the left, where you hear them.
-    const blocks: MenuEntry[][] = [game ? [{ custom: gameCard(game) }] : [], actions].filter((b) => b.length)
+    const blocks: MenuEntry[][] = [
+      game ? [{ custom: gameCard(game) }] : [],
+      song ? [{ custom: songCard(song) }] : [],
+      actions,
+    ].filter((b) => b.length)
     return blocks.flatMap((b, i) => (i ? ['line' as const, ...b] : b))
+  }
+
+  /** The song the person listens to now, on any of their devices. */
+  private songOf(key: string): Listening | null {
+    for (const peer of this.mesh?.peers() ?? []) {
+      const song = peer.key === key ? this.listeningBy.get(peer.id) : undefined
+      if (song) return song
+    }
+    return null
   }
 
   /** What the person plays now, on any of their devices. */
@@ -3395,6 +3426,7 @@ export class SpaceView {
         you: false,
         away: false,
         playing: null,
+        listening: null,
         status: 'online',
         statusText: '',
         ...was,
@@ -3415,6 +3447,7 @@ export class SpaceView {
       you: true,
       away: document.hidden,
       playing: playingNow(),
+      listening: listeningNow(),
       status: loadStatus().mode,
       statusText: loadStatus().text,
       sharing: this.capture !== null,
@@ -3436,6 +3469,7 @@ export class SpaceView {
         statusText: hidden ? '' : (status?.text ?? ''),
         away: this.away.has(peer.id) && !(was?.here && !was.away),
         playing: this.playingBy.get(peer.id) ?? was?.playing ?? null,
+        listening: this.listeningBy.get(peer.id) ?? was?.listening ?? null,
         sharing: this.sharers.has(peer.id) || was?.sharing === true,
         voice: this.voice?.whereIs(peer.id) ?? was?.voice ?? null,
         talking: this.voice?.isTalking(peer.id) === true || was?.talking === true,
@@ -3552,6 +3586,13 @@ export class SpaceView {
       return h('span', { class: 'person-doing game', title: `Playing ${name} ${forHowLong(Date.now() - since)}` }, [
         icon('game', 12),
         h('span', { class: 'truncate', text: `Playing ${name}` }),
+      ])
+    }
+    if (row.listening) {
+      const { title, artist } = row.listening
+      return h('span', { class: 'person-doing listening', title: `Listening to ${title}${artist ? ` by ${artist}` : ''} on Spotify` }, [
+        icon('music', 12),
+        h('span', { class: 'truncate', text: `Listening to ${title}` }),
       ])
     }
     if (!row.voice) return null
