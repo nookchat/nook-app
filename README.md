@@ -96,6 +96,28 @@ with voice does it.
   space have. Somebody who joins later gets the new key from whoever is
   online, in a few seconds. See
   [Encryption in server/README.md](server/README.md#encryption).
+- **Banning somebody** removes them, and closes the old invites. After a
+  ban, the code alone lets nobody new in: nobody gives a newcomer the key,
+  every device ignores what they write, and a signal under a key older than
+  the ban's is not heard, so they are not seen as here and cannot join voice.
+  Invite people then makes a link with a pass after the code
+  (`K7M2-9QPT-VB2W~DES9NQ6YG1QSWNYN@...`). The pass is written to the log
+  under the new key, so only the people in the space read it. A newcomer
+  shows a hash of the pass and their own key, and the first device online
+  that checks it gives them the key. Unban, in Space settings, Removed
+  people, lets somebody back in with no new link.
+- **Your status**: a press on your face and name at the foot of the channels
+  picks Online, Idle, Do not disturb or Invisible, and a few words of your
+  own. The others see the dot and the words in the list of people. Do not
+  disturb stops notifications, pushes and the sounds for messages; a call
+  still rings. Invisible lists you with the people who are away, but you
+  still show in a voice channel you are in, and the other devices still
+  hear from yours. The status follows you to every device.
+- **Notes**: the bar of a note has Rename, Who can see it, Copy, and Delete.
+  A note kept to some levels is out of sight for everybody else, and what
+  they write to it is ignored. Its maker, the owner, and whoever can change
+  channels always see it. The list of channels and notes has no buttons; a
+  right click opens the actions.
 - **Notifications while Nook is closed**: with notifications on, a browser
   also gets them when no Nook page is open, through the browser's own push
   service. The device that sends a message seals the notification for your
@@ -135,9 +157,12 @@ with voice does it.
 - **Clips from your recordings**, in the desktop app: the clip button in the
   message box lists your Steam game recordings, the Videos folder where
   NVIDIA, OBS and Xbox save theirs, and any folder you add in Settings,
-  Recordings. Pick one, drag its two ends to the part you want (or press I
+  Recordings. A tab for each game, the one played last first, and a chip
+  for each source, pick which show. Pick one, drag its two ends to the part you want (or press I
   and O while it plays), and Add to message puts the clip in the message box,
   the way a file you drop does. Save clip keeps it on your computer instead.
+  The mute button (or M) silences the editor while you pick; the clip keeps
+  its sound.
   Steam does not keep a recording as a video file: it keeps a folder of small
   pieces, the picture and the sound apart (`session.mpd`,
   `init-stream0.m4s`, `chunk-stream0-00001.m4s`, and so on), in

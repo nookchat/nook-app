@@ -29,6 +29,8 @@ function keepMode(mode: Mode): void {
 export interface NoteHooks {
   save(id: string, title: string | undefined, text: string | undefined): Promise<void>
   nameOf(key: string): string
+  /** The buttons in the note's bar, for what may be done to it. */
+  tools(note: NoteInfo, rename: () => void): HTMLElement[]
 }
 
 /** One shared note: the markdown on the left, how it reads on the right. */
@@ -39,6 +41,7 @@ export class NoteEditor {
   private readonly source: HTMLTextAreaElement
   private readonly reader: HTMLElement
   private readonly status: HTMLElement
+  private readonly tools = h('div', { class: 'note-tools row' })
   private readonly modeButtons = new Map<Mode, HTMLButtonElement>()
   private mode = savedMode()
   private note: NoteInfo | null = null
@@ -98,7 +101,7 @@ export class NoteEditor {
     }
 
     this.root = h('div', { class: 'note-view hidden' }, [
-      h('div', { class: 'note-bar row' }, [this.title, this.status, modes]),
+      h('div', { class: 'note-bar row' }, [this.title, this.status, modes, this.tools]),
       h('div', { class: 'note-panes' }, [this.source, this.reader]),
     ])
     this.setMode(this.mode)
@@ -121,6 +124,7 @@ export class NoteEditor {
       this.drawReader()
       this.root.classList.remove('hidden')
       this.paintStatus()
+      this.paintTools()
       return
     }
     this.note = note
@@ -137,6 +141,18 @@ export class NoteEditor {
       this.title.value = note.title
     }
     this.paintStatus()
+    this.paintTools()
+  }
+
+  private paintTools(): void {
+    if (!this.note) return
+    this.tools.replaceChildren(...this.hooks.tools(this.note, () => this.rename()))
+  }
+
+  /** The title is where the name is changed. */
+  private rename(): void {
+    this.title.focus()
+    this.title.select()
   }
 
   hide(): void {

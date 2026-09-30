@@ -1,3 +1,4 @@
+import { doNotDisturb } from '../store/status'
 import { toast } from './toast'
 
 const KEY = 'nook.notify.v1'
@@ -105,7 +106,7 @@ export function setNotifyText(on: boolean): void {
  * `tag` stops the same message showing twice; `picture` is the sender's face.
  */
 export function notify(title: string, body: string, go?: () => void, more: { tag?: string; picture?: string } = {}): void {
-  if (notifyState() !== 'on') return
+  if (notifyState() !== 'on' || doNotDisturb()) return
   if (typeof document !== 'undefined' && !document.hidden && document.hasFocus()) return
   try {
     const note = new Notification(title, {

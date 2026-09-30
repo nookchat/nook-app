@@ -134,8 +134,8 @@ try {
   await alice.waitForTimeout(700)
   await say(alice, 'something in the scratch channel')
   const row = alice.locator('.rail-row', { hasText: 'scratch' })
-  await row.locator('.person-more').evaluate((el) => el.focus())
-  await row.locator('.person-more').click()
+  // No button in the row: a right click opens its menu.
+  await row.click({ button: 'right' })
   await alice.waitForSelector('.menu')
   alice.once('dialog', (d) => d.accept())
   await alice.click('.menu-item:has(.menu-label:text-is("Delete"))')

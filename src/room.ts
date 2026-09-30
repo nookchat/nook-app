@@ -12,6 +12,24 @@ const PBKDF2_ROUNDS = 250_000
 const MAX_LINK_SERVERS = 5
 const LOCKED_SUFFIX = '.P'
 const SERVER_SEPARATOR = '@'
+/** Before the servers: the pass of an invite made after a ban. */
+const PASS_SEPARATOR = '~'
+const PASS_LENGTH = 16
+
+/** Passes read from links, by the space's code, until the space takes them. */
+const passes = new Map<string, string>()
+
+export function newPass(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(PASS_LENGTH))
+  return Array.from(bytes, (b) => CROCKFORD_BASE32[b & 31]).join('')
+}
+
+/** The pass a link to this space brought, once. */
+export function takePass(secret: string): string {
+  const pass = passes.get(secret) ?? ''
+  passes.delete(secret)
+  return pass
+}
 
 export interface Room {
   secret: string
@@ -100,9 +118,9 @@ export async function deriveRoom(secret: string, password = ''): Promise<Room> {
   return { secret: canonical, id: toHex(idBytes).slice(0, 32), key, write: toHex(writeBytes) }
 }
 
-export function roomLink(secret: string, locked = false, server = ''): string {
+export function roomLink(secret: string, locked = false, server = '', pass = ''): string {
   const { origin, pathname } = window.location
-  return `${origin}${pathname}#${linkTail(secret, locked, server)}`
+  return `${origin}${pathname}#${linkTail(secret, locked, server, pass)}`
 }
 
 function unescapeServerTag(tag: string): string {
@@ -113,10 +131,10 @@ function unescapeServerTag(tag: string): string {
   }
 }
 
-function linkTail(secret: string, locked: boolean, server: string): string {
+function linkTail(secret: string, locked: boolean, server: string, pass = ''): string {
   const tags = server ? endpointsInOrder(server).map(serverTag).filter(Boolean) : []
   const servers = tags.length ? `${SERVER_SEPARATOR}${tags.join(',')}` : ''
-  return `${formatSecret(secret)}${locked ? LOCKED_SUFFIX : ''}${servers}`
+  return `${formatSecret(secret)}${locked ? LOCKED_SUFFIX : ''}${pass ? `${PASS_SEPARATOR}${pass}` : ''}${servers}`
 }
 
 function endpointsInOrder(server: string): string[] {
@@ -134,7 +152,10 @@ export interface LinkInfo {
 export function parseLink(raw: string): LinkInfo | null {
   const trimmed = raw.trim()
   const at = trimmed.indexOf(SERVER_SEPARATOR)
-  const code = at >= 0 ? trimmed.slice(0, at) : trimmed
+  const head = at >= 0 ? trimmed.slice(0, at) : trimmed
+  const tilde = head.indexOf(PASS_SEPARATOR)
+  const code = tilde >= 0 ? head.slice(0, tilde) : head
+  const pass = tilde >= 0 ? head.slice(tilde + 1).toUpperCase() : ''
   const named = at >= 0 ? unescapeServerTag(trimmed.slice(at + 1)).split(',').map(serverUrl) : []
   const server = at >= 0 ? named[0] : undefined
   if (server && named.length > 1) learn(server, named.slice(1).filter(Boolean))
@@ -142,6 +163,7 @@ export function parseLink(raw: string): LinkInfo | null {
   const locked = code.toUpperCase().endsWith(LOCKED_SUFFIX)
   const secret = parseSecret(locked ? code.slice(0, -LOCKED_SUFFIX.length) : code)
   if (!secret) return null
+  if (pass.length === PASS_LENGTH && [...pass].every((ch) => CROCKFORD_BASE32.includes(ch))) passes.set(secret, pass)
   return server ? { secret, locked, server } : { secret, locked }
 }
 

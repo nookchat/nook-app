@@ -7,7 +7,7 @@ import { UplinkMeter } from '../net/uplink'
 import { PLAYING_CHANGED, cleanGameName, cleanSteamId, playingNow, type Playing } from '../net/playing'
 import { LOUDEST, mutedFor, setMutedFor, setVolumeFor, volumeFor } from '../net/volume'
 import { gifs as serverGifs, preview, serverHasGifs } from '../net/server-api'
-import { formatSecret, roomLink, setLinkSecret, type Room } from '../room'
+import { formatSecret, newPass, roomLink, setLinkSecret, type Room } from '../room'
 import { HostPeer } from '../rtc/host-peer'
 import { ViewerPeer } from '../rtc/viewer-peer'
 import { NO_HARDWARE, probeHardwareEncoders, type HardwareProbe } from '../rtc/hardware'
@@ -52,12 +52,14 @@ import { CUSTOM, CUSTOM_MAX_S, decodeClip, openSoundboard, playClip, type Sound 
 import { ask, askChannel, askSound, pickSome } from './ask'
 import { saveScreen } from '../store/screen'
 import { channelMuted, channelMutedItself, MUTED_CHANGED, muteChannel, muteSpace, spaceMuted } from '../store/mute'
+import { cleanPresence, cleanStatusText, loadStatus, presenceLook, STATUS_CHANGED, type Presence } from '../store/status'
 import { avatarOf, ChatPanel, imageLinks } from './chat-panel'
 import { clear, copyText, fmtKbps, h, onPress, roleInk } from './dom'
 import { desktopOffer } from './desktop-offer'
 import { forHowLong, gameCard } from './game-card'
 import { ghost } from './ghost'
-import { icon } from './icons'
+import { icon, type IconName } from './icons'
+import { myStatusDot, openStatusMenu } from './status-menu'
 import { closeMenu, onContextMenu, openMenu, type MenuItem, type MenuEntry } from './menu'
 import { viewArea } from './place'
 import type { MemberRow } from './space-settings'
@@ -94,6 +96,8 @@ const TYPING_FOR_MS = 5000
 const SEARCH_LIMIT = 40
 const WATCHING_MAX = 12
 const SERVER_SILENCE_MS = 10_000
+/** How long a newcomer waits for the space's key before they are told why it may not come. */
+const KEY_WAIT_MS = 20_000
 /** A volume this close to 100% is 100%. */
 const SNAP_PERCENT = 4
 
@@ -107,6 +111,8 @@ interface PersonRow {
   you: boolean
   away: boolean
   playing: Playing | null
+  status: Presence
+  statusText: string
 }
 
 interface StageTile {
@@ -326,6 +332,8 @@ export class SpaceView {
   private read: Record<string, number> = {}
   private readWhenOpened = 0
   private readonly away = new Set<string>()
+  /** What each session says of itself: idle, do not disturb, invisible, and its own words. */
+  private readonly statusBy = new Map<string, { mode: Presence; text: string }>()
   /** Sessions in voice that have muted or deafened themselves. */
   private readonly quiet = new Map<string, 'muted' | 'deafened'>()
   /** Sessions in voice with their camera on. */
@@ -398,6 +406,11 @@ export class SpaceView {
     }
     if (this.stopped) return
     addServer(this.server)
+    // Nobody gave us the space's newest key: most likely an old invite, after a ban.
+    window.setTimeout(() => {
+      if (this.stopped || !space.waitingForKey()) return
+      toast('Nobody has let you in yet. If somebody was banned here, an old invite no longer works: ask for a new link.', 'warn', 15_000)
+    }, KEY_WAIT_MS)
     this.room = space.room
     this.chatPanel.setFiles(filesFor(space))
     const chat = space.chat
@@ -453,6 +466,7 @@ export class SpaceView {
     document.addEventListener('visibilitychange', this.onVisible)
     window.addEventListener(PLAYING_CHANGED, this.onPlaying)
     window.addEventListener(MUTED_CHANGED, this.onPlaying)
+    window.addEventListener(STATUS_CHANGED, this.onPlaying)
     window.addEventListener('keydown', this.onShortcut)
     this.draw()
     this.status()
@@ -535,6 +549,7 @@ export class SpaceView {
     document.removeEventListener('visibilitychange', this.onVisible)
     window.removeEventListener(PLAYING_CHANGED, this.onPlaying)
     window.removeEventListener(MUTED_CHANGED, this.onPlaying)
+    window.removeEventListener(STATUS_CHANGED, this.onPlaying)
     window.removeEventListener('keydown', this.onShortcut)
     for (const t of this.timers) window.clearInterval(t)
     this.timers = []
@@ -558,6 +573,7 @@ export class SpaceView {
     const known = new Set([
       ...this.sharers.keys(),
       ...this.away,
+      ...this.statusBy.keys(),
       ...this.quiet.keys(),
       ...this.filming,
       ...this.typing.keys(),
@@ -571,6 +587,7 @@ export class SpaceView {
   private forgetSession(id: string): void {
     this.sharers.delete(id)
     this.away.delete(id)
+    this.statusBy.delete(id)
     this.quiet.delete(id)
     this.filming.delete(id)
     this.voiceSince.delete(id)
@@ -647,6 +664,12 @@ export class SpaceView {
     const wasAway = this.away.has(from)
     if (data.away === true) this.away.add(from)
     else this.away.delete(from)
+
+    const hadStatus = this.statusBy.get(from)
+    const status = { mode: cleanPresence(data.status), text: cleanStatusText(data.statusText) }
+    if (status.mode === 'online' && !status.text) this.statusBy.delete(from)
+    else this.statusBy.set(from, status)
+    if ((hadStatus?.mode ?? 'online') !== status.mode || (hadStatus?.text ?? '') !== status.text) this.draw()
 
     if (typeof data.voiceFor === 'number' && Number.isFinite(data.voiceFor) && data.voiceFor >= 0) {
       const since = Date.now() - data.voiceFor
@@ -1217,7 +1240,7 @@ export class SpaceView {
         return true
       }
       case 'invite': {
-        void copyText(roomLink(this.secret, this.locked, this.server)).then((ok) =>
+        void this.inviteLink().then(copyText).then((ok) =>
           toast(ok ? 'Invite link copied.' : 'Could not copy it.', ok ? 'info' : 'warn'),
         )
         return true
@@ -1547,56 +1570,80 @@ export class SpaceView {
           title: `Open ${note.title}`,
           on: { click: () => this.openNote(note.id) },
         },
-        [icon('file', 16), h('span', { class: 'truncate grow', text: note.title })],
+        [
+          icon('file', 16),
+          h('span', { class: 'truncate grow', text: note.title }),
+          note.levels.length ? h('span', { class: 'kept-mark kept-lock', title: this.noteSeenBy(note) }, [icon('lock', 13)]) : null,
+        ],
       )
-      const button = h('button', {
-        class: 'ghost tiny-btn person-more',
-        title: `What you can do with ${note.title}`,
-        ariaLabel: `Actions for ${note.title}`,
-        data: { menu: `note:${note.id}` },
-      })
-      onPress(button, () => openMenu(button, this.noteActions(note)))
-      button.append(icon('more', 17))
-      const row = h('div', { class: 'row rail-row' }, [open, button])
+      const row = h('div', { class: 'row rail-row' }, [open])
       onContextMenu(row, () => this.noteActions(note))
       this.noteList.append(row)
     }
   }
 
+  /** The note's own buttons: rename, who can see it, copy, and delete. */
+  private noteTools(note: NoteInfo, rename: () => void): HTMLElement[] {
+    const tool = (name: IconName, label: string, run: () => void, danger = false): HTMLElement =>
+      h('button', { class: `ghost icon-only${danger ? ' danger' : ''}`, title: label, ariaLabel: label, on: { click: run } }, [
+        icon(name, 17),
+      ])
+    const out = [tool('edit', 'Rename', rename)]
+    if (this.mayKeepNote(note)) {
+      const lock = tool(note.levels.length ? 'lock' : 'people', this.noteSeenBy(note), () => void this.pickNoteLevels(note))
+      lock.classList.toggle('on', note.levels.length > 0)
+      out.push(lock)
+    }
+    out.push(tool('copy', 'Copy the markdown', () => this.copyNote(note)))
+    if (this.mayKeepNote(note)) out.push(tool('trash', 'Delete the note', () => this.deleteNote(note), true))
+    return out
+  }
+
+  private mayKeepNote(note: NoteInfo): boolean {
+    return !!this.chat && (note.maker === this.chat.me || this.chat.can('channels'))
+  }
+
+  private noteSeenBy(note: NoteInfo): string {
+    const levels = this.chat?.levels() ?? []
+    const names = note.levels.map((id) => levels.find((l) => l.id === id)?.name).filter(Boolean)
+    return names.length ? `Who can see it: only ${names.join(', ')}` : 'Who can see it: everybody'
+  }
+
+  private async pickNoteLevels(note: NoteInfo): Promise<void> {
+    const levels = this.chat?.levels() ?? []
+    const choices = levels.filter((l) => l.id !== OWNER).map((l) => ({ id: l.id, name: l.name, colour: l.colour }))
+    const picked = await pickSome(
+      `Who can see ${note.title}`,
+      'Tick nobody for everybody. You, the owner, and whoever can change channels always see it.',
+      choices,
+      note.levels,
+    )
+    if (picked === null) return
+    void this.publish((c) => c.setNoteLevels(note.id, picked))
+  }
+
+  private copyNote(note: NoteInfo): void {
+    navigator.clipboard.writeText(note.text).then(
+      () => toast('Copied.'),
+      () => toast('Could not copy that.', 'warn'),
+    )
+  }
+
+  private deleteNote(note: NoteInfo): void {
+    if (!window.confirm(`Delete the note "${note.title}" for everybody? It cannot be undone.`)) return
+    if (this.noteId === note.id) this.openChannel(this.channel)
+    void this.publish((c) => c.dropNote(note.id))
+  }
+
+  /** The right click on a note in the list. */
   private noteActions(note: NoteInfo): MenuItem[] {
-    const chat = this.chat
-    if (!chat) return []
     const items: MenuItem[] = [
       { label: 'Open', run: () => this.openNote(note.id) },
-      {
-        label: 'Rename',
-        run: async () => {
-          const raw = await ask('What should this note be called?', { value: note.title, ok: 'Rename' })
-          if (raw === null || !raw.trim()) return
-          void this.publish((c) => c.saveNote(note.id, raw))
-        },
-      },
-      {
-        label: 'Copy the markdown',
-        run: () => {
-          navigator.clipboard.writeText(note.text).then(
-            () => toast('Copied.'),
-            () => toast('Could not copy that.', 'warn'),
-          )
-        },
-      },
+      { label: 'Copy the markdown', run: () => this.copyNote(note) },
     ]
-    if (note.maker === chat.me || chat.can('channels')) {
-      items.push({
-        label: 'Delete',
-        note: 'For everybody in this space',
-        danger: true,
-        run: () => {
-          if (!window.confirm(`Delete the note "${note.title}" for everybody? It cannot be undone.`)) return
-          if (this.noteId === note.id) this.openChannel(this.channel)
-          void this.publish((c) => c.dropNote(note.id))
-        },
-      })
+    if (this.mayKeepNote(note)) {
+      items.push({ label: 'Who can see it', note: this.noteSeenBy(note).replace('Who can see it: ', ''), run: () => void this.pickNoteLevels(note) })
+      items.push({ label: 'Delete', note: 'For everybody in this space', danger: true, run: () => this.deleteNote(note) })
     }
     return items
   }
@@ -1669,11 +1716,13 @@ export class SpaceView {
     if (!chat) return
     const name = chat.displayName
     const picture = chat.avatarOf(chat.me) || loadAvatar()
-    const sig = `${name}|${picture.length}|${picture.slice(-24)}`
+    const status = loadStatus()
+    const sig = `${name}|${picture.length}|${picture.slice(-24)}|${status.mode}|${status.text}`
     if (this.meFace.dataset.sig === sig) return
     this.meFace.dataset.sig = sig
-    this.meFace.replaceChildren(avatarOf(chat.me, name, picture, 32), h('i', { class: 'dot good' }))
+    this.meFace.replaceChildren(avatarOf(chat.me, name, picture, 32), myStatusDot())
     this.meName.textContent = name
+    this.meName.title = status.text ? `${name}: ${status.text}` : name
   }
 
   private everybody(): Map<string, string> {
@@ -1761,6 +1810,7 @@ export class SpaceView {
     this.noteEditor = new NoteEditor({
       save: (id, title, text) => this.publish((c) => c.saveNote(id, title, text)),
       nameOf: (key) => this.chat?.nameOf(key) || shortKey(key),
+      tools: (note, rename) => this.noteTools(note, rename),
     })
     this.peopleList = h('div', { class: 'rail-list' })
     this.voiceBar = h('div', { class: 'voice-bar voice-panel hidden' })
@@ -1825,8 +1875,12 @@ export class SpaceView {
       title: 'Who is here, and the invite',
       on: { click: () => this.togglePeople() },
     })
-    this.peopleButton.classList.add('on')
     this.peopleButton.append(icon('people', 21))
+    this.paintPeopleButton()
+    const narrow = window.matchMedia('(max-width: 780px)')
+    const repaint = (): void => this.paintPeopleButton()
+    narrow.addEventListener('change', repaint)
+    this.unlisten.push(() => narrow.removeEventListener('change', repaint))
 
     this.shell = h('div', { class: 'space-grid loading' }, [
       scrim,
@@ -1913,9 +1967,18 @@ export class SpaceView {
 
     this.meFace = h('span', { class: 'me-face' })
     this.meName = h('span', { class: 'me-name truncate' })
-    const me = h('div', { class: 'me-panel' }, [
+    const who = h('div', { class: 'me-who', role: 'button', tabIndex: 0, ariaLabel: 'Your status', title: 'Set your status', data: { menu: 'status' } }, [
       this.meFace,
       h('div', { class: 'me-text' }, [this.meName, this.chrome?.status ?? null]),
+    ])
+    onPress(who, () => openStatusMenu(who))
+    who.addEventListener('keydown', (ev) => {
+      if (ev.key !== 'Enter' && ev.key !== ' ') return
+      ev.preventDefault()
+      openStatusMenu(who)
+    })
+    const me = h('div', { class: 'me-panel' }, [
+      who,
       h(
         'button',
         {
@@ -2039,7 +2102,15 @@ export class SpaceView {
     }
     this.membersHidden = !this.membersHidden
     this.shell.classList.toggle('members-hidden', this.membersHidden)
-    this.peopleButton.classList.toggle('on', !this.membersHidden)
+    this.paintPeopleButton()
+  }
+
+  /** Lit while the people are on screen: the column on a wide window, the drawer on a narrow one. */
+  private paintPeopleButton(): void {
+    const narrow = window.matchMedia('(max-width: 780px)').matches
+    const open = narrow ? this.railOpen === 'right' : !this.membersHidden
+    this.peopleButton.classList.toggle('on', open)
+    this.peopleButton.setAttribute('aria-pressed', String(open))
   }
 
   private closeSettings(): void {
@@ -2094,6 +2165,8 @@ export class SpaceView {
           if (!window.confirm(`Remove ${this.chat?.nameOf(key) || shortKey(key)} from this space?`)) return
           await this.setRole(key, 'kicked')
         },
+        ban: (key) => this.ban(key),
+        invitesClosed: this.chat?.log.invitesClosed() ?? false,
         rename: () => this.renameSpace(),
         setPicture: (file) => this.setSpacePicture(file),
         reset: () => this.resetSpace(),
@@ -2103,6 +2176,7 @@ export class SpaceView {
           .map(([key]) => ({
             key,
             name: this.chat?.nameOf(key) || shortKey(key),
+            banned: this.chat?.authority().isBanned(key) ?? false,
             restore: () => void this.setRole(key, 'member'),
           })),
         start,
@@ -2178,6 +2252,7 @@ export class SpaceView {
     this.shell.classList.toggle('rail-right-open', which === 'right')
     this.channelsButton.setAttribute('aria-expanded', String(which === 'left'))
     this.peopleButton.setAttribute('aria-expanded', String(which === 'right'))
+    this.paintPeopleButton()
   }
 
   private openSearchBox(): void {
@@ -2242,7 +2317,16 @@ export class SpaceView {
     this.onLeave()
   }
 
-  private async setRole(subject: string, role: string): Promise<void> {
+  /** A removal that also closes the old invites: after it, only a link made since lets a new person in. */
+  private async ban(key: string): Promise<void> {
+    const name = this.chat?.nameOf(key) || shortKey(key)
+    const sure = window.confirm(
+      `Ban ${name} from this space?\n\nThey are removed, and the old invite links stop letting anybody new in. Send new people a new link from Invite people.`,
+    )
+    if (sure) await this.setRole(key, 'kicked', true)
+  }
+
+  private async setRole(subject: string, role: string, ban = false): Promise<void> {
     const auth = this.chat?.authority()
     const me = this.chat?.me ?? ''
     const allowed =
@@ -2251,7 +2335,7 @@ export class SpaceView {
       toast('Your level cannot do that.', 'warn')
       return
     }
-    await this.publish((c) => c.setRole(subject, role))
+    await this.publish((c) => c.setRole(subject, role, ban))
   }
 
   private levelsEditor(): HTMLElement {
@@ -2276,9 +2360,26 @@ export class SpaceView {
     void this.publish((c) => c.announceName(name, avatar))
   }
 
+  /**
+   * The link to send somebody. After a ban the code alone lets nobody new in, so the link
+   * carries a pass too: this person's own, made once and kept in the log for the others.
+   */
+  private async inviteLink(): Promise<string> {
+    const chat = this.chat
+    let pass = ''
+    if (chat?.log.invitesClosed()) {
+      pass = chat.log.passOf(chat.me)
+      if (!pass) {
+        pass = newPass()
+        await this.publish((c) => c.addPass(pass))
+      }
+    }
+    return roomLink(this.secret, this.locked, this.server, pass)
+  }
+
   private async showInvite(): Promise<void> {
     const { qrSvg } = await import('./qr')
-    const link = roomLink(this.secret, this.locked, this.server)
+    const link = await this.inviteLink()
     const close = (): void => {
       scrim.remove()
       window.removeEventListener('keydown', onKey)
@@ -2314,7 +2415,13 @@ export class SpaceView {
           h('button', { class: 'ghost icon-only', ariaLabel: 'Close', on: { click: close } }, [icon('close', 18)]),
         ]),
         h('div', { class: 'invite-body' }, [
-          h('div', { class: 'share-code', text: formatSecret(this.secret), title: 'The code for this space', data: { link } }),
+          h('div', {
+            class: 'share-code',
+            // After a ban the code needs its pass: the two are typed together.
+            text: link.includes('~') ? `${formatSecret(this.secret)}~${link.split('~')[1].split('@')[0]}` : formatSecret(this.secret),
+            title: 'The code for this space',
+            data: { link },
+          }),
           copy,
           frame,
           h('div', { class: 'tiny faint invite-scan', text: 'Or scan it with a phone.' }),
@@ -2365,15 +2472,7 @@ export class SpaceView {
             : null,
         ],
       )
-      const more = h('button', {
-        class: 'ghost tiny-btn person-more',
-        title: `What you can do with ${channel.label}`,
-        ariaLabel: `Actions for ${channel.label}`,
-        data: { menu: `channel:${name}` },
-      })
-      onPress(more, () => openMenu(more, this.channelActions(channel)))
-      more.append(icon('more', 17))
-      const railRow = h('div', { class: 'row rail-row' }, [open, more])
+      const railRow = h('div', { class: 'row rail-row' }, [open])
       onContextMenu(railRow, () => this.channelActions(channel))
       if (canEdit) this.orderByHand(railRow, name, false)
       this.channelList.append(railRow)
@@ -3118,7 +3217,7 @@ export class SpaceView {
       items.push('line')
       if (role === 'kicked') {
         items.push({
-          label: 'Unban',
+          label: auth.isBanned(key) ? 'Unban' : 'Let back in',
           run: () => void this.setRole(key, MEMBER),
         })
       } else {
@@ -3130,6 +3229,12 @@ export class SpaceView {
             if (!window.confirm(`Remove ${name} from this space?`)) return
             void this.setRole(key, 'kicked')
           },
+        })
+        items.push({
+          label: 'Ban',
+          note: 'Remove them, and close the old invite links',
+          danger: true,
+          run: () => void this.ban(key),
         })
       }
     }
@@ -3156,6 +3261,8 @@ export class SpaceView {
         you: false,
         away: false,
         playing: null,
+        status: 'online',
+        statusText: '',
         ...was,
         ...patch,
       })
@@ -3174,6 +3281,8 @@ export class SpaceView {
       you: true,
       away: document.hidden,
       playing: playingNow(),
+      status: loadStatus().mode,
+      statusText: loadStatus().text,
       sharing: this.capture !== null,
       voice: this.voice?.state.channel ?? null,
       talking: this.voice?.isTalking(this.selfId) ?? false,
@@ -3182,9 +3291,15 @@ export class SpaceView {
     for (const peer of this.mesh?.peers() ?? []) {
       const key = peer.key || peer.id
       const was = rows.get(key)
+      const status = this.statusBy.get(peer.id)
+      // Invisible: here for voice and calls, and listed with the people who are away.
+      const hidden = status?.mode === 'invisible'
+      if (hidden && was?.here) continue
       put(key, {
         name: peer.name || was?.name || '',
-        here: true,
+        here: !hidden,
+        status: hidden ? 'online' : (status?.mode ?? 'online'),
+        statusText: hidden ? '' : (status?.text ?? ''),
         away: this.away.has(peer.id) && !(was?.here && !was.away),
         playing: this.playingBy.get(peer.id) ?? was?.playing ?? null,
         sharing: this.sharers.has(peer.id) || was?.sharing === true,
@@ -3250,12 +3365,7 @@ export class SpaceView {
     const person = h('div', { class: rowClass }, [
       h('span', { class: 'person-face' }, [
         avatarOf(row.key, row.name, avatar, 32),
-        row.here
-          ? h('i', {
-              class: `dot ${row.away ? 'warn' : 'good'}`,
-              title: row.away ? 'Here, but looking at something else' : 'Here',
-            })
-          : null,
+        row.here ? this.presenceDot(row) : null,
       ]),
       h('div', { class: 'person-text' }, [
         h('div', { class: 'row person-line' }, [
@@ -3263,7 +3373,9 @@ export class SpaceView {
           role === OWNER
             ? h('span', { class: 'crown', title: 'Made this space' }, [icon('crown', 12)])
             : null,
-          role === 'kicked' ? h('span', { class: 'tiny faint', text: 'removed' }) : null,
+          role === 'kicked'
+            ? h('span', { class: 'tiny faint', text: this.chat?.authority().isBanned(row.key) ? 'banned' : 'removed' })
+            : null,
         ]),
         this.personDoing(row),
       ]),
@@ -3288,9 +3400,17 @@ export class SpaceView {
     return person
   }
 
+  private presenceDot(row: PersonRow): HTMLElement {
+    const look = presenceLook(row.status, row.away)
+    return h('i', { class: `dot ${look.dot}`, title: row.you && row.status === 'invisible' ? 'Invisible: you show as away' : look.words })
+  }
+
   private personDoing(row: PersonRow): HTMLElement | null {
     if (row.sharing) {
       return h('span', { class: 'person-doing live' }, [h('i', { class: 'live-dot' }), 'Sharing their screen'])
+    }
+    if (row.statusText) {
+      return h('span', { class: 'person-doing said', title: row.statusText }, [h('span', { class: 'truncate', text: row.statusText })])
     }
     if (row.playing) {
       const { name, since } = row.playing

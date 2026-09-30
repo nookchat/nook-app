@@ -215,6 +215,17 @@ try {
   check('the picture of a plain video is kept on this device', keptPictures >= 1, `${keptPictures}`)
   check('the dialog lists the recordings, newest first', (await page.locator('.recording-title').allTextContents()).join('|') === 'Counter-Strike 2|Counter-Strike 2|hevc')
   check('with a filter for each source', (await page.locator('.recordings-filters .chip-toggle').allTextContents()).join('|') === 'All|NVIDIA|Steam|Videos')
+  const tabs = () => page.locator('.recordings-game').allTextContents()
+  check('a tab for each game, then the ones with no game', (await tabs()).join('|') === 'All3|Counter-Strike 22|Other1', (await tabs()).join('|'))
+  await page.click('.recordings-game:has-text("Counter-Strike 2")')
+  const titles = () => page.locator('.recording-title').allTextContents()
+  check('a game tab shows only that game', (await titles()).join('|') === 'Counter-Strike 2|Counter-Strike 2', (await titles()).join('|'))
+  await page.click('.recordings-filters .chip-toggle:has-text("Steam")')
+  check('and the source filter works with it', (await titles()).join('|') === 'Counter-Strike 2')
+  await page.click('.recordings-game:has-text("Other")')
+  check('a game and a source with nothing says so', (await titles()).length === 0 && (await page.locator('.recordings-grid').textContent()).includes('Nothing'))
+  await page.click('.recordings-filters .chip-toggle:has-text("All")')
+  await page.click('.recordings-game:has-text("All")')
   await page.screenshot({ path: 'test-output/recordings-list.png' })
 
   await page.locator('.recording-card').first().click()
@@ -233,6 +244,16 @@ try {
   await page.keyboard.press('End')
   check('the two ends never cross', /Clip 0:24 to 0:25 · 0:01/.test(await about()), await about())
   await page.keyboard.press('Home')
+
+  // Mute is only for you, while you pick: the clip keeps its sound.
+  const muted = () => page.evaluate(() => document.querySelector('.clip-video')?.muted)
+  check('the editor plays with its sound at first', (await muted()) === false)
+  await page.click('.clip-controls button[aria-label="Mute while you edit"]')
+  check('the mute button silences it', (await muted()) === true)
+  await page.locator('.clip-handle.start').focus()
+  await page.keyboard.press('m')
+  check('and M turns the sound back on', (await muted()) === false)
+  await page.keyboard.press('m')
   await page.screenshot({ path: 'test-output/recordings-clip.png' })
 
   // Every change while the clip is made, and the height of the dialog then: nothing may move.

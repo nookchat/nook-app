@@ -6,6 +6,7 @@ import { shortKey } from '../store/identity'
 import { cleanChannel, DEFAULT_CHANNEL, type LogEvent, type PushTarget } from '../store/log'
 import { channelMutedItself, MUTED_CHANGED, spaceMuted } from '../store/mute'
 import { stable } from '../store/server-spaces'
+import { doNotDisturb, STATUS_CHANGED } from '../store/status'
 import { NOTIFY_CHANGED, notifyState, notifyText, notifyWhat } from '../ui/notify'
 
 /**
@@ -123,6 +124,7 @@ function wanted(space: SpaceRuntime, sub: Subscription | null): Record<string, u
     text: notifyText(),
     muted: spaceMuted(room),
     mute,
+    dnd: doNotDisturb(),
   }
 }
 
@@ -169,6 +171,7 @@ export function watchPush(all: () => SpaceRuntime[], roomsChanged: string): void
   const again = (): void => syncPush(all)
   window.addEventListener(NOTIFY_CHANGED, again)
   window.addEventListener(MUTED_CHANGED, again)
+  window.addEventListener(STATUS_CHANGED, again)
   window.addEventListener(roomsChanged, again)
   again()
 }
@@ -258,6 +261,7 @@ async function pushNow(space: SpaceRuntime, event: LogEvent): Promise<void> {
     if (!to || to === chat.me || online.has(to)) return
     const text = chat.directText(event.id) || (typeof event.body.fbox === 'string' ? 'Sent you a file' : '')
     for (const target of targets.get(to) ?? []) {
+      if (target.dnd) continue
       const body = target.text ? text || 'Sent you a message' : 'Sent you a message'
       jobs.push(send(target, { t: who, b: body.slice(0, MAX_BODY_CHARS), tag, room: space.room.id, dm: chat.me }, tag))
     }
@@ -271,7 +275,7 @@ async function pushNow(space: SpaceRuntime, event: LogEvent): Promise<void> {
     if (person === chat.me || online.has(person) || !chat.mayEnter(person, channel)) continue
     const mention = mentionsMe(text, names, person)
     for (const target of devices) {
-      if (target.muted || target.mute.includes(channel)) continue
+      if (target.muted || target.dnd || target.mute.includes(channel)) continue
       if (!mention && target.what !== 'all') continue
       const said = text || (files ? 'Sent a file' : '')
       const body = target.text && said ? said : mention ? 'Mentioned you' : 'Sent a message'

@@ -10,6 +10,8 @@ export interface RoomNote {
   password?: string
   founder?: string
   closed?: boolean
+  /** The pass of the invite this device came in with, after a ban. */
+  pass?: string
   read?: Record<string, number>
   readDm?: Record<string, number>
 }

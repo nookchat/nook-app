@@ -1,3 +1,5 @@
+import { doNotDisturb } from '../store/status'
+
 const KEY = 'nook.sounds.v1'
 
 const NEWS_MAX_AGE_MS = 45_000
@@ -109,11 +111,13 @@ function cue(name: Cue): void {
 }
 
 export function chirpMessage(): void {
+  if (doNotDisturb()) return
   cue('message')
 }
 
 /** Somebody named you, or wrote to you alone. */
 export function chirpMention(): void {
+  if (doNotDisturb()) return
   cue('mention')
 }
 

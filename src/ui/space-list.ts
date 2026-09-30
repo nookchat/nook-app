@@ -1,10 +1,8 @@
 import { SELF_HOSTING_URL, checkServer, serverTag, serverUrl } from '../backend'
 import { newSecret, parseLink } from '../room'
-import { spaces } from '../space/registry'
-import { loadIdentity } from '../store/identity'
-import { ROOMS_CHANGED, type RoomNote } from '../store/notes'
+import { ROOMS_CHANGED } from '../store/notes'
 import { addServer, newSpaceServer, ownServers } from '../store/server-spaces'
-import { forgetSpace, listSpaces } from '../store/spaces'
+import { listSpaces } from '../store/spaces'
 import { h } from './dom'
 import { ghost, lockup } from './ghost'
 import { icon } from './icons'
@@ -17,8 +15,6 @@ interface SpaceListActions {
 }
 
 export async function spaceList(actions: SpaceListActions): Promise<HTMLElement> {
-  const me = loadIdentity().pubkey
-
   const join = h('input', { type: 'text', placeholder: 'Paste an invite link or code', ariaLabel: 'Room code' })
   const go = (): void => {
     const raw = join.value.trim()
@@ -72,21 +68,6 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
 
   const recent = h('div', { class: 'stack tight' })
 
-  const leave = async (room: RoomNote): Promise<void> => {
-    const label = room.title || 'this space'
-    const yours = room.founder === me
-    const ok = window.confirm(
-      yours
-        ? `Leave ${label}? It comes off your list. You made it, so it keeps going for everybody else: delete it from inside to close it.`
-        : `Leave ${label}? It comes off your list. The link still works if you want back in.`,
-    )
-    if (!ok) return
-    spaces.drop(room.room)
-    await forgetSpace(room)
-    toast('Left.', 'info')
-    await paint()
-  }
-
   const paint = async (): Promise<void> => {
     const rooms = hideShadows((await listSpaces()).filter((r) => !r.closed))
     const rows = rooms.slice(0, 24).map((room) => {
@@ -116,12 +97,6 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
             room.locked ? h('span', { class: 'tiny faint', title: 'Needs a password' }, [icon('lock', 13)]) : null,
           ],
         ),
-        h('button', {
-          class: 'ghost tiny-btn',
-          text: 'Leave',
-          title: 'Take this space off your list',
-          on: { click: () => void leave(room) },
-        }),
       ])
     })
     if (rows.length === 0) {

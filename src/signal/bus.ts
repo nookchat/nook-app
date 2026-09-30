@@ -54,10 +54,11 @@ export class SignalBus {
   private open(t: Transport): void {
     t.connect({
       onWire: (wire) => {
-        // A signal under a key this device does not hold is not for it.
+        // A signal under a key this device does not hold is not for it. After a ban, one under
+        // a key from before it came from somebody with only the old code.
         const { tag, wire: sealed } = untag(wire)
         const key = this.keys.key(tag)
-        if (!key) return
+        if (!key || !this.keys.hears(tag)) return
         const opened = open(key, sealed)
         this.after(async () => this.receive(await opened))
       },

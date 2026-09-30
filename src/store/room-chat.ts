@@ -109,6 +109,21 @@ export class RoomChat {
     return this.write('board', { id, gone: true })
   }
 
+  /** Shows the pass of an invite, bound to this person's key. */
+  showPass(proof: string): Promise<LogEvent> {
+    return this.write('join', { proof })
+  }
+
+  /** An invite's pass, for the people in the space to know when a newcomer shows it. */
+  addPass(pass: string): Promise<LogEvent> {
+    return this.write('invite', { pass })
+  }
+
+  /** Keeps a note to some levels. None is everybody. */
+  setNoteLevels(id: string, levels: string[]): Promise<LogEvent> {
+    return this.write('note', { id, levels })
+  }
+
   dropNote(id: string): Promise<LogEvent> {
     return this.write('note', { id, gone: true })
   }
@@ -211,8 +226,9 @@ export class RoomChat {
     return this.write('space', { name: name.slice(0, 32).trim() })
   }
 
-  setRole(subject: string, role: string): Promise<LogEvent> {
-    return this.write('role', { subject, role })
+  /** A ban is a removal that also closes the space's old invites. */
+  setRole(subject: string, role: string, ban = false): Promise<LogEvent> {
+    return this.write('role', ban && role === 'kicked' ? { subject, role, ban: true } : { subject, role })
   }
 
   setLevel(level: Level): Promise<LogEvent> {

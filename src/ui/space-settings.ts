@@ -15,12 +15,16 @@ export interface SpaceSettingsActions {
   setPicture(file: File | null): Promise<void>
   reset(): Promise<void>
   remove(): Promise<void>
-  removed: { key: string; name: string; restore(): void }[]
+  removed: { key: string; name: string; banned: boolean; restore(): void }[]
+  /** Somebody was banned, so only invites made since then let a new person in. */
+  invitesClosed: boolean
   /** Everybody in the space, as it is now. */
   members(): MemberRow[]
   setLevel(key: string, level: string): Promise<void>
   /** Asks first. */
   kick(key: string): Promise<void>
+  /** Asks first. A removal that also closes the old invites. */
+  ban(key: string): Promise<void>
   levels(): HTMLElement
   start?: string
   back(): void
@@ -63,6 +67,9 @@ function membersList(actions: SpaceSettingsActions): HTMLElement {
           h('div', { class: 'row grow member-who' }, [avatarOf(m.key, m.name, m.picture, 28), name]),
           m.mayRemove
             ? h('button', { class: 'ghost small danger', text: 'Remove', on: { click: () => void actions.kick(m.key).then(draw) } })
+            : null,
+          m.mayRemove
+            ? h('button', { class: 'ghost small danger', text: 'Ban', on: { click: () => void actions.ban(m.key).then(draw) } })
             : null,
           level,
         ]),
@@ -164,9 +171,10 @@ export function spaceTabs(actions: SpaceSettingsActions): SettingsTab[] {
         for (const p of actions.removed) {
           const row = h('div', { class: 'action-row' }, [
             h('span', { class: 'switch-label truncate', text: p.name }),
+            p.banned ? h('span', { class: 'tiny faint', text: 'Banned' }) : null,
             h('button', {
               class: 'small',
-              text: 'Unban',
+              text: p.banned ? 'Unban' : 'Let back in',
               on: {
                 click: () => {
                   p.restore()
@@ -179,7 +187,19 @@ export function spaceTabs(actions: SpaceSettingsActions): SettingsTab[] {
           list.append(row)
         }
         return h('div', { class: 'stack settings-stack' }, [
-          card('Removed people', actions.removed.length ? list : note('Nobody is removed from this space.')),
+          card(
+            'Removed people',
+            note(
+              'Remove: everything they write after it is ignored, and the space gets a new key. Ban: the same, and the old invite links stop letting new people in.',
+            ),
+            actions.removed.length ? list : note('Nobody is removed from this space.'),
+          ),
+          actions.invitesClosed
+            ? card(
+                'Invites',
+                note('Somebody was banned, so an old invite link lets nobody new in. Send a new link from Invite people.'),
+              )
+            : null,
         ])
       },
     })

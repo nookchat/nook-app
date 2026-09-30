@@ -3,17 +3,18 @@ import { Channel, connectionTo } from '../net/connection'
 import { SpaceFiles } from '../net/files'
 import { Mesh } from '../net/mesh'
 import { PLAYING_CHANGED, playingNow } from '../net/playing'
+import { loadStatus, STATUS_CHANGED } from '../store/status'
 import { pushAbout } from '../net/push'
 import { Voice } from '../net/voice'
 import { heardAt } from '../net/volume'
-import { deriveRoom, newPeerId, type Room } from '../room'
+import { deriveRoom, newPeerId, takePass, type Room } from '../room'
 import { rtcConfig } from '../rtc/config'
 import { KeyKeeper, SpaceKeys } from './keys'
 import { channelMuted } from '../store/mute'
 import { SignalBus } from '../signal/bus'
 import type { Envelope } from '../signal/envelope'
 import { loadIdentity } from '../store/identity'
-import { cleanChannel, type LogEvent } from '../store/log'
+import { cleanChannel, passProof, type LogEvent } from '../store/log'
 import type { RoomNote } from '../store/notes'
 import { PREFS_CHANGED } from '../store/prefs'
 import { RoomChat } from '../store/room-chat'
@@ -41,6 +42,7 @@ type NotePatch = Partial<{
   read: Record<string, number>
   readDm: Record<string, number>
   closed: boolean
+  pass: string
 }>
 
 export interface OpenSpace {
@@ -171,6 +173,8 @@ export class SpaceRuntime {
     mesh.extra = () => ({
       key: identity.pubkey,
       away: document.hidden ? true : undefined,
+      status: loadStatus().mode === 'online' ? undefined : loadStatus().mode,
+      statusText: loadStatus().text || undefined,
       voice: this.voice?.state.channel ?? undefined,
       muted: this.voice?.state.channel && this.voice.state.muted ? true : undefined,
       deafened: this.voice?.state.channel && this.voice.state.deafened ? true : undefined,
@@ -247,6 +251,7 @@ export class SpaceRuntime {
     mesh.start()
     document.addEventListener('visibilitychange', this.announceAgain)
     window.addEventListener(PLAYING_CHANGED, this.announceAgain)
+    window.addEventListener(STATUS_CHANGED, this.announceAgain)
     // Now and then, so anybody who counted us gone by mistake after a reconnect has us back.
     this.lastLook = Date.now()
     this.stillHere = window.setInterval(this.lookAround, STILL_HERE_MS)
@@ -260,6 +265,7 @@ export class SpaceRuntime {
       this.keysChanged()
     })
     void chat.readDirect()
+    void this.showPass()
 
     if (open.fresh && !chat.founder) {
       await chat.claimFounder()
@@ -346,8 +352,30 @@ export class SpaceRuntime {
   private keysChanged(): void {
     this.keyQueue = this.keyQueue
       .then(() => this.keys.learn(this.chat.log, this.chat.me))
+      .then(() => this.keys.hearOnly(this.chat.log.keysSinceBan()))
       .then(() => this.keeper?.consider())
       .catch((err) => console.warn('[nook] a space key did not open', err))
+  }
+
+  /** The space has a newer key than this device holds, and nobody has given it a copy. */
+  waitingForKey(): boolean {
+    const newest = this.chat?.log.keyEpochs().at(-1)
+    return !!newest && !this.keys.has(newest.id) && !this.chat.log.authority().isKicked(this.chat.me)
+  }
+
+  /**
+   * Came in with an invite made after a ban: show its pass, bound to our own key, so somebody
+   * in the space gives us the key. Once is enough.
+   */
+  private async showPass(): Promise<void> {
+    const pass = takePass(this.secret) || this.note?.pass || ''
+    if (!pass) return
+    if (pass !== this.note?.pass) await this.remember({ pass })
+    await this.channel.loaded
+    if (this.stopped) return
+    const proof = await passProof(pass, this.chat.me)
+    if (this.chat.log.joins().get(this.chat.me)?.includes(proof)) return
+    await this.chat.showPass(proof)
   }
 
   private async take(events: unknown[]): Promise<void> {
@@ -424,6 +452,7 @@ export class SpaceRuntime {
       locked: this.locked,
       password: this.password || existing?.password || undefined,
       closed: patch.closed || existing?.closed || undefined,
+      pass: patch.pass || existing?.pass || undefined,
       read: patch.read ?? existing?.read,
       readDm: patch.readDm ?? existing?.readDm,
       founder: patch.founder ?? existing?.founder ?? this.chat?.founder ?? '',
@@ -618,6 +647,7 @@ export class SpaceRuntime {
     this.voice?.dispose()
     document.removeEventListener('visibilitychange', this.announceAgain)
     window.removeEventListener(PLAYING_CHANGED, this.announceAgain)
+    window.removeEventListener(STATUS_CHANGED, this.announceAgain)
     window.clearInterval(this.stillHere)
     this.mesh?.stop()
     const bus = this.bus

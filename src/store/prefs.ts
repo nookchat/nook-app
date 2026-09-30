@@ -15,6 +15,7 @@ const SYNCED = [
   'nook.settings.v1',
   'nook.servers.v1',
   'nook.own.v1',
+  'nook.status.v1',
 ]
 const MERGED_LISTS = new Set(['nook.servers.v1', 'nook.own.v1'])
 const STAMPS = 'nook.prefs.stamps.v1'

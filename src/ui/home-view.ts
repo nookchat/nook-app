@@ -5,7 +5,9 @@ import { ROOMS_CHANGED } from '../store/notes'
 import { saveScreen } from '../store/screen'
 import { callControls, voiceDock } from './call'
 import { ChatPanel, avatarOf } from './chat-panel'
-import { h } from './dom'
+import { h, onPress } from './dom'
+import { openStatusMenu, myStatusDot } from './status-menu'
+import { STATUS_CHANGED } from '../store/status'
 import { icon } from './icons'
 import type { WindowChrome } from './shell'
 import { homeFace, switcherButton } from './space-switcher'
@@ -60,9 +62,18 @@ export class HomeView {
     this.actions = actions
     this.open = open
 
-    const me = (this.me = h('div', { class: 'me-panel' }, [
+    const who = h('div', { class: 'me-who', role: 'button', tabIndex: 0, ariaLabel: 'Your status', title: 'Set your status', data: { menu: 'status' } }, [
       h('span', { class: 'me-face' }),
       h('div', { class: 'me-text' }, [h('span', { class: 'me-name truncate', text: 'You' }), chrome.status]),
+    ])
+    onPress(who, () => openStatusMenu(who))
+    who.addEventListener('keydown', (ev) => {
+      if (ev.key !== 'Enter' && ev.key !== ' ') return
+      ev.preventDefault()
+      openStatusMenu(who)
+    })
+    const me = (this.me = h('div', { class: 'me-panel' }, [
+      who,
       h(
         'button',
         { class: 'ghost icon-only', title: 'Your name, your ID, and your servers', ariaLabel: 'Settings', on: { click: () => actions.settings() } },
@@ -94,8 +105,11 @@ export class HomeView {
     const redraw = (): void => this.draw()
     window.addEventListener(ROOMS_CHANGED, redraw)
     const stopAvatar = spaces.watchMyAvatar(() => this.drawMe())
+    const drawMe = (): void => this.drawMe()
+    window.addEventListener(STATUS_CHANGED, drawMe)
     this.unlisten = () => {
       window.removeEventListener(ROOMS_CHANGED, redraw)
+      window.removeEventListener(STATUS_CHANGED, drawMe)
       stopAvatar()
     }
     await this.show(this.open)
@@ -113,7 +127,7 @@ export class HomeView {
     const any = spaces.all().find((s) => s.chat)?.chat
     const name = any?.displayName ?? ''
     const face = this.me.querySelector('.me-face')
-    face?.replaceChildren(avatarOf(any?.me ?? 'you', name, spaces.myAvatar(), 32), h('i', { class: 'dot good' }))
+    face?.replaceChildren(avatarOf(any?.me ?? 'you', name, spaces.myAvatar(), 32), myStatusDot())
     const label = this.me.querySelector('.me-name')
     if (label && name) label.textContent = name
   }

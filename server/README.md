@@ -243,9 +243,19 @@ to use, and keeps a line it cannot open yet until its copy comes.
   online and holds the newest key seals a copy for them, a few seconds after
   they arrive. Until then they see the messages from before the removal.
 - **What the removed person keeps**: what they could read before, and the
-  copies of the key, which they cannot open. They can still join again as a
-  new person with the code, as they could on Discord with a new account, and
-  the others see them arrive.
+  copies of the key, which they cannot open. After a removal they can still
+  join again as a new person with the code, as they could on Discord with a
+  new account, and the others see them arrive. A ban closes that door.
+- **After a ban**, a copy goes only to people let in: whoever made the space,
+  whoever may remove people, whoever holds the key made for the ban or a
+  newer one from somebody let in, and whoever was let back in since. A new
+  invite carries a pass, which its maker writes to the log under the new key.
+  A newcomer writes SHA-256 of the pass and their own public key, signed, so
+  the proof works for nobody else, and the first device online that checks
+  it seals them a copy. Every device ignores what somebody without admission
+  writes, and a signal under a key older than the ban's, so a new identity
+  with the old code is not seen, heard, or let into voice. The server sees
+  none of this: the pass and the proof are sealed lines like any other.
 - **A key is trusted** only when somebody whose level may remove people made
   it, and a copy only when it opens to the key its id names. If the one who
   removed somebody was offline and nobody made a key, the next person online

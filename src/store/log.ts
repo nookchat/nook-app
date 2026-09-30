@@ -21,6 +21,8 @@ const EVENT_KINDS = [
   'board',
   'key',
   'push',
+  'invite',
+  'join',
 ] as const
 
 export type EventKind = (typeof EVENT_KINDS)[number]
@@ -76,7 +78,17 @@ export class Authority {
     private readonly levels: Map<string, Level>,
     private readonly placed: Map<string, string>,
     readonly kickedAt: Map<string, number>,
+    /** Who is banned now: removed, and the space's old invites closed to them. */
+    readonly bannedAt: Map<string, number> = new Map(),
+    /** When each person removed was let back in. */
+    readonly letBackAt: Map<string, number> = new Map(),
+    /** Every ban there has been, in order, those since lifted too. */
+    readonly bans: number[] = [],
   ) {}
+
+  isBanned(key: string): boolean {
+    return this.bannedAt.has(key)
+  }
 
   list(): Level[] {
     return [...this.levels.values()].sort((a, b) => b.rank - a.rank || a.name.localeCompare(b.name))
@@ -129,10 +141,15 @@ function cleanLevelIds(raw: unknown[]): string[] {
 }
 
 /** The owner and whoever looks after channels see them all, so they can open one up again. */
-function mayEnter(auth: Authority, key: string, channel: ChannelInfo): boolean {
+function mayEnter(auth: Authority, key: string, channel: { levels: string[] }): boolean {
   if (channel.levels.length === 0) return true
   if (!key || auth.isKicked(key)) return false
   return key === auth.founder || auth.can(key, 'channels') || channel.levels.includes(auth.levelOf(key).id)
+}
+
+/** A note kept to some levels opens to them, to its maker, and to whoever may keep a channel. */
+function mayOpenNote(auth: Authority, key: string, note: NoteInfo): boolean {
+  return note.levels.length === 0 || key === note.maker || mayEnter(auth, key, note)
 }
 
 function cleanColour(raw: unknown): string {
@@ -304,7 +321,7 @@ export class RoomLog {
 
   /** Computed once per state of the log. Callers must not mutate what it returns. */
   private cached<T>(key: string, make: () => T): T {
-    const all = this.all()
+    const all = this.everything()
     if (this.memoFrom !== all || this.memoFounder !== this.founder) {
       this.memo.clear()
       this.memoFrom = all
@@ -319,12 +336,15 @@ export class RoomLog {
   }
 
   private foldAuthority(): Authority {
-    const all = this.all()
+    const all = this.everything()
     const levels = new Map<string, Level>(STARTING_LEVELS.map((l) => [l.id, { ...l, can: [...l.can] }]))
     const placed = new Map<string, string>()
     const kickedAt = new Map<string, number>()
     const founder = this.founder
-    const auth = new Authority(founder, levels, placed, kickedAt)
+    const bannedAt = new Map<string, number>()
+    const letBackAt = new Map<string, number>()
+    const bans: number[] = []
+    const auth = new Authority(founder, levels, placed, kickedAt, bannedAt, letBackAt, bans)
 
     for (const e of all) {
       if (e.kind === 'level') {
@@ -354,7 +374,12 @@ export class RoomLog {
       if (!/^[0-9a-f]{64}$/.test(subject) || subject === founder) continue
       const role = String(e.body.role ?? '')
       if (role === 'kicked') {
-        if (auth.mayRemove(e.author, subject)) kickedAt.set(subject, e.lamport)
+        if (!auth.mayRemove(e.author, subject)) continue
+        kickedAt.set(subject, e.lamport)
+        if (e.body.ban === true) {
+          bannedAt.set(subject, e.lamport)
+          bans.push(e.lamport)
+        }
         continue
       }
       const level = levels.get(role)
@@ -362,6 +387,8 @@ export class RoomLog {
       if (kickedAt.has(subject)) {
         if (!auth.mayRemove(e.author, subject) && !auth.mayPlace(e.author, subject)) continue
         kickedAt.delete(subject)
+        bannedAt.delete(subject)
+        letBackAt.set(subject, e.lamport)
         if (level.id === MEMBER) {
           placed.delete(subject)
           continue
@@ -470,10 +497,130 @@ export class RoomLog {
     return name
   }
 
-  /** Every event in agreed order. Shared: never mutate it. */
-  all(): LogEvent[] {
+  /** Every event in agreed order, even from people a ban keeps out. Shared: never mutate it. */
+  everything(): LogEvent[] {
     this.ordered ??= [...this.byId.values()].sort(compare)
     return this.ordered
+  }
+
+  /**
+   * Every event that counts, in agreed order. After a ban, what people without admission
+   * write is left out: they came in with an old invite. Shared: never mutate it.
+   */
+  all(): LogEvent[] {
+    return this.cached('visible', () => {
+      const ok = this.admitted()
+      const raw = this.everything()
+      if (!ok) return raw
+      const auth = this.authority()
+      // A removed person's own events stay: the removal already decides what of theirs is shown.
+      return raw.filter((e) => ok.has(e.author) || auth.isKicked(e.author) || e.kind === 'key' || e.kind === 'join')
+    })
+  }
+
+  /**
+   * The ban whose new key is made, and that key's place in keyEpochs(). A ban whose key is still
+   * to come waits: until then the ban before it stands.
+   */
+  private banEpoch(): { ban: number; at: number } | null {
+    return this.cached('banEpoch', () => {
+      const bans = this.authority().bans
+      const epochs = this.keyEpochs()
+      for (let i = bans.length - 1; i >= 0; i--) {
+        const at = epochs.findIndex((e) => e.covers >= bans[i])
+        if (at >= 0) return { ban: bans[i], at }
+      }
+      return null
+    })
+  }
+
+  /** Whether somebody was ever banned here, so the code alone no longer lets a person in. */
+  invitesClosed(): boolean {
+    return this.banEpoch() !== null
+  }
+
+  /**
+   * After a ban, the people let in: whoever made the space, whoever may remove people, whoever
+   * was let back in since, and whoever was given the key made for the ban or a newer one by
+   * somebody already let in. Null when nobody was banned: then the code lets anybody in.
+   */
+  admitted(): Set<string> | null {
+    return this.cached('admitted', () => {
+      const found = this.banEpoch()
+      if (!found) return null
+      const auth = this.authority()
+      const ids = new Set(this.keyEpochs().slice(found.at).map((e) => e.id))
+      const out = new Set<string>(this.founder ? [this.founder] : [])
+      for (const [key, when] of auth.letBackAt) if (when > found.ban) out.add(key)
+      const copies = this.everything().filter((e) => e.kind === 'key' && ids.has(String(e.body.id ?? '')))
+      // Round again while it grows: a copy counts once its giver counts.
+      for (let grew = true; grew; ) {
+        grew = false
+        for (const e of copies) {
+          if (!out.has(e.author) && !auth.can(e.author, 'remove')) continue
+          const boxes = e.body.boxes
+          if (!boxes || typeof boxes !== 'object') continue
+          for (const person of Object.keys(boxes)) {
+            if (!PERSON_KEY.test(person) || out.has(person)) continue
+            out.add(person)
+            grew = true
+          }
+        }
+      }
+      for (const key of [...out]) if (auth.isKicked(key)) out.delete(key)
+      return out
+    })
+  }
+
+  /** The keys made for the ban and after it: after a ban, a signal under an older key is not heard. */
+  keysSinceBan(): string[] {
+    const found = this.banEpoch()
+    return found ? this.keyEpochs().slice(found.at).map((e) => e.id) : []
+  }
+
+  /** Passes in invites made since the ban, by people let in. A newcomer shows one to get the key. */
+  passes(): string[] {
+    return this.cached('passes', () => {
+      const found = this.banEpoch()
+      const ok = this.admitted()
+      if (!found || !ok) return []
+      const auth = this.authority()
+      const out = new Set<string>()
+      for (const e of this.everything()) {
+        if (e.kind !== 'invite' || e.lamport <= found.ban) continue
+        if (!ok.has(e.author) && !auth.can(e.author, 'remove')) continue
+        const pass = cleanPass(e.body.pass)
+        if (pass) out.add(pass)
+      }
+      return [...out]
+    })
+  }
+
+  /** The newest pass this person put in an invite since the ban, or ''. */
+  passOf(author: string): string {
+    const found = this.banEpoch()
+    if (!found) return ''
+    const events = this.everything()
+    for (let i = events.length - 1; i >= 0; i--) {
+      const e = events[i]
+      if (e.lamport <= found.ban) break
+      if (e.kind === 'invite' && e.author === author && cleanPass(e.body.pass)) return cleanPass(e.body.pass)
+    }
+    return ''
+  }
+
+  /** What each person showed when they came in with an invite made after a ban. */
+  joins(): Map<string, string[]> {
+    return this.cached('joins', () => {
+      const out = new Map<string, string[]>()
+      for (const e of this.everything()) {
+        if (e.kind !== 'join') continue
+        const proof = String(e.body.proof ?? '')
+        if (!/^[0-9a-f]{64}$/.test(proof)) continue
+        out.set(e.author, [...(out.get(e.author) ?? []), proof].slice(-8))
+      }
+      return out
+    })
   }
 
   /** The channels you may see. */
@@ -561,7 +708,11 @@ export class RoomLog {
       .map((name) => ({ name, label: label.get(name) || name, topic: topic.get(name) ?? '', levels: levels.get(name) ?? [] }))
   }
 
-  /** Shared notes. Anybody still in the space may write; the maker or a channel keeper may delete. */
+  /**
+   * Shared notes. Anybody still in the space may write; the maker or a channel keeper may delete
+   * one, or keep it to some levels. A kept note is out of sight for everybody else, and what they
+   * write to it is ignored. Anybody with the space's key can still open the lines.
+   */
   notes(): NoteInfo[] {
     return this.cached('notes', () => {
       const auth = this.authority()
@@ -574,22 +725,28 @@ export class RoomLog {
         let note = notes.get(id)
         if (!note) {
           if (e.body.gone === true) continue
-          note = { id, title: 'Untitled', text: '', maker: e.author, by: e.author, at: e.at, lamport: e.lamport }
+          note = { id, title: 'Untitled', text: '', maker: e.author, by: e.author, at: e.at, lamport: e.lamport, levels: [] }
           notes.set(id, note)
         }
+        const keeper = e.author === note.maker || auth.can(e.author, 'channels')
         if (e.body.gone === true) {
-          if (e.author !== note.maker && !auth.can(e.author, 'channels')) continue
+          if (!keeper) continue
           notes.delete(id)
           gone.add(id)
           continue
         }
+        if (!mayOpenNote(auth, e.author, note)) continue
+        if (Array.isArray(e.body.levels) && keeper) note.levels = cleanLevelIds(e.body.levels)
         if (typeof e.body.title === 'string') note.title = cleanNoteTitle(e.body.title) || 'Untitled'
         if (typeof e.body.text === 'string') note.text = e.body.text.slice(0, MAX_TEXT)
+        if (typeof e.body.title !== 'string' && typeof e.body.text !== 'string') continue
         note.by = e.author
         note.at = e.at
         note.lamport = e.lamport
       }
-      return [...notes.values()].sort((a, b) => a.title.localeCompare(b.title))
+      return [...notes.values()]
+        .filter((note) => mayOpenNote(auth, this.me, note))
+        .sort((a, b) => a.title.localeCompare(b.title))
     })
   }
 
@@ -840,7 +997,7 @@ export class RoomLog {
       const auth = this.authority()
       const out: { id: string; lamport: number; covers: number }[] = []
       const seen = new Set<string>()
-      for (const e of this.all()) {
+      for (const e of this.everything()) {
         if (e.kind !== 'key' || e.body.new !== true || !auth.can(e.author, 'remove')) continue
         const id = String(e.body.id ?? '')
         if (!KEY_ID.test(id) || seen.has(id)) continue
@@ -858,7 +1015,7 @@ export class RoomLog {
   keyBoxes(person: string): { id: string; author: string; sealed: string }[] {
     return this.cached(`keyBoxes:${person}`, () => {
       const out: { id: string; author: string; sealed: string }[] = []
-      for (const e of this.all()) {
+      for (const e of this.everything()) {
         if (e.kind !== 'key') continue
         const id = String(e.body.id ?? '')
         const boxes = e.body.boxes as Record<string, unknown> | undefined
@@ -873,7 +1030,7 @@ export class RoomLog {
   keyHolders(id: string): Set<string> {
     return this.cached(`keyHolders:${id}`, () => {
       const out = new Set<string>()
-      for (const e of this.all()) {
+      for (const e of this.everything()) {
         if (e.kind !== 'key' || e.body.id !== id) continue
         const boxes = e.body.boxes
         if (boxes && typeof boxes === 'object') for (const person of Object.keys(boxes)) out.add(person)
@@ -887,7 +1044,7 @@ export class RoomLog {
     return this.cached('keyMembers', () => {
       const auth = this.authority()
       const people = new Set<string>(this.founder ? [this.founder] : [])
-      for (const key of this.lastSeen().keys()) people.add(key)
+      for (const e of this.everything()) people.add(e.author)
       return [...people].filter((p) => PERSON_KEY.test(p) && !auth.isKicked(p))
     })
   }
@@ -1036,6 +1193,8 @@ export interface PushTarget {
   muted: boolean
   /** Text channels muted on their own. */
   mute: string[]
+  /** Do not disturb: nothing at all until it is turned off. */
+  dnd: boolean
 }
 
 function cleanPushTarget(person: string, id: string, body: Record<string, unknown>): PushTarget | null {
@@ -1067,6 +1226,7 @@ function cleanPushTarget(person: string, id: string, body: Record<string, unknow
     text: body.text !== false,
     muted: body.muted === true,
     mute,
+    dnd: body.dnd === true,
   }
 }
 
@@ -1080,6 +1240,22 @@ export interface NoteInfo {
   by: string
   at: number
   lamport: number
+  /** The levels that may see it. Empty is everybody. */
+  levels: string[]
+}
+
+/** A pass in an invite: 16 letters of the same alphabet as a code. */
+export function cleanPass(raw: unknown): string {
+  const text = typeof raw === 'string' ? raw.toUpperCase() : ''
+  return /^[0-9A-HJKMNP-TV-Z]{16}$/.test(text) ? text : ''
+}
+
+const passEncoder = new TextEncoder()
+
+/** What a newcomer shows for a pass: bound to their own key, so nobody else can show it. */
+export async function passProof(pass: string, person: string): Promise<string> {
+  const bytes = passEncoder.encode(`nook-pass-1|${pass}|${person}`)
+  return toHex(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes as BufferSource)))
 }
 
 export function cleanNoteId(raw: unknown): string {

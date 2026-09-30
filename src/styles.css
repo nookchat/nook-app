@@ -1707,27 +1707,6 @@ button.rail-add {
   color: var(--warn);
 }
 
-button.person-more {
-  flex: 0 0 auto;
-  width: 28px;
-  min-width: 28px;
-  min-height: 28px;
-  height: 28px;
-  padding: 0;
-  opacity: 0;
-}
-
-.rail-person:hover .person-more,
-.person-more:focus-visible {
-  opacity: 1;
-}
-
-@media (hover: none) {
-  button.person-more {
-    opacity: 0.6;
-  }
-}
-
 .voice-channel {
   display: flex;
   flex-direction: column;
@@ -1865,6 +1844,36 @@ button.voice-bar-state:hover:not(:disabled) {
 
 .me-face {
   margin-right: 6px;
+}
+
+/* Your face and name: a press sets your status. */
+.me-who {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  margin: -4px 0 -4px -4px;
+  padding: 4px;
+  border-radius: var(--in-pane-radius);
+  cursor: pointer;
+}
+
+.me-who:hover {
+  background: var(--hover);
+}
+
+.me-who:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.menu-icon > .status-dot {
+  width: 10px;
+  height: 10px;
+}
+
+.person-doing.said {
+  color: var(--fg-dim);
 }
 
 .me-face > .dot {
@@ -2597,6 +2606,13 @@ button.start {
   min-width: 36px;
   min-height: 36px;
   border-radius: var(--radius-pill);
+}
+
+/* A panel that is open: plainly lit, not the faint wash of a hover. */
+.space-head button.ghost.on,
+.space-head button.ghost.on:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text-primary) 14%, transparent);
+  color: var(--fg);
 }
 
 .channel-head {
@@ -4324,25 +4340,6 @@ button.to-bottom:hover:not(:disabled) {
   gap: 2px;
 }
 
-.rail-row .person-more {
-  position: absolute;
-  right: 4px;
-  top: 50%;
-  transform: translateY(-50%);
-  opacity: 0;
-}
-
-.rail-row:hover .person-more,
-.rail-row .person-more:focus-visible {
-  opacity: 1;
-}
-
-@media (hover: none) {
-  .rail-row .person-more {
-    opacity: 0.6;
-  }
-}
-
 .mention {
   color: var(--accent-text);
   background: var(--accent-soft);
@@ -5749,6 +5746,23 @@ input[type="text"].note-title:focus {
   white-space: nowrap;
 }
 
+.note-tools {
+  flex: 0 0 auto;
+  gap: 2px;
+}
+
+.note-tools button.icon-only {
+  width: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  border-radius: var(--radius-pill);
+}
+
+.note-tools button.ghost.on {
+  background: color-mix(in srgb, var(--text-primary) 14%, transparent);
+  color: var(--fg);
+}
+
 .note-modes {
   flex: 0 0 auto;
   display: inline-flex;
@@ -6636,8 +6650,54 @@ input.invalid:focus {
   padding: 0 20px 20px;
 }
 
-.recordings-filters:empty {
+.recordings-filters:empty,
+.recordings-games:empty {
   display: none;
+}
+
+/* A tab for each game: All, then the one played last first. Scrolls sideways when there are many. */
+.recordings-games {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.recordings-games::-webkit-scrollbar {
+  display: none;
+}
+
+button.recordings-game {
+  flex: 0 0 auto;
+  max-width: 220px;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 12px;
+  margin-bottom: -1px;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: var(--fg-dim);
+  font-size: var(--size-small);
+}
+
+button.recordings-game:hover:not(:disabled) {
+  background: transparent;
+  color: var(--fg);
+}
+
+button.recordings-game.on {
+  color: var(--fg);
+  font-weight: 600;
+  border-bottom-color: var(--brand);
+}
+
+.recordings-count {
+  font-size: 11px;
+  color: var(--fg-faint);
+  font-variant-numeric: tabular-nums;
 }
 
 .chip-toggle {
@@ -6951,6 +7011,7 @@ input.invalid:focus {
 /* The first look for recordings: cards and filters the size of the real ones, so nothing moves. */
 .chip-toggle.waiting,
 .recording-card.waiting .recording-face,
+.recordings-game.waiting::before,
 .waiting-line::before {
   background: var(--select);
   animation: waiting-glow 1.2s ease-in-out infinite alternate;
@@ -6958,6 +7019,18 @@ input.invalid:focus {
 
 .chip-toggle.waiting {
   pointer-events: none;
+}
+
+/* A bar where the game's name will be, in a tab as tall as the real one. */
+button.recordings-game.waiting {
+  pointer-events: none;
+}
+
+.recordings-game.waiting::before {
+  content: '';
+  flex: 1 1 auto;
+  height: 12px;
+  border-radius: 6px;
 }
 
 .recording-card.waiting {
@@ -6995,6 +7068,7 @@ input.invalid:focus {
 @media (prefers-reduced-motion: reduce) {
   .chip-toggle.waiting,
   .recording-card.waiting .recording-face,
+  .recordings-game.waiting::before,
   .waiting-line::before {
     animation: none;
   }

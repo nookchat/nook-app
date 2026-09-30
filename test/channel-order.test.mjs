@@ -61,8 +61,8 @@ try {
   check('a voice channel can be dragged too', await until(alice, voiceIs, 'studio,lounge'), (await voiceOrder(alice)).join())
   check('and Bob sees that as well', await until(bob, voiceIs, 'studio,lounge'), (await voiceOrder(bob)).join())
 
-  // The menu has Move up and Move down, for a touch screen.
-  await alice.click('.rail-row:has-text("bravo") .person-more')
+  // The right click menu has Move up and Move down, for a touch screen's long press.
+  await alice.click('.rail-row:has-text("bravo")', { button: 'right' })
   await alice.click('.menu-item:has-text("Move up")')
   check('Move up in the menu moves it up one', await until(alice, orderIs, 'charlie,alpha,bravo,general'), (await textOrder(alice)).join())
 

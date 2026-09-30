@@ -43,6 +43,15 @@ const LEAST_PART_S = 1
 const STEP_S = 0.5
 const BIG_STEP_S = 5
 
+/** The recordings with no game, as a tab of their own. */
+const NO_GAME = '\u0000'
+/** The game tab picked last, kept while Nook is open. */
+let pickedGame = ''
+
+function gameOf(rec: Recording): string {
+  return rec.game?.trim() || NO_GAME
+}
+
 export function openRecordings(options: RecordingsOptions): void {
   const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
   let editor: ClipEditor | null = null
@@ -68,6 +77,7 @@ export function openRecordings(options: RecordingsOptions): void {
   let all: Recording[] = []
   let only = ''
   const head = h('div', { class: 'recordings-head' })
+  const games = h('div', { class: 'recordings-games', role: 'tablist', ariaLabel: 'Games' })
   const filters = h('div', { class: 'row wrap recordings-filters' })
   const grid = h('div', { class: 'recordings-grid' })
   const folders = h('div', { class: 'recordings-folders hidden' })
@@ -95,15 +105,49 @@ export function openRecordings(options: RecordingsOptions): void {
       }, [icon('settings', 17)]),
       h('button', { class: 'ghost icon-only', ariaLabel: 'Close', title: 'Close', on: { click: () => close() } }, [icon('close', 18)]),
     )
-    body.replaceChildren(folders, filters, grid)
+    body.replaceChildren(folders, games, filters, grid)
   }
 
   const paintGrid = (): void => {
     clear(grid)
     grid.removeAttribute('aria-busy')
     delete grid.dataset.waiting
-    const shown = only ? all.filter((r) => r.source === only) : all
+    const shown = all.filter((r) => (!only || r.source === only) && (!pickedGame || gameOf(r) === pickedGame))
     for (const rec of shown) grid.append(card(rec, () => openClip(rec)))
+    if (shown.length === 0) grid.append(h('div', { class: 'tiny faint', text: 'Nothing from here for this game.' }))
+  }
+
+  /** A tab for each game, the one played last first, when there is a game to tell apart. */
+  const paintGames = (): void => {
+    clear(games)
+    const count = new Map<string, { n: number; last: number }>()
+    for (const r of all) {
+      const was = count.get(gameOf(r)) ?? { n: 0, last: 0 }
+      count.set(gameOf(r), { n: was.n + 1, last: Math.max(was.last, r.at) })
+    }
+    const named = [...count.keys()].filter((g) => g !== NO_GAME)
+    if (named.length === 0) return
+    named.sort((a, b) => count.get(b)!.last - count.get(a)!.last || a.localeCompare(b))
+    const tabs = ['', ...named, ...(count.has(NO_GAME) ? [NO_GAME] : [])]
+    for (const g of tabs) {
+      const label = g === '' ? 'All' : g === NO_GAME ? 'Other' : g
+      const n = g === '' ? all.length : count.get(g)!.n
+      const tab = h('button', {
+        class: `recordings-game${pickedGame === g ? ' on' : ''}`,
+        role: 'tab',
+        title: g === NO_GAME ? 'Recordings with no game' : label,
+        on: {
+          click: () => {
+            pickedGame = g
+            paintGames()
+            paintGrid()
+          },
+        },
+      }, [h('span', { class: 'truncate', text: label }), h('span', { class: 'recordings-count', text: String(n) })])
+      tab.setAttribute('aria-selected', String(pickedGame === g))
+      games.append(tab)
+    }
+    games.querySelector<HTMLElement>('.recordings-game.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }
 
   const lookAgain = h('button', {
@@ -142,6 +186,8 @@ export function openRecordings(options: RecordingsOptions): void {
     shown = key
     all = list
     if (only && !all.some((r) => r.source === only)) only = ''
+    if (pickedGame && !all.some((r) => gameOf(r) === pickedGame)) pickedGame = ''
+    paintGames()
     paintFilters()
     paintGrid()
   }
@@ -151,7 +197,7 @@ export function openRecordings(options: RecordingsOptions): void {
     if (!shown) {
       const kept = keptRecordings()
       if (kept?.length) show(kept)
-      else waiting(filters, grid)
+      else waiting(games, filters, grid)
     }
     lookAgain.classList.add('busy')
     lookAgain.disabled = true
@@ -162,6 +208,7 @@ export function openRecordings(options: RecordingsOptions): void {
     if (found.length === 0) {
       shown = ''
       all = []
+      clear(games)
       clear(filters)
       grid.replaceChildren(await emptyState(() => void load()))
       return
@@ -196,7 +243,12 @@ export function openRecordings(options: RecordingsOptions): void {
 }
 
 /** Cards and filters the size of the real ones, while the first look is on its way. */
-function waiting(filters: HTMLElement, grid: HTMLElement): void {
+function waiting(games: HTMLElement, filters: HTMLElement, grid: HTMLElement): void {
+  games.replaceChildren(
+    ...[48, 120, 90].map((w) =>
+      h('button', { class: 'recordings-game waiting', tabIndex: -1, ariaLabel: 'Looking', style: { width: `${w}px` } }),
+    ),
+  )
   filters.replaceChildren(
     ...[44, 64, 56].map((w) => h('button', { class: 'chip-toggle waiting', tabIndex: -1, ariaLabel: 'Looking', style: { width: `${w}px` } })),
   )
@@ -432,6 +484,9 @@ async function readFrame(url: string): Promise<Blob | null> {
   }
 }
 
+/** The editor's own mute, kept from one clip to the next while Nook is open. It never reaches the clip. */
+let previewMuted = false
+
 /**
  * Picks a part of one recording, and makes the clip. The picture plays through a video element:
  * a plain file as it is, and a Steam recording a piece at a time through a MediaSource.
@@ -445,6 +500,7 @@ class ClipEditor {
   private readonly endHandle = h('div', { class: 'clip-handle end', tabIndex: 0, role: 'slider', ariaLabel: 'End of the clip' })
   private readonly head = h('div', { class: 'clip-playhead' })
   private readonly playButton = h('button', { class: 'ghost icon-only', title: 'Play the clip (Space)', ariaLabel: 'Play the clip' }, [icon('play', 18)])
+  private readonly muteButton = h('button', { class: 'ghost icon-only' })
   private readonly clock = h('span', { class: 'clip-clock tiny', text: '0:00' })
   private readonly about = h('span', { class: 'tiny faint clip-about' })
   private readonly shareButton = h('button', { class: 'primary' }, [icon('send', 15), 'Add to message'])
@@ -472,6 +528,7 @@ class ClipEditor {
       h('div', { class: 'clip-stage' }, [this.video]),
       h('div', { class: 'row clip-controls' }, [
         this.playButton,
+        this.muteButton,
         this.clock,
         h('span', { class: 'grow' }),
         h('button', {
@@ -503,6 +560,9 @@ class ClipEditor {
       h('div', { class: 'clip-status' }, [this.bar, this.note]),
     ])
     this.playButton.addEventListener('click', () => this.togglePlay())
+    this.muteButton.addEventListener('click', () => this.toggleMute())
+    this.video.muted = previewMuted
+    this.paintMute()
     this.shareButton.addEventListener('click', () => void this.make(true))
     this.saveButton.addEventListener('click', () => void this.make(false))
     this.bindTrack()
@@ -605,6 +665,21 @@ class ClipEditor {
       this.seek(this.start)
     }
     this.paintHead(t)
+  }
+
+  /** Only what you hear while you pick: the clip keeps its sound. */
+  private toggleMute(): void {
+    previewMuted = !previewMuted
+    this.video.muted = previewMuted
+    this.paintMute()
+  }
+
+  private paintMute(): void {
+    const label = previewMuted ? 'Unmute (M)' : 'Mute while you edit (M)'
+    this.muteButton.replaceChildren(icon(previewMuted ? 'mute' : 'volume', 18))
+    this.muteButton.title = label
+    this.muteButton.setAttribute('aria-label', previewMuted ? 'Unmute' : 'Mute while you edit')
+    this.muteButton.setAttribute('aria-pressed', String(previewMuted))
   }
 
   private paintPlay(): void {
@@ -726,6 +801,9 @@ class ClipEditor {
       } else if (key === 'o') {
         ev.preventDefault()
         this.setEnd(this.now())
+      } else if (key === 'm') {
+        ev.preventDefault()
+        this.toggleMute()
       }
     })
   }

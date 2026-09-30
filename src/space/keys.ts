@@ -1,6 +1,6 @@
 import { fromBase64, toBase64, toHex } from '../bytes'
 import { sharedKey } from '../store/identity'
-import { KEY_ID, type RoomLog } from '../store/log'
+import { KEY_ID, passProof, type RoomLog } from '../store/log'
 
 /**
  * A space starts with one key, made from its code. When somebody is removed, the device of
@@ -11,6 +11,11 @@ import { KEY_ID, type RoomLog } from '../store/log'
  *
  * Somebody who joins later has only the code. The first device that is online and holds the
  * newest key seals a copy for them too, a few seconds after they arrive.
+ *
+ * A ban closes that door. After it, only people let in get a copy: those who had the key, and
+ * newcomers who show the pass of an invite made since the ban. And a signal under a key older
+ * than the ban's is not heard, so somebody with only the old code is not seen, heard, or let
+ * into voice.
  */
 
 /** How many copies go in one event, so it stays well inside one line. */
@@ -78,6 +83,8 @@ export class SpaceKeys {
   private readonly raw = new Map<string, Uint8Array>()
   private readonly tried = new Set<string>()
   private current = ''
+  /** After a ban: the only keys a signal may come under. Null is any key held. */
+  private since: Set<string> | null = null
 
   constructor(readonly base: CryptoKey) {}
 
@@ -88,6 +95,19 @@ export class SpaceKeys {
 
   has(tag: string): boolean {
     return this.held.has(tag)
+  }
+
+  /** Whether a signal under this key is heard: after a ban, only one under the ban's key or newer. */
+  hears(tag: string): boolean {
+    return !this.since || this.since.has(tag)
+  }
+
+  /**
+   * After a ban, the keys a signal may come under. Only once this device holds one of them:
+   * before that it could hear nobody.
+   */
+  hearOnly(ids: string[]): void {
+    this.since = ids.some((id) => this.held.has(id)) ? new Set(ids) : null
   }
 
   /** The key to seal with now, and its tag. */
@@ -155,6 +175,10 @@ export class KeyKeeper {
   private timer = 0
   private busy = false
   private stopped = false
+  /** Newcomers who showed a pass that checks out, after a ban. */
+  private readonly passed = new Set<string>()
+  private readonly checked = new Set<string>()
+  private checking = false
 
   constructor(
     private readonly keys: SpaceKeys,
@@ -165,6 +189,7 @@ export class KeyKeeper {
 
   /** Call when the log changes. Cheap when there is nothing to do. */
   consider(): void {
+    void this.checkPasses()
     if (this.stopped || this.timer || this.busy) return
     const need = this.need()
     if (!need) return
@@ -180,6 +205,40 @@ export class KeyKeeper {
     window.clearTimeout(this.timer)
   }
 
+  /** Who may be given the key: after a ban, only people let in, and newcomers with a good pass. */
+  private mayHave(person: string): boolean {
+    const ok = this.log.admitted()
+    return !ok || ok.has(person) || this.passed.has(person)
+  }
+
+  /** Checks the passes newcomers showed against the invites made since the ban. */
+  private async checkPasses(): Promise<void> {
+    const ok = this.log.admitted()
+    if (this.stopped || this.checking || !ok) return
+    const passes = this.log.passes()
+    if (passes.length === 0) return
+    this.checking = true
+    let found = false
+    try {
+      const auth = this.log.authority()
+      for (const [person, proofs] of this.log.joins()) {
+        if (ok.has(person) || this.passed.has(person) || auth.isKicked(person)) continue
+        for (const pass of passes) {
+          const tried = `${person}:${pass}`
+          if (this.checked.has(tried)) continue
+          this.checked.add(tried)
+          if (!proofs.includes(await passProof(pass, person))) continue
+          this.passed.add(person)
+          found = true
+          break
+        }
+      }
+    } finally {
+      this.checking = false
+    }
+    if (found) this.consider()
+  }
+
   /** Whether somebody was removed after the newest key was made, or somebody still lacks it. */
   private need(): { kind: 'rotate'; after: number; mine: boolean } | { kind: 'grant'; id: string; people: string[] } | null {
     const auth = this.log.authority()
@@ -189,12 +248,12 @@ export class KeyKeeper {
     // A key covers every removal up to the one it was made for, whatever the clocks say.
     if (lastKick > (newest?.covers ?? 0)) {
       if (!auth.can(this.me, 'remove')) return null
-      const kick = this.log.all().find((e) => e.kind === 'role' && e.body.role === 'kicked' && e.lamport === lastKick)
+      const kick = this.log.everything().find((e) => e.kind === 'role' && e.body.role === 'kicked' && e.lamport === lastKick)
       return { kind: 'rotate', after: lastKick, mine: kick?.author === this.me }
     }
     if (!newest || !this.keys.has(newest.id)) return null
     const boxed = this.log.keyHolders(newest.id)
-    const people = this.log.keyMembers().filter((p) => !boxed.has(p))
+    const people = this.log.keyMembers().filter((p) => !boxed.has(p) && this.mayHave(p))
     return people.length ? { kind: 'grant', id: newest.id, people } : null
   }
 
@@ -204,7 +263,8 @@ export class KeyKeeper {
     this.busy = true
     try {
       if (need.kind === 'rotate') {
-        const { bodies } = await this.keys.make([...new Set([this.me, ...this.log.keyMembers()])], need.after)
+        const people = this.log.keyMembers().filter((p) => this.mayHave(p))
+        const { bodies } = await this.keys.make([...new Set([this.me, ...people])], need.after)
         for (const body of bodies) await this.write(body)
       } else {
         for (const body of await this.keys.copies(need.id, need.people)) await this.write(body)
