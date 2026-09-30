@@ -18,4 +18,8 @@ needed.delete(undefined)
 const missing = [...needed].filter((file) => !packed(file))
 check('every file the desktop app loads is packed into it', missing.length === 0, missing.join(', ') || [...needed].join(', '))
 
+// Signed ad hoc, every update is a new app to the macOS Keychain, which then asks for a password.
+const main = readFileSync(new URL('main.cjs', dir), 'utf8')
+check('the Mac app never asks the Keychain, so an update asks for no password', /appendSwitch\('use-mock-keychain'\)/.test(main))
+
 finish()

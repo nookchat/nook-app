@@ -29,6 +29,10 @@ const { watchUpdates } = require('./updates.cjs')
 const recordings = require('./recordings.cjs')
 
 app.setName('Nook')
+// Chromium keeps a key in the macOS Keychain to seal its cookies. The app is signed ad hoc, so
+// every update looks like a new app to the Keychain, and it asks for your password again. Nook
+// keeps nothing in cookies, so Chromium's own stand-in key does, and the Keychain is never asked.
+if (process.platform === 'darwin') app.commandLine.appendSwitch('use-mock-keychain')
 
 // Windows shows a notification only for an app whose id matches its Start menu shortcut, and the
 // installer names that shortcut with the appId in package.json. Without this, every one is dropped.
