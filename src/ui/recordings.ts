@@ -316,7 +316,7 @@ class ClipEditor {
   private readonly about = h('span', { class: 'tiny faint clip-about' })
   private readonly shareButton = h('button', { class: 'primary' }, [icon('send', 15), 'Add to message'])
   private readonly saveButton = h('button', { class: 'ghost' }, [icon('download', 15), 'Save clip'])
-  private readonly bar = h('span', { class: 'attach-bar clip-progress hidden', role: 'progressbar' }, [h('i')])
+  private readonly bar = h('span', { class: 'attach-bar clip-progress idle', role: 'progressbar' }, [h('i')])
   private readonly note = h('div', { class: 'tiny faint clip-note' })
   private player: PiecePlayer | null = null
   private duration = 0
@@ -366,8 +366,8 @@ class ClipEditor {
         this.saveButton,
         this.shareButton,
       ]),
-      this.bar,
-      this.note,
+      // Always there, at the same height, so nothing moves when a clip is made.
+      h('div', { class: 'clip-status' }, [this.bar, this.note]),
     ])
     this.playButton.addEventListener('click', () => this.togglePlay())
     this.shareButton.addEventListener('click', () => void this.make(true))
@@ -605,7 +605,7 @@ class ClipEditor {
     this.shareButton.disabled = true
     this.saveButton.disabled = true
     const fill = this.bar.firstElementChild as HTMLElement
-    this.bar.classList.remove('hidden')
+    this.bar.classList.remove('idle')
     fill.style.transform = 'scaleX(0)'
     const source = { url: this.rec.url, title: recordingName(this.rec), size: this.rec.size, duration: this.duration || null, at: this.rec.at }
     try {
@@ -632,7 +632,7 @@ class ClipEditor {
       toast(err instanceof ClipRefused ? err.message : 'Nook could not make that clip.', 'bad', 8000)
     } finally {
       this.working = null
-      this.bar.classList.add('hidden')
+      this.bar.classList.add('idle')
       if (!this.stopped) this.paint()
     }
   }

@@ -214,10 +214,22 @@ try {
   await page.keyboard.press('Home')
   await page.screenshot({ path: 'test-output/recordings-clip.png' })
 
+  // Every change while the clip is made, and the height of the dialog then: nothing may move.
+  await page.evaluate(() => {
+    const modal = document.querySelector('.recordings-modal')
+    const track = document.querySelector('.clip-track')
+    window.__shifts = [`${modal.getBoundingClientRect().height}:${track.getBoundingClientRect().top}`]
+    new MutationObserver(() => {
+      if (!modal.isConnected) return
+      window.__shifts.push(`${modal.getBoundingClientRect().height}:${track.getBoundingClientRect().top}`)
+    }).observe(modal, { subtree: true, childList: true, characterData: true, attributes: true })
+  })
   await page.click('.clip-editor button:has-text("Add to message")')
   await page.waitForSelector('.attach-chip', { timeout: 30_000 })
   check('Add to message puts the clip in the message box', (await page.locator('.attach-chip .attach-name').textContent()).endsWith('.mp4'))
   check('and closes the dialog', (await page.locator('.recordings-modal').count()) === 0)
+  const shifts = [...new Set(await page.evaluate(() => window.__shifts))]
+  check('nothing moves while the clip is made', shifts.length === 1, shifts.join(' '))
   check('with no toast', (await page.locator('.toast').count()) === 0, await page.locator('.toast').allTextContents().then((t) => t.join(' | ')))
   const sent = await poll(() => page.evaluate(() => document.querySelector('.attach-chip.done') !== null), 30_000)
   check('the clip goes up to the server', sent)

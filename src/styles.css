@@ -6801,12 +6801,24 @@ input.invalid:focus {
   color: var(--bad);
 }
 
+.clip-status {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 30px;
+}
+
 .clip-progress {
+  flex: 0 0 auto;
   margin: 0;
 }
 
-.clip-note:empty {
-  display: none;
+.clip-progress.idle {
+  visibility: hidden;
+}
+
+.clip-note {
+  min-height: 1lh;
 }
 
 @media (max-width: 640px) {
