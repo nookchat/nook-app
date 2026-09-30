@@ -46,8 +46,10 @@ export function fitNear(pop: HTMLElement, anchor: HTMLElement, gap = MARGIN): vo
   const height = pop.getBoundingClientRect().height
   const below = area.bottom - at.bottom - gap
   const above = at.top - area.top - gap
-  const top = height <= below || below >= above ? at.bottom + gap : at.top - gap - height
-  fitInView(pop, at.left, top)
+  const under = height <= below || below >= above
+  // The side it opens to, so it grows out of the anchor and not toward it.
+  pop.dataset.side = under ? 'below' : 'above'
+  fitInView(pop, at.left, under ? at.bottom + gap : at.top - gap - height)
 }
 
 /** At the pointer, as a right click menu opens: down and right, or flipped where it has no room. */
@@ -55,6 +57,7 @@ export function fitAtPoint(pop: HTMLElement, x: number, y: number): void {
   const area = viewArea()
   const box = pop.getBoundingClientRect()
   const left = x + box.width > area.right ? x - box.width : x
-  const top = y + box.height > area.bottom ? y - box.height : y
-  fitInView(pop, left, top)
+  const up = y + box.height > area.bottom
+  pop.dataset.side = up ? 'above' : 'below'
+  fitInView(pop, left, up ? y - box.height : y)
 }

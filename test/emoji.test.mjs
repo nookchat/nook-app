@@ -134,8 +134,8 @@ try {
 
   await page.click('button[aria-label="Emoji"]')
   await page.waitForSelector('.emoji-pop')
-  const recentHead = await page.$eval('.emoji-head', (el) => el.textContent)
-  check('the picker remembers what this person uses', recentHead === 'Recent', recentHead)
+  const firstHead = await page.$eval('.emoji-head', (el) => el.textContent)
+  check('the full picker opens on the emoji, with no Recent row', firstHead !== 'Recent', firstHead)
   await page.keyboard.press('Escape')
 
   const link = page.url()

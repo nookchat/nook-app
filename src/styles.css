@@ -686,7 +686,7 @@ a.button-link,
 .rail-person.has-menu,
 label.pick-row,
 label.level-power:not(.off) {
-  transition: transform 80ms var(--ease);
+  transition: transform 80ms var(--ease), background 120ms var(--ease);
 }
 
 a.button-link:active,
@@ -4793,8 +4793,8 @@ button.quick-slot.empty {
   z-index: 70;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  width: 274px;
+  gap: 6px;
+  width: 348px;
   padding: 8px;
   background: var(--surface);
   border: 1px solid var(--line);
@@ -4840,9 +4840,9 @@ input[type="text"].emoji-search {
 .emoji-tab {
   flex: 1 1 0;
   min-width: 0;
-  min-height: 20px;
+  min-height: 28px;
   padding: 0;
-  font-size: 13px;
+  font-size: 16px;
   line-height: 1;
   border-color: transparent;
   background: transparent;
@@ -4855,7 +4855,7 @@ input[type="text"].emoji-search {
 }
 
 .emoji-grid {
-  height: 196px;
+  height: 300px;
   overflow-y: auto;
   overscroll-behavior: contain;
   border: 1px solid var(--line-soft);
@@ -4882,14 +4882,14 @@ input[type="text"].emoji-search {
 /* A group out of sight is not laid out or drawn, so opening costs one screenful. */
 .emoji-section {
   content-visibility: auto;
-  contain-intrinsic-size: auto 240px;
+  contain-intrinsic-size: auto 330px;
 }
 
 .emoji-cell {
   min-height: 0;
-  height: 29px;
+  height: 40px;
   padding: 0;
-  font-size: 17px;
+  font-size: 26px;
   line-height: 1;
   border-color: transparent;
   background: transparent;
@@ -4903,18 +4903,6 @@ input[type="text"].emoji-search {
   border-color: transparent;
 }
 
-.emoji-foot {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 18px;
-  padding: 0 2px;
-}
-
-.emoji-preview {
-  font-size: 15px;
-  line-height: 1;
-}
 
 .chat-replying {
   display: flex;
@@ -7065,5 +7053,97 @@ button.recordings-game.waiting {
 @keyframes look-turn {
   to {
     transform: rotate(360deg);
+  }
+}
+
+/* Motion for the chrome: calm fades and small scales, 140 to 220ms. Only the ghost overshoots.
+   The reduced motion rule near the top of this file stops all of it. */
+
+/* A row lights up on hover over a moment, not in one jump. */
+.rail-person,
+.pick-row,
+.chat-row,
+.switch-row,
+.mention-option {
+  transition: background 120ms var(--ease);
+}
+
+/* A dialog: the scrim fades in, and the box grows a little as it comes. */
+.scrim {
+  animation: scrim-in var(--dur-fast) linear both;
+}
+
+.scrim > .modal {
+  animation: modal-in var(--dur-base) var(--ease-out) both;
+}
+
+@keyframes scrim-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.97);
+  }
+}
+
+/* A menu or picker grows out of the side it opens on: down from under its button, up from over it. */
+.menu,
+.emoji-pop,
+.sound-pop {
+  transform-origin: top left;
+  animation: pop-in var(--dur-fast) var(--ease-out) both;
+}
+
+.menu[data-side="above"],
+.emoji-pop[data-side="above"],
+.sound-pop[data-side="above"] {
+  transform-origin: bottom left;
+  --pop-from: 4px;
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--pop-from, -4px)) scale(0.97);
+  }
+}
+
+/* The GIF picker sits centred over the composer, so it keeps its own shift and rises into place. */
+.gif-pop {
+  animation: gif-pop-in var(--dur-base) var(--ease-out) both;
+}
+
+@keyframes gif-pop-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(8px);
+  }
+}
+
+/* A toast slides in from the edge it sits on, and back out when it goes. */
+.toast {
+  animation: toast-in var(--dur-base) var(--ease-out) both;
+}
+
+.toast.leaving {
+  pointer-events: none;
+  animation: toast-out var(--dur-fast) ease-in forwards;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+
+@keyframes toast-out {
+  to {
+    opacity: 0;
+    transform: translateX(16px) scale(0.98);
   }
 }

@@ -437,7 +437,6 @@ export function openEmojiPicker(options: PickerOptions): void {
     placeholder: 'Search',
   })
   const grid = h('div', { class: 'emoji-grid' })
-  const preview = h('div', { class: 'emoji-foot' })
   const tabs = h('div', { class: 'emoji-tabs' })
 
   const pop = h('div', { class: 'emoji-pop', role: 'dialog', ariaLabel: 'Emoji' }, [
@@ -445,16 +444,7 @@ export function openEmojiPicker(options: PickerOptions): void {
     search,
     tabs,
     grid,
-    preview,
   ])
-
-  const setPreview = (ch: string): void => {
-    clear(preview)
-    preview.append(
-      h('span', { class: 'emoji-preview', text: ch }),
-      h('span', { class: 'truncate tiny faint', text: ch ? describe(ch) : 'Pick one' }),
-    )
-  }
 
   const pick = (ch: string): void => {
     noteEmoji(ch)
@@ -470,14 +460,6 @@ export function openEmojiPicker(options: PickerOptions): void {
   grid.addEventListener('click', (ev) => {
     const hit = cellAt(ev.target)
     if (hit?.textContent) pick(hit.textContent)
-  })
-  grid.addEventListener('mouseover', (ev) => {
-    const hit = cellAt(ev.target)
-    if (hit?.textContent) setPreview(hit.textContent)
-  })
-  grid.addEventListener('focusin', (ev) => {
-    const hit = cellAt(ev.target)
-    if (hit?.textContent) setPreview(hit.textContent)
   })
 
   const section = (label: string, list: string[]): void => {
@@ -500,7 +482,6 @@ export function openEmojiPicker(options: PickerOptions): void {
       section(hits.length ? 'Matches' : 'Nothing matches that', hits)
       return
     }
-    section('Recent', recentEmoji())
     grid.append(...sections())
   }
 
@@ -577,7 +558,6 @@ export function openEmojiPicker(options: PickerOptions): void {
   }
 
   open = { close, anchor: options.anchor }
-  setPreview('')
   paint('')
   document.body.append(pop)
   placeNear(pop, options.anchor)

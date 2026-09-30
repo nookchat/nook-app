@@ -198,6 +198,8 @@ try {
   await page.evaluate(() => (window.__listDelay = 1200))
   await button.click()
   await page.waitForSelector('.recording-card.waiting')
+  // The dialog grows in as it opens: measure it where it stops.
+  await page.evaluate(() => Promise.all(document.querySelector('.scrim > .modal').getAnimations().map((a) => a.finished)))
   const box = (sel) => page.locator(sel).first().evaluate((el) => {
     const r = el.getBoundingClientRect()
     return [Math.round(r.top), Math.round(r.height), Math.round(r.width)].join(',')
