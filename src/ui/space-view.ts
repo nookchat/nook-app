@@ -42,6 +42,7 @@ import {
   type LogEvent,
   type Message,
   type NoteInfo,
+  type ThreadInfo,
 } from '../store/log'
 import type { RoomChat } from '../store/room-chat'
 import { filesFor, isCallChannel, type SpaceRuntime } from '../space/runtime'
@@ -329,6 +330,8 @@ export class SpaceView {
   private shareButtonSharing: boolean | null = null
   private channelTitle!: HTMLDivElement
   private channelTitleSig = ''
+  private noteListSig: string | null = null
+  private threadListSig: string | null = null
   /**
    * A press on a side bar, until the click it makes has landed. The lists there are drawn anew
    * on every change, and one drawn between the press and the release takes the click with it,
@@ -373,6 +376,8 @@ export class SpaceView {
     serverMs: number | null
   } | null = null
   private linkBusy = false
+  /** A slow getStats must not start a second tick over the first. */
+  private tickBusy = false
   /** When each session in voice came into its channel, by our clock. */
   private readonly voiceSince = new Map<string, number>()
   /** The game each session says it plays, and since when by our clock. */
@@ -1676,10 +1681,13 @@ export class SpaceView {
 
   private renderNotes(): void {
     if (this.heldForPress()) return
+    const notes = this.chat?.notes() ?? []
+    // Drawn again only when the list changes, so focus and hover stay on a row.
+    const sig = [this.noteId, ...notes.map((n) => `${n.id}\t${n.title}\t${n.levels.join()}\t${n.maker}`)].join('\n')
+    if (this.noteListSig === sig) return
+    this.noteListSig = sig
     clear(this.noteList)
-    const chat = this.chat
-    if (!chat) return
-    for (const note of chat.notes()) {
+    for (const note of notes) {
       const open = h(
         'button',
         {
@@ -1693,7 +1701,8 @@ export class SpaceView {
         ],
       )
       const row = h('div', { class: 'row rail-row' }, [open])
-      onContextMenu(row, () => this.noteActions(note))
+      // The newest copy of the note: the row stays while its text changes.
+      onContextMenu(row, () => this.noteActions(this.chat?.notes().find((n) => n.id === note.id) ?? note))
       this.noteList.append(row)
     }
   }
@@ -1927,7 +1936,9 @@ export class SpaceView {
     this.channelList = h('div', { class: 'rail-list' })
     this.voiceList = h('div', { class: 'rail-list' })
     this.threadList = h('div', { class: 'rail-list rail-threads' })
+    this.threadListSig = null
     this.noteList = h('div', { class: 'rail-list' })
+    this.noteListSig = null
     this.noteEditor = new NoteEditor({
       save: (id, title, text) => this.publish((c) => c.saveNote(id, title, text)),
       nameOf: (key) => this.chat?.nameOf(key) || shortKey(key),
@@ -2895,18 +2906,24 @@ export class SpaceView {
   }
 
   private renderThreads(): void {
+    const threads = (this.chat?.threads() ?? []).slice(0, 6)
+    const fresh = (thread: ThreadInfo): boolean =>
+      thread.newest > (this.read[thread.root.channel] ?? 0) && thread.root.author !== this.chat?.me
+    const sig = [
+      this.thread ?? '',
+      ...threads.map((t) => `${t.root.id}\t${t.root.name}\t${t.root.text}\t${t.replies}\t${fresh(t)}`),
+    ].join('\n')
+    if (this.threadListSig === sig) return
+    this.threadListSig = sig
     clear(this.threadList)
-    const threads = this.chat?.threads() ?? []
     if (threads.length === 0) return
     this.threadList.append(h('div', { class: 'rail-head' }, [h('span', { class: 'eyebrow', text: 'Threads' })]))
-    for (const thread of threads.slice(0, 6)) {
-      const mark = this.read[thread.root.channel] ?? 0
-      const fresh = thread.newest > mark && thread.root.author !== this.chat?.me
+    for (const thread of threads) {
       this.threadList.append(
         h(
           'button',
           {
-            class: `rail-item${this.thread === thread.root.id ? ' on' : ''}${fresh ? ' unread' : ''}`,
+            class: `rail-item${this.thread === thread.root.id ? ' on' : ''}${fresh(thread) ? ' unread' : ''}`,
             title: `${thread.root.name || shortKey(thread.root.author)}: ${thread.root.text}`,
             on: { click: () => this.openThread(thread.root.id) },
           },
@@ -4375,6 +4392,16 @@ export class SpaceView {
   }
 
   private async tick(): Promise<void> {
+    if (this.tickBusy) return
+    this.tickBusy = true
+    try {
+      await this.sampleStreams()
+    } finally {
+      this.tickBusy = false
+    }
+  }
+
+  private async sampleStreams(): Promise<void> {
     const peers = [...this.watchers.values()]
     if (peers.length) {
       await Promise.all(peers.map((p) => p.sample()))
@@ -4388,15 +4415,18 @@ export class SpaceView {
         })
       }
       const plan = this.plan(peers.length)
-      for (const peer of peers) await peer.setPlan(plan)
+      await Promise.all(peers.map((peer) => peer.setPlan(plan)))
     }
-    for (const [id, entry] of this.watched) {
-      if (id === this.selfId || !entry.peer) continue
-      const s = await entry.peer.sample()
-      const size = s.height ? ` · ${s.height}p` : ''
-      entry.tag.textContent = `${entry.tag.dataset.who ?? ''}${size}`
-      entry.tile.title = `${s.width}x${s.height}, ${s.fps} fps, ${fmtKbps(s.kbps)}${s.codec ? `, ${s.codec}` : ''}`
-    }
+    // Each stream's stats at once, not one after the other.
+    await Promise.all(
+      [...this.watched].map(async ([id, entry]) => {
+        if (id === this.selfId || !entry.peer) return
+        const s = await entry.peer.sample()
+        const size = s.height ? ` · ${s.height}p` : ''
+        entry.tag.textContent = `${entry.tag.dataset.who ?? ''}${size}`
+        entry.tile.title = `${s.width}x${s.height}, ${s.fps} fps, ${fmtKbps(s.kbps)}${s.codec ? `, ${s.codec}` : ''}`
+      }),
+    )
   }
 
   private qualityMenu(): HTMLElement {

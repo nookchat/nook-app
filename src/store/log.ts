@@ -305,6 +305,8 @@ export class RoomLog {
   private readonly byId = new Map<string, LogEvent>()
   private clock = 0
   private ordered: LogEvent[] | null = null
+  /** Whether `ordered` went out since the last add: then an add copies it, and does not push. */
+  private orderedShared = false
   private memoFrom: LogEvent[] | null = null
   private memoFounder = ''
   private readonly memo = new Map<string, unknown>()
@@ -324,8 +326,14 @@ export class RoomLog {
     this.advance(event.lamport)
     const ordered = this.ordered
     if (ordered && (ordered.length === 0 || compare(ordered[ordered.length - 1], event) < 0)) {
-      // A new array, not a push: holders of the old one, and the memo, rely on it never changing.
-      this.ordered = [...ordered, event]
+      // A new array once it went out: holders of the old one, and the memo, rely on it never
+      // changing. Until then a push, so a page of events added in a row is not copied each time.
+      if (this.orderedShared) {
+        this.ordered = [...ordered, event]
+        this.orderedShared = false
+      } else {
+        ordered.push(event)
+      }
     } else {
       this.ordered = null
     }
@@ -525,6 +533,7 @@ export class RoomLog {
   /** Every event in agreed order, even from people a ban keeps out. Shared: never mutate it. */
   everything(): LogEvent[] {
     this.ordered ??= [...this.byId.values()].sort(compare)
+    this.orderedShared = true
     return this.ordered
   }
 
@@ -900,8 +909,17 @@ export class RoomLog {
     return to
   }
 
-  /** Pass a channel to get what its readers see, thread replies excluded. */
+  /**
+   * Pass a channel to get what its readers see, thread replies excluded. Computed once per state
+   * of the log, so callers must not change the list, and only set `name` on a message.
+   */
   messages(channel?: string): Message[] {
+    const all = this.cached('messages', () => this.foldMessages())
+    if (!channel) return all
+    return this.cached(`messages:${channel}`, () => all.filter((m) => m.channel === channel && !m.inThread))
+  }
+
+  private foldMessages(): Message[] {
     const out: Message[] = []
     const index = new Map<string, Message>()
     const names = new Map<string, string>()
@@ -942,7 +960,6 @@ export class RoomLog {
       }
       if (e.kind === 'poll') {
         if (removed.has(placeOf(e)) || shut(e)) continue
-        if (channel && placeOf(e) !== channel) continue
         const question = String(e.body.question ?? '').slice(0, 200).trim()
         const raw = Array.isArray(e.body.options) ? e.body.options : []
         const options = raw
@@ -980,7 +997,6 @@ export class RoomLog {
       }
       if (e.kind === 'said') {
         if (removed.has(placeOf(e)) || shut(e)) continue
-        if (channel && placeOf(e) !== channel) continue
         const message: Message = {
           id: e.id,
           author: e.author,
@@ -1056,11 +1072,15 @@ export class RoomLog {
       if (count) m.replies = count
     }
 
-    const live = out.filter((m) => !m.retracted)
-    return channel ? live.filter((m) => !m.inThread) : live
+    return out.filter((m) => !m.retracted)
   }
 
+  /** Computed once per state of the log. Callers must not change what it returns. */
   threads(): ThreadInfo[] {
+    return this.cached('threads', () => this.foldThreads())
+  }
+
+  private foldThreads(): ThreadInfo[] {
     const all = this.messages()
     const latest = new Map<string, { last: number; newest: number }>()
     for (const m of all) {
