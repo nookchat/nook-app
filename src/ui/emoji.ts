@@ -402,25 +402,50 @@ function emojiCell(ch: string): HTMLElement {
   return h('button', { class: 'emoji-cell', text: ch, title: label, ariaLabel: label })
 }
 
-function emojiSection(label: string, list: string[]): HTMLElement {
+function emojiSection(list: string[]): HTMLElement {
   const row = h('div', { class: 'emoji-row' })
   for (const ch of list) row.append(emojiCell(ch))
-  return h('div', { class: 'emoji-section' }, [h('div', { class: 'emoji-head', text: label }), row])
+  return h('div', { class: 'emoji-section' }, [row])
 }
 
 /** Every group, built once and moved into whichever picker is open. */
 let groupSections: HTMLElement[] | null = null
 
 function sections(): HTMLElement[] {
-  groupSections ??= ALL.map(({ group, list }) => emojiSection(group.label, list.map((e) => e.ch)))
+  groupSections ??= ALL.map(({ list }) => emojiSection(list.map((e) => e.ch)))
   return groupSections
+}
+
+/** A hidden grid in the page that holds the groups while no picker is open, so their layout stays done. */
+let parking: HTMLElement | null = null
+
+function park(): void {
+  parking ??= h('div', { class: 'emoji-grid emoji-parked' })
+  parking.setAttribute('aria-hidden', 'true')
+  parking.inert = true
+  if (!parking.isConnected) document.body.append(parking)
+  parking.append(...sections())
+}
+
+/** Draws every emoji once, off screen, so the emoji font is loaded before the first open. */
+function warmFont(): void {
+  const cell = parking?.querySelector('.emoji-cell')
+  const ctx = document.createElement('canvas').getContext('2d')
+  if (!cell || !ctx) return
+  const style = getComputedStyle(cell)
+  ctx.font = `${style.fontSize} ${style.fontFamily}`
+  for (const { list } of ALL) for (const e of list) ctx.fillText(e.ch, 0, 32)
 }
 
 /** Builds the picker's insides while nothing else is happening, so the first open is quick. */
 export function warmEmoji(): void {
+  const warm = (): void => {
+    if (!open) park()
+    warmFont()
+  }
   const idle = (window as Window & { requestIdleCallback?: (cb: () => void) => void }).requestIdleCallback
-  if (idle) idle(() => sections())
-  else window.setTimeout(() => sections(), 1500)
+  if (idle) idle(warm)
+  else window.setTimeout(warm, 1500)
 }
 
 export function openEmojiPicker(options: PickerOptions): void {
@@ -437,12 +462,10 @@ export function openEmojiPicker(options: PickerOptions): void {
     placeholder: 'Search',
   })
   const grid = h('div', { class: 'emoji-grid' })
-  const tabs = h('div', { class: 'emoji-tabs' })
 
   const pop = h('div', { class: 'emoji-pop', role: 'dialog', ariaLabel: 'Emoji' }, [
     options.title ? h('div', { class: 'emoji-title tiny faint', text: options.title }) : null,
     search,
-    tabs,
     grid,
   ])
 
@@ -462,11 +485,6 @@ export function openEmojiPicker(options: PickerOptions): void {
     if (hit?.textContent) pick(hit.textContent)
   })
 
-  const section = (label: string, list: string[]): void => {
-    if (list.length === 0) return
-    grid.append(emojiSection(label, list))
-  }
-
   function paint(query: string): void {
     clear(grid)
     const q = query.trim().toLowerCase()
@@ -479,30 +497,10 @@ export function openEmojiPicker(options: PickerOptions): void {
         }
         if (hits.length >= 120) break
       }
-      section(hits.length ? 'Matches' : 'Nothing matches that', hits)
+      grid.append(hits.length ? emojiSection(hits) : h('div', { class: 'emoji-none tiny faint', text: 'Nothing matches that' }))
       return
     }
     grid.append(...sections())
-  }
-
-  for (const { group } of ALL) {
-    tabs.append(
-      h('button', {
-        class: 'emoji-tab',
-        text: group.tab,
-        title: group.label,
-        ariaLabel: group.label,
-        on: {
-          click: () => {
-            search.value = ''
-            paint('')
-            const heads = [...grid.querySelectorAll('.emoji-head')]
-            const head = heads.find((el) => el.textContent === group.label)
-            if (head instanceof HTMLElement) head.scrollIntoView({ block: 'start' })
-          },
-        },
-      }),
-    )
   }
 
   search.addEventListener('input', () => paint(search.value))
@@ -552,6 +550,7 @@ export function openEmojiPicker(options: PickerOptions): void {
     if (open?.close !== close) return
     open = null
     pop.remove()
+    park()
     window.removeEventListener('keydown', onKey, true)
     window.removeEventListener('pointerdown', onDown, true)
     window.removeEventListener('resize', close)

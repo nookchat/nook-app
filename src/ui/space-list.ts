@@ -94,7 +94,6 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
               h('span', { class: 'truncate space-row-name', text: room.title || 'Unnamed space' }),
               h('span', { class: 'tiny faint truncate', text: whenLabel(room.lastSeen) }),
             ]),
-            room.locked ? h('span', { class: 'tiny faint', title: 'Needs a password' }, [icon('lock', 13)]) : null,
           ],
         ),
       ])

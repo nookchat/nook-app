@@ -1121,6 +1121,11 @@ main.home {
   color: var(--fg);
 }
 
+/* The hover fill reaches into the card's padding, so the tile lines up with the heading. */
+.home-spaces .space-row {
+  margin-inline: -10px;
+}
+
 .space-row > .rail-item:hover:not(:disabled) {
   background: var(--surface-2);
   color: var(--fg);
@@ -4906,28 +4911,6 @@ input[type="text"].emoji-search {
   font-size: var(--size-small);
 }
 
-.emoji-tabs {
-  display: flex;
-  gap: 1px;
-}
-
-.emoji-tab {
-  flex: 1 1 0;
-  min-width: 0;
-  min-height: 28px;
-  padding: 0;
-  font-size: 16px;
-  line-height: 1;
-  border-color: transparent;
-  background: transparent;
-  box-shadow: none;
-}
-
-.emoji-tab:hover:not(:disabled) {
-  background: var(--surface-2);
-  border-color: transparent;
-}
-
 .emoji-grid {
   height: 300px;
   overflow-y: auto;
@@ -4938,14 +4921,19 @@ input[type="text"].emoji-search {
   padding: 2px;
 }
 
-.emoji-head {
-  position: sticky;
-  top: -2px;
-  z-index: 1;
-  padding: 3px 3px 2px;
-  font-size: calc(var(--size-small) - 1px);
-  color: var(--fg-faint);
-  background: var(--field-bg);
+/* Same width as the grid in an open picker, so the groups keep their layout when they move in. */
+.emoji-parked {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 332px;
+  visibility: hidden;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.emoji-none {
+  padding: 8px 6px;
 }
 
 .emoji-row {
@@ -5226,6 +5214,7 @@ input[type="text"].emoji-search {
 
 input[type="text"].gif-search {
   width: 100%;
+  margin-bottom: 6px;
   font-size: var(--size-small);
 }
 
@@ -5236,6 +5225,10 @@ input[type="text"].gif-search {
   max-height: 300px;
   min-height: 0;
   overflow-y: auto;
+}
+
+.gif-status:empty {
+  display: none;
 }
 
 .gif-pop.placed {

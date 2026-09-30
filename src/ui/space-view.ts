@@ -3481,7 +3481,7 @@ export class SpaceView {
       if (!term) return
     }
     const grid = h('div', { class: 'gif-grid' })
-    const status = h('div', { class: 'tiny faint' })
+    const status = h('div', { class: 'gif-status tiny faint' })
     const box = h('input', {
       type: 'text',
       class: 'gif-search',
@@ -3565,7 +3565,7 @@ export class SpaceView {
         grid.append(cell)
       }
       if (gifs.length > 0) {
-        status.textContent = `${wanted ? `Results for "${wanted}"` : 'Popular now'}, from ${from}.`
+        clear(status)
         return
       }
       clear(status)
