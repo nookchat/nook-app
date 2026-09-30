@@ -87,6 +87,23 @@ try {
   await alice.waitForSelector('.levels')
   const names = await alice.$$eval('.levels .level-name', (els) => els.map((e) => e.textContent))
   check('the owner sees the levels of the space', names.join(',') === 'Owner,Admin,Moderator,Member', names.join(','))
+  // The owner may call their own level something else, and colour it, but not change what it can do.
+  await alice.click('.levels button[aria-label="Change the level Owner"]')
+  await alice.waitForSelector('.level.open input[aria-label="The name of the level"]')
+  check('the owner level has no powers to untick, and no delete', (await alice.locator('.level.open .level-powers').count()) === 0 && (await alice.locator('.level.open button:has-text("Delete level")').count()) === 0)
+  await alice.fill('.level.open input[aria-label="The name of the level"]', 'Captain')
+  await alice.click('.level.open button:text-is("Save")')
+  await alice.waitForFunction(() => [...document.querySelectorAll('.levels .level-name')].some((e) => e.textContent === 'Captain'))
+  const captain = await bob.evaluate(async () => {
+    const { spaces } = await import('/src/space/registry.ts')
+    const chat = spaces.all()[0].chat
+    for (let i = 0; i < 40 && chat.levelOf(chat.log.founder).name !== 'Captain'; i++) await new Promise((r) => setTimeout(r, 250))
+    const level = chat.levelOf(chat.log.founder)
+    return { name: level.name, all: level.can.length, rank: level.rank }
+  })
+  check('the owner renames their own level, for everybody', captain.name === 'Captain', JSON.stringify(captain))
+  check('and it can still do everything, at the top', captain.all === 8 && captain.rank === 1000, JSON.stringify(captain))
+  await alice.click('.level.open button[aria-label^="Change the level"]').catch(() => undefined)
   await alice.click('.levels button:has-text("New level")')
   await alice.waitForSelector('.level.open input[aria-label="The name of the level"]')
   await alice.fill('.level.open input[aria-label="The name of the level"]', 'Helpers')

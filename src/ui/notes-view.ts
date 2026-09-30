@@ -30,14 +30,13 @@ export interface NoteHooks {
   save(id: string, title: string | undefined, text: string | undefined): Promise<void>
   nameOf(key: string): string
   /** The buttons in the note's bar, for what may be done to it. */
-  tools(note: NoteInfo, rename: () => void): HTMLElement[]
+  tools(note: NoteInfo): HTMLElement[]
 }
 
 /** One shared note: the markdown on the left, how it reads on the right. */
 export class NoteEditor {
   readonly root: HTMLElement
   private readonly hooks: NoteHooks
-  private readonly title: HTMLInputElement
   private readonly source: HTMLTextAreaElement
   private readonly reader: HTMLElement
   private readonly status: HTMLElement
@@ -47,30 +46,12 @@ export class NoteEditor {
   private note: NoteInfo | null = null
   /** What we last sent or took in, to tell our own changes from theirs. */
   private shownText = ''
-  private shownTitle = ''
   private saveTimer: number | null = null
   private previewTimer: number | null = null
   private saving = false
 
   constructor(hooks: NoteHooks) {
     this.hooks = hooks
-    this.title = h('input', {
-      type: 'text',
-      class: 'note-title',
-      placeholder: 'Untitled',
-      ariaLabel: 'Note title',
-      on: {
-        input: () => this.later(),
-        blur: () => this.saveNow(),
-        keydown: (ev) => {
-          if ((ev as KeyboardEvent).key === 'Enter') {
-            ev.preventDefault()
-            this.source.focus()
-          }
-        },
-      },
-    })
-    this.title.maxLength = 80
     this.source = h('textarea', {
       class: 'note-source',
       placeholder: '# A heading\n\nWrite in markdown. Everybody in this space can read and change it.',
@@ -101,7 +82,8 @@ export class NoteEditor {
     }
 
     this.root = h('div', { class: 'note-view hidden' }, [
-      h('div', { class: 'note-bar row' }, [this.title, this.status, modes, this.tools]),
+      // The name is in the channel head above: once is enough.
+      h('div', { class: 'note-bar row' }, [this.status, h('span', { class: 'grow' }), modes, this.tools]),
       h('div', { class: 'note-panes' }, [this.source, this.reader]),
     ])
     this.setMode(this.mode)
@@ -118,8 +100,6 @@ export class NoteEditor {
       this.saveNow()
       this.note = note
       this.shownText = note.text
-      this.shownTitle = note.title
-      this.title.value = note.title
       this.source.value = note.text
       this.drawReader()
       this.root.classList.remove('hidden')
@@ -136,23 +116,13 @@ export class NoteEditor {
       if (document.activeElement === this.source) this.source.setSelectionRange(at, at)
       this.drawReader()
     }
-    if (note.title !== this.shownTitle && this.title.value === this.shownTitle) {
-      this.shownTitle = note.title
-      this.title.value = note.title
-    }
     this.paintStatus()
     this.paintTools()
   }
 
   private paintTools(): void {
     if (!this.note) return
-    this.tools.replaceChildren(...this.hooks.tools(this.note, () => this.rename()))
-  }
-
-  /** The title is where the name is changed. */
-  private rename(): void {
-    this.title.focus()
-    this.title.select()
+    this.tools.replaceChildren(...this.hooks.tools(this.note))
   }
 
   hide(): void {
@@ -163,8 +133,7 @@ export class NoteEditor {
 
   focus(): void {
     if (this.mode === 'read') this.setMode('split')
-    if (!this.source.value) this.source.focus()
-    else this.title.focus()
+    this.source.focus()
   }
 
   private setMode(mode: Mode): void {
@@ -206,20 +175,15 @@ export class NoteEditor {
     const note = this.note
     if (!note) return
     const text = this.source.value
-    const title = this.title.value.trim() || 'Untitled'
-    const newText = text !== this.shownText ? text : undefined
-    const newTitle = title !== this.shownTitle ? title : undefined
-    if (newText === undefined && newTitle === undefined) return
+    if (text === this.shownText) return
     this.shownText = text
-    this.shownTitle = title
     this.saving = true
     this.paintStatus()
     void this.hooks
-      .save(note.id, newTitle, newText)
+      .save(note.id, undefined, text)
       .catch(() => {
         // Put it back as unsaved so the next edit, or leaving, tries again.
-        if (newText !== undefined) this.shownText = ''
-        if (newTitle !== undefined) this.shownTitle = ''
+        this.shownText = ''
       })
       .finally(() => {
         this.saving = false
@@ -230,7 +194,7 @@ export class NoteEditor {
   private paintStatus(): void {
     const note = this.note
     if (!note) return
-    const dirty = this.source.value !== this.shownText || (this.title.value.trim() || 'Untitled') !== this.shownTitle
+    const dirty = this.source.value !== this.shownText
     if (this.saving) this.status.textContent = 'Saving...'
     else if (dirty) this.status.textContent = 'Not saved yet'
     else {

@@ -130,8 +130,10 @@ export class Authority {
     )
   }
 
+  /** The owner's own level: only its name and colour, and only by the owner. */
   mayEdit(who: string, level: Level): boolean {
-    return level.id !== OWNER && this.can(who, 'levels') && level.rank < this.levelOf(who).rank
+    if (level.id === OWNER) return !!who && who === this.founder
+    return this.can(who, 'levels') && level.rank < this.levelOf(who).rank
   }
 }
 
@@ -349,8 +351,15 @@ export class RoomLog {
     for (const e of all) {
       if (e.kind === 'level') {
         const id = String(e.body.id ?? '')
-        if (!/^[a-z0-9]{1,16}$/.test(id) || id === OWNER) continue
+        if (!/^[a-z0-9]{1,16}$/.test(id)) continue
         const was = levels.get(id)
+        if (id === OWNER) {
+          // A name and a colour: what the owner may do, and where the level sits, never change.
+          const name = String(e.body.name ?? '').slice(0, 24).trim()
+          if (!was || !auth.mayEdit(e.author, was) || e.body.gone === true || !name) continue
+          levels.set(id, { ...was, name, colour: cleanColour(e.body.colour) })
+          continue
+        }
         if (was && !auth.mayEdit(e.author, was)) continue
         if (!was && !auth.can(e.author, 'levels')) continue
         const mine = auth.levelOf(e.author)

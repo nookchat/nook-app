@@ -90,7 +90,7 @@ export function levelsEditor(options: LevelsOptions): HTMLElement {
             },
             [dot, title, facts, icon(open ? 'close' : 'edit', 14)],
           )
-        : h('div', { class: 'level-head fixed', title: level.id === OWNER ? 'Nobody can change the owner' : 'Only somebody above this level can change it' }, [
+        : h('div', { class: 'level-head fixed', title: level.id === OWNER ? 'Only the owner can change this' : 'Only somebody above this level can change it' }, [
             dot,
             title,
             facts,
@@ -198,10 +198,12 @@ export function levelsEditor(options: LevelsOptions): HTMLElement {
       return h('div', { class: 'level-form stack' }, [
         h('label', { class: 'stack tight' }, [h('span', { class: 'eyebrow', text: 'Name' }), name]),
         h('div', { class: 'stack tight' }, [h('span', { class: 'eyebrow', text: 'Colour of their names' }), swatches]),
-        h('div', { class: 'stack tight' }, [h('span', { class: 'eyebrow', text: 'What they can do' }), powers]),
-        level.id === MEMBER ? null : order,
+        level.id === OWNER
+          ? h('div', { class: 'tiny faint', text: 'The owner can do everything, and is always at the top.' })
+          : h('div', { class: 'stack tight' }, [h('span', { class: 'eyebrow', text: 'What they can do' }), powers]),
+        level.id === MEMBER || level.id === OWNER ? null : order,
         // Delete on the left and Save on the right, as in every dialog.
-        h('div', { class: 'row spread' }, [remove ?? h('span'), saveButton]),
+        h('div', { class: 'row spread' }, [(level.id === OWNER ? null : remove) ?? h('span'), saveButton]),
       ])
     }
 

@@ -2504,6 +2504,18 @@ button.start {
   border-radius: var(--radius-md);
 }
 
+/* The yes of a dialog that deletes: red, but not so loud it is pressed without a look. */
+.ask-buttons button.confirm-ok {
+  background: color-mix(in srgb, var(--danger) 16%, var(--surface-2));
+  border-color: transparent;
+  color: var(--bad);
+  font-weight: 600;
+}
+
+.ask-buttons button.confirm-ok:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 24%, var(--surface-2));
+}
+
 .ask-buttons {
   justify-content: flex-end;
   gap: 8px;
@@ -5722,24 +5734,6 @@ input[type="text"].gif-search {
   color: var(--fg-faint);
 }
 
-input[type="text"].note-title,
-input[type="text"].note-title:hover,
-input[type="text"].note-title:focus {
-  flex: 1 1 auto;
-  min-width: 0;
-  background: transparent;
-  border: 0;
-  box-shadow: none;
-  padding: 4px 0;
-  font-size: 17px;
-  font-weight: 600;
-  color: var(--fg);
-}
-
-.note-title:focus {
-  outline: none;
-}
-
 /* Said in full: the title gives way before it does. */
 .note-status {
   flex: 0 0 auto;
@@ -5756,6 +5750,11 @@ input[type="text"].note-title:focus {
   min-width: 32px;
   min-height: 32px;
   border-radius: var(--radius-pill);
+}
+
+/* The lock's body is low in its box: up a little, it sits in the middle of the round button. */
+.note-tools .tool-lock > .icon {
+  transform: translateY(-1.5px);
 }
 
 .note-tools button.ghost.on {

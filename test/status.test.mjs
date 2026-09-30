@@ -45,12 +45,9 @@ try {
   check('the others see your words under your name', await poll(async () => (await aliceRow(bob).textContent()).includes('Out for lunch'), 10_000))
 
   await pick(alice, 'Invisible')
-  const away = await poll(async () => {
-    const groups = await bob.locator('.rail-head, .rail-person').allTextContents()
-    const at = groups.findIndex((t) => t.startsWith('Away'))
-    return at >= 0 && groups.slice(at).some((t) => t.includes('Alice'))
-  }, 10_000)
-  check('invisible: the others list you with the people away', away)
+  const away = await poll(async () => /\baway\b/.test(await aliceRow(bob).getAttribute('class')), 10_000)
+  check('invisible: the others list you as away', away)
+  check('still under your level', (await bob.locator('.rail-head, .rail-person').allTextContents()).findIndex((t) => t.startsWith('Owner')) >= 0)
   check('and see none of your words', !(await aliceRow(bob).textContent()).includes('Out for lunch'))
 
   await pick(alice, 'Online')

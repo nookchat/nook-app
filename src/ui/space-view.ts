@@ -49,7 +49,7 @@ import { voiceDock } from './call'
 import { chirpMention, chirpMessage, chirpStream, isNews, speak } from './sounds'
 import type { LinkQuality } from '../net/voice'
 import { CUSTOM, CUSTOM_MAX_S, decodeClip, openSoundboard, playClip, type Sound } from './soundboard'
-import { ask, askChannel, askSound, pickSome } from './ask'
+import { ask, askChannel, askSound, confirmDanger, pickSome } from './ask'
 import { saveScreen } from '../store/screen'
 import { channelMuted, channelMutedItself, MUTED_CHANGED, muteChannel, muteSpace, spaceMuted } from '../store/mute'
 import { cleanPresence, cleanStatusText, loadStatus, presenceLook, STATUS_CHANGED, type Presence } from '../store/status'
@@ -1583,20 +1583,25 @@ export class SpaceView {
   }
 
   /** The note's own buttons: rename, who can see it, copy, and delete. */
-  private noteTools(note: NoteInfo, rename: () => void): HTMLElement[] {
+  private noteTools(note: NoteInfo): HTMLElement[] {
     const tool = (name: IconName, label: string, run: () => void, danger = false): HTMLElement =>
-      h('button', { class: `ghost icon-only${danger ? ' danger' : ''}`, title: label, ariaLabel: label, on: { click: run } }, [
+      h('button', { class: `ghost icon-only tool-${name}${danger ? ' danger' : ''}`, title: label, ariaLabel: label, on: { click: run } }, [
         icon(name, 17),
       ])
-    const out = [tool('edit', 'Rename', rename)]
+    const out = [tool('edit', 'Rename', () => void this.renameNote(note))]
     if (this.mayKeepNote(note)) {
       const lock = tool(note.levels.length ? 'lock' : 'people', this.noteSeenBy(note), () => void this.pickNoteLevels(note))
       lock.classList.toggle('on', note.levels.length > 0)
       out.push(lock)
+      out.push(tool('trash', 'Delete the note', () => void this.deleteNote(note), true))
     }
-    out.push(tool('copy', 'Copy the markdown', () => this.copyNote(note)))
-    if (this.mayKeepNote(note)) out.push(tool('trash', 'Delete the note', () => this.deleteNote(note), true))
     return out
+  }
+
+  private async renameNote(note: NoteInfo): Promise<void> {
+    const raw = await ask('What should this note be called?', { value: note.title, ok: 'Rename' })
+    if (raw === null || !raw.trim() || raw.trim() === note.title) return
+    void this.publish((c) => c.saveNote(note.id, raw.trim()))
   }
 
   private mayKeepNote(note: NoteInfo): boolean {
@@ -1629,8 +1634,9 @@ export class SpaceView {
     )
   }
 
-  private deleteNote(note: NoteInfo): void {
-    if (!window.confirm(`Delete the note "${note.title}" for everybody? It cannot be undone.`)) return
+  private async deleteNote(note: NoteInfo): Promise<void> {
+    const sure = await confirmDanger(`Delete ${note.title}?`, 'It goes for everybody in this space, and it cannot be undone.', 'Delete')
+    if (!sure) return
     if (this.noteId === note.id) this.openChannel(this.channel)
     void this.publish((c) => c.dropNote(note.id))
   }
@@ -1639,11 +1645,12 @@ export class SpaceView {
   private noteActions(note: NoteInfo): MenuItem[] {
     const items: MenuItem[] = [
       { label: 'Open', run: () => this.openNote(note.id) },
+      { label: 'Rename', run: () => void this.renameNote(note) },
       { label: 'Copy the markdown', run: () => this.copyNote(note) },
     ]
     if (this.mayKeepNote(note)) {
       items.push({ label: 'Who can see it', note: this.noteSeenBy(note).replace('Who can see it: ', ''), run: () => void this.pickNoteLevels(note) })
-      items.push({ label: 'Delete', note: 'For everybody in this space', danger: true, run: () => this.deleteNote(note) })
+      items.push({ label: 'Delete', note: 'For everybody in this space', danger: true, run: () => void this.deleteNote(note) })
     }
     return items
   }
@@ -1810,7 +1817,7 @@ export class SpaceView {
     this.noteEditor = new NoteEditor({
       save: (id, title, text) => this.publish((c) => c.saveNote(id, title, text)),
       nameOf: (key) => this.chat?.nameOf(key) || shortKey(key),
-      tools: (note, rename) => this.noteTools(note, rename),
+      tools: (note) => this.noteTools(note),
     })
     this.peopleList = h('div', { class: 'rail-list' })
     this.voiceBar = h('div', { class: 'voice-bar voice-panel hidden' })
@@ -3334,10 +3341,10 @@ export class SpaceView {
       this.peopleList.append(this.personRow(row, roles.get(row.key) ?? 'member', avatars.get(row.key) ?? ''))
     }
 
-    // Who is here, under their level, the highest first, as Discord groups people by role.
+    // Everybody under their level, the highest first, as Discord groups people by role. In each,
+    // who is here comes first, and who is away after them, faded.
     const groups = new Map<string, { name: string; rank: number; rows: PersonRow[] }>()
     for (const row of visible) {
-      if (!row.here) continue
       const level = chat?.levelOf(row.key)
       const id = level?.id ?? MEMBER
       const group = groups.get(id) ?? { name: level?.name ?? 'Member', rank: level?.rank ?? 0, rows: [] }
@@ -3348,10 +3355,6 @@ export class SpaceView {
       this.peopleList.append(head(`${group.name} · ${group.rows.length}`))
       for (const row of group.rows) draw(row)
     }
-
-    const away = visible.filter((r) => !r.here)
-    if (away.length) this.peopleList.append(head(`Away · ${away.length}`))
-    for (const row of away) draw(row)
   }
 
   private personRow(row: PersonRow, role: string, avatar: string): HTMLElement {

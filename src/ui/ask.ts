@@ -101,6 +101,40 @@ export function pickSome(title: string, about: string, choices: Choice[], chosen
   })
 }
 
+/**
+ * Asks before something that cannot be undone, as window.confirm does, in Nook's own dialog.
+ * Cancel is on the left, and has the focus, so Enter does no harm.
+ */
+export function confirmDanger(title: string, about: string, ok: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const was = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const finish = (answer: boolean): void => {
+      scrim.remove()
+      window.removeEventListener('keydown', onKey, true)
+      was?.focus()
+      resolve(answer)
+    }
+    const onKey = (ev: KeyboardEvent): void => {
+      if (ev.key !== 'Escape') return
+      ev.stopPropagation()
+      finish(false)
+    }
+    const cancel = h('button', { class: 'ghost', text: 'Cancel', on: { click: () => finish(false) } })
+    const scrim = h('div', { class: 'scrim', on: { click: (ev) => ev.target === scrim && finish(false) } }, [
+      h('div', { class: 'modal ask-modal confirm-modal', role: 'alertdialog', ariaLabel: title }, [
+        h('div', { class: 'invite-head' }, [
+          h('div', { class: 'invite-words' }, [h('div', { class: 'invite-title', text: title }), h('div', { class: 'small faint', text: about })]),
+          h('button', { class: 'ghost icon-only', ariaLabel: 'Close', on: { click: () => finish(false) } }, [icon('close', 18)]),
+        ]),
+        h('div', { class: 'row ask-buttons' }, [cancel, h('button', { class: 'danger confirm-ok', text: ok, on: { click: () => finish(true) } })]),
+      ]),
+    ])
+    window.addEventListener('keydown', onKey, true)
+    document.body.append(scrim)
+    cancel.focus()
+  })
+}
+
 function pickRows(choices: Choice[], picked: Set<string>): HTMLElement[] {
   return choices.map((choice) => {
     const box = h('input', { type: 'checkbox', ariaLabel: choice.name })

@@ -89,7 +89,8 @@ with voice does it.
 - **The list of people** on the right: a click, or a right click, on somebody
   opens what you can do about them. It has the people who are here in groups
   by level, the highest level first, as Discord groups people by role. The
-  people who are away are last, in one group.
+  people who are away are under their level too, after the ones who are
+  here, and faded.
 - **Removing somebody** changes the key of the space, with no click. The
   code in the old invite still lets a person in, but what is written after
   the removal is sealed with a new key that only the people still in the
@@ -110,7 +111,7 @@ with voice does it.
   picks Online, Idle, Do not disturb or Invisible, and a few words of your
   own. The others see the dot and the words in the list of people. Do not
   disturb stops notifications, pushes and the sounds for messages; a call
-  still rings. Invisible lists you with the people who are away, but you
+  still rings. Invisible shows you as away, but you
   still show in a voice channel you are in, and the other devices still
   hear from yours. The status follows you to every device.
 - **Notes**: the bar of a note has Rename, Who can see it, Copy, and Delete.
