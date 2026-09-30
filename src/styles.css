@@ -27,6 +27,8 @@
      --scrim, --radius-sm) are the brand's own and are not set here. */
   --bg: var(--surface-0);
   --pane: var(--surface-1);
+  /* How far anything you press goes in: the same everywhere, as the brand's .nook-btn does. */
+  --press: scale(0.97);
   --face: var(--surface-0);
   --surface: var(--surface-1);
   --hover: color-mix(in srgb, var(--text-primary) 6%, transparent);
@@ -75,6 +77,9 @@
   --btn-weight: 500;
 
   --pill-radius: var(--radius-pill);
+  /* A button with only an icon is a rounded square, never a circle. Smaller for the small ones. */
+  --icon-btn-radius: var(--radius-sm);
+  --icon-btn-radius-small: 8px;
   --panel-radius: var(--radius-lg);
   --pane-radius: var(--radius-lg);
   /* A shape inside a rounded one takes its radius less the gap between them, so the curves run side by side. */
@@ -667,7 +672,26 @@ button:hover:not(:disabled) {
 
 button:active:not(:disabled) {
   background: var(--btn-bg-active);
-  transform: scale(0.97);
+  transform: var(--press);
+}
+
+/* Not buttons in the page, but pressed as one: the same press, and as quick. */
+a.button-link,
+.pin-card,
+.me-who,
+.rail-person.has-menu,
+label.pick-row,
+label.level-power:not(.off) {
+  transition: transform 80ms var(--ease);
+}
+
+a.button-link:active,
+.pin-card:active,
+.me-who:active,
+.rail-person.has-menu:active,
+label.pick-row:active,
+label.level-power:not(.off):active {
+  transform: var(--press);
 }
 
 button:disabled {
@@ -745,6 +769,7 @@ button.ghost:hover:not(:disabled) {
 }
 
 button.icon-only {
+  border-radius: var(--icon-btn-radius);
   padding: 0;
   width: var(--btn-h);
   min-width: var(--btn-h);
@@ -1463,7 +1488,7 @@ button.desktop-offer-download {
 }
 
 .rail-head .eyebrow {
-  font-size: 11px;
+  font-size: 13px;
 }
 
 button.rail-add {
@@ -1471,7 +1496,7 @@ button.rail-add {
   min-width: 28px;
   min-height: 28px;
   height: 28px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--icon-btn-radius-small);
 }
 
 .space-title {
@@ -2018,7 +2043,7 @@ button.voice-tool {
   min-height: 40px;
   padding: 0;
   border: 0;
-  border-radius: 50%;
+  border-radius: var(--icon-btn-radius);
   background: var(--surface-1);
   box-shadow: none;
   color: var(--fg-dim);
@@ -2617,15 +2642,9 @@ button.start {
   width: 36px;
   min-width: 36px;
   min-height: 36px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--icon-btn-radius);
 }
 
-/* A panel that is open: plainly lit, not the faint wash of a hover. */
-.space-head button.ghost.on,
-.space-head button.ghost.on:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--text-primary) 14%, transparent);
-  color: var(--fg);
-}
 
 .channel-head {
   flex: 1 1 auto;
@@ -3143,7 +3162,7 @@ input[type="text"].space-search {
   padding: 3px;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: var(--radius-pill);
+  border-radius: calc(var(--icon-btn-radius-small) + 3px);
   box-shadow: var(--shadow-small);
   opacity: 0;
   pointer-events: none;
@@ -3167,7 +3186,7 @@ input[type="text"].space-search {
   min-height: 34px;
   height: 34px;
   padding: 0;
-  border-radius: var(--radius-pill);
+  border-radius: var(--icon-btn-radius-small);
   background: transparent;
   color: var(--fg-dim);
 }
@@ -4008,7 +4027,7 @@ input[type="range"].vp-volume {
   height: 44px;
   min-height: 44px;
   padding: 0;
-  border-radius: 50%;
+  border-radius: var(--icon-btn-radius);
 }
 
 .call-answer {
@@ -4334,7 +4353,7 @@ button.to-bottom {
   height: 44px;
   min-height: 44px;
   padding: 0;
-  border-radius: var(--pill-radius);
+  border-radius: var(--icon-btn-radius);
   background: var(--beam);
   color: var(--beam-fg);
   border-color: transparent;
@@ -4961,7 +4980,7 @@ input[type="text"].emoji-search {
   padding: 0;
   color: var(--fg-faint);
   border: 1px solid transparent;
-  border-radius: var(--radius-pill);
+  border-radius: var(--icon-btn-radius);
   background: transparent;
 }
 
@@ -5246,7 +5265,7 @@ input[type="text"].gif-search {
 }
 
 .sound-cell:active {
-  transform: scale(0.97);
+  transform: var(--press);
 }
 
 .sound-emoji {
@@ -5749,7 +5768,7 @@ input[type="text"].gif-search {
   width: 32px;
   min-width: 32px;
   min-height: 32px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--icon-btn-radius);
 }
 
 /* The lock's body is low in its box: up a little, it sits in the middle of the round button. */
@@ -5757,10 +5776,6 @@ input[type="text"].gif-search {
   transform: translateY(-1.5px);
 }
 
-.note-tools button.ghost.on {
-  background: color-mix(in srgb, var(--text-primary) 14%, transparent);
-  color: var(--fg);
-}
 
 .note-modes {
   flex: 0 0 auto;

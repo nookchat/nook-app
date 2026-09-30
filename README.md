@@ -87,10 +87,10 @@ with voice does it.
   the levels below yours, and you give nobody a power you do not have. Every
   device checks each change in the log, so a button is never the rule.
 - **The list of people** on the right: a click, or a right click, on somebody
-  opens what you can do about them. It has the people who are here in groups
-  by level, the highest level first, as Discord groups people by role. The
-  people who are away are under their level too, after the ones who are
-  here, and faded.
+  opens what you can do about them. As Discord groups people by role, each
+  level above Member has a heading, the highest first, with the people who
+  are away after the ones who are here, faded. Everybody else is under
+  Online, then Offline.
 - **Removing somebody** changes the key of the space, with no click. The
   code in the old invite still lets a person in, but what is written after
   the removal is sealed with a new key that only the people still in the

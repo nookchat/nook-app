@@ -1590,9 +1590,7 @@ export class SpaceView {
       ])
     const out = [tool('edit', 'Rename', () => void this.renameNote(note))]
     if (this.mayKeepNote(note)) {
-      const lock = tool(note.levels.length ? 'lock' : 'people', this.noteSeenBy(note), () => void this.pickNoteLevels(note))
-      lock.classList.toggle('on', note.levels.length > 0)
-      out.push(lock)
+      out.push(tool(note.levels.length ? 'lock' : 'people', this.noteSeenBy(note), () => void this.pickNoteLevels(note)))
       out.push(tool('trash', 'Delete the note', () => void this.deleteNote(note), true))
     }
     return out
@@ -2112,11 +2110,10 @@ export class SpaceView {
     this.paintPeopleButton()
   }
 
-  /** Lit while the people are on screen: the column on a wide window, the drawer on a narrow one. */
+  /** Whether the people are on screen, for a screen reader: the button itself looks the same. */
   private paintPeopleButton(): void {
     const narrow = window.matchMedia('(max-width: 780px)').matches
     const open = narrow ? this.railOpen === 'right' : !this.membersHidden
-    this.peopleButton.classList.toggle('on', open)
     this.peopleButton.setAttribute('aria-pressed', String(open))
   }
 
@@ -3341,13 +3338,18 @@ export class SpaceView {
       this.peopleList.append(this.personRow(row, roles.get(row.key) ?? 'member', avatars.get(row.key) ?? ''))
     }
 
-    // Everybody under their level, the highest first, as Discord groups people by role. In each,
-    // who is here comes first, and who is away after them, faded.
+    // As Discord does: a heading for each level above Member, the highest first, and everybody
+    // else under Online, then Offline. Under a level, who is here comes first, and who is away
+    // after them, faded.
     const groups = new Map<string, { name: string; rank: number; rows: PersonRow[] }>()
     for (const row of visible) {
       const level = chat?.levelOf(row.key)
-      const id = level?.id ?? MEMBER
-      const group = groups.get(id) ?? { name: level?.name ?? 'Member', rank: level?.rank ?? 0, rows: [] }
+      const plain = !level || level.id === MEMBER
+      const id = plain ? (row.here ? ':online' : ':offline') : level.id
+      const name = plain ? (row.here ? 'Online' : 'Offline') : level.name
+      // Under every level, however low; Offline is last of all.
+      const rank = plain ? (row.here ? -1 : -2) : level.rank
+      const group = groups.get(id) ?? { name, rank, rows: [] }
       group.rows.push(row)
       groups.set(id, group)
     }
