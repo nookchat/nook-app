@@ -49,13 +49,18 @@ export async function squareThumb(file: File, side = THUMB_SIDE, most = MAX_AVAT
   )
   if ('close' in bitmap) bitmap.close()
 
-  for (const type of ['image/webp', 'image/jpeg']) {
-    for (const quality of [0.7, 0.55, 0.4, 0.3]) {
-      const url = canvas.toDataURL(type, quality)
-      // A browser without WebP hands back a PNG, which is far too big here.
-      if (!url.startsWith(`data:${type}`)) break
-      if (url.length <= most) return url
-    }
+  for (const quality of [0.7, 0.55, 0.4, 0.3]) {
+    const url = canvas.toDataURL('image/webp', quality)
+    // A browser without WebP hands back a PNG instead.
+    if (!url.startsWith('data:image/webp')) break
+    if (url.length <= most) return url
+  }
+  // WebP and PNG keep a clear background clear. JPEG has none, so it is the last try.
+  const png = canvas.toDataURL('image/png')
+  if (png.length <= most) return png
+  for (const quality of [0.7, 0.55, 0.4, 0.3]) {
+    const url = canvas.toDataURL('image/jpeg', quality)
+    if (url.length <= most) return url
   }
   throw new Error('That picture will not shrink small enough. Try a simpler one.')
 }

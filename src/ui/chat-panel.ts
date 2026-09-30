@@ -78,11 +78,35 @@ function spoiler(text: string): HTMLElement {
   return box
 }
 
+/** A reaction chip swells, bursts into a few bits and is gone, then the change goes out. */
+function popChip(chip: HTMLElement, then: () => void): void {
+  if (chip.classList.contains('popping')) return
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    then()
+    return
+  }
+  chip.classList.add('popping')
+  const burst = h('span', { class: 'react-burst' })
+  for (let i = 0; i < 8; i++) {
+    const bit = h('i')
+    bit.style.setProperty('--turn', `${i * 45 + 22}deg`)
+    burst.append(bit)
+  }
+  chip.after(burst)
+  burst.style.left = `${chip.offsetLeft + chip.offsetWidth / 2}px`
+  burst.style.top = `${chip.offsetTop + chip.offsetHeight / 2}px`
+  window.setTimeout(() => {
+    burst.remove()
+    then()
+  }, 320)
+}
+
 export function avatarOf(key: string, name: string, picture: string, size = 20): HTMLElement {
   const box = h('span', { class: 'avatar', title: name || shortKey(key) })
   box.style.width = `${size}px`
   box.style.height = `${size}px`
   if (picture) {
+    box.classList.add('has-picture')
     const img = h('img', { class: 'avatar-img' })
     img.alt = ''
     img.src = picture
@@ -1264,7 +1288,14 @@ export class ChatPanel {
           {
             class: `chat-react${on ? ' on' : ''}`,
             ariaLabel: `${this.whoReacted(people)} reacted with ${emoji}. ${on ? 'Take yours back' : 'React with this too'}`,
-            on: { click: () => this.actions?.react(m.id, emoji, !people.has(this.me)) },
+            on: {
+              click: () => {
+                const mine = people.has(this.me)
+                // The last one of it, and it is yours: it pops like a balloon before it goes.
+                if (mine && people.size === 1) popChip(chip, () => this.actions?.react(m.id, emoji, false))
+                else this.actions?.react(m.id, emoji, !mine)
+              },
+            },
           },
           [h('span', { class: 'chat-react-face', text: emoji }), ' ', h('span', { text: String(people.size) })],
         )

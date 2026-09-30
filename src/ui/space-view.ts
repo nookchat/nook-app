@@ -328,6 +328,7 @@ export class SpaceView {
   private meFace!: HTMLSpanElement
   private meName!: HTMLSpanElement
   private membersHidden = false
+  private peopleSlide: Animation | null = null
   private railOpen: 'left' | 'right' | null = null
 
   private thread: string | null = null
@@ -2098,8 +2099,53 @@ export class SpaceView {
       return
     }
     this.membersHidden = !this.membersHidden
-    this.shell.classList.toggle('members-hidden', this.membersHidden)
+    this.slidePeople(this.membersHidden)
     this.paintPeopleButton()
+  }
+
+  /**
+   * The people pane slides out to the right, and the chat grows into its room, or the other way.
+   * The column closes to nothing with the grid's right padding, which is where the class leaves it.
+   */
+  private slidePeople(hide: boolean): void {
+    const grid = this.shell
+    const pane = grid.querySelector<HTMLElement>(':scope > .rail-right')
+    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    this.peopleSlide?.cancel()
+    if (!pane || still) {
+      grid.classList.toggle('members-hidden', hide)
+      return
+    }
+    grid.classList.remove('members-hidden')
+    // Too narrow for the pane at all: there is nothing to slide.
+    if (getComputedStyle(pane).display === 'none') {
+      grid.classList.toggle('members-hidden', hide)
+      return
+    }
+    const style = getComputedStyle(grid)
+    const left = style.gridTemplateColumns.split(' ')[0]
+    const open = { gridTemplateColumns: `${left} minmax(0px, 1fr) 248px`, paddingRight: style.paddingLeft }
+    const shut = { gridTemplateColumns: `${left} minmax(0px, 1fr) 0px`, paddingRight: '0px' }
+    const timing = { duration: 220, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' }
+    grid.style.overflow = 'hidden'
+    pane.style.minWidth = '248px'
+    const slide = grid.animate(hide ? [open, shut] : [shut, open], timing)
+    pane.animate(
+      hide
+        ? [{ transform: 'none', opacity: 1 }, { transform: 'translateX(24px)', opacity: 0 }]
+        : [{ transform: 'translateX(24px)', opacity: 0 }, { transform: 'none', opacity: 1 }],
+      timing,
+    )
+    this.peopleSlide = slide
+    const done = (): void => {
+      if (this.peopleSlide !== slide) return
+      this.peopleSlide = null
+      grid.style.overflow = ''
+      pane.style.minWidth = ''
+      grid.classList.toggle('members-hidden', hide)
+    }
+    slide.onfinish = done
+    slide.oncancel = done
   }
 
   /** Whether the people are on screen, for a screen reader: the button itself looks the same. */

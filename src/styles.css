@@ -3232,6 +3232,73 @@ input[type="text"].space-search {
   color: var(--text-primary);
 }
 
+/* The last reaction taken back: it swells like a balloon and bursts. */
+.chat-reacts {
+  position: relative;
+}
+
+.chat-react.popping {
+  pointer-events: none;
+  animation: react-pop 300ms cubic-bezier(0.3, 0, 0.6, 1) forwards;
+}
+
+@keyframes react-pop {
+  0% {
+    transform: scale(1);
+  }
+  55% {
+    transform: scale(1.22);
+    opacity: 1;
+  }
+  70% {
+    transform: scale(1.32);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.32);
+    opacity: 0;
+  }
+}
+
+.react-burst {
+  position: absolute;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.react-burst > i {
+  position: absolute;
+  left: -3px;
+  top: -3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0;
+  transform: rotate(var(--turn)) translateX(0);
+  animation: react-bit 260ms 150ms var(--ease-out) forwards;
+}
+
+.react-burst > i:nth-child(even) {
+  width: 4px;
+  height: 4px;
+  left: -2px;
+  top: -2px;
+  background: var(--text-primary);
+}
+
+@keyframes react-bit {
+  0% {
+    opacity: 1;
+    transform: rotate(var(--turn)) translateX(14px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(var(--turn)) translateX(30px) scale(0.4);
+  }
+}
+
 .chat-react.add {
   width: 40px;
   min-width: 40px;
@@ -4270,6 +4337,11 @@ input[type="range"].vp-volume {
   font-weight: 600;
   line-height: 1;
   user-select: none;
+}
+
+/* A picture with a clear background shows what is behind it, not the ember of a letter avatar. */
+.avatar.has-picture {
+  background: transparent;
 }
 
 .avatar-img {
@@ -7109,18 +7181,6 @@ button.recordings-game.waiting {
   from {
     opacity: 0;
     transform: translateY(var(--pop-from, -4px)) scale(0.97);
-  }
-}
-
-/* The GIF picker sits centred over the composer, so it keeps its own shift and rises into place. */
-.gif-pop {
-  animation: gif-pop-in var(--dur-base) var(--ease-out) both;
-}
-
-@keyframes gif-pop-in {
-  from {
-    opacity: 0;
-    transform: translateX(-50%) translateY(8px);
   }
 }
 
