@@ -34,6 +34,10 @@ try {
   await answer(alice, 'Plans')
   await alice.waitForSelector('.note-view:not(.hidden)')
   const lit = () => alice.locator('.rail-left .rail-item.on').allTextContents()
+  // The list is drawn once the click that opened the note is in: a moment after.
+  await alice
+    .waitForFunction(() => [...document.querySelectorAll('.rail-left .rail-item.on')].map((e) => e.textContent.trim()).join('|') === 'Plans', null, { timeout: 3000 })
+    .catch(() => undefined)
   check('only the note is lit in the list, not the channel as well', (await lit()).map((t) => t.trim()).join('|') === 'Plans', (await lit()).join('|'))
   check('the note shows the markdown and how it reads, with no toggle', (await alice.locator('.note-modes').count()) === 0 && (await alice.locator('.note-reader').isVisible()))
   check('Bob sees a note open to everybody', await poll(async () => (await noteTitles(bob)).includes('Plans'), 10_000))

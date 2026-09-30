@@ -326,6 +326,17 @@ export class SpaceView {
   private channelTitleSig = ''
   /** The row with the channel's name, search and the people button. Up in the desktop app's title bar when it has one. */
   private spaceHead: HTMLElement | null = null
+  /**
+   * A press on a side bar, until the click it makes has landed. The lists there are drawn anew
+   * on every change, and one drawn between the press and the release takes the click with it,
+   * so they wait, and are drawn once the click is in.
+   */
+  private pressing = false
+  private missedDraw = false
+  private pressTimer = 0
+  private pressWired = false
+  /** Keeps the row in the title bar over the column of messages, as that column moves. */
+  private headWatch: ResizeObserver | null = null
   private searchInput!: HTMLInputElement
   private searchWrap!: HTMLDivElement
   private searchResults!: HTMLDivElement
@@ -1578,6 +1589,7 @@ export class SpaceView {
   }
 
   private renderNotes(): void {
+    if (this.heldForPress()) return
     clear(this.noteList)
     const chat = this.chat
     if (!chat) return
@@ -1931,6 +1943,45 @@ export class SpaceView {
 
     this.root.append(h('main', {}, [this.shell]))
     this.headUp(true)
+    this.holdRailsWhilePressed()
+  }
+
+  private holdRailsWhilePressed(): void {
+    const release = (): void => {
+      if (!this.pressing) return
+      window.clearTimeout(this.pressTimer)
+      // After the click, which comes just after the release.
+      this.pressTimer = window.setTimeout(() => {
+        this.pressing = false
+        if (!this.missedDraw) return
+        this.missedDraw = false
+        this.draw()
+      }, 0)
+    }
+    this.shell.addEventListener(
+      'pointerdown',
+      (ev) => {
+        if (!(ev.target as Element).closest('.rail')) return
+        this.pressing = true
+        window.clearTimeout(this.pressTimer)
+        // A release that never comes, as when the pointer leaves the window, lets go on its own.
+        this.pressTimer = window.setTimeout(release, 2000)
+      },
+      true,
+    )
+    if (this.pressWired) return
+    this.pressWired = true
+    for (const name of ['pointerup', 'pointercancel', 'dragend'] as const) {
+      window.addEventListener(name, release, true)
+      this.unlisten.push(() => window.removeEventListener(name, release, true))
+    }
+  }
+
+  /** True while a side bar is pressed: the list is drawn once the click is in. */
+  private heldForPress(): boolean {
+    if (!this.pressing) return false
+    this.missedDraw = true
+    return true
   }
 
   /**
@@ -1943,13 +1994,25 @@ export class SpaceView {
     const head = this.spaceHead
     if (!bar || !head) return
     document.documentElement.classList.toggle('nook-head-up', up)
+    this.headWatch?.disconnect()
+    this.headWatch = null
     if (!up) {
       if (bar.contains(head)) head.remove()
       return
     }
-    const brand = bar.querySelector('.brand')
-    if (brand) brand.after(head)
-    else bar.prepend(head)
+    bar.append(head)
+    // Straight over the messages: the name where they start, the buttons where they end.
+    const main = this.shell.querySelector<HTMLElement>('.space-main')
+    if (!main) return
+    const place = (): void => {
+      const at = main.getBoundingClientRect()
+      head.style.left = `${Math.round(at.left)}px`
+      head.style.width = `${Math.round(at.width)}px`
+    }
+    this.headWatch = new ResizeObserver(place)
+    this.headWatch.observe(main)
+    this.headWatch.observe(this.shell)
+    place()
   }
 
   private makeChatPanel(): ChatPanel {
@@ -2611,6 +2674,7 @@ export class SpaceView {
 
   private renderChannels(): void {
     if (this.channelDrag && !this.channelDrag.voice) return
+    if (this.heldForPress()) return
     const chat = this.chat
     clear(this.channelList)
     const canEdit = chat?.can('channels') === true
@@ -2805,7 +2869,7 @@ export class SpaceView {
   }
 
   private renderVoice(): void {
-    if (this.channelDrag?.voice || this.personDrag) {
+    if (this.channelDrag?.voice || this.personDrag || this.heldForPress()) {
       this.renderVoiceBar()
       return
     }
@@ -3527,7 +3591,7 @@ export class SpaceView {
   }
 
   private renderPeople(order: PersonRow[]): void {
-    if (this.personDrag) return
+    if (this.personDrag || this.heldForPress()) return
     clear(this.peopleList)
     const chat = this.chat
     const roles = chat?.roles() ?? new Map<string, string>()

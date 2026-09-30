@@ -2765,25 +2765,21 @@ button.start {
 
 
 /*
- * In the desktop app, the row goes up into the title bar, beside the Nook icon: the channel's
- * name on the left, search and the buttons on the right, sized to the bar. Only the buttons
- * and the search box take clicks; the rest of the bar still drags the window.
+ * In the desktop app, the row goes up into the title bar, straight over the messages: the
+ * channel's name where they start, search and the buttons where they end, sized to the bar.
+ * Only the buttons and the search box take clicks; the rest of the bar still drags the window.
  */
-html.nook-head-up #nook-titlebar .brand {
-  flex: 0 0 auto;
-}
-
 html.nook-head-up #nook-titlebar .title {
   display: none;
 }
 
+/* Over the column of messages, where it was: the page sets its left and its width. */
 #nook-titlebar .space-head {
-  flex: 1 1 auto;
-  min-width: 0;
+  position: absolute;
+  top: 0;
   height: 100%;
   min-height: 0;
   gap: 2px;
-  padding: 0 8px 0 12px;
   color: var(--fg);
   font: 400 13px/1 var(--sans);
 }
@@ -3175,6 +3171,11 @@ input[type="text"].space-search {
 .chat-row.first {
   margin-top: 16px;
   padding-top: 4px;
+}
+
+/* A message that ends in reactions, a card, a picture or a poll gets room under it, so the next one does not crowd it. */
+.chat-row:has(.chat-reacts, .link-card:not(.hidden), .att-block, .poll, .chat-thread, .embed-card) {
+  padding-bottom: 10px;
 }
 
 .chat-row:hover {
