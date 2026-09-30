@@ -2,29 +2,8 @@ import type { NoteInfo } from '../store/log'
 import { clear, h } from './dom'
 import { renderMarkdown } from './markdown'
 
-type Mode = 'write' | 'split' | 'read'
-
-const MODE_KEY = 'nook:note-mode'
 const SAVE_AFTER_MS = 1200
 const PREVIEW_AFTER_MS = 120
-
-function savedMode(): Mode {
-  try {
-    const mode = localStorage.getItem(MODE_KEY)
-    if (mode === 'write' || mode === 'split' || mode === 'read') return mode
-  } catch {
-    /* storage can be blocked */
-  }
-  return 'split'
-}
-
-function keepMode(mode: Mode): void {
-  try {
-    localStorage.setItem(MODE_KEY, mode)
-  } catch {
-    /* storage can be blocked */
-  }
-}
 
 export interface NoteHooks {
   save(id: string, title: string | undefined, text: string | undefined): Promise<void>
@@ -41,8 +20,6 @@ export class NoteEditor {
   private readonly reader: HTMLElement
   private readonly status: HTMLElement
   private readonly tools = h('div', { class: 'note-tools row' })
-  private readonly modeButtons = new Map<Mode, HTMLButtonElement>()
-  private mode = savedMode()
   private note: NoteInfo | null = null
   /** What we last sent or took in, to tell our own changes from theirs. */
   private shownText = ''
@@ -69,24 +46,11 @@ export class NoteEditor {
     this.reader = h('div', { class: 'note-reader md' })
     this.status = h('span', { class: 'tiny faint note-status' })
 
-    const modes = h('div', { class: 'note-modes', role: 'group', ariaLabel: 'How to show the note' })
-    const labels: [Mode, string][] = [
-      ['write', 'Write'],
-      ['split', 'Both'],
-      ['read', 'Read'],
-    ]
-    for (const [mode, label] of labels) {
-      const button = h('button', { class: 'ghost', text: label, on: { click: () => this.setMode(mode) } })
-      this.modeButtons.set(mode, button)
-      modes.append(button)
-    }
-
     this.root = h('div', { class: 'note-view hidden' }, [
       // The name is in the channel head above: once is enough.
-      h('div', { class: 'note-bar row' }, [this.status, h('span', { class: 'grow' }), modes, this.tools]),
+      h('div', { class: 'note-bar row' }, [this.status, h('span', { class: 'grow' }), this.tools]),
       h('div', { class: 'note-panes' }, [this.source, this.reader]),
     ])
-    this.setMode(this.mode)
   }
 
   get openId(): string | null {
@@ -132,23 +96,10 @@ export class NoteEditor {
   }
 
   focus(): void {
-    if (this.mode === 'read') this.setMode('split')
     this.source.focus()
   }
 
-  private setMode(mode: Mode): void {
-    this.mode = mode
-    keepMode(mode)
-    this.root.dataset.mode = mode
-    for (const [m, button] of this.modeButtons) {
-      button.classList.toggle('on', m === mode)
-      button.setAttribute('aria-pressed', String(m === mode))
-    }
-    if (mode !== 'write') this.drawReader()
-  }
-
   private drawReader(): void {
-    if (this.mode === 'write') return
     clear(this.reader)
     const text = this.source.value
     if (text.trim()) this.reader.append(renderMarkdown(text))

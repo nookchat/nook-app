@@ -46,8 +46,10 @@ try {
 
   await pick(alice, 'Invisible')
   const away = await poll(async () => /\baway\b/.test(await aliceRow(bob).getAttribute('class')), 10_000)
-  check('invisible: the others list you as away', away)
-  check('still under your level', (await bob.locator('.rail-head, .rail-person').allTextContents()).findIndex((t) => t.startsWith('Owner')) >= 0)
+  check('invisible: the others list you as not here', away)
+  const list = await bob.locator('.rail-head, .rail-person').allTextContents()
+  const offline = list.findIndex((t) => t.startsWith('Offline'))
+  check('under Offline, as Discord does', offline >= 0 && list.slice(offline).some((t) => t.includes('Alice')), list.join(' | '))
   check('and see none of your words', !(await aliceRow(bob).textContent()).includes('Out for lunch'))
 
   await pick(alice, 'Online')

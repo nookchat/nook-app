@@ -1140,14 +1140,6 @@ export class SpaceView {
     }
   }
 
-  private keptMark(channel: ChannelInfo): HTMLElement {
-    const levels = this.chat?.levels() ?? []
-    const names = channel.levels.map((id) => levels.find((l) => l.id === id)?.name).filter(Boolean)
-    const mark = h('span', { class: 'kept-mark kept-lock', title: `Only for ${names.join(', ') || 'whoever can change channels'}` })
-    mark.append(icon('lock', 13))
-    return mark
-  }
-
   private runCommand(line: string): boolean {
     const [word, ...rest] = line.slice(1).split(' ')
     const name = word.toLowerCase()
@@ -1573,7 +1565,6 @@ export class SpaceView {
         [
           icon('file', 16),
           h('span', { class: 'truncate grow', text: note.title }),
-          note.levels.length ? h('span', { class: 'kept-mark kept-lock', title: this.noteSeenBy(note) }, [icon('lock', 13)]) : null,
         ],
       )
       const row = h('div', { class: 'row rail-row' }, [open])
@@ -2461,14 +2452,13 @@ export class SpaceView {
       const open = h(
         'button',
         {
-          class: `rail-item grow${name === this.channel ? ' on' : ''}${news ? ' unread' : ''}${muted ? ' muted' : ''}`,
+          class: `rail-item grow${name === this.channel && !this.noteId ? ' on' : ''}${news ? ' unread' : ''}${muted ? ' muted' : ''}`,
           title: channel.topic || `Open ${channel.label}`,
           on: { click: () => this.openChannel(name) },
         },
         [
           icon('hash', 16),
           h('span', { class: 'truncate grow', text: channel.label }),
-          channel.levels.length ? this.keptMark(channel) : null,
           muted ? h('span', { class: 'kept-mark', title: 'Muted' }, [icon('bell-off', 13)]) : null,
           liveChannels.has(name) ? h('span', { class: 'pill live', text: 'live' }) : null,
           news?.mentions
@@ -2657,7 +2647,7 @@ export class SpaceView {
               : 'Join this voice channel. Everybody in it hears everybody else.',
           on: { click: () => this.clickVoice(name) },
         },
-        [icon('volume', 16), h('span', { class: 'truncate grow', text: channel.label }), channel.levels.length ? this.keptMark(channel) : null],
+        [icon('volume', 16), h('span', { class: 'truncate grow', text: channel.label })],
       )
       const since = this.channelSince(name)
       const timer = since ? h('span', { class: 'voice-timer', title: 'How long somebody has been in here' }) : null
@@ -3338,17 +3328,17 @@ export class SpaceView {
       this.peopleList.append(this.personRow(row, roles.get(row.key) ?? 'member', avatars.get(row.key) ?? ''))
     }
 
-    // As Discord does: a heading for each level above Member, the highest first, and everybody
-    // else under Online, then Offline. Under a level, who is here comes first, and who is away
-    // after them, faded.
+    // As Discord does: whoever is connected is under their level, the highest first, idle or
+    // away ones too, and a plain member under Online. Whoever is not connected at all is under
+    // Offline, whatever their level.
     const groups = new Map<string, { name: string; rank: number; rows: PersonRow[] }>()
     for (const row of visible) {
       const level = chat?.levelOf(row.key)
       const plain = !level || level.id === MEMBER
-      const id = plain ? (row.here ? ':online' : ':offline') : level.id
-      const name = plain ? (row.here ? 'Online' : 'Offline') : level.name
-      // Under every level, however low; Offline is last of all.
-      const rank = plain ? (row.here ? -1 : -2) : level.rank
+      const id = !row.here ? ':offline' : plain ? ':online' : level.id
+      const name = !row.here ? 'Offline' : plain ? 'Online' : level.name
+      // Online under every level, and Offline last of all.
+      const rank = !row.here ? -2 : plain ? -1 : level.rank
       const group = groups.get(id) ?? { name, rank, rows: [] }
       group.rows.push(row)
       groups.set(id, group)
@@ -3407,7 +3397,7 @@ export class SpaceView {
 
   private presenceDot(row: PersonRow): HTMLElement {
     const look = presenceLook(row.status, row.away)
-    return h('i', { class: `dot ${look.dot}`, title: row.you && row.status === 'invisible' ? 'Invisible: you show as away' : look.words })
+    return h('i', { class: `dot ${look.dot}`, title: row.you && row.status === 'invisible' ? 'Invisible: you show as offline' : look.words })
   }
 
   private personDoing(row: PersonRow): HTMLElement | null {

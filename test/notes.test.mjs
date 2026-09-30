@@ -33,6 +33,9 @@ try {
   await alice.click('button[aria-label="Make a note"]')
   await answer(alice, 'Plans')
   await alice.waitForSelector('.note-view:not(.hidden)')
+  const lit = () => alice.locator('.rail-left .rail-item.on').allTextContents()
+  check('only the note is lit in the list, not the channel as well', (await lit()).map((t) => t.trim()).join('|') === 'Plans', (await lit()).join('|'))
+  check('the note shows the markdown and how it reads, with no toggle', (await alice.locator('.note-modes').count()) === 0 && (await alice.locator('.note-reader').isVisible()))
   check('Bob sees a note open to everybody', await poll(async () => (await noteTitles(bob)).includes('Plans'), 10_000))
   check('the note in the list has no button of its own', (await alice.locator('.rail-row .person-more').count()) === 0)
 
@@ -50,7 +53,7 @@ try {
   await alice.click('.ask-modal button:has-text("Save")')
   check('kept to Moderators, Bob no longer sees it', await poll(async () => !(await noteTitles(bob)).includes('Secret plans'), 10_000))
   check('its maker still does', (await noteTitles(alice)).includes('Secret plans'))
-  check('and the list marks it kept', (await alice.locator('.rail-row:has-text("Secret plans") .kept-lock').count()) === 1)
+  check('the list shows no lock beside its name', (await alice.locator('.rail-row:has-text("Secret plans") .icon').count()) === 1)
 
   await alice.click('.note-tools button[aria-label="Delete the note"]')
   await alice.waitForSelector('.confirm-modal')
@@ -60,6 +63,7 @@ try {
   await alice.click('.note-tools button[aria-label="Delete the note"]')
   await alice.click('.confirm-modal button:has-text("Delete")')
   check('delete, in the note, takes it away', await poll(async () => (await noteTitles(alice)).length === 0, 10_000))
+  check('back in the channel, only the channel is lit', await poll(async () => (await lit()).map((t) => t.trim()).join('|') === '#general' || (await lit()).map((t) => t.trim()).join('|') === 'general', 5000), (await lit()).join('|'))
 } catch (err) {
   stoppedEarly(err)
 } finally {

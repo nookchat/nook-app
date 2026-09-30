@@ -21,7 +21,7 @@ export const PRESENCES: { id: Presence; label: string; about: string }[] = [
   { id: 'online', label: 'Online', about: '' },
   { id: 'idle', label: 'Idle', about: '' },
   { id: 'dnd', label: 'Do not disturb', about: 'No notifications, and no sounds for messages' },
-  { id: 'invisible', label: 'Invisible', about: 'You show as away, and you can still use Nook' },
+  { id: 'invisible', label: 'Invisible', about: 'You show as offline, and you can still use Nook' },
 ]
 
 export function cleanPresence(raw: unknown): Presence {

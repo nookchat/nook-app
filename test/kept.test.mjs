@@ -59,7 +59,7 @@ try {
   const hidden = await poll(async () => !(await textRail(carol)).includes('staff'), 20_000)
   check('a member no longer sees staff', hidden, (await textRail(carol)).join(', '))
   check('a moderator still does', (await textRail(bob)).includes('staff'))
-  check('and so does the owner, with a lock on it', await alice.locator('.rail-row:has-text("staff") .kept-mark').count() === 1)
+  check('and so does the owner, with no lock beside the name', await alice.locator('.rail-row:has-text("staff") .kept-mark').count() === 0)
 
   await bob.click('.rail-left .rail-item:has-text("staff")')
   await bob.click(BOX)

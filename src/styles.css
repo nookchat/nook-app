@@ -2467,11 +2467,6 @@ button.start {
   color: var(--fg-faint);
 }
 
-/* The lock's body is low in its box: up by 2px, it runs from the top of the name to its baseline. */
-.kept-lock > .icon {
-  transform: translateY(-2px);
-}
-
 .pick-list {
   display: flex;
   flex-direction: column;
@@ -5777,41 +5772,11 @@ input[type="text"].gif-search {
 }
 
 
-.note-modes {
-  flex: 0 0 auto;
-  display: inline-flex;
-  gap: 2px;
-  padding: 2px;
-  background: var(--surface);
-  border-radius: var(--btn-radius);
-}
-
-.note-modes button {
-  min-height: 28px;
-  padding: 0 10px;
-  font-size: 12.5px;
-}
-
-.note-modes button.on {
-  background: var(--select-strong);
-  color: var(--select-fg);
-}
-
 .note-panes {
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
   grid-template-columns: 1fr 1fr;
-}
-
-.note-view[data-mode='write'] .note-panes,
-.note-view[data-mode='read'] .note-panes {
-  grid-template-columns: 1fr;
-}
-
-.note-view[data-mode='write'] .note-reader,
-.note-view[data-mode='read'] .note-source {
-  display: none;
 }
 
 .note-source {
@@ -5834,7 +5799,7 @@ input[type="text"].gif-search {
   outline: none;
 }
 
-.note-view[data-mode='split'] .note-source {
+.note-panes > .note-source {
   border-right: 1px solid var(--line-soft);
 }
 
@@ -5844,19 +5809,18 @@ input[type="text"].gif-search {
   padding: 18px 24px 40px;
 }
 
-/* Write and Read keep the note in the same column, so going from one to the other does not move it. */
-.note-view[data-mode='write'] .note-source,
-.note-view[data-mode='read'] .note-reader {
-  padding-inline: max(24px, calc((100% - 760px) / 2));
-}
-
 @media (max-width: 760px) {
   .note-panes {
     grid-template-columns: 1fr;
   }
 
-  .note-view[data-mode='split'] .note-reader {
+  /* Too narrow for two: the markdown alone. */
+  .note-reader {
     display: none;
+  }
+
+  .note-panes > .note-source {
+    border-right: 0;
   }
 
   .note-status {

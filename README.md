@@ -87,10 +87,10 @@ with voice does it.
   the levels below yours, and you give nobody a power you do not have. Every
   device checks each change in the log, so a button is never the rule.
 - **The list of people** on the right: a click, or a right click, on somebody
-  opens what you can do about them. As Discord groups people by role, each
-  level above Member has a heading, the highest first, with the people who
-  are away after the ones who are here, faded. Everybody else is under
-  Online, then Offline.
+  opens what you can do about them. As Discord groups people by role,
+  whoever is connected is under their level, the highest first, idle or
+  away ones too, with a yellow dot. A plain member is under Online. Whoever
+  is not connected at all, or is invisible, is under Offline, last.
 - **Removing somebody** changes the key of the space, with no click. The
   code in the old invite still lets a person in, but what is written after
   the removal is sealed with a new key that only the people still in the
@@ -111,7 +111,7 @@ with voice does it.
   picks Online, Idle, Do not disturb or Invisible, and a few words of your
   own. The others see the dot and the words in the list of people. Do not
   disturb stops notifications, pushes and the sounds for messages; a call
-  still rings. Invisible shows you as away, but you
+  still rings. Invisible puts you under Offline, but you
   still show in a voice channel you are in, and the other devices still
   hear from yours. The status follows you to every device.
 - **Notes**: the bar of a note has Rename, Who can see it, Copy, and Delete.
