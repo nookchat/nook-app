@@ -66,7 +66,7 @@ export class HomeView {
       h(
         'button',
         { class: 'ghost icon-only', title: 'Your name, your ID, and your servers', ariaLabel: 'Settings', on: { click: () => actions.settings() } },
-        [icon('settings', 19)],
+        [icon('cog', 19)],
       ),
     ]))
     const left = h('div', { class: 'rail rail-left', role: 'navigation', ariaLabel: 'Direct messages' }, [

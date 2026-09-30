@@ -13,6 +13,15 @@ const PUT_BATCH_BYTES = 600_000
 const FAILURES_BEFORE_NEXT_SERVER = 2
 /** Lines sealed with a key this device does not hold yet, kept to open once it does. */
 const HELD_LINES_LIMIT = 20_000
+/**
+ * A socket can look open and carry nothing: after the computer slept, or moved to another
+ * network, a browser may take many minutes to see it has gone. When the server has said nothing
+ * for this long, the page asks it who is here, and a server that does not answer in time counts
+ * as gone, so the page dials again and nothing it shows goes stale.
+ */
+const QUIET_MS = 30_000
+const ANSWER_MS = 10_000
+const LOOK_EVERY_MS = 10_000
 
 type Incoming =
   | { t: 'page' | 'ev'; room: string; at: number; lines: unknown[] }
@@ -34,6 +43,13 @@ export class Connection {
   private attempt = 0
   private retryTimer: number | null = null
   private readonly channels = new Map<string, Channel>()
+  /** When the server last said anything on this socket. */
+  private heardAt = 0
+  /** This server answers "who", so its silence after one means the socket is gone. An old one never does. */
+  private answersWho = false
+  private askedAt = 0
+  private answerTimer: number | null = null
+  private lookedAt = Date.now()
 
   constructor(base: string) {
     this.base = serverUrl(base)
@@ -43,11 +59,37 @@ export class Connection {
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) this.now()
     })
+    window.setInterval(this.look, LOOK_EVERY_MS)
   }
 
+  /** Dials now if it is waiting to, and asks an open socket whether it still carries anything. */
   private readonly now = (): void => {
-    if (this.retryTimer === null || this.channels.size === 0) return
-    this.dial()
+    if (this.channels.size === 0) return
+    if (this.retryTimer !== null) this.dial()
+    else if (this.open) this.check()
+  }
+
+  private readonly look = (): void => {
+    const now = Date.now()
+    // A timer this late means the computer slept: the socket may not have come through it.
+    const slept = now - this.lookedAt > 3 * LOOK_EVERY_MS
+    this.lookedAt = now
+    if (this.open && (slept || now - this.heardAt > QUIET_MS)) this.check()
+  }
+
+  /** Asks the server who is here, in any space: an answer, or anything else, says the socket works. */
+  private check(): void {
+    const room = this.channels.keys().next().value
+    if (!this.answersWho || this.answerTimer !== null || !room) return
+    const ws = this.ws
+    this.askedAt = Date.now()
+    if (!this.send({ t: 'who', room })) return
+    this.answerTimer = window.setTimeout(() => {
+      this.answerTimer = null
+      if (this.ws !== ws || this.heardAt >= this.askedAt) return
+      this.failures += 1
+      this.retry('The server stopped answering.')
+    }, ANSWER_MS)
   }
 
   get open(): boolean {
@@ -114,6 +156,8 @@ export class Connection {
     this.teardown()
     this.setStatus(this.attempt === 0 ? 'connecting' : 'retrying')
     this.current = this.pick()
+    // Each server of a cluster may be older or newer: this one says so with its first list.
+    this.answersWho = false
     let ws: WebSocket
     try {
       ws = new WebSocket(this.address(this.current))
@@ -125,11 +169,13 @@ export class Connection {
     ws.onopen = () => {
       this.attempt = 0
       this.failures = 0
+      this.heardAt = Date.now()
       answered(this.base, this.current)
       this.setStatus('open')
       for (const channel of this.channels.values()) channel.opened()
     }
     ws.onmessage = (ev) => {
+      this.heardAt = Date.now()
       if (typeof ev.data !== 'string') return
       let message: Incoming
       try {
@@ -137,6 +183,7 @@ export class Connection {
       } catch {
         return
       }
+      if (message.t === 'here') this.answersWho = true
       this.channels.get(message.room)?.take(message)
     }
     ws.onclose = () => {
@@ -157,6 +204,10 @@ export class Connection {
   }
 
   private teardown(): void {
+    if (this.answerTimer !== null) {
+      window.clearTimeout(this.answerTimer)
+      this.answerTimer = null
+    }
     if (this.retryTimer !== null) {
       window.clearTimeout(this.retryTimer)
       this.retryTimer = null

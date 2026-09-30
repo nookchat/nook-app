@@ -1973,16 +1973,15 @@ button.voice-bar-state:hover:not(:disabled) {
   color: var(--bad);
 }
 
-.voice-bar-top > .voice-leave {
+/* Leave is round like the tools under it, and red, as a hang up is. */
+.voice-bar-top > button.voice-leave {
   flex: 0 0 auto;
-  width: 32px;
-  min-width: 32px;
-  min-height: 32px;
-  color: var(--fg-dim);
+  background: color-mix(in srgb, var(--danger) 16%, var(--surface-1));
+  color: var(--bad);
 }
 
-.voice-bar-top > .voice-leave:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--danger) 16%, transparent);
+.voice-bar-top > button.voice-leave:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 24%, var(--surface-1));
   color: var(--bad);
 }
 

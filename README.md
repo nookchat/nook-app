@@ -226,6 +226,15 @@ the page and goes out when the server is back, and voice and screen shares
 keep going, since they go between the browsers. `node test/restart.test.mjs`
 restarts a server under two people in voice.
 
+**A socket that goes quiet** can look open for many minutes after a laptop
+sleeps or moves to another network. When the server has said nothing for 30
+seconds, or the network or the screen comes back, the page asks it who is
+here; with no answer in 10 seconds it dials again, and what it shows catches
+up: the messages, and who has left meanwhile. An old server that never
+answers the question is never counted gone for it.
+`node test/stalled.test.mjs` stops a server under three people, and one of
+them leaves while it is stopped.
+
 **A cluster.** Several servers that name each other in `NOOK_PEERS` and share
 a `NOOK_CLUSTER_SECRET` keep every space on all of them. When the one a page
 is talking to goes down, the page moves to the next without anybody doing

@@ -702,6 +702,7 @@ export class SpaceView {
   private noticeFresh(fresh: LogEvent[]): void {
     const chat = this.chat
     if (!chat) return
+    this.doneTyping(fresh)
     // Only what you can read, from a channel you have not muted: a mention of you has its own sound.
     const heard = fresh.filter((e) => {
       if (e.kind !== 'said' || e.author === chat.me || !isNews(e.at)) return false
@@ -740,6 +741,20 @@ export class SpaceView {
       if (!this.stopped) this.showTyping()
     }, TYPING_FOR_MS + 100)
     return true
+  }
+
+  /** What somebody was typing has come: they are not typing now, whatever their last note said. */
+  private doneTyping(fresh: LogEvent[]): void {
+    const authors = new Set(fresh.filter((e) => e.kind === 'said').map((e) => e.author))
+    if (authors.size === 0 || this.typing.size === 0) return
+    const peers = this.peersById()
+    let cleared = false
+    for (const session of [...this.typing.keys()]) {
+      if (!authors.has(peers.get(session)?.key ?? '')) continue
+      this.typing.delete(session)
+      cleared = true
+    }
+    if (cleared) this.showTyping()
   }
 
   private showTyping(): void {
@@ -1879,7 +1894,7 @@ export class SpaceView {
       more: () => [
         { label: 'Invite', lead: h('span', { class: 'menu-icon' }, [icon('user-plus', 16)]), run: () => void this.showInvite() },
         ...(this.spaceRights().any
-          ? [{ label: 'Settings', lead: h('span', { class: 'menu-icon' }, [icon('settings', 16)]), run: () => void this.openSpaceSettings() }]
+          ? [{ label: 'Space settings', lead: h('span', { class: 'menu-icon' }, [icon('cog', 16)]), run: () => void this.openSpaceSettings() }]
           : []),
         spaceMuted(this.space.room.id)
           ? {
@@ -1909,7 +1924,7 @@ export class SpaceView {
           ariaLabel: 'Settings',
           on: { click: () => void this.openSettings() },
         },
-        [icon('settings', 19)],
+        [icon('cog', 19)],
       ),
     ])
 
@@ -2888,12 +2903,12 @@ export class SpaceView {
           h(
             'button',
             {
-              class: 'ghost icon-only voice-leave',
+              class: 'voice-tool voice-leave',
               title: 'Leave voice',
               ariaLabel: 'Leave',
               on: { click: () => this.leaveVoice() },
             },
-            [icon('phone-off', 19)],
+            [icon('phone-off', 24)],
           ),
         ]),
         h('div', { class: `voice-tools${tools.length === 3 ? ' three' : tools.length === 5 ? ' five' : ''}` }, tools),
