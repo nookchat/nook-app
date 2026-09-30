@@ -347,7 +347,7 @@ somebody arrives or goes, and the only timer is the server's 10 second ping.
 ```
 npm install
 npm run stack        # Postgres in Docker, a server on 8787, and the page on 5173
-npm test             # every check, against the stack
+CHECKS=all npm test  # every check, against the stack (npm test alone is off for now)
 npm test chat files  # only these checks
 npm run speed        # how long opening, switching and sending take
 npm run bench        # how fast the server reads, writes and passes on
