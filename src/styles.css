@@ -1,6 +1,14 @@
 /* How much of a level's own colour its text keeps: the colours were picked for a dark page. */
 :root {
   --who-keep: 45%;
+  /* The left rail of a space, and the tabs of settings in its place, so neither jumps. */
+  --rail-left: 284px;
+}
+
+@media (max-width: 1100px) {
+  :root {
+    --rail-left: 260px;
+  }
 }
 
 :root[data-theme="dark"] {
@@ -1354,14 +1362,14 @@ details.adv[open] > summary {
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
-  grid-template-columns: 284px minmax(0, 1fr) 248px;
+  grid-template-columns: var(--rail-left) minmax(0, 1fr) 248px;
   gap: var(--gap);
   padding: var(--gap);
   background: var(--bg);
 }
 
 .space-grid.members-hidden {
-  grid-template-columns: 284px minmax(0, 1fr);
+  grid-template-columns: var(--rail-left) minmax(0, 1fr);
 }
 
 .space-grid.members-hidden .rail-right {
@@ -1370,7 +1378,7 @@ details.adv[open] > summary {
 
 @media (max-width: 1100px) {
   .space-grid {
-    grid-template-columns: 260px minmax(0, 1fr);
+    grid-template-columns: var(--rail-left) minmax(0, 1fr);
   }
 
   .rail-right {
@@ -1396,6 +1404,53 @@ details.adv[open] > summary {
   flex-direction: column;
   gap: 1px;
   padding: 6px 8px 12px;
+}
+
+/* In a browser, the foot of the list of people: the desktop app, and its download. */
+.desktop-offer {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px;
+  padding: 10px 10px 12px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.desktop-offer-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.desktop-offer-title {
+  flex: 1 1 auto;
+  font-weight: 600;
+  color: var(--heading);
+}
+
+button.desktop-offer-close {
+  width: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  height: 24px;
+  color: var(--fg-dim);
+}
+
+.desktop-offer-words {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--fg-dim);
+}
+
+button.desktop-offer-download {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
 
 .rail-head {
@@ -2377,6 +2432,11 @@ button.start {
   display: inline-flex;
   flex: 0 0 auto;
   color: var(--fg-faint);
+}
+
+/* The lock's body is low in its box: up by 2px, it runs from the top of the name to its baseline. */
+.kept-lock > .icon {
+  transform: translateY(-2px);
 }
 
 .pick-list {
@@ -5734,7 +5794,7 @@ input[type="text"].note-title:focus {
   border: 0;
   border-radius: 0;
   box-shadow: none;
-  padding: 18px 20px;
+  padding: 18px 24px;
   background: var(--field-bg);
   color: var(--fg);
   font-family: var(--mono);
@@ -5757,6 +5817,8 @@ input[type="text"].note-title:focus {
   padding: 18px 24px 40px;
 }
 
+/* Write and Read keep the note in the same column, so going from one to the other does not move it. */
+.note-view[data-mode='write'] .note-source,
 .note-view[data-mode='read'] .note-reader {
   padding-inline: max(24px, calc((100% - 760px) / 2));
 }
@@ -6029,7 +6091,7 @@ main.settings {
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-columns: 264px minmax(0, 1fr);
+  grid-template-columns: var(--rail-left) minmax(0, 1fr);
   gap: var(--gap);
 }
 
@@ -6068,6 +6130,21 @@ main.settings {
 
 .settings-nav-group:first-of-type {
   padding-top: 0;
+}
+
+.settings-nav-group:not(.after):empty {
+  display: none;
+}
+
+/* A line between one section of tabs and the next. */
+.settings-nav-group.after {
+  margin-top: 10px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.settings-nav-group.after:empty {
+  padding: 0 0 6px;
 }
 
 button.settings-tab {

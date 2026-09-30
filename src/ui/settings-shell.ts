@@ -5,7 +5,7 @@ export interface SettingsTab {
   id: string
   label: string
   icon: IconName
-  /** A heading over this tab and the ones after it in the list. */
+  /** The section of the list this tab is in. A heading goes over the first tab of each one. */
   group?: string
   /** Built each time the tab opens, so it shows what is true now. */
   build(): HTMLElement
@@ -52,8 +52,13 @@ export function settingsShell(options: ShellOptions): HTMLElement {
   }
 
   nav.append(h('div', { class: 'settings-nav-title', text: options.title }))
-  for (const tab of options.tabs) {
-    if (tab.group) nav.append(h('div', { class: 'settings-nav-group', text: tab.group }))
+  let group: string | undefined
+  for (const [i, tab] of options.tabs.entries()) {
+    if (i === 0 || tab.group !== group) {
+      group = tab.group
+      // A section without a name is still set apart from the one above it.
+      nav.append(h('div', { class: `settings-nav-group${i ? ' after' : ''}`, text: group ?? '' }))
+    }
     const button = h('button', { class: 'settings-tab', on: { click: () => show(tab.id) } }, [
       icon(tab.icon, 17),
       h('span', { class: 'truncate', text: tab.label }),

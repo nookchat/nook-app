@@ -84,6 +84,7 @@ export function spaceTabs(actions: SpaceSettingsActions): SettingsTab[] {
       id: 'overview',
       label: 'Overview',
       icon: 'settings',
+      group,
       build: () => {
         const picker = h('input', { type: 'file', class: 'hidden', ariaLabel: 'Choose a picture for the space' })
         picker.accept = 'image/png,image/jpeg,image/webp,image/gif'
@@ -133,6 +134,7 @@ export function spaceTabs(actions: SpaceSettingsActions): SettingsTab[] {
       id: 'members',
       label: 'Members',
       icon: 'people',
+      group: 'People',
       build: () =>
         h('div', { class: 'stack settings-stack' }, [
           card('Members', note('Everybody in the space, and their level. Levels are changed here.'), membersList(actions)),
@@ -144,6 +146,7 @@ export function spaceTabs(actions: SpaceSettingsActions): SettingsTab[] {
       id: 'levels',
       label: 'Levels',
       icon: 'crown',
+      group: 'People',
       build: () =>
         h('div', { class: 'stack settings-stack' }, [
           card('Levels', actions.levels()),
@@ -155,6 +158,7 @@ export function spaceTabs(actions: SpaceSettingsActions): SettingsTab[] {
       id: 'removed',
       label: 'Removed people',
       icon: 'shield',
+      group: 'People',
       build: () => {
         const list = h('div', { class: 'action-list' })
         for (const p of actions.removed) {
@@ -205,7 +209,6 @@ export function spaceTabs(actions: SpaceSettingsActions): SettingsTab[] {
         ]),
     })
   }
-  if (tabs[0]) tabs[0].group = group
   return tabs
 }
 

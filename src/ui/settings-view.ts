@@ -330,9 +330,44 @@ export function settingsView(actions: SettingsActions): HTMLElement {
         ]),
     },
     {
+      id: 'devices',
+      label: 'Devices & backup',
+      icon: 'device',
+      group: 'User settings',
+      build: () =>
+        h('div', { class: 'stack settings-stack' }, [
+          card(
+            'Other devices',
+            note('Use Nook on your phone or another computer, with the same spaces and messages.'),
+            h('div', { class: 'row wrap' }, [
+              h('button', { text: 'Link a device', on: { click: () => showLinkCode() } }),
+              h('button', { class: 'ghost', text: 'Enter a code', on: { click: () => enterLinkCode() } }),
+            ]),
+          ),
+          card(
+            'Backup',
+            backupNote,
+            h('div', { class: 'row wrap' }, [
+              h('button', { on: { click: () => showBackup(sayBackup) } }, [icon('download', 15), 'Save a backup']),
+            ]),
+          ),
+        ]),
+    },
+    {
+      id: 'servers',
+      label: 'Servers',
+      icon: 'server',
+      group: 'User settings',
+      build: () => {
+        drawServers()
+        return h('div', { class: 'stack settings-stack' }, [card('Your servers', serverList, addOpen, addRow, own)])
+      },
+    },
+    {
       id: 'appearance',
       label: 'Appearance',
       icon: 'sun',
+      group: 'App settings',
       build: () =>
         h('div', { class: 'stack settings-stack' }, [
           card('Theme', note('Cream by day, charcoal after dark. System follows your device.'), themeChoice()),
@@ -342,6 +377,7 @@ export function settingsView(actions: SettingsActions): HTMLElement {
       id: 'voice',
       label: 'Voice & audio',
       icon: 'mic',
+      group: 'App settings',
       build: () =>
         voiceSettings(
           h('div', { class: 'switch-list' }, [
@@ -356,6 +392,7 @@ export function settingsView(actions: SettingsActions): HTMLElement {
       id: 'notifications',
       label: 'Notifications',
       icon: 'bell',
+      group: 'App settings',
       build: () => {
         paintNotify()
         return h('div', { class: 'stack settings-stack' }, [
@@ -377,9 +414,31 @@ export function settingsView(actions: SettingsActions): HTMLElement {
       },
     },
     {
+      id: 'reactions',
+      label: 'Reactions',
+      icon: 'smile',
+      group: 'App settings',
+      build: () =>
+        h('div', { class: 'stack settings-stack' }, [
+          card(
+            'Quick reactions',
+            note('The emoji offered first when you react to a message. An empty place takes one you used lately.'),
+            quick,
+          ),
+        ]),
+    },
+    {
+      id: 'keys',
+      label: 'Keyboard',
+      icon: 'keyboard',
+      group: 'App settings',
+      build: () => shortcutSettings(),
+    },
+    {
       id: 'activity',
       label: 'Activity',
       icon: 'game',
+      group: 'Games and clips',
       build: () => {
         const now = h('div', { class: 'tiny faint settings-game' })
         const paintNow = (): void => {
@@ -417,6 +476,7 @@ export function settingsView(actions: SettingsActions): HTMLElement {
       id: 'recordings',
       label: 'Recordings',
       icon: 'clapper',
+      group: 'Games and clips',
       build: () => {
         const folders = h('div', { class: 'stack tight recordings-folders' })
         if (seesRecordings()) void paintFolders(folders)
@@ -430,57 +490,6 @@ export function settingsView(actions: SettingsActions): HTMLElement {
             folders,
           ),
         ])
-      },
-    },
-    {
-      id: 'reactions',
-      label: 'Reactions',
-      icon: 'smile',
-      build: () =>
-        h('div', { class: 'stack settings-stack' }, [
-          card(
-            'Quick reactions',
-            note('The emoji offered first when you react to a message. An empty place takes one you used lately.'),
-            quick,
-          ),
-        ]),
-    },
-    {
-      id: 'keys',
-      label: 'Keyboard',
-      icon: 'keyboard',
-      build: () => shortcutSettings(),
-    },
-    {
-      id: 'devices',
-      label: 'Devices & backup',
-      icon: 'device',
-      build: () =>
-        h('div', { class: 'stack settings-stack' }, [
-          card(
-            'Other devices',
-            note('Use Nook on your phone or another computer, with the same spaces and messages.'),
-            h('div', { class: 'row wrap' }, [
-              h('button', { text: 'Link a device', on: { click: () => showLinkCode() } }),
-              h('button', { class: 'ghost', text: 'Enter a code', on: { click: () => enterLinkCode() } }),
-            ]),
-          ),
-          card(
-            'Backup',
-            backupNote,
-            h('div', { class: 'row wrap' }, [
-              h('button', { on: { click: () => showBackup(sayBackup) } }, [icon('download', 15), 'Save a backup']),
-            ]),
-          ),
-        ]),
-    },
-    {
-      id: 'servers',
-      label: 'Servers',
-      icon: 'server',
-      build: () => {
-        drawServers()
-        return h('div', { class: 'stack settings-stack' }, [card('Your servers', serverList, addOpen, addRow, own)])
       },
     },
     {

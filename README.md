@@ -362,6 +362,7 @@ src/
     call.ts           a call ringing, the strip over a conversation, the voice dock
     voice-settings.ts microphone and speaker, a microphone test, a relay test
     space-view.ts     a space: channels, voice, sharing, search, people
+    desktop-offer.ts  the desktop app and its download, under the people in a browser
     space-list.ts     the home page: your spaces, making and joining one
     chat-panel.ts     the conversation, drawn as nodes and never as HTML
     attachments.ts    files in a message, the picture viewer, and the upload tray
@@ -425,6 +426,10 @@ trackpad pinch, or `+` and `-`, zooms. A drag moves a zoomed picture.
   for a screen or a window. On Windows it can share the system sound too. It
   also tells the page what game you are playing: `desktop/games.cjs` looks at
   the running programs every 15 seconds, while Settings lets it.
+- **The desktop offer:** in a browser on a computer, the foot of the list of
+  people says what the desktop app adds, with a download for your system
+  from the latest release (`src/ui/desktop-offer.ts`). Its close button hides
+  it for good. The desktop app and a phone never show it.
 - **Right click in the desktop app:** a text box, a selection, a link or a
   picture gets the menu a browser gives, with spelling guesses
   (`desktop/edit-menu.cjs`). The page's own menus, on a channel or a

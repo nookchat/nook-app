@@ -54,6 +54,7 @@ import { saveScreen } from '../store/screen'
 import { channelMuted, channelMutedItself, MUTED_CHANGED, muteChannel, muteSpace, spaceMuted } from '../store/mute'
 import { avatarOf, ChatPanel, imageLinks } from './chat-panel'
 import { clear, copyText, fmtKbps, h, onPress, roleInk } from './dom'
+import { desktopOffer } from './desktop-offer'
 import { forHowLong, gameCard } from './game-card'
 import { ghost } from './ghost'
 import { icon } from './icons'
@@ -1104,7 +1105,7 @@ export class SpaceView {
   private keptMark(channel: ChannelInfo): HTMLElement {
     const levels = this.chat?.levels() ?? []
     const names = channel.levels.map((id) => levels.find((l) => l.id === id)?.name).filter(Boolean)
-    const mark = h('span', { class: 'kept-mark', title: `Only for ${names.join(', ') || 'whoever can change channels'}` })
+    const mark = h('span', { class: 'kept-mark kept-lock', title: `Only for ${names.join(', ') || 'whoever can change channels'}` })
     mark.append(icon('lock', 13))
     return mark
   }
@@ -1779,6 +1780,7 @@ export class SpaceView {
     const left = this.leftRail()
     const right = h('div', { class: 'rail rail-right', role: 'complementary', ariaLabel: 'Who is here' }, [
       h('div', { class: 'rail-scroll' }, [this.peopleList]),
+      desktopOffer(),
     ])
 
     this.pinsButton = h('button', {
