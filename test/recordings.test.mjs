@@ -117,7 +117,11 @@ async function serveRecordings(page) {
         addFolder: async () => null,
         removeFolder: async () => [],
         restoreFolders: async () => [],
-        list: async () => list,
+        // As slow as a big folder, when a check asks.
+        list: async () => {
+          await new Promise((done) => setTimeout(done, window.__listDelay ?? 0))
+          return list
+        },
         index: async (id) => (id === 'steam' ? index : null),
         show: () => undefined,
       },
@@ -190,8 +194,25 @@ try {
   const button = page.locator('button[aria-label="Share a clip from your recordings"]')
   await button.waitFor({ timeout: 10_000 })
   check('the desktop app has a clip button in the message box', await button.isVisible())
+  // The first look: cards the size of the real ones wait for the list, so nothing moves when it comes.
+  await page.evaluate(() => (window.__listDelay = 1200))
   await button.click()
-  await page.waitForSelector('.recording-card')
+  await page.waitForSelector('.recording-card.waiting')
+  const box = (sel) => page.locator(sel).first().evaluate((el) => {
+    const r = el.getBoundingClientRect()
+    return [Math.round(r.top), Math.round(r.height), Math.round(r.width)].join(',')
+  })
+  const waitingCard = await box('.recording-card')
+  const top = (sel) => page.locator(sel).first().evaluate((el) => Math.round(el.getBoundingClientRect().top))
+  const waitingGrid = await top('.recordings-grid')
+  await page.screenshot({ path: 'test-output/recordings-waiting.png' })
+  check('while it looks, the dialog shows waiting cards and filters', (await page.locator('.recordings-filters .chip-toggle.waiting').count()) > 0)
+  await page.waitForSelector('.recording-card:not(.waiting)')
+  check('a real card takes the place of a waiting one exactly', (await box('.recording-card')) === waitingCard, `${waitingCard} -> ${await box('.recording-card')}`)
+  check('and the list does not move', (await top('.recordings-grid')) === waitingGrid, `${waitingGrid} -> ${await top('.recordings-grid')}`)
+  await page.waitForFunction(() => document.querySelector('.recording-card img.recording-picture')?.src.startsWith('blob:'), null, { timeout: 10_000 })
+  const keptPictures = await page.evaluate(async () => (await (await caches.open('nook-recording-pictures-v1')).keys()).length)
+  check('the picture of a plain video is kept on this device', keptPictures >= 1, `${keptPictures}`)
   check('the dialog lists the recordings, newest first', (await page.locator('.recording-title').allTextContents()).join('|') === 'Counter-Strike 2|Counter-Strike 2|hevc')
   check('with a filter for each source', (await page.locator('.recordings-filters .chip-toggle').allTextContents()).join('|') === 'All|NVIDIA|Steam|Videos')
   await page.screenshot({ path: 'test-output/recordings-list.png' })
@@ -247,8 +268,14 @@ try {
   check('a clip of a Steam recording has its picture and its sound', fromSteam.video === 'avc' && fromSteam.audio === 'aac', JSON.stringify(fromSteam))
   check('and is as long as the part', Math.abs(fromSteam.duration - 5) < 1.2, `${fromSteam.duration.toFixed(2)} s`)
 
+  // Again: the list kept from last time is there at once, while the folders are read again.
+  await page.evaluate(() => (window.__listDelay = 3000))
   await button.click()
-  await page.waitForSelector('.recording-card')
+  await page.waitForSelector('.recording-card', { timeout: 1000 })
+  check('the dialog opens with the list kept from last time, at once', (await page.locator('.recording-card.waiting').count()) === 0 && (await page.locator('.recording-card').count()) === 3)
+  const pictureAtOnce = await page.waitForFunction(() => document.querySelector('.recording-card img.recording-picture')?.src.startsWith('blob:'), null, { timeout: 1000 }).then(() => true, () => false)
+  check('with the picture kept from last time', pictureAtOnce)
+  await page.evaluate(() => (window.__listDelay = 0))
   await page.locator('.recording-card').nth(1).click()
   await page.waitForSelector('.clip-editor')
   const shows = await poll(() => page.evaluate(() => document.querySelector('.clip-video')?.readyState >= 2), 10_000)

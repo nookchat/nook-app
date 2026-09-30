@@ -1,7 +1,8 @@
 // Finds the game recordings on this computer, so the page can list them and
 // share one. Steam keeps a recording as many small video and sound files: this
 // joins them into one MP4 as it is read, and never writes a new file. The page
-// gets a random id for each recording, never where its files are.
+// gets an id for each recording, never where its files are. The id stays the same
+// while the recording does, so the page can keep the list and its pictures.
 // Nothing here needs Electron: main.cjs gives it the paths it needs.
 
 const { execFile } = require('node:child_process')
@@ -191,10 +192,25 @@ function strings(list) {
 function readConfig(file) {
   try {
     const config = JSON.parse(fs.readFileSync(file, 'utf8'))
-    return { folders: strings(config.folders), hidden: strings(config.hidden) }
+    const salt = typeof config.salt === 'string' && /^[0-9a-f]{32}$/.test(config.salt) ? config.salt : undefined
+    return { folders: strings(config.folders), hidden: strings(config.hidden), salt }
   } catch {
     return { folders: [], hidden: [] }
   }
+}
+
+/** Mixed into every id, and kept, so an id is the same after a restart but tells nobody the path. */
+function saltOf(opts) {
+  const config = readConfig(opts.file)
+  if (config.salt) return config.salt
+  config.salt = crypto.randomBytes(16).toString('hex')
+  writeConfig(opts.file, config)
+  return config.salt
+}
+
+/** A recording's id: where it is, and how big and how new it is, so a recording that grows gets a new one. */
+function idOf(salt, entry) {
+  return crypto.createHash('sha256').update(`${salt}\n${entry.key}\n${entry.print}`).digest('hex').slice(0, 16)
 }
 
 function writeConfig(file, config) {
@@ -368,6 +384,7 @@ function steamEntry({ kind, dir, show, thumb, folder, name, part, gameNames: kno
     const live = kind === 'steam-background' ? info.writing || Date.now() - info.newest < LIVE_MS : undefined
     return {
       key: await real(dir),
+      print: `${info.size}|${Math.round(info.newest)}`,
       kind,
       dir,
       show,
@@ -575,6 +592,7 @@ async function fileEntry(folder, file, rel) {
   const ext = path.extname(name)
   return {
     key: await real(file),
+    print: `${st.size}|${Math.round(st.mtimeMs)}`,
     kind: 'file',
     file,
     show: file,
@@ -625,12 +643,13 @@ async function scanFiles(folder) {
 
 // The list
 
-/** The recordings of the latest look, by id. An id from an older look finds nothing. */
+/** The recordings of the latest look, by id. An id of a recording that changed since finds nothing. */
 let current = new Map()
 
 /** Every recording in every folder that is there, newest first. Never throws. */
 async function list(opts) {
   try {
+    const salt = saltOf(opts)
     const all = (await folders(opts)).filter((folder) => folder.exists)
     const known = await gameNames(await steamRoots(opts))
     nextDurations = new Map()
@@ -642,8 +661,9 @@ async function list(opts) {
       for (const entry of found) {
         if (seen.has(entry.key)) continue
         seen.add(entry.key)
-        const id = crypto.randomBytes(8).toString('hex')
-        next.set(id, entry)
+        const id = idOf(salt, entry)
+        // The same recording as last time keeps what was worked out about it, such as its join.
+        next.set(id, current.get(id) ?? entry)
         items.push(
           clean({
             id,

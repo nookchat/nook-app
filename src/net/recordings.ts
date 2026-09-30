@@ -91,8 +91,32 @@ export async function restoreRecordingFolders(): Promise<RecordingFolder[]> {
   return (await shell()?.restoreFolders().catch(() => null)) ?? []
 }
 
+/** The list from the last look, kept on this device, so the dialog opens with it at once. */
+const LIST_KEY = 'nook.recordings.v1'
+
 export async function listRecordings(): Promise<Recording[]> {
-  return (await shell()?.list().catch(() => null)) ?? []
+  const found = await shell()?.list().catch(() => null)
+  if (!found) return []
+  try {
+    localStorage.setItem(LIST_KEY, JSON.stringify(found))
+  } catch {
+    /* too big or blocked: the next look reads the folders again */
+  }
+  return found
+}
+
+/**
+ * The list from the last look, or null. A recording keeps its id while it does not change,
+ * so these still open; one that changed is replaced when the new look comes in.
+ */
+export function keptRecordings(): Recording[] | null {
+  if (!shell()) return null
+  try {
+    const kept = JSON.parse(localStorage.getItem(LIST_KEY) ?? 'null') as unknown
+    return Array.isArray(kept) ? (kept as Recording[]) : null
+  } catch {
+    return null
+  }
 }
 
 export async function recordingIndex(id: string): Promise<RecordingIndex | null> {

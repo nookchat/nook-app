@@ -4,6 +4,7 @@ import { steamPicture } from '../net/playing'
 import {
   addRecordingFolder,
   isSteam,
+  keptRecordings,
   listRecordings,
   recordingFolders,
   recordingIndex,
@@ -32,6 +33,8 @@ interface RecordingsOptions {
   onClip: (file: File) => void
 }
 
+/** Cards held for a list that is on its way, so nothing moves when it comes in. */
+const WAITING_CARDS = 6
 /** A part longer than this starts as its last this many seconds: what just happened. */
 const FIRST_PART_S = 30
 /** Always this much of a clip, so the two ends never cross. */
@@ -78,12 +81,7 @@ export function openRecordings(options: RecordingsOptions): void {
         h('div', { class: 'invite-title', text: 'Your recordings' }),
         h('div', { class: 'tiny faint', text: 'From Steam, NVIDIA and your folders. Pick one to make a clip.' }),
       ]),
-      h('button', {
-        class: 'ghost icon-only',
-        title: 'Look again',
-        ariaLabel: 'Look again',
-        on: { click: () => void load() },
-      }, [icon('refresh', 17)]),
+      lookAgain,
       h('button', {
         class: 'ghost icon-only',
         title: 'Where Nook looks',
@@ -102,14 +100,23 @@ export function openRecordings(options: RecordingsOptions): void {
 
   const paintGrid = (): void => {
     clear(grid)
+    grid.removeAttribute('aria-busy')
+    delete grid.dataset.waiting
     const shown = only ? all.filter((r) => r.source === only) : all
     for (const rec of shown) grid.append(card(rec, () => openClip(rec)))
   }
 
+  const lookAgain = h('button', {
+    class: 'ghost icon-only look-again',
+    title: 'Look again',
+    ariaLabel: 'Look again',
+    on: { click: () => void load() },
+  }, [icon('refresh', 17)])
+
   const paintFilters = (): void => {
     clear(filters)
     const sources = [...new Set(all.map((r) => r.source))]
-    if (sources.length < 2) return
+    if (sources.length === 0) return
     for (const source of ['', ...sources]) {
       const chip = h('button', {
         class: `chip-toggle${only === source ? ' on' : ''}`,
@@ -127,17 +134,39 @@ export function openRecordings(options: RecordingsOptions): void {
     }
   }
 
-  const load = async (): Promise<void> => {
-    grid.replaceChildren(h('div', { class: 'recordings-empty faint', text: 'Looking for recordings…' }))
-    all = await listRecordings()
+  /** What a card shows, so a look that finds the same recordings draws nothing again. */
+  let shown = ''
+  const show = (list: Recording[]): void => {
+    const key = JSON.stringify(list.map((r) => [r.id, r.title, r.game, r.source, r.duration, r.live, r.thumb]))
+    if (key === shown) return
+    shown = key
+    all = list
     if (only && !all.some((r) => r.source === only)) only = ''
     paintFilters()
-    if (all.length === 0) {
-      clear(grid)
-      grid.append(await emptyState(() => void load()))
+    paintGrid()
+  }
+
+  // The last list at once, then the folders are read again, and the cards change only if they did.
+  const load = async (): Promise<void> => {
+    if (!shown) {
+      const kept = keptRecordings()
+      if (kept?.length) show(kept)
+      else waiting(filters, grid)
+    }
+    lookAgain.classList.add('busy')
+    lookAgain.disabled = true
+    const found = await listRecordings()
+    lookAgain.classList.remove('busy')
+    lookAgain.disabled = false
+    void forgetThumbs(found.map((r) => r.id))
+    if (found.length === 0) {
+      shown = ''
+      all = []
+      clear(filters)
+      grid.replaceChildren(await emptyState(() => void load()))
       return
     }
-    paintGrid()
+    show(found)
   }
 
   const openClip = (rec: Recording): void => {
@@ -164,6 +193,28 @@ export function openRecordings(options: RecordingsOptions): void {
   window.addEventListener('keydown', onKey, true)
   document.body.append(scrim)
   void load()
+}
+
+/** Cards and filters the size of the real ones, while the first look is on its way. */
+function waiting(filters: HTMLElement, grid: HTMLElement): void {
+  filters.replaceChildren(
+    ...[44, 64, 56].map((w) => h('button', { class: 'chip-toggle waiting', tabIndex: -1, ariaLabel: 'Looking', style: { width: `${w}px` } })),
+  )
+  grid.replaceChildren(
+    ...Array.from({ length: WAITING_CARDS }, () =>
+      // A button, as the real card is, so its type and size are the same.
+      h('button', { class: 'recording-card waiting', tabIndex: -1, ariaLabel: 'Looking for recordings' }, [
+        h('div', { class: 'recording-face' }),
+        // Each line in the same type as the real one, so it is as tall.
+        h('span', { class: 'recording-words' }, [
+          h('span', { class: 'recording-title truncate waiting-line', text: '\u00a0' }),
+          h('span', { class: 'tiny faint truncate waiting-line short', text: '\u00a0' }),
+        ]),
+      ]),
+    ),
+  )
+  grid.setAttribute('aria-busy', 'true')
+  grid.dataset.waiting = 'true'
 }
 
 /** Nothing found: where Nook looked, and how to add a folder. */
@@ -261,7 +312,7 @@ function card(rec: Recording, open: () => void): HTMLElement {
     img.onerror = () => img.remove()
     face.append(img)
   } else if (!isSteam(rec)) {
-    face.append(frameOf(rec.url))
+    face.append(frameOf(rec))
   }
   face.append(icon('play', 26))
   if (rec.duration) face.append(h('span', { class: 'recording-length', text: timeLabel(rec.duration) }))
@@ -282,21 +333,103 @@ function sourceWords(rec: Recording): string {
   return rec.source
 }
 
-/** A frame from a plain video, loaded only once its card is in view. */
-function frameOf(url: string): HTMLElement {
-  const video = h('video', { class: 'recording-picture' })
-  video.muted = true
-  video.preload = 'none'
-  video.playsInline = true
-  const seen = new IntersectionObserver((entries) => {
-    if (!entries.some((e) => e.isIntersecting)) return
-    seen.disconnect()
-    video.preload = 'metadata'
-    // A little way in: the first frame is often black.
-    video.src = `${url}#t=2`
+/** Where the pictures of plain videos are kept, on this device, by the recording's id. */
+const THUMBS = 'nook-recording-pictures-v1'
+const THUMB_PX = 480
+const thumbAddress = (id: string): string => `https://nook.invalid/recording-picture/${id}`
+
+async function keptThumb(id: string): Promise<Blob | null> {
+  try {
+    const hit = await (await caches.open(THUMBS)).match(thumbAddress(id))
+    return hit ? await hit.blob() : null
+  } catch {
+    return null
+  }
+}
+
+async function keepThumb(id: string, picture: Blob): Promise<void> {
+  try {
+    await (await caches.open(THUMBS)).put(thumbAddress(id), new Response(picture, { headers: { 'content-type': 'image/jpeg' } }))
+  } catch {
+    /* no cache here: the picture is made again next time */
+  }
+}
+
+/** Lets go of the pictures of recordings that are gone, or changed and have a new id. */
+async function forgetThumbs(ids: string[]): Promise<void> {
+  try {
+    const keep = new Set(ids.map(thumbAddress))
+    const cache = await caches.open(THUMBS)
+    for (const request of await cache.keys()) if (!keep.has(request.url)) await cache.delete(request)
+  } catch {
+    /* nothing kept */
+  }
+}
+
+/**
+ * A frame from a plain video: the one kept from last time, or one read from the video once its
+ * card is in view, a little way in, since the first frame is often black. It is kept for next time.
+ */
+function frameOf(rec: Recording): HTMLElement {
+  const img = h('img', { class: 'recording-picture' })
+  img.alt = ''
+  img.decoding = 'async'
+  const showBlob = (blob: Blob): void => {
+    const url = URL.createObjectURL(blob)
+    img.addEventListener('load', () => URL.revokeObjectURL(url), { once: true })
+    img.src = url
+  }
+  void keptThumb(rec.id).then((kept) => {
+    if (kept) {
+      showBlob(kept)
+      return
+    }
+    const seen = new IntersectionObserver((entries) => {
+      if (!entries.some((e) => e.isIntersecting)) return
+      seen.disconnect()
+      void readFrame(rec.url).then((frame) => {
+        if (!frame) return
+        showBlob(frame)
+        void keepThumb(rec.id, frame)
+      })
+    })
+    seen.observe(img)
   })
-  seen.observe(video)
-  return video
+  return img
+}
+
+async function readFrame(url: string): Promise<Blob | null> {
+  const video = h('video')
+  video.muted = true
+  video.playsInline = true
+  video.preload = 'auto'
+  // The desktop app lets the page read it, so the canvas may be read back.
+  video.crossOrigin = 'anonymous'
+  try {
+    await new Promise<void>((ok, fail) => {
+      video.onloadedmetadata = () => ok()
+      video.onerror = () => fail(new Error('not a video this browser plays'))
+      video.src = url
+    })
+    await new Promise<void>((ok) => {
+      video.onseeked = () => ok()
+      video.currentTime = Number.isFinite(video.duration) ? Math.min(2, video.duration / 4) : 0
+    })
+    const w = video.videoWidth
+    const tall = video.videoHeight
+    if (!w || !tall) return null
+    const scale = Math.min(1, THUMB_PX / w)
+    const canvas = h('canvas')
+    canvas.width = Math.round(w * scale)
+    canvas.height = Math.round(tall * scale)
+    canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height)
+    return await new Promise<Blob | null>((ok) => canvas.toBlob(ok, 'image/jpeg', 0.75))
+  } catch {
+    return null
+  } finally {
+    video.removeAttribute('src')
+    video.load()
+  }
 }
 
 /**

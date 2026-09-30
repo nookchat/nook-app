@@ -6531,9 +6531,10 @@ input.invalid:focus {
 }
 
 /* Your recordings, and the clip made from one (src/ui/recordings.ts). */
+/* As tall whatever it holds, so nothing moves as recordings come in or a clip opens. */
 .recordings-modal {
   max-width: 920px;
-  max-height: min(88dvh, 860px);
+  height: min(88dvh, 820px);
   overflow: hidden;
 }
 
@@ -6550,6 +6551,7 @@ input.invalid:focus {
 }
 
 .recordings-body {
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -6868,4 +6870,66 @@ input.invalid:focus {
 .react-who-names {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+/* The first look for recordings: cards and filters the size of the real ones, so nothing moves. */
+.chip-toggle.waiting,
+.recording-card.waiting .recording-face,
+.waiting-line::before {
+  background: var(--select);
+  animation: waiting-glow 1.2s ease-in-out infinite alternate;
+}
+
+.chip-toggle.waiting {
+  pointer-events: none;
+}
+
+.recording-card.waiting {
+  pointer-events: none;
+}
+
+/* A line of the real type, with a bar over it: exactly as tall as the words it waits for. */
+.waiting-line {
+  position: relative;
+}
+
+.waiting-line::before {
+  content: '';
+  position: absolute;
+  top: 22%;
+  bottom: 22%;
+  left: 0;
+  width: 70%;
+  border-radius: var(--radius-pill);
+}
+
+.waiting-line.short::before {
+  width: 45%;
+}
+
+@keyframes waiting-glow {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chip-toggle.waiting,
+  .recording-card.waiting .recording-face,
+  .waiting-line::before {
+    animation: none;
+  }
+}
+
+.look-again.busy svg {
+  animation: look-turn 0.9s linear infinite;
+}
+
+@keyframes look-turn {
+  to {
+    transform: rotate(360deg);
+  }
 }
