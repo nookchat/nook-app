@@ -5,7 +5,7 @@ interface SurfaceOptions {
   muted: boolean
   showVolume: boolean
   /** The last button on the bar, which closes the stream: stop watching it, or stop sharing it. */
-  close?: { label: string; icon: IconName; run: () => void }
+  close?: { label: string; icon: IconName; run: () => void; danger?: boolean }
 }
 
 function iconButton(name: IconName, title: string, onClick: () => void): HTMLButtonElement {
@@ -65,12 +65,6 @@ export class VideoSurface {
       iconButton('zoom-out', 'Zoom out', () => this.zoomBy(1 / 1.25)),
       this.zoomLabel,
       iconButton('zoom-in', 'Zoom in', () => this.zoomBy(1.25)),
-      h('button', {
-        class: 'small',
-        text: 'Reset',
-        title: 'Reset the zoom (0)',
-        on: { click: () => this.resetView() },
-      }),
     ])
 
     const controls: HTMLElement[] = []
@@ -107,9 +101,10 @@ export class VideoSurface {
     controls.push(this.windowButton, this.fullscreenButton)
 
     if (options.close) {
-      const { label, icon: glyph, run } = options.close
+      const { label, icon: glyph, run, danger } = options.close
       const close = iconButton(glyph, label, run)
       close.classList.add('surface-close')
+      if (danger) close.classList.add('danger')
       controls.push(h('div', { class: 'divider' }), close)
     }
 

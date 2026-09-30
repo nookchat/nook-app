@@ -1340,6 +1340,16 @@ details.adv[open] > summary {
   color: var(--fg);
 }
 
+/* Stop sharing: red, as on the voice bar. */
+.surface-bar button.surface-close.danger {
+  background: color-mix(in srgb, var(--danger) 16%, var(--face));
+  color: var(--bad);
+}
+
+.surface-bar button.surface-close.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 24%, var(--face));
+}
+
 .surface.hide-bar .surface-bar {
   opacity: 0;
   pointer-events: none;

@@ -4213,7 +4213,7 @@ export class SpaceView {
       muted: true,
       showVolume: true,
       close: mine
-        ? { label: 'Stop sharing', icon: 'stop', run: () => void this.toggleShare() }
+        ? { label: 'Stop sharing', icon: 'stop', run: () => void this.toggleShare(), danger: true }
         : {
             label: 'Stop watching',
             icon: 'close',
