@@ -6,7 +6,7 @@ import type { Voice } from '../net/voice'
 import { UplinkMeter } from '../net/uplink'
 import { LISTENING_CHANGED, cleanListening, listeningNow, type Listening } from '../net/listening'
 import { PLAYING_CHANGED, cleanGameName, cleanSteamId, playingNow, type Playing } from '../net/playing'
-import { LOUDEST, mutedFor, setMutedFor, setVolumeFor, volumeFor } from '../net/volume'
+import { LOUDEST, mutedFor, setMutedFor, setVolumeFor, volumeFor, VOLUMES_CHANGED } from '../net/volume'
 import { gifs as serverGifs, preview, serverHasGifs } from '../net/server-api'
 import { formatSecret, newPass, roomLink, setLinkSecret, type Room } from '../room'
 import { HostPeer } from '../rtc/host-peer'
@@ -379,6 +379,8 @@ export class SpaceView {
   private readonly playingBy = new Map<string, Playing>()
   /** The song each session plays on Spotify, when they show it. */
   private readonly listeningBy = new Map<string, Listening>()
+  /** Keys I've muted for myself, as of the last redraw — so a slider drag doesn't redraw unless it actually changed. */
+  private mutedKeysSeen = new Set<string>()
   private readonly boardButton = h(
     'button',
     {
@@ -493,6 +495,7 @@ export class SpaceView {
     window.addEventListener(LISTENING_CHANGED, this.onPlaying)
     window.addEventListener(MUTED_CHANGED, this.onPlaying)
     window.addEventListener(STATUS_CHANGED, this.onPlaying)
+    window.addEventListener(VOLUMES_CHANGED, this.onVolumes)
     window.addEventListener('keydown', this.onShortcut)
     this.draw()
     this.status()
@@ -508,6 +511,26 @@ export class SpaceView {
   }
 
   private readonly onPlaying = (): void => this.draw()
+
+  private readonly onVolumes = (): void => {
+    const keys = this.mutedKeysNow()
+    const same = keys.size === this.mutedKeysSeen.size && [...keys].every((k) => this.mutedKeysSeen.has(k))
+    if (same) return
+    this.mutedKeysSeen = keys
+    this.renderVoice()
+  }
+
+  /** Everyone currently in a voice channel that I've muted for myself. */
+  private mutedKeysNow(): Set<string> {
+    const keys = new Set<string>()
+    for (const channel of this.chat?.channelInfo(true) ?? [{ name: DEFAULT_VOICE, label: DEFAULT_VOICE, topic: '', levels: [] }]) {
+      for (const id of this.voice?.membersOf(channel.name) ?? []) {
+        const key = this.keyOf(id)
+        if (mutedFor(key)) keys.add(key)
+      }
+    }
+    return keys
+  }
 
   private readonly onShortcut = (ev: KeyboardEvent): void => {
     if (ev.key === 'Escape' && this.railOpen) {
@@ -577,6 +600,7 @@ export class SpaceView {
     window.removeEventListener(LISTENING_CHANGED, this.onPlaying)
     window.removeEventListener(MUTED_CHANGED, this.onPlaying)
     window.removeEventListener(STATUS_CHANGED, this.onPlaying)
+    window.removeEventListener(VOLUMES_CHANGED, this.onVolumes)
     window.removeEventListener('keydown', this.onShortcut)
     for (const t of this.timers) window.clearInterval(t)
     this.timers = []
@@ -3041,6 +3065,12 @@ export class SpaceView {
           icon('mic-off', 14),
           deaf ? icon('headphones-off', 14) : null,
         ]),
+      )
+    }
+    // Local-only: I muted them for myself, which nobody else can see.
+    if (!mine && mutedFor(key)) {
+      member.append(
+        h('span', { class: 'voice-quiet', title: 'Muted by you', ariaLabel: 'Muted by you' }, [icon('mute', 14)]),
       )
     }
     if (mine ? this.voice?.cameraOn : ids.some((i) => this.filming.has(i))) {
