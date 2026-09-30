@@ -86,7 +86,8 @@ with voice does it.
   the space with their level, for whoever may change levels or remove people. You change only
   the levels below yours, and you give nobody a power you do not have. Every
   device checks each change in the log, so a button is never the rule.
-- **The list of people** on the right has the people who are here in groups
+- **The list of people** on the right: a click, or a right click, on somebody
+  opens what you can do about them. It has the people who are here in groups
   by level, the highest level first, as Discord groups people by role. The
   people who are away are last, in one group.
 - **Removing somebody** changes the key of the space, with no click. The
@@ -121,7 +122,7 @@ with voice does it.
   played it, with no toast. Every sound, the board's own and the ones people
   add, is brought to the same loudness (-23 LUFS, by ITU-R BS.1770), so none
   is much louder than another.
-- **Each person's volume** is in their menu, or a right click on them in voice.
+- **Each person's volume** is a right click on them in the voice channel, on the left.
   It goes from 0 to 200%, and starts at 100%. A double click puts it back.
 - **Playing**: the desktop app sees the game you have open and shows it under
   your name, the way Discord does, in the list of people and in voice. It

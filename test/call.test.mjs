@@ -71,7 +71,8 @@ try {
   check('two people in the lounge hear each other', !!inLounge)
 
   const sinkVolume = () => ada.evaluate(() => document.querySelector('audio.voice-sink')?.volume ?? null)
-  await ada.click('.rail-person:has-text("Ben") .person-more')
+  // A person's volume is in the voice channel on the left, on a right click.
+  await ada.click('.voice-member:has-text("Ben")', { button: 'right' })
   await ada.waitForSelector('.menu-volume input[type="range"]', { timeout: 5000 })
   await ada.$eval('.menu-volume input[type="range"]', (el) => {
     el.value = '30'

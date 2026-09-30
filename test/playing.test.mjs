@@ -34,7 +34,7 @@ async function makeSpace(page, name) {
 const doingOf = (page) => page.$$eval('.rail-person .person-doing.game', (els) => els.map((e) => e.textContent.trim()))
 
 async function openCard(page) {
-  await page.click('.rail-person:has-text("Playing") button.person-more')
+  await page.click('.rail-person.has-menu:has-text("Playing")')
   await page.waitForSelector('.menu-game', { timeout: 5000 })
   return page.$eval('.menu-game', (el) => ({ art: el.querySelector('img')?.src ?? null, words: el.textContent }))
 }

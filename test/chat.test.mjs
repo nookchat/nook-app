@@ -282,7 +282,14 @@ try {
     els.map((e) => e.textContent),
   )
   check('the pinned reactions lead the quick row', quick[0] === '🎉' && quick[1] === '🚀', quick.join(''))
-  await alice.keyboard.press('Escape')
+  await alice.click('.emoji-pop.quick .chat-react')
+  const chip = alice.locator('.chat-reacts .chat-react:not(.add)').first()
+  await chip.waitFor({ timeout: 5000 })
+  await chip.hover()
+  const who = await alice.waitForSelector('.react-who', { timeout: 3000 }).then((el) => el.textContent(), () => '')
+  check('a hover on a reaction says who reacted with it', who.includes('You reacted'), who)
+  await alice.mouse.move(0, 0)
+  check('and the card goes with the pointer', (await alice.locator('.react-who').count()) === 0)
 
   await alice.click('button[aria-label="Switch space"]')
   const opened = await alice.waitForSelector('.menu.switcher', { timeout: 5000 }).then(() => true, () => false)
@@ -328,9 +335,8 @@ try {
   )
 
   const menuFor = async (page, who) => {
-    const more = page.locator('.rail-person', { hasText: who }).locator('.person-more')
-    await more.first().evaluate((el) => el.focus())
-    await more.first().click()
+    // A click on the person opens it: there is no ellipsis.
+    await page.locator('.rail-person', { hasText: who }).first().click()
     await page.waitForSelector('.menu', { timeout: 5000 })
     // A note sits beside the label with no separator, so textContent runs the two together.
     return page.$$eval('.menu-item', (els) =>
@@ -338,9 +344,15 @@ try {
     )
   }
 
+  const people = await alice.$$eval('.rail-person', (els) => ({
+    titles: els.filter((e) => e.title).length,
+    dots: els.filter((e) => e.querySelector('.person-more')).length,
+  }))
+  check('the people on the right have no tooltip and no ellipsis', people.titles === 0 && people.dots === 0, JSON.stringify(people))
   const onBob = await menuFor(alice, 'Bob')
+  check('and their menu sets no volume: that is on the left', (await alice.locator('.menu .menu-volume').count()) === 0)
   check(
-    'one ellipsis opens what the owner can do about somebody, and levels stay in the space settings',
+    'a click on somebody opens what the owner can do about them, and levels stay in the space settings',
     onBob.some((t) => t.startsWith('Remove')) && !onBob.some((t) => t === 'Admin' || t === 'Member'),
     onBob.join(' | '),
   )
@@ -357,7 +369,7 @@ try {
 
   const onSelf = await alice.$$eval('.rail-person', (els) => {
     const mine = els.find((e) => e.textContent.includes('(you)'))
-    return !!mine?.querySelector('.person-more')
+    return !!mine?.classList.contains('has-menu')
   })
   check('and your own row has no menu at all', onSelf === false)
 

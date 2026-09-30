@@ -60,7 +60,7 @@ try {
   check('and one click takes her in', await until(alice, inChannel, ['studio', 'Carol']))
 
   // The menu does the same, for a touch screen.
-  await alice.click('.rail-person:has-text("Bob") .person-more')
+  await alice.click('.rail-person.has-menu:has-text("Bob")')
   await alice.click('.menu-item:has-text("lounge")')
   check('Move to, in his menu, moves Bob back to the lounge', await until(alice, inChannel, ['lounge', 'Bob']))
 

@@ -1881,7 +1881,6 @@ export class SpaceView {
             }
           : {
               label: 'Mute this space',
-              note: 'No notifications or counts from its channels, for you',
               lead: h('span', { class: 'menu-icon' }, [icon('bell-off', 16)]),
               run: () => muteSpace(this.space.room.id, true),
             },
@@ -2987,13 +2986,8 @@ export class SpaceView {
   private personMenu(key: string, role: string, you: boolean, here: boolean): MenuEntry[] {
     const actions = this.actionsFor(key, role, you, here)
     const game = you ? null : this.gameOf(key)
-    const talks = !you && (this.mesh?.peers() ?? []).some((p) => p.key === key && this.voice?.whereIs(p.id))
-    const name = this.chat?.nameOf(key) || shortKey(key)
-    const blocks: MenuEntry[][] = [
-      game ? [{ custom: gameCard(game) }] : [],
-      talks ? [{ custom: this.volumeBlock(key, name) }] : [],
-      actions,
-    ].filter((b) => b.length)
+    // A person's volume is set in the voice channel on the left, where you hear them.
+    const blocks: MenuEntry[][] = [game ? [{ custom: gameCard(game) }] : [], actions].filter((b) => b.length)
     return blocks.flatMap((b, i) => (i ? ['line' as const, ...b] : b))
   }
 
@@ -3228,22 +3222,9 @@ export class SpaceView {
     const shown = h('span', { class: 'truncate', text: row.you ? `${label} (you)` : label })
     if (level?.colour) shown.style.color = roleInk(level.colour)
 
-    let more: HTMLButtonElement | null = null
-    if (!row.you) {
-      const button = h('button', {
-        class: 'ghost tiny-btn person-more',
-        title: `What you can do about ${label}`,
-        ariaLabel: `Actions for ${label}`,
-        data: { menu: `person:${row.key}` },
-      })
-      onPress(button, () => openMenu(button, this.personMenu(row.key, role, row.you, row.here)))
-      button.append(icon('more', 17))
-      more = button
-    }
-
     // Who is talking shows in the voice channel on the left, not here.
     const rowClass = `rail-person${row.here ? '' : ' away'}`
-    const person = h('div', { class: rowClass, title: `${level?.name ?? 'Member'} · ID ${row.key}` }, [
+    const person = h('div', { class: rowClass }, [
       h('span', { class: 'person-face' }, [
         avatarOf(row.key, row.name, avatar, 32),
         row.here
@@ -3263,9 +3244,23 @@ export class SpaceView {
         ]),
         this.personDoing(row),
       ]),
-      more,
     ])
-    if (!row.you) onContextMenu(person, () => this.personMenu(row.key, role, row.you, row.here))
+    // A click, or a right click, opens what you can do about them. Your own row has nothing.
+    if (!row.you) {
+      person.dataset.menu = `person:${row.key}`
+      person.tabIndex = 0
+      person.setAttribute('role', 'button')
+      person.setAttribute('aria-label', `Actions for ${label}`)
+      person.classList.add('has-menu')
+      const open = (): void => openMenu(person, this.personMenu(row.key, role, row.you, row.here))
+      person.addEventListener('click', open)
+      person.addEventListener('keydown', (ev) => {
+        if (ev.key !== 'Enter' && ev.key !== ' ') return
+        ev.preventDefault()
+        open()
+      })
+      onContextMenu(person, () => this.personMenu(row.key, role, row.you, row.here))
+    }
     if (!row.you && row.here && this.chat?.can('move')) this.dragPerson(person, row.key)
     return person
   }

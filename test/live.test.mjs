@@ -190,11 +190,9 @@ try {
 
   // Both are still in the lounge from sharing.
   const menuFor = async (page, who) => {
-    const row = page.locator('.rail-person', { hasText: who })
-    const more = row.locator('.person-more')
-    if ((await more.count()) === 0) return []
-    await more.first().evaluate((el) => el.focus())
-    await more.first().click()
+    const row = page.locator('.rail-person.has-menu', { hasText: who })
+    if ((await row.count()) === 0) return []
+    await row.first().click()
     await page.waitForSelector('.menu', { timeout: 5000 })
     // Headings too: Move to is a heading, with a voice channel under it for each place to go.
     const items = await page.$$eval('.menu-item, .menu-heading', (els) =>
@@ -226,8 +224,7 @@ try {
   )
 
   const bobRow = alice.locator('.rail-person', { hasText: 'Bob' })
-  await bobRow.locator('.person-more').first().evaluate((el) => el.focus())
-  await bobRow.locator('.person-more').first().click()
+  await bobRow.first().click()
   await alice.waitForSelector('.menu', { timeout: 5000 })
   await alice.click('.menu-item:has-text("war-room")')
 

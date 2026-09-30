@@ -109,8 +109,8 @@ try {
   check('the list shows his new level', (await bobLevel.evaluate((el) => el.selectedOptions[0]?.textContent)) === 'Helpers')
   await alice.click('button[aria-label="Close settings"]')
 
-  await alice.waitForSelector('button[aria-label="Actions for Bob"]', { timeout: 20_000 })
-  await alice.click('button[aria-label="Actions for Bob"]')
+  await alice.waitForSelector('.rail-person[aria-label="Actions for Bob"]', { timeout: 20_000 })
+  await alice.click('.rail-person[aria-label="Actions for Bob"]')
   await alice.waitForSelector('.menu')
   const inMenu = await alice.$$eval('.menu .menu-item', (els) => els.map((e) => e.textContent ?? ''))
   check('his menu has no levels in it', !inMenu.some((t) => t.includes('Helpers') || t.includes('Moderator')), inMenu.join(' | ').slice(0, 120))

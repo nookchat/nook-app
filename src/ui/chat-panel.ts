@@ -19,6 +19,7 @@ import {
 import { ghost, typingWords } from './ghost'
 import { icon } from './icons'
 import { closeMenu, onContextMenu, type MenuEntry } from './menu'
+import { fitNear } from './place'
 import { toast } from './toast'
 import { emojiField } from './twemoji'
 
@@ -196,6 +197,9 @@ type ColourOf = (key: string) => string
 
 const WINDOW_STEP = 120
 const WINDOW_MAX = 600
+
+/** A card of who reacted names this many, then how many more. */
+const REACTED_NAMES_MAX = 12
 
 export class ChatPanel {
   readonly root: HTMLElement
@@ -1056,7 +1060,7 @@ export class ChatPanel {
   /** Must hold every value messageRow reads, or that value stops updating. */
   private signature(m: Message, first: boolean, parent: Message | undefined, callsMe: boolean, live: boolean): string {
     const reactions = [...m.reactions]
-      .map(([emoji, who]) => `${emoji}${who.size}${who.has(this.me) ? '*' : ''}`)
+      .map(([emoji, who]) => `${emoji}${[...who].map((key) => this.names.get(key) ?? key).sort().join('+')}${who.has(this.me) ? '*' : ''}`)
       .sort()
       .join(',')
     const poll = m.poll
@@ -1255,17 +1259,17 @@ export class ChatPanel {
       const reacts = h('div', { class: 'chat-reacts' })
       for (const [emoji, people] of m.reactions) {
         const on = people.has(this.me)
-        reacts.append(
-          h(
-            'button',
-            {
-              class: `chat-react${on ? ' on' : ''}`,
-              title: on ? 'Take yours back' : 'React with this too',
-              on: { click: () => this.actions?.react(m.id, emoji, !people.has(this.me)) },
-            },
-            [h('span', { class: 'chat-react-face', text: emoji }), ' ', h('span', { text: String(people.size) })],
-          ),
+        const chip = h(
+          'button',
+          {
+            class: `chat-react${on ? ' on' : ''}`,
+            ariaLabel: `${this.whoReacted(people)} reacted with ${emoji}. ${on ? 'Take yours back' : 'React with this too'}`,
+            on: { click: () => this.actions?.react(m.id, emoji, !people.has(this.me)) },
+          },
+          [h('span', { class: 'chat-react-face', text: emoji }), ' ', h('span', { text: String(people.size) })],
         )
+        this.showWhoReacted(chip, emoji, people)
+        reacts.append(chip)
       }
       const more = h(
         'button',
@@ -1645,6 +1649,43 @@ export class ChatPanel {
       })
     }
     return items
+  }
+
+  /** The names of who reacted, you first, as "You, Ada and Grace". */
+  private whoReacted(people: Set<string>): string {
+    const names = [...people]
+      .sort((a, b) => (a === this.me ? -1 : b === this.me ? 1 : 0))
+      .map((key) => (key === this.me ? 'You' : this.names.get(key) || shortKey(key)))
+    const shown = names.length > REACTED_NAMES_MAX ? [...names.slice(0, REACTED_NAMES_MAX), `${names.length - REACTED_NAMES_MAX} more`] : names
+    return new Intl.ListFormat('en', { type: 'conjunction' }).format(shown)
+  }
+
+  /** Who reacted with this emoji, in a card over the chip, while the pointer or the keyboard is on it. */
+  private showWhoReacted(chip: HTMLElement, emoji: string, people: Set<string>): void {
+    let card: HTMLElement | null = null
+    let watch = 0
+    const hide = (): void => {
+      window.clearInterval(watch)
+      card?.remove()
+      card = null
+    }
+    const show = (): void => {
+      if (card) return
+      document.querySelector('.react-who')?.remove()
+      card = h('div', { class: 'react-who', role: 'tooltip' }, [
+        h('span', { class: 'react-who-face', text: emoji }),
+        h('span', { class: 'react-who-names', text: `${this.whoReacted(people)} reacted` }),
+      ])
+      document.body.append(card)
+      fitNear(card, chip)
+      // A chip drawn again under the pointer never says the pointer left: its card goes with it.
+      watch = window.setInterval(() => chip.isConnected || hide(), 300)
+    }
+    chip.addEventListener('pointerenter', show)
+    chip.addEventListener('pointerleave', hide)
+    chip.addEventListener('focus', show)
+    chip.addEventListener('blur', hide)
+    chip.addEventListener('click', hide)
   }
 
   private reactWith(m: Message, anchor: HTMLElement): void {

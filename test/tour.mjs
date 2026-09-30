@@ -91,7 +91,7 @@ try {
   await wait(200)
   await shot(ada, 'hover-desktop')
   await ada.hover('.rail-person >> nth=1')
-  await ada.click('.rail-person >> nth=1 >> .person-more').catch(() => undefined)
+  await ada.click('.rail-person.has-menu >> nth=0').catch(() => undefined)
   await wait(300)
   await shot(ada, 'menu-desktop')
   await ada.keyboard.press('Escape')
