@@ -388,9 +388,8 @@ export function openSoundboard(options: BoardOptions): void {
   }
 
   open = { close, anchor: options.anchor }
-  foot.textContent = soundsOn()
-    ? 'Everybody in this voice channel hears it.'
-    : 'Sounds are off. Turn them on in Settings to play these.'
+  if (soundsOn()) foot.remove()
+  else foot.textContent = 'Sounds are off. Turn them on in Settings to play these.'
   document.body.append(pop)
   placeNear(pop, options.anchor)
   window.addEventListener('keydown', onKey, true)
