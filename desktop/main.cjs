@@ -54,7 +54,7 @@ const ALLOWED = new Set(['media', 'display-capture', 'notifications', 'clipboard
 let main = null
 
 /** The page colour of the Nook brand (surface-0), shown before the page paints. */
-const pageColour = () => (nativeTheme.shouldUseDarkColors ? '#0D0D0F' : '#FBF7EF')
+const pageColour = () => (nativeTheme.shouldUseDarkColors ? '#100C0B' : '#FDF6F3')
 /** A link the OS gave before the window was there. */
 let pendingLink = null
 

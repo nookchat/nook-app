@@ -38,8 +38,9 @@ The mark is the **bubble ghost**: a ghost whose scalloped hem ends in a speech-b
 
 Two themes, same token names. Everything is semantic: build with `surface-*`, `text-*`, `brand`, `accent`, never raw hex.
 
-- **Light** is cream (`surface-0` #FBF7EF) with ink (#151518) type and ghost.
-- **Dark** is near-black charcoal (`surface-0` #0D0D0F) with a cream ghost. `brand` and `on-brand` **swap** between themes, so a ghost drawn with `brand`/`on-brand` is always the highest-contrast shape on screen.
+- **Light** is cream (`surface-0` #FDF6F3) with ink (#191412) type and ghost.
+- **Dark** is near-black charcoal (`surface-0` #100C0B) with a cream ghost. `brand` and `on-brand` **swap** between themes, so a ghost drawn with `brand`/`on-brand` is always the highest-contrast shape on screen.
+- **Neutrals carry ember's hue.** Every surface, border, text and ink token sits at ember's OKLCH hue (42°) with a low chroma (0.002–0.016), so greys, lines and shadows all read as one warm family. A new neutral takes the same hue; never add a cool or pure grey.
 - **Ember** (`accent` #FF8A5B) is the one hot spot: the ghost's cheeks, the send button, unread badges, a message that names you. One accent element per region. Ember is a fill: text on it is always `on-accent` (ink, 7:1). When ember must be text or a link, use `accent-text`.
 - **Messages** sit straight on `surface-0` in `text-primary`, yours and theirs alike. A hovered message takes a 6% `text-primary` wash. A message that names you takes a 70% `accent-soft` wash and a 2px `accent` bar on its left edge.
 - **Panes:** the channel rail and the member list are `surface-1` with a `border` line, on the `surface-0` page. The conversation is the page itself.

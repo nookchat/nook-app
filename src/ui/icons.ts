@@ -79,8 +79,8 @@ export type IconName =
   | 'arrow-up'
   | 'game'
 
-// The Nook set: a 24px grid, a 1.75px stroke, round caps and joins, and currentColor. The shared
-// icons come from nook-brand/react/icons.tsx. The rest are drawn here on the same grid and stroke.
+// The Nook set: a 24px grid, a 1.75px stroke, round caps and joins, and currentColor. Every icon
+// is drawn here on that grid and stroke.
 
 /** A circle as a path, so one icon can be one path. */
 const circle = (cx: number, cy: number, r: number): string =>

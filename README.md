@@ -287,7 +287,7 @@ with the QR decoder built into Chrome.
 
 ## Look
 
-Nook follows the brand in `nook-brand/` (read `nook-brand/STYLE_GUIDE.md`).
+Nook follows the brand in `src/brand/` (read `src/brand/STYLE_GUIDE.md`).
 Warm cream by day, near-black charcoal after dark, and a small ghost at the heart of it.
 The channels are on the left under the switcher, the conversation is in the
 middle, and who is here is on the right.
@@ -308,11 +308,10 @@ middle, and who is here is on the right.
   JetBrains Mono for code. The fonts are part of the build, so they work
   offline too.
 
-**The brand tokens are in `src/brand/tokens.css`,** copied from
-`nook-brand/tokens/`. The block at the top of `src/styles.css` gives them the
-names the app uses, and nothing below that block names a colour.
-`test/polish.test.mjs` checks that every text colour clears 4.5 to 1 on every
-surface.
+**The brand tokens are in `src/brand/tokens.css`.** The block at the top of
+`src/styles.css` gives them the names the app uses, and nothing below that
+block names a colour. `test/polish.test.mjs` checks that every text colour
+clears 4.5 to 1 on every surface.
 
 `node test/tour.mjs` puts three people in a space, fills it, shares a screen,
 and writes screenshots at desktop and phone width to `test-output/tour/`.
@@ -390,7 +389,7 @@ src/
     gifs.ts           what a GIF is; the server searches, with its key
   rtc/                screen share connections, codecs, quality, stats
   media/              the screen picker, the microphone, the mix, and clips from recordings
-  brand/              the brand tokens, the ghost's motion and its components, from nook-brand/
+  brand/              the brand tokens, the ghost's motion, its components, and the style guide
   ui/
     home-view.ts      Home: direct messages from every space
     welcome.ts        the first visit: your name, and a picture

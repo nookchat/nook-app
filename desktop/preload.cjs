@@ -89,7 +89,7 @@ const CSS = `
   #nook-titlebar {
     position: relative; z-index: 2147483000;
     height: var(--nook-titlebar); display: flex; align-items: center;
-    background: var(--bg, #FBF7EF); color: var(--fg-faint, #6B6760);
+    background: var(--bg, #FDF6F3); color: var(--fg-faint, #6F6561);
     font: 600 12px/1 var(--sans, system-ui, sans-serif);
     user-select: none; -webkit-user-select: none; -webkit-app-region: drag;
   }
@@ -108,11 +108,11 @@ const CSS = `
   #nook-titlebar .controls button {
     width: 46px; height: 100%; min-height: 0; margin: 0; border: 0; border-radius: 0; padding: 0;
     background: transparent; box-shadow: none; transform: none; outline-offset: -2px;
-    color: var(--fg-dim, #5A5750); display: grid; place-items: center; cursor: default;
+    color: var(--fg-dim, #5F5551); display: grid; place-items: center; cursor: default;
   }
   #nook-titlebar .controls button:active { transform: none; }
   #nook-titlebar .controls button svg { width: 10px; height: 10px; }
-  #nook-titlebar .controls button:hover { background: var(--hover, rgb(21 21 24 / 6%)); color: var(--fg, #151518); }
+  #nook-titlebar .controls button:hover { background: var(--hover, rgb(25 20 18 / 6%)); color: var(--fg, #191412); }
   #nook-titlebar .controls button.close:hover { background: #e81123; color: #fff; }
   html.nook-mac #nook-titlebar { padding-left: 72px; }
   html.nook-mac.nook-fullscreen #nook-titlebar { padding-left: 0; }

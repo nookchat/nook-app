@@ -1,4 +1,4 @@
-// The Nook bubble ghost and the lockup, drawn from nook-brand/react. The colours come from the
+// The Nook bubble ghost and the lockup, drawn from the brand's logo. The colours come from the
 // brand tokens through src/brand/motion.css, so both turn over with the theme.
 
 export type GhostMood = 'idle' | 'typing' | 'sleeping' | 'still'
