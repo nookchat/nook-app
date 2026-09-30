@@ -2,7 +2,6 @@ import { h } from './dom'
 import { icon } from './icons'
 import { placeNear } from './emoji'
 import { lengthOf, loudnessOf, peakOf } from './loudness'
-import { onContextMenu, type MenuEntry } from './menu'
 import { sharedAudio, soundsOn } from './sounds'
 
 export interface Sound {
@@ -229,24 +228,14 @@ interface BoardOptions {
   /** Sounds people added, with ids that start with CUSTOM. */
   sounds: Sound[]
   groups: SoundGroup[]
-  /** Adds a sound to the group with this id, or to none with ''. */
-  onAdd?(group: string): void
-  onAddGroup?(): void
-  /** Only called for sounds this person may change: whoever added it, or a channel keeper. */
-  canChange?(id: string): boolean
-  onEdit?(id: string): void
-  onRemove?(id: string): void
-  /** Puts a sound in the group with this id, or in none with ''. */
-  onMove?(id: string, group: string): void
-  /** Only called for groups this person may change: whoever made it, or a channel keeper. */
-  canChangeGroup?(id: string): boolean
-  onEditGroup?(id: string): void
-  onRemoveGroup?(id: string): void
+  /** Opens the soundboard in Space settings, where sounds and groups are added and changed. */
+  onManage(): void
 }
 
 let open: { close(): void; anchor: HTMLElement } | null = null
 
-function volumeRow(): HTMLElement {
+/** How loud the soundboard is for you: a slider, for Space settings. */
+export function volumeRow(): HTMLElement {
   const value = h('span', { class: 'tiny faint sound-volume-value' })
   const range = h('input', { type: 'range', min: '0', max: '100', step: '1', ariaLabel: 'Soundboard volume' })
   range.value = String(Math.round(boardVolume() * 100))
@@ -265,6 +254,7 @@ function volumeRow(): HTMLElement {
   ])
 }
 
+/** The board by the voice bar: it only plays. Sounds and groups are managed in Space settings. */
 export function openSoundboard(options: BoardOptions): void {
   if (open && open.anchor === options.anchor) {
     open.close()
@@ -279,19 +269,21 @@ export function openSoundboard(options: BoardOptions): void {
     h('div', { class: 'row spread' }, [
       h('span', { class: 'eyebrow', text: 'Soundboard' }),
       h('div', { class: 'row sound-head-tools' }, [
-        options.onAddGroup
-          ? h('button', {
-              class: 'ghost small',
-              title: 'Make a group to sort the sounds into, for everybody in this space',
-              text: 'New group',
-              on: {
-                click: () => {
-                  close()
-                  options.onAddGroup?.()
-                },
+        h(
+          'button',
+          {
+            class: 'ghost icon-only',
+            title: 'Manage the soundboard in Space settings',
+            ariaLabel: 'Manage the soundboard',
+            on: {
+              click: () => {
+                close()
+                options.onManage()
               },
-            })
-          : null,
+            },
+          },
+          [icon('cog', 18)],
+        ),
         h(
           'button',
           {
@@ -305,34 +297,14 @@ export function openSoundboard(options: BoardOptions): void {
       ]),
     ]),
     sections,
-    volumeRow(),
     foot,
   ])
 
   const groupIds = new Set(options.groups.map((g) => g.id))
   const groupOf = (sound: Sound): string => (groupIds.has(sound.group) ? sound.group : '')
 
-  const moveItems = (sound: Sound): MenuEntry[] => {
-    if (!options.onMove || options.groups.length === 0) return []
-    const here = groupOf(sound)
-    const places = [...options.groups.map((g) => ({ id: g.id, label: `${g.emoji} ${g.label}` })), { id: '', label: 'No group' }]
-    return [
-      'line',
-      { heading: 'Move to' },
-      ...places
-        .filter((place) => place.id !== here)
-        .map((place) => ({
-          label: place.label,
-          run: () => {
-            close()
-            options.onMove?.(sound.id, place.id)
-          },
-        })),
-    ]
-  }
-
-  const cell = (sound: Sound): HTMLElement => {
-    const button = h(
+  const cell = (sound: Sound): HTMLElement =>
+    h(
       'button',
       {
         class: 'sound-cell custom',
@@ -345,63 +317,31 @@ export function openSoundboard(options: BoardOptions): void {
         h('span', { class: 'sound-name', text: sound.label }),
       ],
     )
-    const mine = options.canChange?.(sound.id) ?? false
-    if (mine || (options.onMove && options.groups.length > 0)) {
-      onContextMenu(button, () => {
-        const items: MenuEntry[] = mine
-          ? [
-              {
-                label: 'Change the name or emoji',
-                run: () => {
-                  close()
-                  options.onEdit?.(sound.id)
-                },
-              },
-              {
-                label: `Take ${sound.label} off`,
-                note: 'For everybody in this space',
-                danger: true,
-                run: () => options.onRemove?.(sound.id),
-              },
-            ]
-          : []
-        const moves = moveItems(sound)
-        return items.length ? [...items, ...moves] : moves.slice(1)
-      })
-    }
-    return button
-  }
 
-  const addCell = (group: SoundGroup | null): HTMLElement =>
-    h(
-      'button',
-      {
-        class: 'sound-cell sound-add',
-        title: group ? `Add a sound to ${group.label}, up to 10 seconds` : 'Add a sound for this space, up to 10 seconds',
-        ariaLabel: group ? `Add a sound to ${group.label}` : 'Add a sound',
+  const loose = options.sounds.filter((sound) => !groupOf(sound))
+  if (options.sounds.length === 0) {
+    sections.append(
+      h('div', { class: 'sound-empty tiny faint', text: 'No sounds here yet. Add them in Space settings.' }),
+      h('button', {
+        class: 'small sound-empty-add',
+        text: 'Add a sound',
         on: {
           click: () => {
             close()
-            options.onAdd?.(group?.id ?? '')
+            options.onManage()
           },
         },
-      },
-      [icon('plus', 20), h('span', { class: 'sound-name', text: 'Add a sound' })],
+      }),
     )
-
-  const loose = options.sounds.filter((sound) => !groupOf(sound))
-  const looseGrid = h('div', { class: 'sound-grid' }, loose.map(cell))
-  if (options.sounds.length === 0) {
-    looseGrid.append(h('div', { class: 'sound-empty tiny faint', text: 'No sounds here yet. Add one of up to 10 seconds, with its own emoji.' }))
+  } else if (loose.length) {
+    sections.append(h('div', { class: 'sound-grid' }, loose.map(cell)))
   }
-  if (options.onAdd) looseGrid.append(addCell(null))
-  sections.append(looseGrid)
 
   const folded = foldedGroups()
   for (const group of options.groups) {
     const inIt = options.sounds.filter((sound) => sound.group === group.id)
+    if (inIt.length === 0) continue
     const grid = h('div', { class: 'sound-grid' }, inIt.map(cell))
-    if (options.onAdd) grid.append(addCell(group))
     const head = h(
       'button',
       {
@@ -425,26 +365,6 @@ export function openSoundboard(options: BoardOptions): void {
     )
     head.setAttribute('aria-expanded', String(!folded.has(group.id)))
     const section = h('section', { class: `sound-group${folded.has(group.id) ? ' folded' : ''}`, ariaLabel: group.label }, [head, grid])
-    if (options.canChangeGroup?.(group.id)) {
-      onContextMenu(head, () => [
-        {
-          label: 'Change the name or emoji',
-          run: () => {
-            close()
-            options.onEditGroup?.(group.id)
-          },
-        },
-        {
-          label: `Take ${group.label} off`,
-          note: 'Its sounds stay, outside any group',
-          danger: true,
-          run: () => {
-            close()
-            options.onRemoveGroup?.(group.id)
-          },
-        },
-      ])
-    }
     sections.append(section)
   }
 

@@ -2431,6 +2431,39 @@ button.start {
   color: var(--warn);
 }
 
+/* Space settings, Soundboard: a sound's emoji plays it, then its name, its group and its buttons. */
+.board-row {
+  gap: 8px;
+  padding-left: 6px;
+}
+
+.board-row .switch-words {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.board-row-play {
+  flex: 0 0 auto;
+}
+
+.board-row-emoji {
+  font-size: 20px;
+  line-height: 1;
+}
+
+select.board-row-group {
+  flex: 0 1 160px;
+  width: auto;
+  min-width: 0;
+  min-height: 34px;
+  padding: 4px 10px;
+  font-size: 13px;
+}
+
+.board-card-foot {
+  gap: 6px;
+}
+
 /* Webhooks stopped by a removal: said at the top, before anything else on the page. */
 .hook-warning {
   display: flex;
@@ -5898,14 +5931,11 @@ input[type="text"].gif-search {
 }
 
 .sound-empty {
-  grid-column: 1 / -1;
   padding: 6px 2px 2px;
 }
 
-.sound-add {
-  justify-content: center;
-  border-style: dashed;
-  color: var(--fg-faint);
+.sound-empty-add {
+  align-self: flex-start;
 }
 
 .sound-cell.custom .sound-name {

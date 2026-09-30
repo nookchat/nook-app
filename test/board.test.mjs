@@ -1,4 +1,4 @@
-import { APP_URL, AUTOPLAY, FAKE_MEDIA, check, finish, launch, stoppedEarly } from './harness.mjs'
+import { APP_URL, AUTOPLAY, FAKE_MEDIA, check, finish, launch, openSpaceSettings, stoppedEarly } from './harness.mjs'
 
 const browser = await launch({ args: [...FAKE_MEDIA, AUTOPLAY] })
 
@@ -562,6 +562,38 @@ try {
   check('and its name comes from the video', ytName === 'A song from YouTube', ytName)
   await alice.click('.sound-maker button:text-is("Cancel")')
   await alice.evaluate(() => delete window.nookDesktop)
+
+  // The same board, in Space settings: every sound, to hear, rename, sort into a group, or take off.
+  await openSpaceSettings(alice, 'soundboard')
+  await alice.waitForSelector('.board-row')
+  const listed = await alice.$$eval('.board-row .switch-label', (els) => els.map((e) => e.textContent))
+  check('Space settings lists every sound on the board', listed.includes('Quack') && listed.includes('Long'), listed.join(', '))
+  await alice.click('.settings-page button:has-text("New group")')
+  await alice.waitForSelector('.ask-modal .sound-face')
+  await alice.fill('.ask-modal .ask-input', 'Loud')
+  await alice.click('.ask-modal button:text-is("Make")')
+  const madeThere = await alice
+    .waitForSelector('.settings-section:has(.eyebrow:has-text("Loud"))', { timeout: 15_000 })
+    .then(() => true)
+    .catch(() => false)
+  check('a group can be made there', madeThere)
+  const loudId = await alice.$eval('select[aria-label="Group of Long"]', (el) => [...el.options].find((o) => o.textContent.endsWith('Loud'))?.value ?? '')
+  await alice.selectOption('select[aria-label="Group of Long"]', loudId)
+  const sorted = await alice
+    .waitForSelector('.settings-section:has(.eyebrow:has-text("Loud")) .board-row:has-text("Long")', { timeout: 15_000 })
+    .then(() => true)
+    .catch(() => false)
+  check('and a sound moves into it from its row', sorted)
+  await alice.click('button[aria-label="Change Long"]')
+  await alice.waitForSelector('.ask-modal .sound-face')
+  await alice.fill('.ask-modal .ask-input', 'Longer')
+  await alice.click('.ask-modal button:text-is("Save")')
+  const renamedThere = await alice
+    .waitForSelector('.board-row .switch-label:text-is("Longer")', { timeout: 15_000 })
+    .then(() => true)
+    .catch(() => false)
+  check('and renamed there', renamedThere)
+  await alice.click('button[aria-label="Close settings"]')
 
   // No key and no archive here, so the grid is empty.
   await alice.click('button[aria-label="Find a GIF"]')

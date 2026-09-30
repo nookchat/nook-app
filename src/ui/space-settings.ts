@@ -3,6 +3,7 @@ import { clear, h } from './dom'
 import { actionRow, card, note, settingsShell, type SettingsTab } from './settings-shell'
 import { icon } from './icons'
 import { spaceFace } from './space-switcher'
+import { volumeRow } from './soundboard'
 import { toast } from './toast'
 
 export interface SpaceSettingsActions {
@@ -10,7 +11,7 @@ export interface SpaceSettingsActions {
   name: string
   picture: string
   /** What your level lets you change here. */
-  can: { space: boolean; levels: boolean; remove: boolean; webhooks: boolean }
+  can: { space: boolean; levels: boolean; remove: boolean; webhooks: boolean; soundboard: boolean }
   rename(): Promise<void>
   /** null takes the picture away. */
   setPicture(file: File | null): Promise<void>
@@ -28,6 +29,7 @@ export interface SpaceSettingsActions {
   ban(key: string): Promise<void>
   levels(): HTMLElement
   hooks: HookActions
+  board: SoundboardActions
   start?: string
   back(): void
 }
@@ -64,6 +66,104 @@ export interface HookActions {
   rename(id: string): Promise<void>
   /** Asks first. */
   drop(id: string): Promise<void>
+}
+
+export interface SoundboardActions {
+  groups(): { id: string; label: string; emoji: string; mayChange: boolean }[]
+  /** Ids are the wire ids. `group` is '' for none, or a group that is gone. */
+  sounds(): { id: string; label: string; emoji: string; group: string; by: string; mayChange: boolean }[]
+  /** Plays it here only, for whoever has the settings open. */
+  play(id: string): void
+  /** Each resolves once the change is made, or it is cancelled. */
+  add(group: string): Promise<void>
+  addGroup(): Promise<void>
+  edit(id: string): Promise<void>
+  /** Asks first. */
+  remove(id: string): Promise<void>
+  move(id: string, group: string): Promise<void>
+  editGroup(id: string): Promise<void>
+  /** Asks first. Its sounds stay, outside any group. */
+  removeGroup(id: string): Promise<void>
+}
+
+/** Every sound and group on the soundboard, to play, rename, sort into groups, or take off. */
+function soundboardPage(board: SoundboardActions): HTMLElement {
+  const groups = board.groups()
+  const sounds = board.sounds()
+  const known = new Set(groups.map((g) => g.id))
+
+  const soundRow = (sound: ReturnType<SoundboardActions['sounds']>[number]): HTMLElement => {
+    const place = h('select', { class: 'board-row-group', ariaLabel: `Group of ${sound.label}` }, [
+      h('option', { value: '', text: 'No group' }),
+      ...groups.map((g) => h('option', { value: g.id, text: `${g.emoji} ${g.label}` })),
+    ])
+    place.value = known.has(sound.group) ? sound.group : ''
+    place.addEventListener('change', () => void board.move(sound.id, place.value))
+    return h('div', { class: 'action-row board-row' }, [
+      h('button', {
+        class: 'ghost icon-only board-row-play',
+        title: 'Hear it, only you',
+        ariaLabel: `Hear ${sound.label}`,
+        on: { click: () => board.play(sound.id) },
+      }, [h('span', { class: 'board-row-emoji', text: sound.emoji })]),
+      h('span', { class: 'switch-words' }, [
+        h('span', { class: 'switch-label truncate', text: sound.label }),
+        h('span', { class: 'tiny faint switch-about', text: `Added by ${sound.by}` }),
+      ]),
+      groups.length ? place : null,
+      sound.mayChange
+        ? h('button', { class: 'ghost small', title: 'Change the name or emoji', ariaLabel: `Change ${sound.label}`, on: { click: () => void board.edit(sound.id) } }, [
+            icon('edit', 14),
+          ])
+        : null,
+      sound.mayChange
+        ? h('button', { class: 'ghost small danger', title: 'Take it off', ariaLabel: `Take ${sound.label} off`, on: { click: () => void board.remove(sound.id) } }, [
+            icon('trash', 14),
+          ])
+        : null,
+    ])
+  }
+
+  const section = (title: string, tools: HTMLElement[], inIt: typeof sounds, group: string): HTMLElement =>
+    card(
+      title,
+      inIt.length ? h('div', { class: 'action-list' }, inIt.map(soundRow)) : note(group ? 'No sounds in this group yet.' : groups.length ? 'No sounds outside a group.' : 'No sounds yet.'),
+      h('div', { class: 'row board-card-foot' }, [
+        h('button', { class: 'small', on: { click: () => void board.add(group) } }, [icon('plus', 14), 'Add a sound']),
+        h('span', { class: 'grow' }),
+        ...tools,
+      ]),
+    )
+
+  const page = h('div', { class: 'stack settings-stack' }, [
+    card(
+      'Soundboard',
+      note(
+        'Sounds play for the people in your voice channel. Anybody whose level has the soundboard may add a sound or a group, and sort the sounds. Whoever added one, or a channel keeper, may rename it or take it off.',
+      ),
+      h('div', { class: 'row board-card-foot' }, [
+        h('button', { class: 'small', on: { click: () => void board.addGroup() } }, [icon('plus', 14), 'New group']),
+      ]),
+    ),
+    card('Volume', note('How loud the soundboard is for you, on this device. Nobody else hears the change.'), volumeRow()),
+  ])
+  for (const group of groups) {
+    const tools = group.mayChange
+      ? [
+          h('button', { class: 'ghost small', ariaLabel: `Change the group ${group.label}`, on: { click: () => void board.editGroup(group.id) } }, [
+            icon('edit', 14),
+            'Rename',
+          ]),
+          h('button', { class: 'ghost small danger', ariaLabel: `Take the group ${group.label} off`, on: { click: () => void board.removeGroup(group.id) } }, [
+            icon('trash', 14),
+            'Take the group off',
+          ]),
+        ]
+      : []
+    page.append(section(`${group.emoji} ${group.label}`, tools, sounds.filter((b) => b.group === group.id), group.id))
+  }
+  page.append(section(groups.length ? 'No group' : 'Sounds', [], sounds.filter((b) => !known.has(b.group)), ''))
+  return page
 }
 
 function copyLink(url: string): void {
@@ -314,6 +414,14 @@ export function spaceTabs(actions: SpaceSettingsActions): SettingsTab[] {
             : null,
         ])
       },
+    })
+  }
+  if (actions.can.soundboard) {
+    tabs.push({
+      id: 'soundboard',
+      label: 'Soundboard',
+      icon: 'music',
+      build: () => soundboardPage(actions.board),
     })
   }
   if (actions.can.webhooks) {

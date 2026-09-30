@@ -145,7 +145,9 @@ with voice does it.
   voice channel, and the green talking ring shows round the face of whoever
   played it, with no toast. Every sound, the board's own and the ones people
   add, is brought to the same loudness (-23 LUFS, by ITU-R BS.1770), so none
-  is much louder than another.
+  is much louder than another. The board by the voice bar only plays; its
+  cog opens Space settings, Soundboard, where sounds are added, renamed,
+  sorted into groups and taken off, and where you set how loud it is for you.
 - **Each person's volume** is a right click on them in the voice channel, on the left.
   It goes from 0 to 200%, and starts at 100%. A double click puts it back.
 - **Playing**: the desktop app sees the game you have open and shows it under

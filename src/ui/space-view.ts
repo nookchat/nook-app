@@ -67,7 +67,7 @@ import { icon, type IconName } from './icons'
 import { myStatusDot, openStatusMenu } from './status-menu'
 import { closeMenu, onContextMenu, openMenu, type MenuItem, type MenuEntry } from './menu'
 import { viewArea } from './place'
-import type { HookActions, MemberRow } from './space-settings'
+import type { HookActions, MemberRow, SoundboardActions } from './space-settings'
 import { hookUrl } from '../space/webhook'
 import { actionFor, type Action } from './shortcuts'
 import { NoteEditor } from './notes-view'
@@ -955,36 +955,72 @@ export class SpaceView {
       return
     }
     this.warmClips()
-    const chat = this.chat
-    const mayChange = (maker: string | undefined): boolean => !!maker && !!chat && (maker === chat.me || chat.can('channels'))
-    // Opened again once the change is in the log, so the board shows it.
-    const thenReopen = (change: (c: RoomChat) => Promise<unknown>): void =>
-      void this.publish(change).then(() => {
-        if (button.isConnected) this.openBoard(button)
-      })
     openSoundboard({
       anchor: button,
       onPick: (id) => this.sendSound(id),
       sounds: this.allSounds(),
       groups: this.allGroups(),
-      onAdd: (group) => void this.addSound(group),
-      onAddGroup: () => void this.saveGroup(null),
-      canChange: (id) => mayChange(chat?.boardSounds().find((b) => CUSTOM + b.id === id)?.maker),
-      onEdit: (id) => void this.editSound(id),
-      onRemove: (id) => {
-        const sound = this.findSound(id)
-        if (!sound || !window.confirm(`Take ${sound.label} off the soundboard for everybody?`)) return
-        void this.publish((c) => c.dropBoardSound(id.slice(CUSTOM.length)))
-      },
-      onMove: (id, group) => thenReopen((c) => c.moveBoardSound(id.slice(CUSTOM.length), group)),
-      canChangeGroup: (id) => mayChange(chat?.boardGroups().find((g) => g.id === id)?.maker),
-      onEditGroup: (id) => void this.saveGroup(id),
-      onRemoveGroup: (id) => {
-        const group = this.allGroups().find((g) => g.id === id)
-        if (!group || !window.confirm(`Take the group ${group.label} off for everybody? Its sounds stay, outside any group.`)) return
-        thenReopen((c) => c.dropBoardGroup(id))
-      },
+      onManage: () => void this.openSpaceSettings('soundboard'),
     })
+  }
+
+  /** Whoever added a sound or made a group may change it, and so may a channel keeper. */
+  private mayChangeBoard(maker: string | undefined): boolean {
+    const chat = this.chat
+    return !!maker && !!chat && (maker === chat.me || chat.can('channels'))
+  }
+
+  /** Asks first. `id` is the wire id, with CUSTOM before it. */
+  private async removeSound(id: string): Promise<void> {
+    const sound = this.findSound(id)
+    if (!sound || !window.confirm(`Take ${sound.label} off the soundboard for everybody?`)) return
+    await this.publish((c) => c.dropBoardSound(id.slice(CUSTOM.length)))
+  }
+
+  /** Puts a sound in a group, or in none with ''. */
+  private async moveSound(id: string, group: string): Promise<void> {
+    await this.publish((c) => c.moveBoardSound(id.slice(CUSTOM.length), group))
+  }
+
+  /** Asks first. Its sounds stay, outside any group. */
+  private async removeGroup(id: string): Promise<void> {
+    const group = this.allGroups().find((g) => g.id === id)
+    if (!group || !window.confirm(`Take the group ${group.label} off for everybody? Its sounds stay, outside any group.`)) return
+    await this.publish((c) => c.dropBoardGroup(id))
+  }
+
+  /** The soundboard, for the space settings. */
+  private boardActions(): SoundboardActions {
+    const reopen = (): void => {
+      if (this.settingsOpen === 'space') void this.openSpaceSettings('soundboard')
+    }
+    const after = (work: Promise<unknown>): Promise<void> => work.then(reopen)
+    const chat = this.chat
+    return {
+      groups: () =>
+        (chat?.boardGroups() ?? []).map((g) => ({ id: g.id, label: g.label, emoji: g.emoji, mayChange: this.mayChangeBoard(g.maker) })),
+      sounds: () =>
+        (chat?.boardSounds() ?? []).map((b) => ({
+          id: CUSTOM + b.id,
+          label: b.label,
+          emoji: b.emoji,
+          group: b.group,
+          by: b.maker === chat?.me ? 'you' : chat?.nameOf(b.maker) || shortKey(b.maker),
+          mayChange: this.mayChangeBoard(b.maker),
+        })),
+      play: (id) => {
+        void this.play(id).then((seconds) => {
+          if (!seconds) toast('Sounds are off. Turn them on in your own Settings to hear them.', 'info', 4000)
+        })
+      },
+      add: (group) => after(this.addSound(group)),
+      addGroup: () => after(this.saveGroup(null)),
+      edit: (id) => after(this.editSound(id)),
+      remove: (id) => after(this.removeSound(id)),
+      move: (id, group) => after(this.moveSound(id, group)),
+      editGroup: (id) => after(this.saveGroup(id)),
+      removeGroup: (id) => after(this.removeGroup(id)),
+    }
   }
 
   /** `group` is the group the sound goes in at first, or '' for none. */
@@ -1041,7 +1077,6 @@ export class SpaceView {
     if (!answer || !name) return
     if (had && name === had.label && answer.emoji === had.emoji) return
     await this.publish((c) => c.saveBoardGroup(had?.id ?? randomId(), name, answer.emoji || '📁'))
-    if (this.boardButton.isConnected) this.openBoard(this.boardButton)
   }
 
   private sendSpoken(arg: string): void {
@@ -2290,12 +2325,13 @@ export class SpaceView {
   }
 
   /** What your level lets you change in this space's settings. */
-  private spaceRights(): { space: boolean; levels: boolean; remove: boolean; webhooks: boolean; any: boolean } {
+  private spaceRights(): { space: boolean; levels: boolean; remove: boolean; webhooks: boolean; soundboard: boolean; any: boolean } {
     const space = this.chat?.can('space') === true
     const levels = this.chat?.can('levels') === true
     const remove = this.chat?.can('remove') === true
     const webhooks = this.chat?.can('webhooks') === true
-    return { space, levels, remove, webhooks, any: space || levels || remove || webhooks }
+    const soundboard = this.chat?.can('soundboard') === true
+    return { space, levels, remove, webhooks, soundboard, any: space || levels || remove || webhooks || soundboard }
   }
 
   /** Said before somebody is removed, when that stops the space's webhooks. */
@@ -2390,6 +2426,7 @@ export class SpaceView {
         can: rights,
         levels: () => this.levelsEditor(),
         hooks: this.hookActions(),
+        board: this.boardActions(),
         members: () => this.memberRows(),
         setLevel: (key, level) => this.setRole(key, level),
         kick: async (key) => {
