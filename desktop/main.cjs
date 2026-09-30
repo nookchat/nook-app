@@ -2,7 +2,8 @@
 // links point at the same place as on the web and the service worker works.
 // The shell adds what a browser tab cannot: a picker for a screen or a window,
 // the system sound on Windows, the game you are playing, the unread count on
-// its icon, and updates of itself. It also lists your game recordings, to share one.
+// its icon, and updates of itself. It also lists your game recordings, to share one,
+// and gets the sound of a YouTube video for the soundboard.
 
 const {
   app,
@@ -27,6 +28,7 @@ const { editMenu } = require('./edit-menu.cjs')
 const { pickerBounds, restoreBounds, screenOf } = require('./placement.cjs')
 const { watchUpdates } = require('./updates.cjs')
 const recordings = require('./recordings.cjs')
+const { youtubeAudio } = require('./youtube.cjs')
 
 app.setName('Nook')
 // Chromium keeps a key in the macOS Keychain to seal its cookies. The app is signed ad hoc, so
@@ -400,6 +402,13 @@ ipcMain.on('recordings:show', (ev, id) => {
   const where = recordings.place(id)
   if (where) shell.showItemInFolder(where)
 })
+
+// The sound of a YouTube video, for the soundboard: { title, bytes, type } or { error }.
+ipcMain.handle('youtube:audio', (ev, url) =>
+  isHome(ev.sender.getURL()) && typeof url === 'string'
+    ? youtubeAudio(path.join(app.getPath('userData'), 'yt-dlp'), url)
+    : { error: 'Not from Nook.' },
+)
 
 ipcMain.on('window:control', (ev, action) => {
   const win = BrowserWindow.fromWebContents(ev.sender)

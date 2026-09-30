@@ -23,6 +23,7 @@ import {
   type Authority,
   type ChannelInfo,
   type NoteInfo,
+  type BoardGroup,
   type BoardSound,
   type EventKind,
   type HookInfo,
@@ -100,8 +101,29 @@ export class RoomChat {
     return this.log.boardSounds()
   }
 
-  addBoardSound(id: string, label: string, emoji: string, file: Attachment): Promise<LogEvent> {
-    return this.write('board', { id, label: label.slice(0, 24), emoji: oneEmoji(emoji), file })
+  boardGroups(): BoardGroup[] {
+    return this.log.boardGroups()
+  }
+
+  /** `group` is the id of the group it goes in, or '' for none. */
+  addBoardSound(id: string, label: string, emoji: string, file: Attachment, group = ''): Promise<LogEvent> {
+    const body: Record<string, unknown> = { id, label: label.slice(0, 24), emoji: oneEmoji(emoji), file }
+    if (group) body.in = group
+    return this.write('board', body)
+  }
+
+  /** Puts a sound in a group, or in none with ''. */
+  moveBoardSound(id: string, group: string): Promise<LogEvent> {
+    return this.write('board', { id, in: group })
+  }
+
+  /** Makes the group when the id is new, or renames it. */
+  saveBoardGroup(id: string, label: string, emoji: string): Promise<LogEvent> {
+    return this.write('board', { id, group: true, label: label.slice(0, 24), emoji: oneEmoji(emoji) })
+  }
+
+  dropBoardGroup(id: string): Promise<LogEvent> {
+    return this.write('board', { id, group: true, gone: true })
   }
 
   editBoardSound(id: string, label: string, emoji: string): Promise<LogEvent> {

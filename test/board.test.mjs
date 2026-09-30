@@ -445,6 +445,124 @@ try {
   )
   check('a name that is not on the board says so', complained)
 
+  // A tone of any length, as a mono 16-bit WAV file.
+  const tone = (seconds) => {
+    const n = Math.round(rate * seconds)
+    const out = Buffer.alloc(44 + n * 2)
+    out.write('RIFF', 0)
+    out.writeUInt32LE(36 + n * 2, 4)
+    out.write('WAVEfmt ', 8)
+    out.writeUInt32LE(16, 16)
+    out.writeUInt16LE(1, 20)
+    out.writeUInt16LE(1, 22)
+    out.writeUInt32LE(rate, 24)
+    out.writeUInt32LE(rate * 2, 28)
+    out.writeUInt16LE(2, 32)
+    out.writeUInt16LE(16, 34)
+    out.write('data', 36)
+    out.writeUInt32LE(n * 2, 40)
+    for (let i = 0; i < n; i++) out.writeInt16LE(Math.round(Math.sin((i / rate) * 2 * Math.PI * 330) * 9000), 44 + i * 2)
+    return out
+  }
+  // A sound longer than one may play opens on its waveform, and only the part picked goes out.
+  await alice.click('button[aria-label="Soundboard"]')
+  await alice.waitForSelector('.sound-pop')
+  const longChooser = alice.waitForEvent('filechooser')
+  await alice.click('button[aria-label="Add a sound"]')
+  await (await longChooser).setFiles({ name: 'long tone.wav', mimeType: 'audio/wav', buffer: tone(25) })
+  await alice.waitForSelector('.sound-maker .sound-wave')
+  check('a long sound opens with a small waveform of all of it', await alice.$eval('.sound-maker .sound-overview', () => true).catch(() => false))
+  const picked = await alice.textContent('.sound-maker .clip-controls .tiny.faint')
+  check('and the part picked at first is ten seconds', picked?.startsWith('10.0 s'), picked)
+  const nameFirst = await alice.inputValue('.sound-maker .ask-input')
+  check('its name comes from the file', nameFirst === 'long tone', nameFirst)
+  await alice.fill('.sound-maker .ask-input', 'Long')
+  await alice.click('.sound-maker button:text-is("Add")')
+  const longShown = await alice
+    .waitForSelector('button[aria-label="Play Long for everybody"]', { state: 'attached', timeout: 15_000 })
+    .then(() => true)
+    .catch(() => false)
+  check('and the board shows it', longShown || (await alice.click('button[aria-label="Soundboard"]'), await alice.waitForSelector('button[aria-label="Play Long for everybody"]', { timeout: 15_000 }).then(() => true).catch(() => false)))
+  if (await alice.$('.sound-pop')) await alice.keyboard.press('Escape')
+  // Ten seconds of it, cut from the middle: mono at 44.1 kHz, 16-bit, and the 44 bytes before it.
+  const cutOut = await alice.evaluate(async (bytes) => {
+    const { cutPart } = await import('/src/ui/sound-maker.ts')
+    const buffer = await new OfflineAudioContext(1, 1, 44100).decodeAudioData(new Uint8Array(bytes).buffer)
+    const file = await cutPart(buffer, 7, 17, 'Long')
+    return { name: file.name, size: file.size }
+  }, [...tone(25)])
+  check('only the part picked goes out, as a WAV file', cutOut.name === 'Long.wav' && cutOut.size === 44 + 441000 * 2, JSON.stringify(cutOut))
+
+  // Groups: anybody who may add a sound may make one and sort the board.
+  await alice.click('button[aria-label="Soundboard"]')
+  await alice.waitForSelector('.sound-pop')
+  await alice.click('.sound-pop button:text-is("New group")')
+  await alice.waitForSelector('.ask-modal .sound-face')
+  await alice.fill('.ask-modal .ask-input', 'Memes')
+  await alice.click('.ask-modal button:text-is("Make")')
+  const madeGroup = await alice
+    .waitForSelector('.sound-pop .sound-group-head:has-text("Memes")', { timeout: 15_000 })
+    .then(() => true)
+    .catch(() => false)
+  check('a new group shows on the board', madeGroup)
+  await alice.click('button[aria-label="Play Quack for everybody"]', { button: 'right' })
+  await alice.click('.menu-item:has-text("Memes")')
+  const moved = await alice
+    .waitForSelector('.sound-group[aria-label="Memes"] button[aria-label="Play Quack for everybody"]', { timeout: 15_000 })
+    .then(() => true)
+    .catch(() => false)
+  check('a sound moves into a group from its menu', moved)
+  await alice.click('.sound-group-head:has-text("Memes")')
+  check('a group folds shut', await alice.$eval('.sound-group[aria-label="Memes"]', (el) => el.classList.contains('folded')))
+  await alice.click('button[aria-label="Soundboard"]')
+  await alice.click('button[aria-label="Soundboard"]')
+  await alice.waitForSelector('.sound-pop')
+  check('and stays shut the next time', await alice.$eval('.sound-group[aria-label="Memes"]', (el) => el.classList.contains('folded')))
+  await alice.click('.sound-group-head:has-text("Memes")')
+
+  const groupChooser = alice.waitForEvent('filechooser')
+  await alice.click('button[aria-label="Add a sound to Memes"]')
+  await (await groupChooser).setFiles({ name: 'beep.wav', mimeType: 'audio/wav', buffer: wav })
+  await alice.waitForSelector('.sound-maker .sound-group-pick')
+  const inGroup = await alice.$eval('.sound-maker .sound-group-pick', (el) => el.selectedOptions[0]?.textContent ?? '')
+  check('a sound added from a group goes in that group', inGroup.endsWith('Memes'), inGroup)
+  await alice.click('.sound-maker button:text-is("Cancel")')
+
+  await alice.click('button[aria-label="Soundboard"]')
+  await alice.waitForSelector('.sound-pop')
+  alice.once('dialog', (d) => void d.accept())
+  await alice.click('.sound-group-head:has-text("Memes")', { button: 'right' })
+  await alice.click('.menu-item:has-text("Take Memes off")')
+  const loose = await alice
+    .waitForSelector('.sound-pop > .sound-sections > .sound-grid button[aria-label="Play Quack for everybody"]', { timeout: 15_000 })
+    .then(() => true)
+    .catch(() => false)
+  check('a group taken off leaves its sounds on the board, outside any group', loose && !(await alice.$('.sound-group')))
+  await alice.keyboard.press('Escape')
+
+  // In the desktop app a sound can come from a YouTube link. The shell is stood in for here.
+  const ytWav = [...tone(40)]
+  await alice.evaluate((bytes) => {
+    window.nookDesktop = { youtubeAudio: async () => ({ title: 'A song from YouTube', bytes: new Uint8Array(bytes), type: 'audio/wav' }) }
+  }, ytWav)
+  await alice.click('button[aria-label="Soundboard"]')
+  await alice.waitForSelector('.sound-pop')
+  await alice.click('button[aria-label="Add a sound"]')
+  await alice.waitForSelector('.sound-maker input[aria-label="A YouTube link"]')
+  await alice.fill('.sound-maker input[aria-label="A YouTube link"]', 'https://example.com/watch?v=x')
+  await alice.press('.sound-maker input[aria-label="A YouTube link"]', 'Enter')
+  const refused = await alice.textContent('.sound-maker .sound-status')
+  check('a link that is not YouTube is refused', refused?.includes('not a YouTube link'), refused)
+  await alice.fill('.sound-maker input[aria-label="A YouTube link"]', 'https://youtu.be/dQw4w9WgXcQ?t=12')
+  await alice.press('.sound-maker input[aria-label="A YouTube link"]', 'Enter')
+  await alice.waitForSelector('.sound-maker .sound-wave')
+  const startsAt = await alice.getAttribute('.sound-maker .clip-handle.start', 'aria-valuenow')
+  check('a YouTube link opens on its waveform, from the t= in the link', startsAt === '12', startsAt)
+  const ytName = await alice.inputValue('.sound-maker .ask-input')
+  check('and its name comes from the video', ytName === 'A song from YouTube', ytName)
+  await alice.click('.sound-maker button:text-is("Cancel")')
+  await alice.evaluate(() => delete window.nookDesktop)
+
   // No key and no archive here, so the grid is empty.
   await alice.click('button[aria-label="Find a GIF"]')
   await alice.waitForSelector('.gif-pop')

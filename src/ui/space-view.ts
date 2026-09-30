@@ -50,7 +50,8 @@ import { spaceFace, switcherButton } from './space-switcher'
 import { voiceDock } from './call'
 import { chirpMention, chirpMessage, chirpStream, isNews, speak } from './sounds'
 import type { LinkQuality } from '../net/voice'
-import { CUSTOM, CUSTOM_MAX_S, decodeClip, openSoundboard, playClip, type Sound } from './soundboard'
+import { CUSTOM, decodeClip, openSoundboard, playClip, type Sound, type SoundGroup } from './soundboard'
+import { canUseYouTube, makeSound, MAX_SOUND_BYTES } from './sound-maker'
 import { ask, askChannel, askSound, confirmDanger, pickSome } from './ask'
 import { saveScreen } from '../store/screen'
 import { channelMuted, channelMutedItself, MUTED_CHANGED, muteChannel, muteSpace, spaceMuted } from '../store/mute'
@@ -93,7 +94,6 @@ function clockFor(ms: number): string {
   const seconds = String(all % 60).padStart(2, '0')
   return hours ? `${hours}:${String(minutes).padStart(2, '0')}:${seconds}` : `${minutes}:${seconds}`
 }
-const MAX_SOUND_BYTES = 2 * 1024 * 1024
 const TTS_EVERY_MS = 5000
 const TTS_MAX_CHARS = 280
 const TYPING_EVERY_MS = 2000
@@ -237,6 +237,11 @@ function gifCell(g: Gif): HTMLVideoElement | HTMLImageElement {
 const NO_VOICE = '*'
 /** A share heard of this soon after it started has just started, and plays its sound. */
 const SHARE_NEW_MS = 10_000
+
+/** 16 hex digits: the id of a sound or a group on the board. */
+function randomId(): string {
+  return [...crypto.getRandomValues(new Uint8Array(8))].map((b) => b.toString(16).padStart(2, '0')).join('')
+}
 
 export class SpaceView {
   private readonly root: HTMLElement
@@ -828,7 +833,11 @@ export class SpaceView {
 
   /** The sounds people added here, by wire id. */
   private allSounds(): Sound[] {
-    return (this.chat?.boardSounds() ?? []).map((b) => ({ id: CUSTOM + b.id, label: b.label, emoji: b.emoji }))
+    return (this.chat?.boardSounds() ?? []).map((b) => ({ id: CUSTOM + b.id, label: b.label, emoji: b.emoji, group: b.group }))
+  }
+
+  private allGroups(): SoundGroup[] {
+    return (this.chat?.boardGroups() ?? []).map((g) => ({ id: g.id, label: g.label, emoji: g.emoji }))
   }
 
   private findSound(id: string): Sound | null {
@@ -947,56 +956,67 @@ export class SpaceView {
     }
     this.warmClips()
     const chat = this.chat
+    const mayChange = (maker: string | undefined): boolean => !!maker && !!chat && (maker === chat.me || chat.can('channels'))
+    // Opened again once the change is in the log, so the board shows it.
+    const thenReopen = (change: (c: RoomChat) => Promise<unknown>): void =>
+      void this.publish(change).then(() => {
+        if (button.isConnected) this.openBoard(button)
+      })
     openSoundboard({
       anchor: button,
       onPick: (id) => this.sendSound(id),
       sounds: this.allSounds(),
-      onAdd: () => void this.addSound(),
-      canChange: (id) => {
-        const board = chat?.boardSounds().find((b) => CUSTOM + b.id === id)
-        return !!board && !!chat && (board.maker === chat.me || chat.can('channels'))
-      },
+      groups: this.allGroups(),
+      onAdd: (group) => void this.addSound(group),
+      onAddGroup: () => void this.saveGroup(null),
+      canChange: (id) => mayChange(chat?.boardSounds().find((b) => CUSTOM + b.id === id)?.maker),
       onEdit: (id) => void this.editSound(id),
       onRemove: (id) => {
         const sound = this.findSound(id)
         if (!sound || !window.confirm(`Take ${sound.label} off the soundboard for everybody?`)) return
         void this.publish((c) => c.dropBoardSound(id.slice(CUSTOM.length)))
       },
+      onMove: (id, group) => thenReopen((c) => c.moveBoardSound(id.slice(CUSTOM.length), group)),
+      canChangeGroup: (id) => mayChange(chat?.boardGroups().find((g) => g.id === id)?.maker),
+      onEditGroup: (id) => void this.saveGroup(id),
+      onRemoveGroup: (id) => {
+        const group = this.allGroups().find((g) => g.id === id)
+        if (!group || !window.confirm(`Take the group ${group.label} off for everybody? Its sounds stay, outside any group.`)) return
+        thenReopen((c) => c.dropBoardGroup(id))
+      },
     })
   }
 
-  private async addSound(): Promise<void> {
-    const pick = h('input', { type: 'file' })
-    pick.accept = 'audio/*'
-    const file = await new Promise<File | null>((ok) => {
-      pick.addEventListener('change', () => ok(pick.files?.[0] ?? null), { once: true })
-      pick.addEventListener('cancel', () => ok(null), { once: true })
-      pick.click()
-    })
-    if (!file) return
-    if (file.size > MAX_SOUND_BYTES) {
+  /** `group` is the group the sound goes in at first, or '' for none. */
+  private async addSound(group = ''): Promise<void> {
+    // In a browser the file comes first, from the click itself; the desktop app asks for a file or a link.
+    let file: File | null = null
+    if (!canUseYouTube()) {
+      const pick = h('input', { type: 'file' })
+      pick.accept = 'audio/*,video/*'
+      file = await new Promise<File | null>((ok) => {
+        pick.addEventListener('change', () => ok(pick.files?.[0] ?? null), { once: true })
+        pick.addEventListener('cancel', () => ok(null), { once: true })
+        pick.click()
+      })
+      if (!file) return
+    }
+    const made = await makeSound({ file, groups: this.allGroups(), group })
+    if (!made) return
+    if (made.file.size > MAX_SOUND_BYTES) {
       toast(`A sound may be at most ${Math.round(MAX_SOUND_BYTES / 1024 / 1024)} MB.`, 'warn')
       return
     }
-    let length = 0
     try {
-      length = (await decodeClip(await file.arrayBuffer())).duration
+      // Checked as every player will open it, before it goes out.
+      await decodeClip(await made.file.arrayBuffer())
     } catch {
-      toast('That file is not a sound this browser can play.', 'warn')
+      toast('That sound could not be opened after the cut.', 'warn')
       return
     }
-    if (length > CUSTOM_MAX_S + 0.5) {
-      toast(`A sound may be at most ${CUSTOM_MAX_S} seconds. That one is ${Math.round(length)}.`, 'warn')
-      return
-    }
-    const answer = await askSound('Add a sound', file.name.replace(/\.[^.]+$/, '').slice(0, 24), '🔊', 'Add')
-    const named = answer?.name.trim() ?? ''
-    if (!answer || !named) return
     try {
-      const sent = await filesFor(this.space).send(file, () => undefined, new AbortController().signal)
-      const bytes = crypto.getRandomValues(new Uint8Array(8))
-      const id = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')
-      await this.publish((c) => c.addBoardSound(id, named, answer.emoji || '🔊', sent))
+      const sent = await filesFor(this.space).send(made.file, () => undefined, new AbortController().signal)
+      await this.publish((c) => c.addBoardSound(randomId(), made.name, made.emoji || '🔊', sent, made.group))
     } catch (err) {
       toast(err instanceof Error ? err.message : 'That sound could not be added.', 'bad')
     }
@@ -1010,6 +1030,18 @@ export class SpaceView {
     const name = answer.name.trim() || sound.label
     if (name === sound.label && answer.emoji === sound.emoji) return
     await this.publish((c) => c.editBoardSound(id.slice(CUSTOM.length), name, answer.emoji))
+  }
+
+  /** Makes a soundboard group, or with an id renames that one. */
+  private async saveGroup(id: string | null): Promise<void> {
+    const had = id ? this.allGroups().find((g) => g.id === id) : null
+    if (id && !had) return
+    const answer = await askSound(had ? `Change ${had.label}` : 'New group', had?.label ?? '', had?.emoji ?? '📁', had ? 'Save' : 'Make')
+    const name = answer?.name.trim() ?? ''
+    if (!answer || !name) return
+    if (had && name === had.label && answer.emoji === had.emoji) return
+    await this.publish((c) => c.saveBoardGroup(had?.id ?? randomId(), name, answer.emoji || '📁'))
+    if (this.boardButton.isConnected) this.openBoard(this.boardButton)
   }
 
   private sendSpoken(arg: string): void {

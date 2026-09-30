@@ -1,7 +1,8 @@
 // Tells the web app it runs in the desktop shell, what game is running, what
 // song Spotify plays, and when a newer desktop app is out. The page gives it the
 // unread count for the icon.
-// It lets the page list your game recordings and play them from nook-rec:// links.
+// It lets the page list your game recordings and play them from nook-rec:// links,
+// and get the sound of a YouTube video for the soundboard.
 // It also draws the title bar in place of the system one: a strip to drag the
 // window by, in the page colour, with the Nook icon on the left, the window's
 // title in the middle with the space's icon before it, as Discord does, and on
@@ -50,6 +51,8 @@ contextBridge.exposeInMainWorld('nookDesktop', {
   installUpdate: () => ipcRenderer.send('update:install'),
   /** The unread count on the Dock or taskbar icon. `overlay` is a PNG data URL, for Windows. */
   setBadge: (count, overlay) => ipcRenderer.send('badge:set', Number(count) || 0, typeof overlay === 'string' ? overlay : ''),
+  /** The sound of a YouTube video, for the soundboard: { title, bytes, type } or { error }. */
+  youtubeAudio: (url) => ipcRenderer.invoke('youtube:audio', String(url)),
   /** Your game recordings, from Steam, NVIDIA and your videos folder, and the folders the list looks in. */
   recordings: {
     /** The folders: [{ path, label, kind: steam | nvidia | videos | folder, found, exists }]. */

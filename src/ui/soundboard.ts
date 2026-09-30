@@ -2,10 +2,18 @@ import { h } from './dom'
 import { icon } from './icons'
 import { placeNear } from './emoji'
 import { lengthOf, loudnessOf, peakOf } from './loudness'
-import { onContextMenu } from './menu'
+import { onContextMenu, type MenuEntry } from './menu'
 import { sharedAudio, soundsOn } from './sounds'
 
 export interface Sound {
+  id: string
+  label: string
+  emoji: string
+  /** The id of its group, or '' when it stands outside every group. */
+  group: string
+}
+
+export interface SoundGroup {
   id: string
   label: string
   emoji: string
@@ -17,6 +25,28 @@ export const CUSTOM = 'c:'
 export const CUSTOM_MAX_S = 10
 
 const VOLUME_KEY = 'nook:board-volume'
+const FOLDED_KEY = 'nook:board-folded'
+
+/** The groups this person folded shut, by id. Only on this device. */
+function foldedGroups(): Set<string> {
+  try {
+    const saved: unknown = JSON.parse(localStorage.getItem(FOLDED_KEY) ?? '[]')
+    return new Set(Array.isArray(saved) ? saved.filter((id): id is string => typeof id === 'string') : [])
+  } catch {
+    return new Set()
+  }
+}
+
+function foldGroup(id: string, folded: boolean): void {
+  const all = foldedGroups()
+  if (folded) all.add(id)
+  else all.delete(id)
+  try {
+    localStorage.setItem(FOLDED_KEY, JSON.stringify([...all]))
+  } catch {
+    /* storage can be blocked */
+  }
+}
 
 /** How loud the soundboard plays here, from 0 to 1. */
 export function boardVolume(): number {
@@ -198,11 +228,20 @@ interface BoardOptions {
   onPick(id: string): void
   /** Sounds people added, with ids that start with CUSTOM. */
   sounds: Sound[]
-  onAdd?(): void
+  groups: SoundGroup[]
+  /** Adds a sound to the group with this id, or to none with ''. */
+  onAdd?(group: string): void
+  onAddGroup?(): void
   /** Only called for sounds this person may change: whoever added it, or a channel keeper. */
   canChange?(id: string): boolean
   onEdit?(id: string): void
   onRemove?(id: string): void
+  /** Puts a sound in the group with this id, or in none with ''. */
+  onMove?(id: string, group: string): void
+  /** Only called for groups this person may change: whoever made it, or a channel keeper. */
+  canChangeGroup?(id: string): boolean
+  onEditGroup?(id: string): void
+  onRemoveGroup?(id: string): void
 }
 
 let open: { close(): void; anchor: HTMLElement } | null = null
@@ -233,27 +272,64 @@ export function openSoundboard(options: BoardOptions): void {
   }
   open?.close()
 
-  const grid = h('div', { class: 'sound-grid' })
+  const sections = h('div', { class: 'sound-sections' })
   const foot = h('div', { class: 'tiny faint' })
 
   const pop = h('div', { class: 'sound-pop', role: 'dialog', ariaLabel: 'Soundboard' }, [
     h('div', { class: 'row spread' }, [
       h('span', { class: 'eyebrow', text: 'Soundboard' }),
-      h(
-        'button',
-        {
-          class: 'ghost icon-only pop-close',
-          title: 'Close',
-          ariaLabel: 'Close the soundboard',
-          on: { click: () => close() },
-        },
-        [icon('close', 18)],
-      ),
+      h('div', { class: 'row sound-head-tools' }, [
+        options.onAddGroup
+          ? h('button', {
+              class: 'ghost small',
+              title: 'Make a group to sort the sounds into, for everybody in this space',
+              text: 'New group',
+              on: {
+                click: () => {
+                  close()
+                  options.onAddGroup?.()
+                },
+              },
+            })
+          : null,
+        h(
+          'button',
+          {
+            class: 'ghost icon-only pop-close',
+            title: 'Close',
+            ariaLabel: 'Close the soundboard',
+            on: { click: () => close() },
+          },
+          [icon('close', 18)],
+        ),
+      ]),
     ]),
-    grid,
+    sections,
     volumeRow(),
     foot,
   ])
+
+  const groupIds = new Set(options.groups.map((g) => g.id))
+  const groupOf = (sound: Sound): string => (groupIds.has(sound.group) ? sound.group : '')
+
+  const moveItems = (sound: Sound): MenuEntry[] => {
+    if (!options.onMove || options.groups.length === 0) return []
+    const here = groupOf(sound)
+    const places = [...options.groups.map((g) => ({ id: g.id, label: `${g.emoji} ${g.label}` })), { id: '', label: 'No group' }]
+    return [
+      'line',
+      { heading: 'Move to' },
+      ...places
+        .filter((place) => place.id !== here)
+        .map((place) => ({
+          label: place.label,
+          run: () => {
+            close()
+            options.onMove?.(sound.id, place.id)
+          },
+        })),
+    ]
+  }
 
   const cell = (sound: Sound): HTMLElement => {
     const button = h(
@@ -269,48 +345,107 @@ export function openSoundboard(options: BoardOptions): void {
         h('span', { class: 'sound-name', text: sound.label }),
       ],
     )
-    if (options.canChange?.(sound.id)) {
-      onContextMenu(button, () => [
-        {
-          label: 'Change the name or emoji',
-          run: () => {
-            close()
-            options.onEdit?.(sound.id)
-          },
-        },
-        {
-          label: `Take ${sound.label} off`,
-          note: 'For everybody in this space',
-          danger: true,
-          run: () => options.onRemove?.(sound.id),
-        },
-      ])
+    const mine = options.canChange?.(sound.id) ?? false
+    if (mine || (options.onMove && options.groups.length > 0)) {
+      onContextMenu(button, () => {
+        const items: MenuEntry[] = mine
+          ? [
+              {
+                label: 'Change the name or emoji',
+                run: () => {
+                  close()
+                  options.onEdit?.(sound.id)
+                },
+              },
+              {
+                label: `Take ${sound.label} off`,
+                note: 'For everybody in this space',
+                danger: true,
+                run: () => options.onRemove?.(sound.id),
+              },
+            ]
+          : []
+        const moves = moveItems(sound)
+        return items.length ? [...items, ...moves] : moves.slice(1)
+      })
     }
     return button
   }
 
-  for (const sound of options.sounds) grid.append(cell(sound))
-  if (options.sounds.length === 0) {
-    grid.append(h('div', { class: 'sound-empty tiny faint', text: 'No sounds here yet. Add one of up to 10 seconds, with its own emoji.' }))
-  }
-  if (options.onAdd) {
-    grid.append(
-      h(
-        'button',
-        {
-          class: 'sound-cell sound-add',
-          title: 'Add a sound for this space, up to 10 seconds',
-          ariaLabel: 'Add a sound',
-          on: {
-            click: () => {
-              close()
-              options.onAdd?.()
-            },
+  const addCell = (group: SoundGroup | null): HTMLElement =>
+    h(
+      'button',
+      {
+        class: 'sound-cell sound-add',
+        title: group ? `Add a sound to ${group.label}, up to 10 seconds` : 'Add a sound for this space, up to 10 seconds',
+        ariaLabel: group ? `Add a sound to ${group.label}` : 'Add a sound',
+        on: {
+          click: () => {
+            close()
+            options.onAdd?.(group?.id ?? '')
           },
         },
-        [icon('plus', 20), h('span', { class: 'sound-name', text: 'Add a sound' })],
-      ),
+      },
+      [icon('plus', 20), h('span', { class: 'sound-name', text: 'Add a sound' })],
     )
+
+  const loose = options.sounds.filter((sound) => !groupOf(sound))
+  const looseGrid = h('div', { class: 'sound-grid' }, loose.map(cell))
+  if (options.sounds.length === 0) {
+    looseGrid.append(h('div', { class: 'sound-empty tiny faint', text: 'No sounds here yet. Add one of up to 10 seconds, with its own emoji.' }))
+  }
+  if (options.onAdd) looseGrid.append(addCell(null))
+  sections.append(looseGrid)
+
+  const folded = foldedGroups()
+  for (const group of options.groups) {
+    const inIt = options.sounds.filter((sound) => sound.group === group.id)
+    const grid = h('div', { class: 'sound-grid' }, inIt.map(cell))
+    if (options.onAdd) grid.append(addCell(group))
+    const head = h(
+      'button',
+      {
+        class: 'sound-group-head',
+        title: 'Fold or open this group, only for you',
+        on: {
+          click: () => {
+            const shut = !section.classList.contains('folded')
+            section.classList.toggle('folded', shut)
+            head.setAttribute('aria-expanded', String(!shut))
+            foldGroup(group.id, shut)
+          },
+        },
+      },
+      [
+        h('span', { class: 'sound-group-fold' }, [icon('chevron-down', 14)]),
+        h('span', { class: 'sound-group-emoji', text: group.emoji }),
+        h('span', { class: 'sound-group-name', text: group.label }),
+        h('span', { class: 'tiny faint', text: String(inIt.length) }),
+      ],
+    )
+    head.setAttribute('aria-expanded', String(!folded.has(group.id)))
+    const section = h('section', { class: `sound-group${folded.has(group.id) ? ' folded' : ''}`, ariaLabel: group.label }, [head, grid])
+    if (options.canChangeGroup?.(group.id)) {
+      onContextMenu(head, () => [
+        {
+          label: 'Change the name or emoji',
+          run: () => {
+            close()
+            options.onEditGroup?.(group.id)
+          },
+        },
+        {
+          label: `Take ${group.label} off`,
+          note: 'Its sounds stay, outside any group',
+          danger: true,
+          run: () => {
+            close()
+            options.onRemoveGroup?.(group.id)
+          },
+        },
+      ])
+    }
+    sections.append(section)
   }
 
   const onKey = (ev: KeyboardEvent): void => {

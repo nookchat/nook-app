@@ -785,7 +785,7 @@ export class RoomLog {
       const sounds = new Map<string, BoardSound>()
       const gone = new Set<string>()
       for (const e of this.all()) {
-        if (e.kind !== 'board' || auth.isKicked(e.author)) continue
+        if (e.kind !== 'board' || e.body.group === true || auth.isKicked(e.author)) continue
         // Only somebody whose level has the soundboard adds to it, or changes a sound on it.
         if (e.body.gone !== true && !auth.can(e.author, 'soundboard')) continue
         const id = cleanNoteId(e.body.id)
@@ -795,6 +795,11 @@ export class RoomLog {
           if (!had || (e.author !== had.maker && !auth.can(e.author, 'channels'))) continue
           sounds.delete(id)
           gone.add(id)
+          continue
+        }
+        // A move to another group: anybody who may add a sound may sort the board.
+        if (had && typeof e.body.in === 'string' && e.body.label === undefined) {
+          sounds.set(id, { ...had, group: cleanNoteId(e.body.in) })
           continue
         }
         if (had) {
@@ -808,9 +813,45 @@ export class RoomLog {
         const file = cleanFiles([e.body.file])[0]
         if (!file || sounds.size >= MAX_BOARD_SOUNDS) continue
         const label = String(e.body.label ?? '').replace(/\s+/g, ' ').trim().slice(0, 24) || 'Sound'
-        sounds.set(id, { id, label, emoji: oneEmoji(String(e.body.emoji ?? '')) || '🔊', file, maker: e.author })
+        const emoji = oneEmoji(String(e.body.emoji ?? '')) || '🔊'
+        sounds.set(id, { id, label, emoji, file, maker: e.author, group: cleanNoteId(e.body.in) })
       }
       return [...sounds.values()]
+    })
+  }
+
+  /**
+   * The groups the soundboard is sorted into. Anybody who may add a sound may make one; its maker or
+   * a channel keeper may rename it or take it off, and its sounds then stand outside any group.
+   */
+  boardGroups(): BoardGroup[] {
+    return this.cached('board-groups', () => {
+      const auth = this.authority()
+      const groups = new Map<string, BoardGroup>()
+      const gone = new Set<string>()
+      for (const e of this.all()) {
+        if (e.kind !== 'board' || e.body.group !== true || auth.isKicked(e.author)) continue
+        if (e.body.gone !== true && !auth.can(e.author, 'soundboard')) continue
+        const id = cleanNoteId(e.body.id)
+        if (!id || gone.has(id)) continue
+        const had = groups.get(id)
+        if (had && e.author !== had.maker && !auth.can(e.author, 'channels')) continue
+        if (e.body.gone === true) {
+          if (!had) continue
+          groups.delete(id)
+          gone.add(id)
+          continue
+        }
+        const label = String(e.body.label ?? '').replace(/\s+/g, ' ').trim().slice(0, 24)
+        const emoji = oneEmoji(String(e.body.emoji ?? ''))
+        if (had) {
+          groups.set(id, { ...had, label: label || had.label, emoji: emoji || had.emoji })
+          continue
+        }
+        if (groups.size >= MAX_BOARD_GROUPS) continue
+        groups.set(id, { id, label: label || 'Group', emoji: emoji || '📁', maker: e.author })
+      }
+      return [...groups.values()]
     })
   }
 
@@ -1297,12 +1338,22 @@ export interface ThreadInfo {
 }
 
 export const MAX_BOARD_SOUNDS = 60
+export const MAX_BOARD_GROUPS = 20
 
 export interface BoardSound {
   id: string
   label: string
   emoji: string
   file: Attachment
+  maker: string
+  /** The id of its group, or '' when it is in none. A group that is gone counts as none. */
+  group: string
+}
+
+export interface BoardGroup {
+  id: string
+  label: string
+  emoji: string
   maker: string
 }
 

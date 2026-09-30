@@ -2643,6 +2643,94 @@ button.start {
   min-width: 0;
 }
 
+/* The add a sound dialog: where the sound comes from, then its waveform to cut it. */
+.modal.ask-modal.sound-maker {
+  max-width: 540px;
+}
+
+.sound-maker-body {
+  gap: 12px;
+}
+
+.sound-source {
+  gap: 14px;
+}
+
+button.sound-source-file {
+  justify-content: center;
+  gap: 8px;
+  min-height: 56px;
+  border: 1.5px dashed var(--border-strong);
+}
+
+.sound-source-link {
+  gap: 6px;
+}
+
+.sound-link-row {
+  gap: 8px;
+}
+
+.sound-link {
+  min-width: 0;
+}
+
+.sound-status {
+  min-height: 1lh;
+}
+
+.sound-status.bad {
+  color: var(--bad);
+}
+
+.sound-trimmer {
+  gap: 8px;
+}
+
+.sound-wave {
+  height: 72px;
+  color: var(--fg-faint);
+}
+
+.sound-wave-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* All of a long sound, small, with the part that is picked. A press or a drag moves the part. */
+.sound-overview {
+  position: relative;
+  height: 28px;
+  margin: 0 7px;
+  border-radius: var(--radius-sm);
+  background: var(--select);
+  color: var(--fg-faint);
+  cursor: pointer;
+  touch-action: none;
+}
+
+.sound-overview-window {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--brand) 22%, transparent);
+  box-shadow: inset 0 0 0 1.5px var(--brand);
+  pointer-events: none;
+}
+
+.sound-group-row {
+  gap: 10px;
+}
+
+.sound-group-pick {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .sound-face {
   flex: 0 0 auto;
   width: 46px;
@@ -5726,8 +5814,71 @@ input[type="text"].gif-search {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 6px;
+}
+
+/* The sounds outside any group, then each group under its own head. It scrolls as one. */
+.sound-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   max-height: min(420px, 60vh);
   overflow-y: auto;
+}
+
+.sound-head-tools {
+  gap: 4px;
+}
+
+.sound-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sound-group.folded > .sound-grid {
+  display: none;
+}
+
+.sound-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 6px;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--fg-dim);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sound-group-head:hover {
+  background: var(--hover);
+}
+
+.sound-group-fold {
+  display: inline-flex;
+  color: var(--fg-faint);
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.sound-group.folded .sound-group-fold {
+  transform: rotate(-90deg);
+}
+
+.sound-group-emoji {
+  font-size: 15px;
+}
+
+.sound-group-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .sound-volume {
