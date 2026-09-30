@@ -3,7 +3,8 @@
 
 export type Theme = 'system' | 'light' | 'dark'
 
-const KEY = 'nook.theme.v1'
+export const THEME_KEY = 'nook.theme.v1'
+const KEY = THEME_KEY
 
 /** The choice made on this page, for when storage is blocked. */
 let chosenHere: Theme | null = null

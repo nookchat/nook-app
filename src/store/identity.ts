@@ -92,6 +92,24 @@ export function secretForLinking(): string {
   }
 }
 
+/**
+ * A log out: everything Nook keeps in this browser goes, the key first among it, so the next
+ * start is a first start. The theme stays, as it is the device's and not the person's.
+ */
+export function forgetEverything(keep: string[]): void {
+  try {
+    const kept = keep.map((key) => [key, localStorage.getItem(key)] as const)
+    localStorage.clear()
+    sessionStorage.clear()
+    for (const [key, value] of kept) if (value !== null) localStorage.setItem(key, value)
+  } catch {
+    /* storage blocked: there was nothing kept */
+  }
+  priv = null
+  pub = ''
+  shared.clear()
+}
+
 export function takeIdentity(secret: string): boolean {
   if (!/^[0-9a-f]{64}$/.test(secret)) return false
   try {

@@ -13,7 +13,9 @@ import { saveAvatar, squareThumb } from './avatar'
 import { avatarOf } from './chat-panel'
 import { clear, copyText, h } from './dom'
 import { openEmojiPicker, quickReactions, setQuickReactions } from './emoji'
+import { confirmDanger } from './ask'
 import { icon } from './icons'
+import { logOutHere } from './log-out'
 import { gameCard } from './game-card'
 import { songCard } from './song-card'
 import { enterLinkCode, lastBackup, showBackup, showLinkCode } from './link-device'
@@ -62,6 +64,13 @@ export function settingsView(actions: SettingsActions): HTMLElement {
       : 'Keep a backup, in case this browser forgets you. You have not saved one here yet.'
   }
   sayBackup()
+
+  const logOut = async (): Promise<void> => {
+    const about = lastBackup()
+      ? 'Nook forgets you in this browser: your key, your spaces and your settings. To come back, choose “I have an account”, then link from another device or use your backup file.'
+      : 'Nook forgets you in this browser: your key, your spaces and your settings. You have not saved a backup here. If no other device is linked to you, you lose this account and its spaces for good.'
+    if (await confirmDanger('Log out of Nook?', about, 'Log out')) await logOutHere()
+  }
 
   const picture = h('button', { class: 'welcome-face profile-face', ariaLabel: 'Change your picture', title: 'Change your picture' })
   const removePicture = h('button', { class: 'ghost tiny-btn hidden', text: 'Remove' })
@@ -351,6 +360,13 @@ export function settingsView(actions: SettingsActions): HTMLElement {
             backupNote,
             h('div', { class: 'row wrap' }, [
               h('button', { on: { click: () => showBackup(sayBackup) } }, [icon('download', 15), 'Save a backup']),
+            ]),
+          ),
+          card(
+            'Log out',
+            note('Nook forgets you in this browser. Your spaces and messages stay on your other devices, and in your backup.'),
+            h('div', { class: 'row wrap' }, [
+              h('button', { class: 'danger', on: { click: () => void logOut() } }, [icon('leave', 15), 'Log out']),
             ]),
           ),
         ]),

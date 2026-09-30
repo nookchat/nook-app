@@ -166,6 +166,17 @@ async function syncNow(spaces: SpaceRuntime[]): Promise<void> {
   }
 }
 
+/** A log out: each space hears this device takes no more notifications, and the browser drops its address. */
+export async function forgetPush(spaces: SpaceRuntime[]): Promise<void> {
+  if (!supported()) return
+  for (const space of spaces) {
+    if (!space.chat || space.chat.isClosed || !ours(space)) continue
+    await space.chat.setPushTarget({ id: deviceId(), gone: true }).catch(() => undefined)
+  }
+  const reg = await navigator.serviceWorker.getRegistration()
+  await (await reg?.pushManager.getSubscription())?.unsubscribe()
+}
+
 /** Keeps each space told, as notifications, mutes and spaces come and go. */
 export function watchPush(all: () => SpaceRuntime[], roomsChanged: string): void {
   const again = (): void => syncPush(all)

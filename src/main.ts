@@ -34,6 +34,7 @@ import { ask } from './ui/ask'
 import { watchUnread } from './ui/badge'
 import { bootDone, bootStep } from './ui/boot'
 import { installCalls } from './ui/call'
+import { loggingOut } from './ui/log-out'
 import { clear } from './ui/dom'
 import { HomeView, type DirectRef } from './ui/home-view'
 import { notify, notifyText, notifyWhat, offerNotify } from './ui/notify'
@@ -150,6 +151,11 @@ async function showSettings(): Promise<void> {
     }),
   )
 }
+
+// A log out in another tab cleared what this one runs on: it starts again, at the welcome.
+window.addEventListener('storage', (ev) => {
+  if (ev.key === null && ev.storageArea === localStorage) window.location.replace(window.location.pathname)
+})
 
 function openSpace(space: SpaceRuntime): void {
   const chrome = freshWindow('Nook')
@@ -382,7 +388,7 @@ window.addEventListener('hashchange', () => {
 })
 
 window.addEventListener('beforeunload', (ev) => {
-  if (active?.isLive) {
+  if (active?.isLive && !loggingOut()) {
     ev.preventDefault()
     ev.returnValue = ''
   }
