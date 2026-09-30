@@ -2804,7 +2804,7 @@ export class SpaceView {
     })
   }
 
-  /** A voice channel that takes a dragged person: their device is asked to join it. */
+  /** A voice channel that takes a dragged person: their device is asked to join it. You go there yourself. */
   private takePeople(row: HTMLElement, channel: ChannelInfo): void {
     row.addEventListener('dragover', (ev) => {
       if (!this.personDrag) return
@@ -2822,7 +2822,8 @@ export class SpaceView {
       ev.preventDefault()
       ev.stopPropagation()
       this.personDrag = null
-      void this.moveTo(key, channel.name)
+      if (key === this.chat?.me) void this.joinVoice(channel.name)
+      else void this.moveTo(key, channel.name)
       this.draw()
     })
   }
@@ -2984,7 +2985,8 @@ export class SpaceView {
       if (canEdit) onContextMenu(head, () => this.voiceChannelActions(channel))
       const row = h('div', { class: 'voice-channel' }, [head])
       if (canEdit) this.orderByHand(row, name, true)
-      if (chat?.can('move')) this.takePeople(row, channel)
+      // Anybody may drag themselves to another channel; only those who may move people drag others.
+      this.takePeople(row, channel)
       for (const [key, ids] of people) {
         row.append(this.voiceMember(key, ids, peers, names.get(key) ?? '', avatars.get(key) ?? ''))
       }
@@ -3090,7 +3092,11 @@ export class SpaceView {
     const watching = this.watched.has(id)
     const member = h('div', { class: `voice-member${talking ? ' talking' : ''}${sounding ? ' sounding' : ''}` })
     if (sounding) member.dataset.sound = sounding.label
-    if (!mine) {
+    // You drag yourself, and not the channel you are in.
+    if (mine) {
+      this.dragPerson(member, key)
+      member.title = 'Drag to another voice channel to go there'
+    } else {
       onContextMenu(member, () => [{ custom: this.volumeBlock(key, name) }])
       member.title = 'Right click for their volume'
       if (this.chat?.can('move')) {
