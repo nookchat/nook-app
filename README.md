@@ -45,7 +45,8 @@ with voice does it.
   rings them wherever they are in the app. Only the two of you can be in it.
 - **Voice keeps going** while you read another space, Home or Settings; the
   foot of the channels says where you are talking, with mute and leave. You
-  are in one call at a time, and joining and leaving make a sound.
+  are in one call at a time. Somebody joining makes a sound, and so does
+  your own leave, but not somebody else's.
 - **Voice**: click a voice channel to join it. The voice bar has the
   microphone, the camera, Share screen, and Leave. Somebody who is sharing has a LIVE badge
   in the voice channel, and a click on it watches them. A share that starts
@@ -346,7 +347,7 @@ somebody arrives or goes, and the only timer is the server's 10 second ping.
 ```
 npm install
 npm run stack        # Postgres in Docker, a server on 8787, and the page on 5173
-npm test             # every check, against the stack
+CHECKS=all npm test  # every check, against the stack (npm test alone is off for now)
 npm test chat files  # only these checks
 npm run speed        # how long opening, switching and sending take
 npm run bench        # how fast the server reads, writes and passes on

@@ -230,9 +230,9 @@ export class SpaceRuntime {
     const voice = new Voice(bus, this.selfId, () => rtcConfig(this.ice.iceServers, this.ice.relayOnly))
     voice.admit = (peer, channel) =>
       isCallChannel(channel) ? !!this.call && this.keyOf(peer) === this.call.with : this.chat.mayEnter(this.keyOf(peer), channel, true)
+    // Somebody coming in chimes. Somebody going is quiet: only your own leave makes a sound.
     voice.onArrival = (arrived, peer) => {
       if (arrived) chirpJoin()
-      else chirpLeave()
       this.callArrival(arrived, peer)
     }
     voice.onFailed = (peer) => callNews({ kind: 'failed', space: this, peer })
