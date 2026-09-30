@@ -47,7 +47,7 @@ export function profileCard(data: ProfileData): HTMLElement {
   const band = h('div', { class: 'profile-band' })
   band.style.setProperty('--band', bandColour(data))
 
-  const face = h('div', { class: 'profile-face' }, [
+  const face = h('div', { class: 'profile-card-face' }, [
     avatarOf(data.key, data.name, data.picture, 84),
     data.presence ? h('i', { class: `dot ${data.presence.dot}`, title: data.presence.words }) : null,
   ])

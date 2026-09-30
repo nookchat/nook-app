@@ -58,8 +58,7 @@ import { cleanPresence, cleanStatusText, loadStatus, presenceLook, STATUS_CHANGE
 import { avatarOf, ChatPanel, imageLinks } from './chat-panel'
 import { clear, copyText, fmtKbps, h, onPress, roleInk } from './dom'
 import { desktopOffer } from './desktop-offer'
-import { forHowLong, gameCard } from './game-card'
-import { songCard } from './song-card'
+import { forHowLong } from './game-card'
 import { profileCard } from './profile-card'
 import { marquee } from './marquee'
 import { ghost } from './ghost'
@@ -325,6 +324,8 @@ export class SpaceView {
   private shareButtonSharing: boolean | null = null
   private channelTitle!: HTMLDivElement
   private channelTitleSig = ''
+  /** The row with the channel's name, search and the people button. Up in the desktop app's title bar when it has one. */
+  private spaceHead: HTMLElement | null = null
   private searchInput!: HTMLInputElement
   private searchWrap!: HTMLDivElement
   private searchResults!: HTMLDivElement
@@ -559,6 +560,7 @@ export class SpaceView {
   destroy(): void {
     if (this.stopped) return
     this.stopped = true
+    this.headUp(false)
     document.removeEventListener('visibilitychange', this.onVisible)
     window.removeEventListener(PLAYING_CHANGED, this.onPlaying)
     window.removeEventListener(LISTENING_CHANGED, this.onPlaying)
@@ -1820,6 +1822,8 @@ export class SpaceView {
   }
 
   private renderShell(): void {
+    // A row from before is up in the title bar: it goes, and the new one takes its place.
+    this.headUp(false)
     clear(this.root)
     this.dock.stop()
     this.dock = voiceDock(this.space)
@@ -1906,14 +1910,14 @@ export class SpaceView {
       scrim,
       left,
       h('div', { class: 'space-main' }, [
-        h('div', { class: 'space-head row' }, [
+        (this.spaceHead = h('div', { class: 'space-head row' }, [
           this.channelsButton,
           this.channelTitle,
           // Search first, then the actions.
           this.searchWrap,
           this.pinsButton,
           this.peopleButton,
-        ]),
+        ])),
         offline,
         this.searchResults,
         this.streamBar,
@@ -1926,6 +1930,26 @@ export class SpaceView {
     ])
 
     this.root.append(h('main', {}, [this.shell]))
+    this.headUp(true)
+  }
+
+  /**
+   * In the desktop app, the channel's name, search and the people button go up into the title
+   * bar, so the messages have its height. They come down while settings are open, and when the
+   * space closes. In a browser there is no title bar, and they stay over the messages.
+   */
+  private headUp(up: boolean): void {
+    const bar = document.getElementById('nook-titlebar')
+    const head = this.spaceHead
+    if (!bar || !head) return
+    document.documentElement.classList.toggle('nook-head-up', up)
+    if (!up) {
+      if (bar.contains(head)) head.remove()
+      return
+    }
+    const brand = bar.querySelector('.brand')
+    if (brand) brand.after(head)
+    else bar.prepend(head)
   }
 
   private makeChatPanel(): ChatPanel {
@@ -2192,12 +2216,14 @@ export class SpaceView {
     this.settingsOpen = null
     clear(this.root)
     this.root.append(h('main', {}, [this.shell]))
+    this.headUp(true)
     this.drawNow()
   }
 
   private async openSettings(start?: string): Promise<void> {
     const { settingsView } = await import('./settings-view')
     if (this.stopped) return
+    this.headUp(false)
     clear(this.root)
     this.settingsOpen = 'user'
     this.root.append(
@@ -2300,6 +2326,7 @@ export class SpaceView {
     }
     const { spaceSettingsView } = await import('./space-settings')
     if (this.stopped) return
+    this.headUp(false)
     clear(this.root)
     this.settingsOpen = 'space'
     this.root.append(
@@ -3259,17 +3286,9 @@ export class SpaceView {
     toast(this.voice?.whereIs(peer.id) ? `Moved them to ${label}` : `Asked them to join ${label}`, 'good', 4000)
   }
 
+  /** What a right click on somebody offers: only what you can do. What they do now is in their profile. */
   private personMenu(key: string, role: string, you: boolean, here: boolean): MenuEntry[] {
-    const actions = this.actionsFor(key, role, you, here)
-    const game = you ? null : this.gameOf(key)
-    const song = you ? null : this.songOf(key)
-    // A person's volume is set in the voice channel on the left, where you hear them.
-    const blocks: MenuEntry[][] = [
-      game ? [{ custom: gameCard(game) }] : [],
-      song ? [{ custom: songCard(song) }] : [],
-      actions,
-    ].filter((b) => b.length)
-    return blocks.flatMap((b, i) => (i ? ['line' as const, ...b] : b))
+    return this.actionsFor(key, role, you, here)
   }
 
   /**
@@ -3320,24 +3339,6 @@ export class SpaceView {
         : undefined,
     })
     openMenu(anchor, [{ custom: card }], { className: 'profile-pop', beside: side })
-  }
-
-  /** The song the person listens to now, on any of their devices. */
-  private songOf(key: string): Listening | null {
-    for (const peer of this.mesh?.peers() ?? []) {
-      const song = peer.key === key ? this.listeningBy.get(peer.id) : undefined
-      if (song) return song
-    }
-    return null
-  }
-
-  /** What the person plays now, on any of their devices. */
-  private gameOf(key: string): Playing | null {
-    for (const peer of this.mesh?.peers() ?? []) {
-      const game = peer.key === key ? this.playingBy.get(peer.id) : undefined
-      if (game) return game
-    }
-    return null
   }
 
   private volumeBlock(key: string, name: string): HTMLElement {

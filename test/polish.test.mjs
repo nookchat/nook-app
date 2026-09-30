@@ -223,6 +223,31 @@ try {
     JSON.stringify(reachable),
   )
 
+  // Replying: a bar that is hard to miss, with a line of the message, and the message lit.
+  await page.click('.chat-row button[aria-label="Reply"]')
+  const replying = await page.evaluate(() => {
+    const bar = document.querySelector('.chat-replying:not(.hidden)')
+    return {
+      what: bar?.querySelector('.chat-replying-what')?.textContent ?? '',
+      quote: bar?.querySelector('.chat-replying-quote')?.textContent ?? '',
+      tall: bar?.getBoundingClientRect().height ?? 0,
+      lit: document.querySelectorAll('.chat-line.pending').length,
+      typing: document.activeElement?.getAttribute('aria-label') ?? '',
+    }
+  })
+  check(
+    'replying shows a bar with a line of the message, lights the message, and puts you in the box',
+    replying.what.startsWith('Replying to') && replying.quote.length > 0 && replying.tall >= 40 && replying.lit === 1 && replying.typing === 'Write a message',
+    JSON.stringify(replying),
+  )
+  await page.screenshot({ path: 'test-output/replying.png' })
+  await page.keyboard.press('Escape')
+  const after = await page.evaluate(() => ({
+    bar: !!document.querySelector('.chat-replying:not(.hidden)'),
+    lit: document.querySelectorAll('.chat-line.pending').length,
+  }))
+  check('Escape stops replying, and the light goes', !after.bar && after.lit === 0, JSON.stringify(after))
+
   const contrast = await page.evaluate(() => {
     const style = getComputedStyle(document.documentElement)
     const read = (name) => style.getPropertyValue(name).trim()

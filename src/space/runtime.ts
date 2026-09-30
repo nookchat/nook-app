@@ -44,6 +44,8 @@ type NotePatch = Partial<{
   readDm: Record<string, number>
   closed: boolean
   pass: string
+  /** This person opened it themselves: it goes back on their list even after they left it. */
+  joined: boolean
 }>
 
 export interface OpenSpace {
@@ -53,6 +55,8 @@ export interface OpenSpace {
   server: string
   /** True when this person is making the space, so they claim it. */
   fresh?: boolean
+  /** Started from the list of spaces in the background, not opened by this person. */
+  fromList?: boolean
   name?: string
 }
 
@@ -146,8 +150,9 @@ export class SpaceRuntime {
     this.room = await deriveRoom(this.secret, this.password)
     this.keys = new SpaceKeys(this.room.key)
     this.note = await this.book.get(this.room.id)
-    // First, so the space is on your list even if the tab closes at once.
-    await this.remember({})
+    // First, so the space is on your list even if the tab closes at once. Only one this person
+    // opened brings back a space they left; one started in the background does not.
+    await this.remember({ joined: open.fromList !== true })
 
     const identity = loadIdentity()
     const chat = new RoomChat(this.room.id, this.note?.founder ?? '')
@@ -468,7 +473,7 @@ export class SpaceRuntime {
       return stable(rest)
     }
     if (existing && Date.now() - existing.lastSeen < LAST_SEEN_REFRESH_MS && plain(existing) === plain(next)) return
-    await this.book.put(next)
+    await this.book.put(next, patch.joined === true)
   }
 
   // Call from a click: it opens the microphone.

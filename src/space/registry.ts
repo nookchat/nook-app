@@ -49,6 +49,7 @@ class Registry {
       locked: note.locked === true,
       password: note.password ?? '',
       server: note.server ?? '',
+      fromList: true,
     })
   }
 

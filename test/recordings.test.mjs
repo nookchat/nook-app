@@ -79,6 +79,8 @@ const items = [
     size: statSync(files.hevc.path).size,
     type: 'video/mp4',
     url: `${FAKE}hevc`,
+    // A picture that will not load: the video is fine, so it stays.
+    thumb: `${FAKE}no-such-picture.jpg`,
   },
   // A file that cannot be read: no picture comes of it, so it is left out of the list.
   {
@@ -222,7 +224,7 @@ try {
   const top = (sel) => page.locator(sel).first().evaluate((el) => Math.round(el.getBoundingClientRect().top))
   const waitingGrid = await top('.recordings-grid')
   await page.screenshot({ path: 'test-output/recordings-waiting.png' })
-  check('while it looks, the dialog shows waiting cards and tabs', (await page.locator('.recordings-game.waiting').count()) > 0)
+  check('while it looks, the dialog shows waiting cards', (await page.locator('.recording-card.waiting').count()) > 0)
   await page.waitForSelector('.recording-card:not(.waiting)')
   check('a real card takes the place of a waiting one exactly', (await box('.recording-card')) === waitingCard, `${waitingCard} -> ${await box('.recording-card')}`)
   check('and the list does not move', (await top('.recordings-grid')) === waitingGrid, `${waitingGrid} -> ${await top('.recordings-grid')}`)
@@ -231,16 +233,10 @@ try {
   check('the picture of a plain video is kept on this device', keptPictures >= 1, `${keptPictures}`)
   await poll(() => page.evaluate(() => !document.querySelector('.recordings-grid')?.textContent.includes('gone')), 10_000)
   const listed = (await page.locator('.recording-title').allTextContents()).join('|')
-  check('the dialog lists the recordings, newest first, and leaves out one it cannot read', listed === 'Counter-Strike 2|Counter-Strike 2|hevc', listed)
+  check('the dialog lists the recordings, newest first, and leaves out one that will not open', listed === 'Counter-Strike 2|Counter-Strike 2|hevc', listed)
+  check('one whose picture will not load stays, and shows a frame of its own', await poll(() => page.evaluate(() => [...document.querySelectorAll('.recording-card')].some((c) => c.textContent.includes('hevc') && c.querySelector('img.recording-picture')?.src.startsWith('blob:'))), 10_000))
   check('with no filter for the source', (await page.locator('.recordings-filters, .chip-toggle').count()) === 0)
-  const tabs = () => page.locator('.recordings-game').allTextContents()
-  check('a tab for each game, then the ones with no game', (await tabs()).join('|') === 'All3|Counter-Strike 22|Other1', (await tabs()).join('|'))
-  await page.click('.recordings-game:has-text("Counter-Strike 2")')
-  const titles = () => page.locator('.recording-title').allTextContents()
-  check('a game tab shows only that game', (await titles()).join('|') === 'Counter-Strike 2|Counter-Strike 2', (await titles()).join('|'))
-  await page.click('.recordings-game:has-text("Other")')
-  check('the tab for no game shows the rest', (await titles()).join('|') === 'hevc', (await titles()).join('|'))
-  await page.click('.recordings-game:has-text("All")')
+  check('and no tabs: every recording is in the one list', (await page.locator('.recordings-games, .recordings-game').count()) === 0)
   await page.screenshot({ path: 'test-output/recordings-list.png' })
 
   await page.locator('.recording-card').first().click()

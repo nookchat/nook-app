@@ -107,7 +107,7 @@ try {
   await guest.waitForTimeout(500)
   await guest.screenshot({ path: 'test-output/spotify-card.png' })
   const profile = await guest.$eval('.profile-card', (el) => ({
-    face: el.querySelector('.profile-face .avatar')?.getBoundingClientRect().width,
+    face: el.querySelector('.profile-card-face .avatar')?.getBoundingClientRect().width,
     name: el.querySelector('.profile-name')?.textContent,
     message: [...el.querySelectorAll('button')].some((b) => b.textContent.startsWith('Message')),
   }))
@@ -117,6 +117,7 @@ try {
   await guest.waitForSelector('.menu .menu-item')
   const menuItems = await guest.locator('.menu .menu-label').allTextContents()
   check('a right click opens what you can do about them', menuItems.includes('Message') && (await guest.locator('.profile-card').count()) === 0, menuItems.join('|'))
+  check('and only that: no song in it', (await guest.locator('.menu .song-card, .menu .menu-game').count()) === 0)
   await guest.keyboard.press('Escape')
 
   // A long name slides along in the list of people, as Discord's do.

@@ -2764,6 +2764,62 @@ button.start {
 }
 
 
+/*
+ * In the desktop app, the row goes up into the title bar, beside the Nook icon: the channel's
+ * name on the left, search and the buttons on the right, sized to the bar. Only the buttons
+ * and the search box take clicks; the rest of the bar still drags the window.
+ */
+html.nook-head-up #nook-titlebar .brand {
+  flex: 0 0 auto;
+}
+
+html.nook-head-up #nook-titlebar .title {
+  display: none;
+}
+
+#nook-titlebar .space-head {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  gap: 2px;
+  padding: 0 8px 0 12px;
+  color: var(--fg);
+  font: 400 13px/1 var(--sans);
+}
+
+#nook-titlebar .space-head button,
+#nook-titlebar .space-head .search-box {
+  -webkit-app-region: no-drag;
+}
+
+#nook-titlebar .space-head button.icon-only {
+  width: 28px;
+  min-width: 28px;
+  height: 26px;
+  min-height: 26px;
+  padding: 0;
+}
+
+#nook-titlebar .space-head .channel-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+#nook-titlebar .space-head .search-box {
+  width: 180px;
+}
+
+#nook-titlebar .space-head .search-box:focus-within {
+  width: 240px;
+}
+
+#nook-titlebar .space-head input[type="text"].space-search {
+  height: 24px;
+  min-height: 24px;
+  font-size: 12.5px;
+}
+
 .channel-head {
   flex: 1 1 auto;
   min-width: 0;
@@ -3182,6 +3238,12 @@ input[type="text"].space-search {
 
 .chat-row:has(.calls-me):hover {
   background: var(--accent-soft);
+}
+
+/* The message you are replying to, or editing, lit while you write. */
+.chat-row:has(.chat-line.pending) {
+  background: color-mix(in srgb, var(--brand) 10%, transparent);
+  box-shadow: inset 2px 0 0 var(--brand);
 }
 
 .chat-line.system {
@@ -4858,7 +4920,7 @@ button.to-bottom:hover:not(:disabled) {
   background: var(--band);
 }
 
-.profile-face {
+.profile-card-face {
   position: relative;
   flex: 0 0 auto;
   display: flex;
@@ -4871,7 +4933,7 @@ button.to-bottom:hover:not(:disabled) {
   background: var(--surface);
 }
 
-.profile-face > .dot {
+.profile-card-face > .dot {
   position: absolute;
   right: 2px;
   bottom: 2px;
@@ -5386,15 +5448,45 @@ input[type="text"].emoji-search {
 }
 
 
+/* You are replying, or editing: a bar over the box that is hard to miss, as Discord's. */
 .chat-replying {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: calc(var(--size-small) - 1px);
-  color: var(--fg-faint);
-  background: var(--surface-2);
-  border-radius: var(--chip-radius);
-  padding: 2px 4px 2px 12px;
+  gap: 10px;
+  padding: 8px 6px 8px 12px;
+  border-radius: var(--radius-md);
+  border-left: 3px solid var(--brand);
+  background: color-mix(in srgb, var(--brand) 9%, var(--surface));
+  color: var(--fg);
+  font-size: var(--size-small);
+  line-height: 18px;
+}
+
+.chat-replying-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  color: var(--brand);
+}
+
+.chat-replying-words {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.chat-replying-quote {
+  color: var(--fg-dim);
+  font-size: 12.5px;
+}
+
+.chat-replying-key {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 640px) {
+  .chat-replying-key {
+    display: none;
+  }
 }
 
 .qr-frame {
@@ -7153,55 +7245,6 @@ input.invalid:focus {
   padding: 0 20px 20px;
 }
 
-.recordings-games:empty {
-  display: none;
-}
-
-/* A tab for each game: All, then the one played last first. Scrolls sideways when there are many. */
-.recordings-games {
-  display: flex;
-  gap: 2px;
-  overflow-x: auto;
-  scrollbar-width: none;
-  border-bottom: 1px solid var(--line-soft);
-}
-
-.recordings-games::-webkit-scrollbar {
-  display: none;
-}
-
-button.recordings-game {
-  flex: 0 0 auto;
-  max-width: 220px;
-  gap: 6px;
-  min-height: 36px;
-  padding: 0 12px;
-  margin-bottom: -1px;
-  background: transparent;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-  color: var(--fg-dim);
-  font-size: var(--size-small);
-}
-
-button.recordings-game:hover:not(:disabled) {
-  background: transparent;
-  color: var(--fg);
-}
-
-button.recordings-game.on {
-  color: var(--fg);
-  font-weight: 600;
-  border-bottom-color: var(--brand);
-}
-
-.recordings-count {
-  font-size: 11px;
-  color: var(--fg-faint);
-  font-variant-numeric: tabular-nums;
-}
-
 .recordings-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -7498,24 +7541,11 @@ button.recordings-game.on {
   overflow-wrap: anywhere;
 }
 
-/* The first look for recordings: cards and tabs the size of the real ones, so nothing moves. */
+/* The first look for recordings: cards the size of the real ones, so nothing moves. */
 .recording-card.waiting .recording-face,
-.recordings-game.waiting::before,
 .waiting-line::before {
   background: var(--select);
   animation: waiting-glow 1.2s ease-in-out infinite alternate;
-}
-
-/* A bar where the game's name will be, in a tab as tall as the real one. */
-button.recordings-game.waiting {
-  pointer-events: none;
-}
-
-.recordings-game.waiting::before {
-  content: '';
-  flex: 1 1 auto;
-  height: 12px;
-  border-radius: 6px;
 }
 
 .recording-card.waiting {
@@ -7552,7 +7582,6 @@ button.recordings-game.waiting {
 
 @media (prefers-reduced-motion: reduce) {
   .recording-card.waiting .recording-face,
-  .recordings-game.waiting::before,
   .waiting-line::before {
     animation: none;
   }

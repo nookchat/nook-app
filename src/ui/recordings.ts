@@ -43,16 +43,8 @@ const LEAST_PART_S = 1
 const STEP_S = 0.5
 const BIG_STEP_S = 5
 
-/** The recordings with no game, as a tab of their own. */
-const NO_GAME = '\u0000'
-/** The game tab picked last, kept while Nook is open. */
-let pickedGame = ''
-/** Recordings whose picture could not be read: the video is broken, so they are left out. */
+/** Recordings whose video would not open, while Nook is open: broken, so they are left out. */
 const broken = new Set<string>()
-
-function gameOf(rec: Recording): string {
-  return rec.game?.trim() || NO_GAME
-}
 
 export function openRecordings(options: RecordingsOptions): void {
   const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -79,7 +71,6 @@ export function openRecordings(options: RecordingsOptions): void {
   let all: Recording[] = []
   const working = (): Recording[] => all.filter((r) => !broken.has(r.id))
   const head = h('div', { class: 'recordings-head' })
-  const games = h('div', { class: 'recordings-games', role: 'tablist', ariaLabel: 'Games' })
   const grid = h('div', { class: 'recordings-grid' })
   const folders = h('div', { class: 'recordings-folders hidden' })
 
@@ -106,14 +97,15 @@ export function openRecordings(options: RecordingsOptions): void {
       }, [icon('settings', 17)]),
       h('button', { class: 'ghost icon-only', ariaLabel: 'Close', title: 'Close', on: { click: () => close() } }, [icon('close', 18)]),
     )
-    body.replaceChildren(folders, games, grid)
+    body.replaceChildren(folders, grid)
   }
 
   const paintGrid = (): void => {
     clear(grid)
     grid.removeAttribute('aria-busy')
     delete grid.dataset.waiting
-    const shown = working().filter((r) => !pickedGame || gameOf(r) === pickedGame)
+    // Every recording, newest first, in one list.
+    const shown = working()
     for (const rec of shown) {
       const el = card(rec, () => openClip(rec), () => {
         el.remove()
@@ -121,51 +113,14 @@ export function openRecordings(options: RecordingsOptions): void {
       })
       grid.append(el)
     }
-    if (shown.length === 0) grid.append(h('div', { class: 'tiny faint', text: 'Nothing here for this game.' }))
+    if (shown.length === 0) grid.append(h('div', { class: 'tiny faint', text: 'None of these recordings would open.' }))
   }
 
-  /** A card whose picture failed is gone, and the tabs count again without it. */
+  /** A card whose video would not open is gone. */
   const leaveOut = (rec: Recording): void => {
     if (broken.has(rec.id)) return
     broken.add(rec.id)
-    const emptied = pickedGame !== '' && !working().some((r) => gameOf(r) === pickedGame)
-    if (emptied) pickedGame = ''
-    paintGames()
-    if (emptied || !grid.querySelector('.recording-card')) paintGrid()
-  }
-
-  /** A tab for each game, the one played last first, when there is a game to tell apart. */
-  const paintGames = (): void => {
-    clear(games)
-    const count = new Map<string, { n: number; last: number }>()
-    const list = working()
-    for (const r of list) {
-      const was = count.get(gameOf(r)) ?? { n: 0, last: 0 }
-      count.set(gameOf(r), { n: was.n + 1, last: Math.max(was.last, r.at) })
-    }
-    const named = [...count.keys()].filter((g) => g !== NO_GAME)
-    if (named.length === 0) return
-    named.sort((a, b) => count.get(b)!.last - count.get(a)!.last || a.localeCompare(b))
-    const tabs = ['', ...named, ...(count.has(NO_GAME) ? [NO_GAME] : [])]
-    for (const g of tabs) {
-      const label = g === '' ? 'All' : g === NO_GAME ? 'Other' : g
-      const n = g === '' ? list.length : count.get(g)!.n
-      const tab = h('button', {
-        class: `recordings-game${pickedGame === g ? ' on' : ''}`,
-        role: 'tab',
-        title: g === NO_GAME ? 'Recordings with no game' : label,
-        on: {
-          click: () => {
-            pickedGame = g
-            paintGames()
-            paintGrid()
-          },
-        },
-      }, [h('span', { class: 'truncate', text: label }), h('span', { class: 'recordings-count', text: String(n) })])
-      tab.setAttribute('aria-selected', String(pickedGame === g))
-      games.append(tab)
-    }
-    games.querySelector<HTMLElement>('.recordings-game.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    if (!grid.querySelector('.recording-card')) paintGrid()
   }
 
   const lookAgain = h('button', {
@@ -182,8 +137,6 @@ export function openRecordings(options: RecordingsOptions): void {
     if (key === shown) return
     shown = key
     all = list
-    if (pickedGame && !working().some((r) => gameOf(r) === pickedGame)) pickedGame = ''
-    paintGames()
     paintGrid()
   }
 
@@ -192,7 +145,7 @@ export function openRecordings(options: RecordingsOptions): void {
     if (!shown) {
       const kept = keptRecordings()
       if (kept?.length) show(kept)
-      else waiting(games, grid)
+      else waiting(grid)
     }
     lookAgain.classList.add('busy')
     lookAgain.disabled = true
@@ -203,7 +156,6 @@ export function openRecordings(options: RecordingsOptions): void {
     if (found.length === 0) {
       shown = ''
       all = []
-      clear(games)
       grid.replaceChildren(await emptyState(() => void load()))
       return
     }
@@ -236,13 +188,8 @@ export function openRecordings(options: RecordingsOptions): void {
   void load()
 }
 
-/** Cards and tabs the size of the real ones, while the first look is on its way. */
-function waiting(games: HTMLElement, grid: HTMLElement): void {
-  games.replaceChildren(
-    ...[48, 120, 90].map((w) =>
-      h('button', { class: 'recordings-game waiting', tabIndex: -1, ariaLabel: 'Looking', style: { width: `${w}px` } }),
-    ),
-  )
+/** Cards the size of the real ones, while the first look is on its way. */
+function waiting(grid: HTMLElement): void {
   grid.replaceChildren(
     ...Array.from({ length: WAITING_CARDS }, () =>
       // A button, as the real card is, so its type and size are the same.
@@ -345,7 +292,8 @@ function card(rec: Recording, open: () => void, fail: () => void): HTMLElement {
   const face = h('div', { class: 'recording-face' })
   if (rec.thumb) {
     const img = h('img', { class: 'recording-picture' })
-    img.onerror = () => fail()
+    // A picture that will not load says nothing about the video: a plain one reads its own frame.
+    img.onerror = () => (isSteam(rec) ? img.remove() : img.replaceWith(frameOf(rec, fail)))
     img.src = rec.thumb
     img.alt = ''
     face.append(img)
@@ -431,11 +379,9 @@ function frameOf(rec: Recording, fail: () => void): HTMLElement {
     const seen = new IntersectionObserver((entries) => {
       if (!entries.some((e) => e.isIntersecting)) return
       seen.disconnect()
-      void readFrame(rec.url).then((frame) => {
-        if (!frame) {
-          fail()
-          return
-        }
+      void readFrame(rec.url).then(({ frame, opens }) => {
+        if (!opens) fail()
+        if (!frame) return
         showBlob(frame)
         void keepThumb(rec.id, frame)
       })
@@ -445,7 +391,34 @@ function frameOf(rec: Recording, fail: () => void): HTMLElement {
   return img
 }
 
-async function readFrame(url: string): Promise<Blob | null> {
+/** Whether a video opens at all, as the clip editor would open it. */
+function opens(url: string): Promise<boolean> {
+  const video = h('video')
+  video.muted = true
+  video.preload = 'metadata'
+  return new Promise<boolean>((done) => {
+    // No answer in a while is not a no: only a refusal hides it.
+    const timer = window.setTimeout(() => done(true), 15_000)
+    video.onloadedmetadata = () => {
+      window.clearTimeout(timer)
+      done(true)
+    }
+    video.onerror = () => {
+      window.clearTimeout(timer)
+      done(false)
+    }
+    video.src = url
+  }).finally(() => {
+    video.removeAttribute('src')
+    video.load()
+  })
+}
+
+/**
+ * A frame from a video, a little way in. `opens` is false only when the video itself will not
+ * open: a frame that cannot be read back says nothing about the video, and hides nothing.
+ */
+async function readFrame(url: string): Promise<{ frame: Blob | null; opens: boolean }> {
   const video = h('video')
   video.muted = true
   video.playsInline = true
@@ -453,26 +426,28 @@ async function readFrame(url: string): Promise<Blob | null> {
   // The desktop app lets the page read it, so the canvas may be read back.
   video.crossOrigin = 'anonymous'
   try {
-    await new Promise<void>((ok, fail) => {
-      video.onloadedmetadata = () => ok()
-      video.onerror = () => fail(new Error('not a video this browser plays'))
+    const loaded = await new Promise<boolean>((ok) => {
+      video.onloadedmetadata = () => ok(true)
+      video.onerror = () => ok(false)
       video.src = url
     })
+    // Refused as it was asked for: whether it opens the way the editor opens it decides.
+    if (!loaded) return { frame: null, opens: await opens(url) }
     await new Promise<void>((ok) => {
       video.onseeked = () => ok()
       video.currentTime = Number.isFinite(video.duration) ? Math.min(2, video.duration / 4) : 0
     })
     const w = video.videoWidth
     const tall = video.videoHeight
-    if (!w || !tall) return null
+    if (!w || !tall) return { frame: null, opens: true }
     const scale = Math.min(1, THUMB_PX / w)
     const canvas = h('canvas')
     canvas.width = Math.round(w * scale)
     canvas.height = Math.round(tall * scale)
     canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height)
-    return await new Promise<Blob | null>((ok) => canvas.toBlob(ok, 'image/jpeg', 0.75))
+    return { frame: await new Promise<Blob | null>((ok) => canvas.toBlob(ok, 'image/jpeg', 0.75)), opens: true }
   } catch {
-    return null
+    return { frame: null, opens: true }
   } finally {
     video.removeAttribute('src')
     video.load()

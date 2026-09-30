@@ -21,7 +21,7 @@ export function stable(value: unknown): string {
 }
 
 function withoutMarks(note: RoomNote & { changed?: number; gone?: boolean }): Record<string, unknown> {
-  const { read: _read, readDm: _readDm, lastSeen: _lastSeen, changed: _changed, gone: _gone, ...rest } = note
+  const { read: _read, readDm: _readDm, lastSeen: _lastSeen, changed: _changed, gone: _gone, joined: _joined, ...rest } = note as RoomNote & { changed?: number; gone?: boolean; joined?: number }
   return rest
 }
 
@@ -29,6 +29,21 @@ interface Kept extends RoomNote {
   changed: number
   /** Tombstone, so a merge with an older copy does not bring the space back. */
   gone?: boolean
+  /** When this person last opened it themselves, from a link or a click. Only that undoes a leave. */
+  joined?: number
+}
+
+/**
+ * Which of two copies of one space's note stands. A leave beats every save made since by a device
+ * that only had the space open in the background: only opening it again brings it back. Otherwise
+ * the newer copy stands.
+ */
+function winner(a: Kept, b: Kept): Kept {
+  if (a.gone !== b.gone) {
+    const [gone, kept] = a.gone ? [a, b] : [b, a]
+    return (kept.joined ?? 0) > (gone.changed ?? 0) ? kept : gone
+  }
+  return (b.changed ?? 0) > (a.changed ?? 0) ? b : a
 }
 
 interface Keys {
@@ -109,10 +124,16 @@ export class ServerBook {
     return note && !note.gone ? strip(note) : null
   }
 
-  async put(note: RoomNote): Promise<void> {
+  /**
+   * Keeps a space's note. `joined` says this person opened it themselves: only that brings back
+   * a space they left. A save from a space open in the background never does.
+   */
+  async put(note: RoomNote, joined = false): Promise<void> {
     await this.load()
     const was = this.notes.get(note.room)
-    this.notes.set(note.room, { ...structuredClone(note), server: this.server, changed: Date.now() })
+    if (was?.gone && !joined) return
+    const now = Date.now()
+    this.notes.set(note.room, { ...structuredClone(note), server: this.server, changed: now, joined: joined ? now : was?.joined })
     const fresh = !was || was.gone === true
     const onlyRead = !fresh && stable(withoutMarks(was)) === stable(withoutMarks(note))
     this.later(fresh ? 0 : onlyRead ? SAVE_MS : SAVE_SOON_MS)
@@ -148,7 +169,11 @@ export class ServerBook {
 
   private take(note: Kept): void {
     const held = this.notes.get(note.room)
-    if (!held || (note.changed ?? 0) > (held.changed ?? 0)) this.notes.set(note.room, note)
+    const kept = held ? winner(held, note) : note
+    if (kept === held) return
+    this.notes.set(note.room, kept)
+    // Left on another device: gone from this one's list too.
+    if (kept.gone && held && !held.gone) roomsChanged()
   }
 
   private queuePush(): void {
@@ -213,7 +238,7 @@ export class ServerBook {
 }
 
 function strip(note: Kept): RoomNote {
-  const { changed: _changed, gone: _gone, ...rest } = note
+  const { changed: _changed, gone: _gone, joined: _joined, ...rest } = note
   return rest
 }
 

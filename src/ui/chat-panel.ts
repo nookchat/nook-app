@@ -1221,6 +1221,7 @@ export class ChatPanel {
       class: `chat-line${mine ? ' mine' : ''}${m.pinned ? ' pinned' : ''}${callsMe ? ' calls-me' : ''}`,
     })
     line.dataset.id = m.id
+    if (this.replyTo?.id === m.id || this.editing?.id === m.id) line.classList.add('pending')
     // Drawn again while lit: the light carries on from where it had got to.
     const since = this.found?.id === m.id ? Date.now() - this.found.at : Infinity
     if (since < 5000) {
@@ -1913,31 +1914,51 @@ export class ChatPanel {
   private startReply(m: Message): void {
     this.editing = null
     this.replyTo = m
-    const name = h('span', { class: 'chat-reply-name', text: m.name || shortKey(m.author) })
+    const name = h('strong', { class: 'chat-reply-name', text: m.name || shortKey(m.author) })
     const colour = this.colourOf(m.author)
     if (colour) name.style.color = roleInk(colour)
-    this.showPending(['Replying to ', name])
+    this.showPending('reply', ['Replying to ', name], m)
+    this.textInput.focus()
   }
 
   private startEdit(m: Message): void {
     this.replyTo = null
     this.editing = m
     this.textInput.value = m.text
-    this.showPending(['Editing your message'])
+    this.showPending('edit', ['Editing your message'], m)
     this.textInput.focus()
   }
 
-  private showPending(label: (string | Node)[]): void {
+  /**
+   * The bar over the message box while you reply or edit, as Discord's: what you do, to whom, a
+   * line of the message, and the message itself lit in the chat, so it is hard to forget.
+   */
+  private showPending(kind: 'reply' | 'edit', label: (string | Node)[], m: Message): void {
     clear(this.replyBar)
     this.replyBar.classList.remove('hidden')
+    this.replyBar.dataset.kind = kind
+    const quote = m.text.replace(/\s+/g, ' ').trim() || (m.files?.length ? 'A file' : '')
     this.replyBar.append(
-      h('span', { class: 'grow truncate' }, label),
+      h('span', { class: 'chat-replying-icon' }, [icon(kind === 'reply' ? 'reply' : 'edit', 16)]),
+      h('span', { class: 'chat-replying-words grow' }, [
+        h('span', { class: 'chat-replying-what truncate' }, label),
+        quote && kind === 'reply' ? h('span', { class: 'chat-replying-quote truncate', text: quote }) : null,
+      ]),
+      h('span', { class: 'chat-replying-key tiny faint', text: 'Esc to cancel' }),
       h(
         'button',
         { class: 'ghost icon-only pop-close', title: 'Cancel', ariaLabel: 'Cancel', on: { click: () => this.cancelPending() } },
         [icon('close', 16)],
       ),
     )
+    this.markPending(m.id)
+  }
+
+  /** Lights the message you reply to, or edit, in the chat. */
+  private markPending(id: string | null): void {
+    for (const lit of this.log.querySelectorAll('.chat-line.pending')) lit.classList.remove('pending')
+    if (!id) return
+    this.log.querySelector(`.chat-line[data-id="${CSS.escape(id)}"]`)?.classList.add('pending')
   }
 
   private cancelPending(): void {
@@ -1945,7 +1966,9 @@ export class ChatPanel {
     if (this.editing) this.textInput.value = ''
     this.editing = null
     this.replyBar.classList.add('hidden')
+    delete this.replyBar.dataset.kind
     clear(this.replyBar)
+    this.markPending(null)
   }
 
   /** Waits a frame, because a loaded picture resizes its row only after the next layout. */

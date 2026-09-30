@@ -2,7 +2,10 @@ import { SELF_HOSTING_URL, checkServer, serverTag, serverUrl } from '../backend'
 import { newSecret, parseLink } from '../room'
 import { ROOMS_CHANGED } from '../store/notes'
 import { addServer, newSpaceServer, ownServers } from '../store/server-spaces'
+import { spaces } from '../space/registry'
+import { bookFor } from '../store/server-spaces'
 import { listSpaces } from '../store/spaces'
+import { onContextMenu } from './menu'
 import { h } from './dom'
 import { ghost, lockup } from './ghost'
 import { icon } from './icons'
@@ -12,6 +15,17 @@ import { toast } from './toast'
 interface SpaceListActions {
   open(secret: string, locked?: boolean, password?: string, newSpaceName?: string, server?: string): void
   refresh(): void
+}
+
+/** Takes a space off your list on every device, with no need to open it. The link still works. */
+async function leave(room: string, server: string, name: string): Promise<void> {
+  if (!server) return
+  if (!window.confirm(`Leave ${name}? It comes off your list on every device. The link still works if you want back in.`)) return
+  spaces.drop(room)
+  const book = bookFor(server)
+  await book.forget(room)
+  await book.flush()
+  toast('Left. It is off your list.', 'info')
 }
 
 export async function spaceList(actions: SpaceListActions): Promise<HTMLElement> {
@@ -78,7 +92,7 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
         img.src = room.picture
         face.append(img)
       }
-      return h('div', { class: 'row space-row' }, [
+      const row = h('div', { class: 'row space-row' }, [
         h(
           'button',
           {
@@ -97,6 +111,16 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
           ],
         ),
       ])
+      // A right click leaves it, as on Discord, with no need to open it first.
+      onContextMenu(row, () => [
+        {
+          label: 'Leave',
+          danger: true,
+          lead: h('span', { class: 'menu-icon' }, [icon('leave', 16)]),
+          run: () => void leave(room.room, room.server ?? '', room.title || 'this space'),
+        },
+      ])
+      return row
     })
     if (rows.length === 0) {
       rows.push(
