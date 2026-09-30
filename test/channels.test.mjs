@@ -117,6 +117,22 @@ try {
   check('and deleted', gone)
   const out = await poll(() => bob.evaluate(() => !document.querySelector('.voice-bar:not(.hidden)')), 10_000)
   check('which takes out whoever was in it', out)
+
+  // A message moved to another channel, for everybody, at the time it was sent.
+  await alice.click('.rail-left .rail-item:has-text("general")')
+  await say(alice, 'this belongs in random')
+  const moving = alice.locator('.chat-line:has-text("this belongs in random")').last()
+  await moving.waitFor()
+  const sent = await moving.locator('.chat-at').textContent()
+  await moving.click({ button: 'right' })
+  await alice.click('.menu-item:has(.menu-label:text-is("random"))')
+  const left = await poll(async () => (await alice.locator('.chat-line:has-text("this belongs in random")').count()) === 0, 10_000)
+  check('a message can be moved to another channel', left)
+  await bob.click('.rail-left .rail-item:has-text("random")')
+  const landed = await poll(async () => (await bob.locator('.chat-line:has-text("this belongs in random")').count()) === 1, 15_000)
+  check('and it shows there for everybody', landed)
+  const there = await bob.locator('.chat-line:has-text("this belongs in random") .chat-at').textContent()
+  check('at the time it was sent', there === sent, `${sent} -> ${there}`)
 } catch (err) {
   stoppedEarly(err)
 } finally {

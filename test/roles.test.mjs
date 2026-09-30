@@ -348,6 +348,74 @@ try {
   check('and a pin can be taken back', pins.undone === false)
   check('a channel can hold more than one', pins.several === 2, `${pins.several}`)
 
+  const moves = await page.evaluate(async () => {
+    const { RoomLog } = await import('/src/store/log.ts')
+    const key = (n) => String(n).repeat(64).slice(0, 64)
+    const FOUNDER = key(1)
+    const MEMBER = key(2)
+    const OTHER = key(3)
+
+    let n = 0
+    const ev = (author, kind, body, at = 1) => ({
+      id: `${++n}`.padStart(64, '0'),
+      room: 'r',
+      author,
+      lamport: n,
+      kind,
+      at,
+      body,
+      sig: 'x'.repeat(128),
+    })
+    const build = (events) => {
+      const log = new RoomLog('r')
+      log.founder = FOUNDER
+      log.me = FOUNDER
+      for (const e of events) log.add(e)
+      return log
+    }
+    const where = (log, id) => log.messages().find((m) => m.id === id)?.channel ?? ''
+
+    const plans = ev(FOUNDER, 'channel', { name: 'plans' })
+    const secret = ev(FOUNDER, 'channel', { name: 'secret', levels: ['admin'] })
+    const said = ev(OTHER, 'said', { text: 'hello', channel: 'general' }, 1234)
+    const reply = ev(MEMBER, 'said', { text: 'hi back', channel: 'general', replyTo: said.id, thread: true })
+
+    const byAdmin = build([plans, said, reply, ev(FOUNDER, 'relocate', { target: said.id, channel: 'plans' })])
+    const moved = byAdmin.messages().find((m) => m.id === said.id)
+    const byWriter = build([plans, said, ev(OTHER, 'relocate', { target: said.id, channel: 'plans' })])
+    const byMember = build([plans, said, ev(MEMBER, 'relocate', { target: said.id, channel: 'plans' })])
+    const nowhere = build([said, ev(FOUNDER, 'relocate', { target: said.id, channel: 'nowhere' })])
+    const shut = build([secret, said, ev(OTHER, 'relocate', { target: said.id, channel: 'secret' })])
+    const back = build([
+      plans,
+      said,
+      ev(FOUNDER, 'relocate', { target: said.id, channel: 'plans' }),
+      ev(FOUNDER, 'relocate', { target: said.id, channel: 'general' }),
+    ])
+
+    return {
+      admin: where(byAdmin, said.id),
+      time: moved?.at,
+      inPlans: byAdmin.messages('plans').map((m) => m.text).join('|'),
+      leftGeneral: byAdmin.messages('general').length,
+      thread: where(byAdmin, reply.id),
+      writer: where(byWriter, said.id),
+      member: where(byMember, said.id),
+      nowhere: where(nowhere, said.id),
+      shut: where(shut, said.id),
+      back: where(back, said.id),
+    }
+  })
+  check('an admin can move a message to another channel', moves.admin === 'plans', moves.admin)
+  check('and it keeps the time it was sent', moves.time === 1234, `${moves.time}`)
+  check('it shows in the new channel and not the old one', moves.inPlans === 'hello' && moves.leftGeneral === 0, `${moves.inPlans} ${moves.leftGeneral}`)
+  check('its thread goes with it', moves.thread === 'plans', moves.thread)
+  check('its writer can move it', moves.writer === 'plans', moves.writer)
+  check('a member cannot move what somebody else wrote', moves.member === 'general', moves.member)
+  check('a move to a channel there is not is ignored', moves.nowhere === 'general', moves.nowhere)
+  check('nobody moves a message into a channel they may not enter', moves.shut === 'general', moves.shut)
+  check('the newest move stands', moves.back === 'general', moves.back)
+
   const polls = await page.evaluate(async () => {
     const { RoomLog } = await import('/src/store/log.ts')
     const key = (n) => String(n).repeat(64).slice(0, 64)

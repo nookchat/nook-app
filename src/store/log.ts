@@ -23,6 +23,7 @@ const EVENT_KINDS = [
   'push',
   'invite',
   'join',
+  'relocate',
 ] as const
 
 export type EventKind = (typeof EVENT_KINDS)[number]
@@ -37,12 +38,22 @@ const KEY_COVERS_MS = 24 * 60 * 60 * 1000
 /** A level's id, or 'kicked'. */
 export type Role = string
 
-export type Permission = 'channels' | 'pin' | 'delete' | 'remove' | 'move' | 'soundboard' | 'levels' | 'space'
+export type Permission =
+  | 'channels'
+  | 'pin'
+  | 'delete'
+  | 'relocate'
+  | 'remove'
+  | 'move'
+  | 'soundboard'
+  | 'levels'
+  | 'space'
 
 export const PERMISSIONS: { id: Permission; label: string; about: string }[] = [
   { id: 'channels', label: 'Channels', about: 'Make, rename, order and delete channels' },
   { id: 'pin', label: 'Pin messages', about: 'Hold a message up at the top of a channel' },
   { id: 'delete', label: 'Delete messages', about: 'Take down what anybody wrote' },
+  { id: 'relocate', label: 'Move messages', about: 'Put what anybody wrote in another channel' },
   { id: 'remove', label: 'Remove people', about: 'Remove somebody, or let them back in' },
   { id: 'move', label: 'Move people', about: 'Move somebody into a voice channel' },
   { id: 'soundboard', label: 'Soundboard', about: 'Play sounds in a voice channel, and add them' },
@@ -68,7 +79,7 @@ const OWNER_RANK = 1000
 const STARTING_LEVELS: Level[] = [
   { id: OWNER, name: 'Owner', colour: '#f0b232', rank: OWNER_RANK, can: ALL },
   { id: 'admin', name: 'Admin', colour: '#f25f5c', rank: 100, can: ALL },
-  { id: 'mod', name: 'Moderator', colour: '#3ddc84', rank: 50, can: ['pin', 'delete', 'remove', 'move', 'soundboard'] },
+  { id: 'mod', name: 'Moderator', colour: '#3ddc84', rank: 50, can: ['pin', 'delete', 'relocate', 'remove', 'move', 'soundboard'] },
   { id: MEMBER, name: 'Member', colour: '', rank: 0, can: [] },
 ]
 
@@ -252,7 +263,7 @@ export async function openEvent(raw: unknown, room: string): Promise<LogEvent | 
   return { ...base, id, sig: e.sig }
 }
 
-const CLEARABLE = new Set<EventKind>(['said', 'edit', 'react', 'retract', 'pin', 'poll', 'vote'])
+const CLEARABLE = new Set<EventKind>(['said', 'edit', 'react', 'retract', 'pin', 'poll', 'vote', 'relocate'])
 
 // A 48 px WebP thumbnail is about 1500 characters.
 export const MAX_AVATAR = 2600
@@ -813,6 +824,33 @@ export class RoomLog {
     return gone
   }
 
+  /**
+   * Where each moved message is now, by its id. The newest move stands. Its writer may move
+   * it, and so may whoever may move messages, to a channel there is that the mover may enter.
+   * It keeps its time.
+   */
+  private moved(auth: Authority, kicked: Map<string, number>): Map<string, string> {
+    const writers = new Map<string, string>()
+    const to = new Map<string, string>()
+    const there = new Map(this.everyChannel().map((c) => [c.name, c]))
+    for (const e of this.all()) {
+      if (e.kind === 'said' || e.kind === 'poll') {
+        writers.set(e.id, e.author)
+        continue
+      }
+      if (e.kind !== 'relocate') continue
+      const removedAt = kicked.get(e.author)
+      if (removedAt !== undefined && e.lamport > removedAt) continue
+      const target = String(e.body.target ?? '')
+      const writer = writers.get(target)
+      if (!writer || (e.author !== writer && !auth.can(e.author, 'relocate'))) continue
+      const channel = cleanChannel(String(e.body.channel ?? ''))
+      const info = there.get(channel)
+      if (info && mayEnter(auth, e.author, info)) to.set(target, channel)
+    }
+    return to
+  }
+
   /** Pass a channel to get what its readers see, thread replies excluded. */
   messages(channel?: string): Message[] {
     const out: Message[] = []
@@ -823,10 +861,16 @@ export class RoomLog {
     const cleared = this.resetAt()
     const removed = this.deletedChannels()
     const kept = this.keptChannels()
+    const moved = this.moved(auth, kicked)
+    // A thread's replies go where their first message goes.
+    const placeOf = (e: LogEvent): string =>
+      moved.get(e.id) ??
+      (e.body.thread === true && typeof e.body.replyTo === 'string' ? moved.get(e.body.replyTo) : undefined) ??
+      channelOf(e)
     // Not for you to read, or written by somebody it is not for. Anybody with the space's
     // key can still open these lines; the app only keeps them out of sight.
     const shut = (e: LogEvent): boolean => {
-      const info = kept.get(channelOf(e))
+      const info = kept.get(placeOf(e))
       return !!info && (!mayEnter(auth, this.me, info) || !mayEnter(auth, e.author, info))
     }
 
@@ -840,8 +884,8 @@ export class RoomLog {
         continue
       }
       if (e.kind === 'poll') {
-        if (removed.has(channelOf(e)) || shut(e)) continue
-        if (channel && channelOf(e) !== channel) continue
+        if (removed.has(placeOf(e)) || shut(e)) continue
+        if (channel && placeOf(e) !== channel) continue
         const question = String(e.body.question ?? '').slice(0, 200).trim()
         const raw = Array.isArray(e.body.options) ? e.body.options : []
         const options = raw
@@ -854,7 +898,7 @@ export class RoomLog {
           author: e.author,
           at: e.at,
           lamport: e.lamport,
-          channel: channelOf(e),
+          channel: placeOf(e),
           text: question,
           replyTo: null,
           edited: false,
@@ -878,14 +922,14 @@ export class RoomLog {
         continue
       }
       if (e.kind === 'said') {
-        if (removed.has(channelOf(e)) || shut(e)) continue
-        if (channel && channelOf(e) !== channel) continue
+        if (removed.has(placeOf(e)) || shut(e)) continue
+        if (channel && placeOf(e) !== channel) continue
         const message: Message = {
           id: e.id,
           author: e.author,
           at: e.at,
           lamport: e.lamport,
-          channel: channelOf(e),
+          channel: placeOf(e),
           text: String(e.body.text ?? ''),
           replyTo: typeof e.body.replyTo === 'string' ? e.body.replyTo : null,
           inThread: e.body.thread === true,

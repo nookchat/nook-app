@@ -211,6 +211,8 @@ interface ChatActions {
   retract(id: string): void
   rename(name: string): void
   pin(id: string, on: boolean): void
+  /** Puts a message, and its thread, in another channel. */
+  relocate?(id: string, channel: string): void
   vote(id: string, choice: number): void
 }
 
@@ -230,6 +232,9 @@ export class ChatPanel {
   actions: ChatActions | null = null
   canPin = false
   canDelete = false
+  canRelocate = false
+  /** The channels a message may go to: not its own, and only ones its writer may enter. */
+  relocateTargets: ((m: Message) => { name: string; label: string }[]) | null = null
   /** What a right click on a name or a picture in the chat offers. */
   personMenu: ((key: string) => MenuEntry[]) | null = null
   colourOf: ColourOf = () => ''
@@ -1667,6 +1672,14 @@ export class ChatPanel {
           )
         },
       })
+    }
+    const targets =
+      (mine || this.canRelocate) && !m.inThread && this.actions?.relocate ? this.relocateTargets?.(m) ?? [] : []
+    if (targets.length) {
+      items.push('line', { heading: 'Move to' })
+      for (const c of targets) {
+        items.push({ label: c.label, lead: lead('hash'), run: () => this.actions?.relocate?.(m.id, c.name) })
+      }
     }
     if (mine || this.canDelete) {
       items.push('line', {

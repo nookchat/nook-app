@@ -339,6 +339,11 @@ export class RoomChat {
     return this.write('edit', { target, text: trimToWire(text, MAX_TEXT) })
   }
 
+  /** Puts a message, and its thread, in another channel. It keeps its time. */
+  relocate(target: string, channel: string): Promise<LogEvent> {
+    return this.write('relocate', { target, channel: cleanChannel(channel) || DEFAULT_CHANNEL })
+  }
+
   react(target: string, emoji: string, on: boolean): Promise<LogEvent> {
     return this.write('react', { target, emoji: oneEmoji(emoji), on })
   }

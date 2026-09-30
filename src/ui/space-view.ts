@@ -1473,6 +1473,9 @@ export class SpaceView {
     }
     this.chatPanel.canPin = chat.can('pin')
     this.chatPanel.canDelete = chat.can('delete')
+    this.chatPanel.canRelocate = chat.can('relocate')
+    this.chatPanel.relocateTargets = (m) =>
+      chat.channelInfo().filter((c) => c.name !== m.channel && chat.mayEnter(m.author, c.name))
     this.chatPanel.personMenu = (key) => {
       if (key === chat.me) return []
       const role = chat.roles().get(key) ?? 'member'
@@ -1927,6 +1930,11 @@ export class SpaceView {
       react: (id, emoji, on) => void this.publish((c) => c.react(id, emoji, on)),
       retract: (id) => void this.publish((c) => c.retract(id)),
       pin: (id, on) => void this.publish((c) => c.pin(id, on)),
+      relocate: (id, channel) => {
+        void this.publish((c) => c.relocate(id, channel))
+        const label = this.chat?.channelInfo().find((c) => c.name === channel)?.label || channel
+        toast(`Moved to ${label}.`)
+      },
       vote: (id, choice) => void this.publish((c) => c.vote(id, choice)),
       rename: (name) => this.rename(name),
     }
