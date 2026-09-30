@@ -1,6 +1,7 @@
 import { songLink, songProgress, type Listening } from '../net/listening'
 import { h } from './dom'
 import { icon } from './icons'
+import { marquee } from './marquee'
 
 /** 3:07, from milliseconds. */
 function clock(ms: number): string {
@@ -22,7 +23,7 @@ export function songCard(song: Listening): HTMLElement {
     cover.src = song.art!
   }
 
-  const title = h('a', { class: 'song-title truncate', text: song.title, title: song.title })
+  const title = h('a', { class: 'song-title' }, [marquee(song.title)])
   title.href = songLink(song)
   title.target = '_blank'
   title.rel = 'noreferrer noopener'
@@ -30,8 +31,8 @@ export function songCard(song: Listening): HTMLElement {
   const words = h('div', { class: 'song-words' }, [
     h('span', { class: 'menu-volume-label row' }, [icon('music', 14), 'Listening to Spotify']),
     title,
-    song.artist ? h('span', { class: 'song-artist truncate', text: `by ${song.artist}` }) : null,
-    song.album ? h('span', { class: 'tiny faint truncate', text: `on ${song.album}` }) : null,
+    song.artist ? marquee(`by ${song.artist}`, 'song-artist') : null,
+    song.album ? marquee(`on ${song.album}`, 'tiny faint') : null,
   ])
 
   const card = h('div', { class: 'song-card' }, [h('div', { class: 'song-top' }, [cover, words])])

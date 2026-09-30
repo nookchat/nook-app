@@ -105,7 +105,7 @@ function webhooksPage(hooks: HookActions): HTMLElement {
             h('span', { class: 'switch-label truncate', text: row.name }),
             h('span', {
               class: 'tiny faint switch-about',
-              text: row.stopped ? `Stopped. Posted in # ${row.channel}. Make a new link to use it again.` : `Posts in # ${row.channel}`,
+              text: row.stopped ? `Stopped · # ${row.channel}` : `Posts in # ${row.channel}`,
             }),
           ]),
           row.stopped
@@ -129,8 +129,8 @@ function webhooksPage(hooks: HookActions): HTMLElement {
           h('span', {
             text:
               stopped === 1
-                ? 'A webhook stopped because somebody was removed from the space. Make a new link for it, then paste the new link into every app that used the old one.'
-                : `${stopped} webhooks stopped because somebody was removed from the space. Make a new link for each, then paste the new links into every app that used the old ones.`,
+                ? 'Somebody was removed, so a webhook stopped. Make a new link for it.'
+                : `Somebody was removed, so ${stopped} webhooks stopped. Make a new link for each.`,
           }),
         ]),
       )
@@ -143,25 +143,10 @@ function webhooksPage(hooks: HookActions): HTMLElement {
         h('div', { class: 'row wrap hook-new' }, [name, channel, make]),
         rows.length ? list : note('No webhooks yet.'),
       ),
-      card(
-        'When a link stops working',
-        h('ul', { class: 'hook-rules' }, [
-          h('li', {}, [
-            h('strong', { text: 'Removing or banning somebody stops every webhook. ' }),
-            'The space gets a new key, so the old links no longer work. Make a new link for each webhook here, then paste it into every app that used the old one.',
-          ]),
-          h('li', { text: 'People who join the space, or leave it by themselves, change nothing. Your webhooks keep working.' }),
-          h('li', { text: 'Deleting a webhook stops its link at once. Its old messages stay.' }),
-        ]),
-      ),
-      card(
-        'Keep the links secret',
-        h('ul', { class: 'hook-rules' }, [
-          h('li', { text: 'Anybody with a link can post into its channel, and can read what that webhook posted. The link opens nothing else in the space.' }),
-          h('li', { text: 'The server reads what a webhook posts, because the app that posts sends plain words. Everything else in the space stays end-to-end encrypted.' }),
-          h('li', { text: 'Anybody in the space who knows how could find a webhook’s link, so only add webhooks to a space whose people you trust.' }),
-        ]),
-      ),
+      h('ul', { class: 'hook-rules' }, [
+        h('li', { text: 'Keep webhook links secret. Anybody with a link can post in its channel.' }),
+        h('li', { text: 'Webhooks are part of the space’s encryption. When you remove or ban somebody, every webhook stops. Make a new link, and put it where you used the old one.' }),
+      ]),
     )
   }
   draw()

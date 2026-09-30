@@ -72,6 +72,9 @@ try {
   check('the page asks the shell to look at Spotify', (await host.evaluate(() => window.__watchingSpotify)) === true)
 
   const guest = await (await browser.newContext({ viewport: { width: 1280, height: 860 } })).newPage()
+  // Spotify's covers, served here: a small green square.
+  const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64')
+  await guest.route('https://i.scdn.co/**', (route) => route.fulfill({ status: 200, contentType: 'image/png', body: PNG }))
   await guest.goto(host.url())
   await guest.waitForSelector('.space-name')
   await guest.waitForTimeout(1500)
@@ -88,10 +91,10 @@ try {
       at: Date.now(),
     }),
   )
-  check('you see your own song under your name', await seen(host, 'Listening to Blinding Lights'))
-  check('the others see it too', await seen(guest, 'Listening to Blinding Lights'), await doingOf(guest))
+  check('you see your own song under your name', await seen(host, 'Blinding Lights'))
+  check('the others see it too', await seen(guest, 'Blinding Lights'), await doingOf(guest))
 
-  await guest.click('.rail-person.has-menu:has-text("Listening to")')
+  await guest.click('.rail-person.has-menu:has(.person-doing.listening)')
   await guest.waitForSelector('.song-card', { timeout: 5000 })
   const card = await guest.$eval('.song-card', (el) => ({
     words: el.textContent,
@@ -103,12 +106,33 @@ try {
   check('and how far in it is, by the time the shell gave', /^1:0\d.*3:20$/.test(card.time), card.time)
   await guest.waitForTimeout(500)
   await guest.screenshot({ path: 'test-output/spotify-card.png' })
+  const profile = await guest.$eval('.profile-card', (el) => ({
+    face: el.querySelector('.profile-face .avatar')?.getBoundingClientRect().width,
+    name: el.querySelector('.profile-name')?.textContent,
+    message: [...el.querySelectorAll('button')].some((b) => b.textContent.startsWith('Message')),
+  }))
+  check('a click on a name opens their profile, with a large picture and a Message button', profile.face >= 80 && !!profile.name && profile.message, JSON.stringify(profile))
   await guest.keyboard.press('Escape')
+  await guest.click('.rail-person.has-menu:has(.person-doing.listening)', { button: 'right' })
+  await guest.waitForSelector('.menu .menu-item')
+  const menuItems = await guest.locator('.menu .menu-label').allTextContents()
+  check('a right click opens what you can do about them', menuItems.includes('Message') && (await guest.locator('.profile-card').count()) === 0, menuItems.join('|'))
+  await guest.keyboard.press('Escape')
+
+  // A long name slides along in the list of people, as Discord's do.
+  await host.evaluate(() =>
+    window.__song({ title: 'A Very Long Song Name That Cannot Possibly Fit In The List Of People (Extended Remix)', artist: 'Band', art: 'https://i.scdn.co/image/ab67616d0000b273', at: Date.now() }),
+  )
+  check('a long song shows', await seen(guest, 'A Very Long Song Name That Cannot Possibly Fit In The List Of People (Extended Remix)'))
+  const slides = await guest.waitForFunction(() => document.querySelector('.rail-person .person-doing.listening .marquee')?.classList.contains('moving'), null, { timeout: 5000 }).then(() => true, () => false)
+  check('and its name slides along, since it does not fit', slides, await guest.$eval('.rail-person .person-doing.listening', (el) => el.outerHTML.slice(0, 300)))
+  check('with the cover at the end of the row', (await guest.locator('.rail-person .person-art').count()) === 1)
+  await guest.screenshot({ path: 'test-output/spotify-row.png' })
 
   // A song from Windows has no track: the button searches for it.
   await host.evaluate(() => window.__song({ title: 'One More Time', artist: 'Daft Punk', at: Date.now() }))
-  check('a new song shows', await seen(guest, 'Listening to One More Time'))
-  await guest.click('.rail-person.has-menu:has-text("Listening to")')
+  check('a new song shows', await seen(guest, 'One More Time'))
+  await guest.click('.rail-person.has-menu:has(.person-doing.listening)')
   await guest.waitForSelector('.song-card')
   const search = await guest.$eval('.song-card .song-open', (a) => a.href)
   check('with no track, the button searches Spotify', search === 'https://open.spotify.com/search/Daft%20Punk%20One%20More%20Time', search)
@@ -122,7 +146,7 @@ try {
   // Paused: gone.
   await host.evaluate(async () => (await import('/src/net/listening.ts')).setShowsListening(true))
   await host.evaluate(() => window.__song({ title: 'Back', artist: 'Band', at: Date.now() }))
-  check('turned on again, it shows', await seen(guest, 'Listening to Back'))
+  check('turned on again, it shows', await seen(guest, 'Back'))
   await host.evaluate(() => window.__song(null))
   check('when Spotify stops, it goes', await seen(guest, ''))
 } catch (err) {

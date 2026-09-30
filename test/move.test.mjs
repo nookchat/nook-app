@@ -59,10 +59,13 @@ try {
   await carol.click('.toast button:has-text("Join")')
   check('and one click takes her in', await until(alice, inChannel, ['studio', 'Carol']))
 
-  // The menu does the same, for a touch screen.
-  await alice.click('.rail-person.has-menu:has-text("Bob")')
-  await alice.click('.menu-item:has-text("lounge")')
-  check('Move to, in his menu, moves Bob back to the lounge', await until(alice, inChannel, ['lounge', 'Bob']))
+  // His right click menu has no Move to: people are moved with a drag, on the left.
+  await alice.click('.rail-person.has-menu:has-text("Bob")', { button: 'right' })
+  await alice.waitForSelector('.menu')
+  check('the right click menu has no Move to', (await alice.locator('.menu .menu-heading:text-is("Move to")').count()) === 0)
+  await alice.keyboard.press('Escape')
+  await alice.locator('.voice-member', { hasText: 'Bob' }).dragTo(alice.locator('.voice-channel', { hasText: 'lounge' }))
+  check('dragged back, Bob is in the lounge again', await until(alice, inChannel, ['lounge', 'Bob']))
 
   // Bob is a member.
   const drags = await bob.$$eval('.voice-member, .rail-person', (els) => els.some((e) => e.draggable))

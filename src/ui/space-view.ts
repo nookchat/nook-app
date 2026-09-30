@@ -60,6 +60,8 @@ import { clear, copyText, fmtKbps, h, onPress, roleInk } from './dom'
 import { desktopOffer } from './desktop-offer'
 import { forHowLong, gameCard } from './game-card'
 import { songCard } from './song-card'
+import { profileCard } from './profile-card'
+import { marquee } from './marquee'
 import { ghost } from './ghost'
 import { icon, type IconName } from './icons'
 import { myStatusDot, openStatusMenu } from './status-menu'
@@ -1956,6 +1958,9 @@ export class SpaceView {
       rename: (name) => this.rename(name),
     }
     panel.previewFor = (url) => preview(this.server, url)
+    panel.onProfile = (key, anchor) => this.openProfile(key, anchor, 'right')
+    panel.presences = () =>
+      new Map(this.roster().filter((r) => r.here).map((r) => [r.key, presenceLook(r.status, r.away)]))
     // Through the server, as a link card's pictures are, so the reader's address stays with it.
     panel.pictureFor = (url) =>
       this.server ? `${this.server.replace(/\/+$/, '')}/api/v1/preview/image?url=${encodeURIComponent(url)}` : ''
@@ -2217,9 +2222,7 @@ export class SpaceView {
   private hooksStopNote(): string {
     const live = this.chat?.hooks().filter((hook) => hook.stoppedAt === null).length ?? 0
     if (live === 0) return ''
-    return live === 1
-      ? '\n\nThis also stops the space\'s webhook. Somebody who may manage webhooks makes a new link for it, in Space settings, under Webhooks.'
-      : `\n\nThis also stops the space's ${live} webhooks. Somebody who may manage webhooks makes new links for them, in Space settings, under Webhooks.`
+    return `\n\nThis also stops the space's ${live === 1 ? 'webhook' : 'webhooks'}. Make new links in Space settings, under Webhooks.`
   }
 
   /** The webhooks, for the space settings. */
@@ -3269,6 +3272,49 @@ export class SpaceView {
     return blocks.flatMap((b, i) => (i ? ['line' as const, ...b] : b))
   }
 
+  /**
+   * A person's profile, beside their name: their picture large, their status, their level, and
+   * what they do now. From it, a message to them, or the rest of what their right click offers.
+   */
+  private openProfile(key: string, anchor: HTMLElement, side: 'left' | 'right'): void {
+    const chat = this.chat
+    if (!chat || chat.log.hooks().some((hook) => hook.pub === key)) return
+    const row = this.roster().find((r) => r.key === key)
+    const you = key === chat.me
+    const level = chat.levelOf(key)
+    const role = chat.roles().get(key) ?? MEMBER
+    const voice = row?.voice ? (chat.channelInfo(true).find((c) => c.name === row.voice)?.label ?? row.voice) : null
+    const card = profileCard({
+      key,
+      name: you ? chat.displayName : row?.name || chat.nameOf(key),
+      picture: chat.log.avatars().get(key) ?? '',
+      you,
+      presence: row?.here ? presenceLook(row.status, row.away) : null,
+      statusText: row?.statusText ?? '',
+      level: level.id === MEMBER ? null : { name: level.name, colour: level.colour },
+      owner: key === chat.founder,
+      voice: voice && isCallChannel(voice) ? 'A call' : voice,
+      sharing: row?.sharing === true,
+      playing: row?.playing ?? null,
+      listening: row?.listening ?? null,
+      tag: shortKey(key),
+      message: you
+        ? undefined
+        : () => {
+            closeMenu()
+            this.openDirect(key)
+          },
+      more: you ? undefined : (button) => openMenu(button, this.personMenu(key, role, false, row?.here === true)),
+      edit: you
+        ? () => {
+            closeMenu()
+            void this.openSettings('profile')
+          }
+        : undefined,
+    })
+    openMenu(anchor, [{ custom: card }], { className: 'profile-pop', beside: side })
+  }
+
   /** The song the person listens to now, on any of their devices. */
   private songOf(key: string): Listening | null {
     for (const peer of this.mesh?.peers() ?? []) {
@@ -3360,23 +3406,6 @@ export class SpaceView {
     }
     const auth = chat.authority()
     const me = chat.me
-    const standing = this.voice?.state.channel
-    if (here && !you && auth.can(me, 'move')) {
-      // Every voice channel they may go in and are not in: a drag does the same, where there is a mouse.
-      const theirs = (this.mesh?.peers() ?? []).filter((p) => p.key === key).map((p) => this.voice?.whereIs(p.id)).find(Boolean)
-      const into = chat.channelInfo(true).filter((c) => c.name !== theirs && chat.mayEnter(key, c.name, true))
-      if (into.length) {
-        items.push('line', { heading: 'Move to' })
-        for (const c of into) {
-          items.push({
-            label: c.label,
-            lead: h('span', { class: 'menu-icon' }, [icon('volume', 16)]),
-            note: c.name === standing ? 'The voice channel you are in' : undefined,
-            run: () => void this.moveTo(key, c.name),
-          })
-        }
-      }
-    }
     // A level is changed in the space settings, under Members, not here.
     if (auth.mayRemove(me, key)) {
       items.push('line')
@@ -3548,25 +3577,37 @@ export class SpaceView {
         ]),
         this.personDoing(row),
       ]),
+      this.songArt(row),
     ])
-    // A click, or a right click, opens what you can do about them. Your own row has nothing.
-    if (!row.you) {
-      person.dataset.menu = `person:${row.key}`
-      person.tabIndex = 0
-      person.setAttribute('role', 'button')
-      person.setAttribute('aria-label', `Actions for ${label}`)
-      person.classList.add('has-menu')
-      const open = (): void => openMenu(person, this.personMenu(row.key, role, row.you, row.here))
-      person.addEventListener('click', open)
-      person.addEventListener('keydown', (ev) => {
-        if (ev.key !== 'Enter' && ev.key !== ' ') return
-        ev.preventDefault()
-        open()
-      })
-      onContextMenu(person, () => this.personMenu(row.key, role, row.you, row.here))
-    }
+    // A click opens their profile, as on Discord, and a right click what you can do about them.
+    person.dataset.menu = `person:${row.key}`
+    person.tabIndex = 0
+    person.setAttribute('role', 'button')
+    person.setAttribute('aria-label', `Profile of ${label}`)
+    person.classList.add('has-menu')
+    const open = (): void => this.openProfile(row.key, person, 'left')
+    person.addEventListener('click', open)
+    person.addEventListener('keydown', (ev) => {
+      if (ev.key !== 'Enter' && ev.key !== ' ') return
+      ev.preventDefault()
+      open()
+    })
+    if (!row.you) onContextMenu(person, () => this.personMenu(row.key, role, row.you, row.here))
     if (!row.you && row.here && this.chat?.can('move')) this.dragPerson(person, row.key)
     return person
+  }
+
+  /** The cover of the song they listen to, small, at the end of their row. */
+  private songArt(row: PersonRow): HTMLElement | null {
+    const art = row.listening?.art
+    if (!art) return null
+    const img = h('img', { class: 'person-art', title: row.listening!.title })
+    img.alt = ''
+    img.referrerPolicy = 'no-referrer'
+    img.decoding = 'async'
+    img.addEventListener('error', () => img.remove())
+    img.src = art
+    return img
   }
 
   private presenceDot(row: PersonRow): HTMLElement {
@@ -3585,14 +3626,15 @@ export class SpaceView {
       const { name, since } = row.playing
       return h('span', { class: 'person-doing game', title: `Playing ${name} ${forHowLong(Date.now() - since)}` }, [
         icon('game', 12),
-        h('span', { class: 'truncate', text: `Playing ${name}` }),
+        marquee(`Playing ${name}`),
       ])
     }
     if (row.listening) {
       const { title, artist } = row.listening
+      // The song's own name, sliding along when it is too long to fit, as Discord does.
       return h('span', { class: 'person-doing listening', title: `Listening to ${title}${artist ? ` by ${artist}` : ''} on Spotify` }, [
         icon('music', 12),
-        h('span', { class: 'truncate', text: `Listening to ${title}` }),
+        marquee(title),
       ])
     }
     if (!row.voice) return null

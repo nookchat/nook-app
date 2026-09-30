@@ -1,6 +1,6 @@
 import { h } from './dom'
 import { placeNear } from './emoji'
-import { fitAtPoint } from './place'
+import { fitAtPoint, fitBeside } from './place'
 
 export interface MenuItem {
   label: string
@@ -18,6 +18,8 @@ interface MenuOptions {
   className?: string
   /** Opens at this point, as a right click menu does, instead of under the anchor. */
   at?: { x: number; y: number }
+  /** Opens beside the anchor, as a profile does, instead of under it. */
+  beside?: 'left' | 'right'
 }
 
 let open: (() => void) | null = null
@@ -113,6 +115,7 @@ export function openMenu(anchor: HTMLElement, items: MenuEntry[], options: MenuO
   openFor = anchor
   document.body.append(menu)
   if (options.at) fitAtPoint(menu, options.at.x, options.at.y)
+  else if (options.beside) fitBeside(menu, anchor, options.beside)
   else placeNear(menu, anchor)
   window.addEventListener('keydown', onKey, true)
   window.addEventListener('pointerdown', onDown, true)

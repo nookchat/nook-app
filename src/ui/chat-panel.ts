@@ -237,6 +237,10 @@ export class ChatPanel {
   relocateTargets: ((m: Message) => { name: string; label: string }[]) | null = null
   /** A picture a webhook names, through the space's server. '' when there is no way to show it. */
   pictureFor: ((url: string) => string) | null = null
+  /** Who is here now, and the dot each shows, for the list that @ opens. Whoever is missing is offline. */
+  presences: (() => Map<string, { dot: string; words: string }>) | null = null
+  /** A click on a name or a picture in the chat: their profile, beside it. */
+  onProfile: ((key: string, anchor: HTMLElement) => void) | null = null
   /** What a right click on a name or a picture in the chat offers. */
   personMenu: ((key: string) => MenuEntry[]) | null = null
   colourOf: ColourOf = () => ''
@@ -758,11 +762,27 @@ export class ChatPanel {
     return hits
   }
 
-  private nameOption(key: string, name: string, take: () => void): HTMLButtonElement {
+  /** A name to pick, with their picture and the dot that says whether they are here, as Discord shows it. */
+  private nameOption(
+    key: string,
+    name: string,
+    take: () => void,
+    here?: Map<string, { dot: string; words: string }>,
+  ): HTMLButtonElement {
     const label = h('span', { class: 'truncate', text: name })
     const colour = key === EVERYONE ? '' : this.colourOf(key)
     if (colour) label.style.color = roleInk(colour)
-    return h('button', { class: 'mention-option', on: pickOnPress(take) }, [label])
+    let face: HTMLElement
+    if (key === EVERYONE) {
+      face = h('span', { class: 'mention-face everyone' }, [icon('people', 14)])
+    } else {
+      const look = here?.get(key) ?? { dot: 'idle', words: 'Offline' }
+      face = h('span', { class: 'mention-face' }, [
+        avatarOf(key, name, this.avatars.get(key) ?? '', 24),
+        here ? h('i', { class: `dot ${look.dot}`, title: look.words }) : null,
+      ])
+    }
+    return h('button', { class: 'mention-option has-face', data: { name }, on: pickOnPress(take) }, [face, label])
   }
 
   private suggest(): void {
@@ -784,10 +804,11 @@ export class ChatPanel {
       this.closeSuggestions()
       return
     }
+    const here = this.presences?.()
     this.showSuggestions(
       'mention',
       at,
-      hits.map(({ key, name }) => this.nameOption(key, name, () => this.takeSuggestion(name))),
+      hits.map(({ key, name }) => this.nameOption(key, name, () => this.takeSuggestion(name), here)),
     )
   }
 
@@ -872,10 +893,11 @@ export class ChatPanel {
 
     const hits = this.nameHits(fragment)
     if (hits.length === 0) return false
+    const here = this.presences?.()
     this.showSuggestions(
       'name',
       start,
-      hits.map(({ key, name }) => this.nameOption(key, name, () => this.takeName(name))),
+      hits.map(({ key, name }) => this.nameOption(key, name, () => this.takeName(name), here)),
     )
     return true
   }
@@ -904,7 +926,9 @@ export class ChatPanel {
     }
     if (ev.key === 'Enter' || ev.key === 'Tab') {
       const chosen = options[at === -1 ? 0 : at]
-      const label = chosen?.querySelector('span')?.textContent ?? chosen?.textContent ?? ''
+      // A person's option keeps their name apart from their picture.
+      const label =
+        (chosen as HTMLElement | undefined)?.dataset.name ?? chosen?.querySelector('span')?.textContent ?? chosen?.textContent ?? ''
       if (this.suggestKind === 'command') {
         this.textInput.value = `${label} `
         this.closeSuggestions()
@@ -1249,9 +1273,19 @@ export class ChatPanel {
       const colour = this.colourOf(m.author)
       if (colour) name.style.color = roleInk(colour)
       row.classList.add('first')
+      const face = this.faceOf(m)
+      if (!m.hook) {
+        for (const el of [name, face]) {
+          el.classList.add('opens-profile')
+          el.addEventListener('click', (ev) => {
+            ev.stopPropagation()
+            this.onProfile?.(m.author, name)
+          })
+        }
+      }
       line.append(
         h('div', { class: 'chat-who' }, [
-          this.faceOf(m),
+          face,
           name,
           m.hook ? h('span', { class: 'chat-hook-mark', text: 'Webhook', title: 'Posted by an app, through a webhook' }) : null,
           at,

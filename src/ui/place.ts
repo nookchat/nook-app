@@ -52,6 +52,21 @@ export function fitNear(pop: HTMLElement, anchor: HTMLElement, gap = MARGIN): vo
   fitInView(pop, at.left, under ? at.bottom + gap : at.top - gap - height)
 }
 
+/**
+ * Beside the anchor, its top level with the anchor's, as Discord opens a profile: to the left of
+ * the people list, to the right of a name in the chat. The other side when there is no room.
+ */
+export function fitBeside(pop: HTMLElement, anchor: HTMLElement, side: 'left' | 'right', gap = 12): void {
+  const at = anchor.getBoundingClientRect()
+  const area = viewArea()
+  const width = pop.getBoundingClientRect().width
+  const leftRoom = at.left - gap - area.left
+  const rightRoom = area.right - at.right - gap
+  const left = side === 'left' ? width <= leftRoom || leftRoom >= rightRoom : !(width <= rightRoom || rightRoom >= leftRoom)
+  pop.dataset.side = left ? 'left' : 'right'
+  fitInView(pop, left ? at.left - gap - width : at.right + gap, at.top)
+}
+
 /** At the pointer, as a right click menu opens: down and right, or flipped where it has no room. */
 export function fitAtPoint(pop: HTMLElement, x: number, y: number): void {
   const area = viewArea()

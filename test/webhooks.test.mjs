@@ -58,8 +58,8 @@ try {
   // A webhook, made in the space settings. Its link is copied at once.
   await openSpaceSettings(alice, 'webhooks')
   const rules = await alice.locator('.hook-rules').first().textContent()
-  check('the page says that removing somebody stops every webhook', /Removing or banning somebody stops every webhook/.test(rules))
-  check('and that joining or leaving changes nothing', (await alice.locator('.hook-rules').first().textContent()).includes('join the space, or leave it by themselves'))
+  check('the page says the links are secret', rules.includes('Keep webhook links secret'))
+  check('and that removing or banning somebody stops every webhook', rules.includes('When you remove or ban somebody, every webhook stops'))
   await alice.fill('.hook-name', 'CI')
   await alice.click('button:has-text("New webhook")')
   await alice.waitForSelector('.hook-row')

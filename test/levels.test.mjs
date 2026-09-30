@@ -159,7 +159,7 @@ try {
   await alice.click(BOX)
   await alice.keyboard.type('thanks @Bo')
   const offeredColour = await alice
-    .waitForSelector('.mention-option:has-text("Bob") span', { timeout: 5_000 })
+    .waitForSelector('.mention-option:has-text("Bob") > .truncate', { timeout: 5_000 })
     .then((el) => el.evaluate((e) => getComputedStyle(e).color), () => '')
   check('the list of names to tag shows Bob in the colour of his level', offeredColour === TEAL, offeredColour)
   await alice.keyboard.press('Enter')

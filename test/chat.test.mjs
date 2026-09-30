@@ -104,8 +104,14 @@ try {
   await alice.click(BOX)
   await alice.keyboard.type('@Bo')
   await alice.waitForSelector('.mention-pop', { timeout: 5000 })
-  const offered = await alice.$$eval('.mention-option', (els) => els.map((e) => e.textContent))
+  const offered = await alice.$$eval('.mention-option', (els) => els.map((e) => (e.querySelector('.truncate') ?? e).textContent))
   check('typing an @ offers the people in the room', offered.includes('Bob'), offered.join())
+  const bobOption = await alice.$eval('.mention-option:has-text("Bob")', (el) => ({
+    face: !!el.querySelector('.mention-face .avatar'),
+    dot: el.querySelector('.mention-face .dot')?.className ?? '',
+  }))
+  check('with their picture, and a dot that says they are here', bobOption.face && bobOption.dot.includes('good'), JSON.stringify(bobOption))
+  await alice.screenshot({ path: 'test-output/mention-list.png' })
 
   await alice.keyboard.press('Enter')
   const completed = await alice.inputValue(BOX)
@@ -136,7 +142,7 @@ try {
   await alice.click(BOX)
   await alice.keyboard.type('/dm Bo')
   await alice.waitForSelector('.mention-pop', { timeout: 5000 })
-  const named = await alice.$$eval('.mention-option', (els) => els.map((e) => e.textContent))
+  const named = await alice.$$eval('.mention-option', (els) => els.map((e) => (e.querySelector('.truncate') ?? e).textContent))
   check('a command that wants a person offers the people', named.includes('Bob'), named.join())
 
   await alice.keyboard.press('Tab')
@@ -147,7 +153,7 @@ try {
   await alice.click(BOX)
   await alice.keyboard.type('/msg Bo')
   await alice.waitForSelector('.mention-pop', { timeout: 5000 })
-  const aliased = await alice.$$eval('.mention-option', (els) => els.map((e) => e.textContent))
+  const aliased = await alice.$$eval('.mention-option', (els) => els.map((e) => (e.querySelector('.truncate') ?? e).textContent))
   check('the other spelling of a command offers them too', aliased.includes('Bob'), aliased.join())
   await alice.keyboard.press('Escape')
 
@@ -264,7 +270,7 @@ try {
   await alice.click('input[aria-label="Search this space"]')
   await alice.keyboard.type('from:Bo')
   await alice.waitForSelector('.mention-pop', { timeout: 5000 })
-  const searchNames = await alice.$$eval('.mention-option', (els) => els.map((e) => e.textContent))
+  const searchNames = await alice.$$eval('.mention-option', (els) => els.map((e) => (e.querySelector('.truncate') ?? e).textContent))
   check('the from: filter offers the people', searchNames.includes('Bob'), searchNames.join())
 
   await alice.keyboard.press('Tab')
@@ -335,8 +341,8 @@ try {
   )
 
   const menuFor = async (page, who) => {
-    // A click on the person opens it: there is no ellipsis.
-    await page.locator('.rail-person', { hasText: who }).first().click()
+    // A right click on the person opens it: there is no ellipsis. A click opens their profile.
+    await page.locator('.rail-person', { hasText: who }).first().click({ button: 'right' })
     await page.waitForSelector('.menu', { timeout: 5000 })
     // A note sits beside the label with no separator, so textContent runs the two together.
     return page.$$eval('.menu-item', (els) =>
@@ -352,7 +358,7 @@ try {
   const onBob = await menuFor(alice, 'Bob')
   check('and their menu sets no volume: that is on the left', (await alice.locator('.menu .menu-volume').count()) === 0)
   check(
-    'a click on somebody opens what the owner can do about them, and levels stay in the space settings',
+    'a right click on somebody opens what the owner can do about them, and levels stay in the space settings',
     onBob.some((t) => t.startsWith('Remove')) && !onBob.some((t) => t === 'Admin' || t === 'Member'),
     onBob.join(' | '),
   )
@@ -367,11 +373,19 @@ try {
   )
   await bob.keyboard.press('Escape')
 
-  const onSelf = await alice.$$eval('.rail-person', (els) => {
-    const mine = els.find((e) => e.textContent.includes('(you)'))
-    return !!mine?.classList.contains('has-menu')
-  })
-  check('and your own row has no menu at all', onSelf === false)
+  await alice.locator('.rail-person', { hasText: 'Bob' }).first().click()
+  await alice.waitForSelector('.profile-card', { timeout: 5000 })
+  const bobProfile = await alice.$eval('.profile-card', (el) => el.textContent)
+  check('a click on somebody opens their profile', bobProfile.includes('Bob') && bobProfile.includes('Message Bob'), bobProfile)
+  await alice.keyboard.press('Escape')
+
+  await alice.locator('.rail-person', { hasText: '(you)' }).first().click({ button: 'right' })
+  await alice.waitForTimeout(300)
+  check('your own row has no right click menu', (await alice.$('.menu')) === null)
+  await alice.locator('.rail-person', { hasText: '(you)' }).first().click()
+  await alice.waitForSelector('.profile-card', { timeout: 5000 })
+  check('and a click on it opens your own profile, to edit', (await alice.locator('.profile-card button:has-text("Edit profile")').count()) === 1)
+  await alice.keyboard.press('Escape')
 
   await menuFor(alice, 'Bob')
   await alice.click('.menu-item:has(.menu-label:text-is("Mention"))')
