@@ -1,6 +1,6 @@
 import { showBoot } from '../ui/boot'
 import { h } from '../ui/dom'
-import { icon } from '../ui/icons'
+import { ghost } from '../ui/ghost'
 
 /** How often an open tab asks whether there is a new version. */
 const CHECK_MS = 10 * 60 * 1000
@@ -277,7 +277,7 @@ function showOffer(words: OfferWords, update: () => Promise<void>): void {
   document.querySelector('.update-pop')?.remove()
   const now = h('button', { class: 'primary', text: words.button })
   const pop = h('div', { class: 'update-pop', role: 'alertdialog', ariaLabel: words.title }, [
-    h('span', { class: 'update-icon' }, [icon('download', 20)]),
+    h('span', { class: 'update-icon' }, [ghost({ entrance: 'peek', size: 34 })]),
     h('div', { class: 'update-words' }, [
       h('strong', { text: words.title }),
       h('div', { class: 'row wrap update-actions' }, [

@@ -1500,6 +1500,8 @@ button.rail-add {
   min-width: 28px;
   min-height: 28px;
   height: 28px;
+  /* Into the head's padding: a head with a + is as tall as one without, so each name sits at the same place. */
+  margin: -6px 0;
   border-radius: var(--icon-btn-radius-small);
 }
 
@@ -6470,9 +6472,10 @@ input.invalid:focus {
   bottom: 16px;
   z-index: 75;
   display: flex;
-  gap: 12px;
-  width: min(360px, calc(100vw - 32px));
-  padding: 14px 16px;
+  gap: 10px;
+  width: max-content;
+  max-width: min(300px, calc(100vw - 32px));
+  padding: 12px 14px;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
@@ -6484,11 +6487,8 @@ input.invalid:focus {
   flex: 0 0 auto;
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
-  border-radius: var(--icon-btn-radius);
-  background: var(--accent-soft);
-  color: var(--text-primary);
+  width: 34px;
+  height: 34px;
 }
 
 .update-words {
