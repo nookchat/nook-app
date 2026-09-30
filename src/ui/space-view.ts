@@ -16,6 +16,7 @@ import { useServedIce } from '../rtc/config'
 import { fetchIce, serverTag } from '../backend'
 import {
   availableCodecs,
+  capHeight,
   planFor,
   PRESETS,
   presetById,
@@ -4467,12 +4468,12 @@ export class SpaceView {
   private async applyConstraints(): Promise<void> {
     const track = this.capture?.video
     if (!track) return
+    // Never past 1080p. The encoder makes it smaller too, if the browser does not here.
+    const most = capHeight(this.settings.maxHeight)
     const constraints: MediaTrackConstraints = {
       frameRate: { ideal: this.settings.fps, max: this.settings.fps },
-    }
-    if (this.settings.maxHeight > 0) {
-      constraints.height = { max: this.settings.maxHeight }
-      constraints.width = { max: Math.round((this.settings.maxHeight * 16) / 9) }
+      height: { max: most },
+      width: { max: Math.round((most * 16) / 9) },
     }
     await track.applyConstraints(constraints).catch(() => undefined)
   }

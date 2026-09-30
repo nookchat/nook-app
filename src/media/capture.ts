@@ -1,5 +1,7 @@
+import { capHeight } from '../rtc/quality'
+
 export interface CaptureOptions {
-  /** 0 keeps whatever the display gives. */
+  /** The most the capture asks for. Past 1080, or 0, it asks for 1080. */
   maxHeight: number
   fps: number
   wantSystemAudio: boolean
@@ -35,10 +37,12 @@ export async function captureScreen(options: CaptureOptions): Promise<ScreenCapt
     )
   }
 
-  const video: MediaTrackConstraints = { frameRate: { ideal: options.fps, max: 60 } }
-  if (options.maxHeight > 0) {
-    video.height = { max: options.maxHeight }
-    video.width = { max: Math.round((options.maxHeight * 16) / 9) }
+  // Never past 1080p. The encoder makes it smaller too, if the browser does not here.
+  const most = capHeight(options.maxHeight)
+  const video: MediaTrackConstraints = {
+    frameRate: { ideal: options.fps, max: 60 },
+    height: { max: most },
+    width: { max: Math.round((most * 16) / 9) },
   }
 
   // The extra fields are Chromium only. Other browsers ignore what they do not know.

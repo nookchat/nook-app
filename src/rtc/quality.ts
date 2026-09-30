@@ -19,6 +19,22 @@ interface QualityInput {
   bitrateScale: number
 }
 
+/** No stream goes out bigger than 1080p: its long side at most 1920, its short side at most 1080. */
+export const MOST_LONG = 1920
+export const MOST_SHORT = 1080
+
+/** The height a capture asks for: what a preset or a setting says, but never past 1080. 0 was "the display's own". */
+export function capHeight(height: number): number {
+  return height > 0 ? Math.min(height, MOST_SHORT) : MOST_SHORT
+}
+
+/** How much a picture of this size is made smaller to fit in 1080p, or 1 when it fits already. */
+export function fitScale(width: number, height: number): number {
+  const long = Math.max(width, height)
+  const short = Math.min(width, height)
+  return Math.max(1, long / MOST_LONG, short / MOST_SHORT)
+}
+
 export type PresetId = 'docs' | 'slides' | 'video' | 'game' | 'detail' | 'light' | 'custom'
 
 interface Preset {
@@ -26,7 +42,7 @@ interface Preset {
   name: string
   useWhen: string
   mode: Mode
-  /** 0 keeps whatever the display gives. */
+  /** The most the capture asks for. Never past 1080: see capHeight. */
   maxHeight: number
   fps: number
   bitrateScale: number
@@ -77,9 +93,9 @@ export const PRESETS: Preset[] = [
     id: 'detail',
     name: 'Maximum detail',
     useWhen:
-      'Use for photo work, drawings, or a 4K display where every pixel counts. Needs a fast upload and a strong processor.',
+      'Use for photo work or drawings, where every pixel counts. Needs a fast upload and a strong processor.',
     mode: 'text',
-    maxHeight: 0,
+    maxHeight: 1080,
     fps: 30,
     bitrateScale: 1.4,
   },
@@ -122,7 +138,9 @@ function idealBitrateKbps(mode: Mode, width: number, height: number, bitrateScal
 
 export function planFor(input: QualityInput): QualityPlan {
   const { mode, budgetKbps, viewerCount, width, height, fps, bitrateScale } = input
-  const ideal = idealBitrateKbps(mode, width, height, bitrateScale, fps)
+  // A display past 1080p, or a capture the browser would not make smaller, is made smaller here.
+  const fit = fitScale(width, height)
+  const ideal = idealBitrateKbps(mode, width / fit, height / fit, bitrateScale, fps)
   const share = Math.floor(budgetKbps / Math.max(1, viewerCount))
   const maxBitrateKbps = Math.max(READABLE_FLOOR_KBPS, Math.min(ideal, share))
 
@@ -133,7 +151,7 @@ export function planFor(input: QualityInput): QualityPlan {
 
   return {
     maxBitrateKbps,
-    scaleDown,
+    scaleDown: Math.round(fit * scaleDown * 1000) / 1000,
     maxFramerate: fps,
     degradation: mode === 'text' ? 'maintain-resolution' : 'maintain-framerate',
   }

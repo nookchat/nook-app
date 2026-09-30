@@ -1,4 +1,5 @@
 import {
+  capHeight,
   DEFAULT_PRESET,
   presetById,
   type CodecChoice,
@@ -47,7 +48,7 @@ export function loadSettings(): HostSettings {
     const saved = JSON.parse(raw) as Partial<HostSettings>
     const merged: HostSettings = { ...base, ...saved }
     merged.fps = clamp(merged.fps, 1, 60, base.fps)
-    merged.maxHeight = clamp(merged.maxHeight, 0, 4320, base.maxHeight)
+    merged.maxHeight = capHeight(clamp(merged.maxHeight, 0, 4320, base.maxHeight))
     merged.bitrateScale = clamp(merged.bitrateScale, 0.2, 3, base.bitrateScale)
     merged.budgetKbps = clamp(merged.budgetKbps, 500, 50_000, base.budgetKbps)
     merged.maxViewers = clamp(Math.round(merged.maxViewers), 1, 20, base.maxViewers)
