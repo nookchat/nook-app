@@ -22,15 +22,8 @@
     "appId": "app.nook.desktop",
     "productName": "Nook",
     "files": [
-      "main.cjs",
-      "games.cjs",
-      "recordings.cjs",
-      "updates.cjs",
-      "placement.cjs",
-      "edit-menu.cjs",
-      "preload.cjs",
+      "*.cjs",
       "picker.html",
-      "picker-preload.cjs",
       "fonts/**"
     ],
     "directories": {
