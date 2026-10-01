@@ -43,6 +43,7 @@ import {
   type LogEvent,
   type Message,
   type NoteInfo,
+  type WhiteboardInfo,
   type ThreadInfo,
 } from '../store/log'
 import type { RoomChat } from '../store/room-chat'
@@ -73,6 +74,7 @@ import type { HookActions, MemberRow, SoundboardActions } from './space-settings
 import { hookUrl } from '../space/webhook'
 import { actionFor, type Action } from './shortcuts'
 import { NoteEditor } from './notes-view'
+import { WhiteboardView } from './whiteboard-view'
 import { placeNear } from './emoji'
 import { asSheet, closeOnBack, onDrag, phone, PHONE, scrollsThatWay } from './gestures'
 import { loadAvatar, squareThumb } from './avatar'
@@ -164,6 +166,9 @@ const COMMANDS = [
   { name: 'leave', note: 'Leave this space' },
   { name: 'help', note: 'List these' },
 ]
+
+/** What can sit in place of the chat. */
+type PageKind = 'note' | 'whiteboard'
 
 function parseNote<T extends object>(raw: string, type: string): T | null {
   if (!raw.startsWith(`{"t":"${type}"`)) return null
@@ -324,6 +329,11 @@ export class SpaceView {
   private noteEditor!: NoteEditor
   /** The note on screen in place of the chat, if any. */
   private noteId: string | null = null
+  private boardList!: HTMLDivElement
+  private boardView!: WhiteboardView
+  /** The whiteboard on screen in place of the chat, if any. */
+  private boardId: string | null = null
+  private boardListSig: string | null = null
   private peopleList!: HTMLDivElement
   private voiceBar!: HTMLDivElement
   private shell!: HTMLElement
@@ -561,6 +571,8 @@ export class SpaceView {
       }
     }
     const action = actionFor(ev)
+    // On a whiteboard, its own keys come first: the search is not in view there anyway.
+    if (action === 'search' && (ev.target as Element | null)?.closest?.('.whiteboard-view')) return
     if (action) {
       ev.preventDefault()
       this.runShortcut(action)
@@ -1409,7 +1421,7 @@ export class SpaceView {
 
   private openThread(rootId: string | null): void {
     this.showRail(null)
-    this.closeNote()
+    this.closePage()
     this.chatPanel.keepDraft()
     this.thread = rootId
     this.chatPanel.useDraft(rootId ? `thread:${rootId}` : this.channel)
@@ -1492,7 +1504,7 @@ export class SpaceView {
     if (m.inThread && m.replyTo) this.openThread(m.replyTo)
     else if (this.thread) this.openThread(null)
     // From a note too, which sits in place of the channel it came from.
-    if (m.channel !== this.channel || this.noteId) this.openChannel(m.channel)
+    if (m.channel !== this.channel || this.noteId || this.boardId) this.openChannel(m.channel)
     this.drawNow()
     window.setTimeout(() => this.chatPanel.jump(m.id), 40)
   }
@@ -1636,12 +1648,21 @@ export class SpaceView {
     const note = this.noteId ? chat.notes().find((n) => n.id === this.noteId) : undefined
     if (this.noteId && !note) {
       toast('That note was deleted.', 'warn')
-      this.closeNote()
+      this.closePage()
     }
-    this.shell.classList.toggle('note-open', !!note)
+    const board = this.boardId ? chat.whiteboards().find((b) => b.id === this.boardId) : undefined
+    if (this.boardId && !board) {
+      toast('That whiteboard was deleted.', 'warn')
+      this.closePage()
+    }
+    this.shell.classList.toggle('note-open', !!note || !!board)
+    this.shell.classList.toggle('whiteboard-open', !!board)
     if (note) {
       this.noteEditor.show(note)
-      this.renderNoteHead(note.title)
+      this.renderNoteHead(note.title, 'file')
+    } else if (board) {
+      this.boardView.show(board)
+      this.renderNoteHead(board.title, 'whiteboard')
     } else {
       this.renderChannelHead(info)
       this.markRead(this.channel)
@@ -1655,6 +1676,7 @@ export class SpaceView {
     this.renderThreads()
     this.renderVoice()
     this.renderNotes()
+    this.renderWhiteboards()
     this.renderPeople(people)
     this.renderMe()
     this.renderShareButton()
@@ -1686,13 +1708,13 @@ export class SpaceView {
     }
   }
 
-  private renderNoteHead(title: string): void {
-    const sig = `note\n${title}`
+  private renderNoteHead(title: string, kind: IconName): void {
+    const sig = `${kind}\n${title}`
     if (this.channelTitleSig === sig) return
     this.channelTitleSig = sig
     clear(this.channelTitle)
     this.channelTitle.append(
-      h('span', { class: 'channel-name' }, [icon('file', 18), h('span', { class: 'truncate', text: title })]),
+      h('span', { class: 'channel-name' }, [icon(kind, 18), h('span', { class: 'truncate', text: title })]),
     )
   }
 
@@ -1703,68 +1725,85 @@ export class SpaceView {
     const sig = [this.noteId, ...notes.map((n) => `${n.id}\t${n.title}\t${n.levels.join()}\t${n.maker}`)].join('\n')
     if (this.noteListSig === sig) return
     this.noteListSig = sig
-    clear(this.noteList)
-    for (const note of notes) {
+    this.fillPageList('note', this.noteList, notes, this.noteId)
+  }
+
+  private renderWhiteboards(): void {
+    if (this.heldForPress()) return
+    const boards = this.chat?.whiteboards() ?? []
+    const sig = [this.boardId, ...boards.map((b) => `${b.id}\t${b.title}\t${b.levels.join()}\t${b.maker}`)].join('\n')
+    if (this.boardListSig === sig) return
+    this.boardListSig = sig
+    this.fillPageList('whiteboard', this.boardList, boards, this.boardId)
+  }
+
+  private fillPageList(kind: PageKind, list: HTMLElement, pages: WhiteboardInfo[], openId: string | null): void {
+    clear(list)
+    for (const page of pages) {
       const open = h(
         'button',
         {
-          class: `rail-item grow${note.id === this.noteId ? ' on' : ''}`,
-          title: `Open ${note.title}`,
-          on: { click: () => this.openNote(note.id) },
+          class: `rail-item grow${page.id === openId ? ' on' : ''}`,
+          title: `Open ${page.title}`,
+          on: { click: () => this.openPage(kind, page.id) },
         },
         [
-          icon('file', 16),
-          h('span', { class: 'truncate grow', text: note.title }),
+          icon(kind === 'note' ? 'file' : 'whiteboard', 16),
+          h('span', { class: 'truncate grow', text: page.title }),
         ],
       )
       const row = h('div', { class: 'row rail-row' }, [open])
-      // The newest copy of the note: the row stays while its text changes.
-      onContextMenu(row, () => this.noteActions(this.chat?.notes().find((n) => n.id === note.id) ?? note))
-      this.noteList.append(row)
+      // The newest copy of the page: the row stays while its contents change.
+      onContextMenu(row, () => this.pageActions(kind, this.pagesOf(kind).find((p) => p.id === page.id) ?? page))
+      list.append(row)
     }
   }
 
-  /** The note's own buttons: rename, who can see it, copy, and delete. */
-  private noteTools(note: NoteInfo): HTMLElement[] {
+  private pagesOf(kind: PageKind): WhiteboardInfo[] {
+    return (kind === 'note' ? this.chat?.notes() : this.chat?.whiteboards()) ?? []
+  }
+
+  /** The page's own buttons: rename, who can see it, and delete. */
+  private pageTools(kind: PageKind, page: WhiteboardInfo): HTMLElement[] {
     const tool = (name: IconName, label: string, run: () => void, danger = false): HTMLElement =>
       h('button', { class: `ghost icon-only tool-${name}${danger ? ' danger' : ''}`, title: label, ariaLabel: label, on: { click: run } }, [
         icon(name, 20),
       ])
-    const out = [tool('edit', 'Rename', () => void this.renameNote(note))]
-    if (this.mayKeepNote(note)) {
-      out.push(tool(note.levels.length ? 'lock' : 'people', this.noteSeenBy(note), () => void this.pickNoteLevels(note)))
-      out.push(tool('trash', 'Delete the note', () => void this.deleteNote(note), true))
+    const out = [tool('edit', 'Rename', () => void this.renamePage(kind, page))]
+    if (this.mayKeepNote(page)) {
+      out.push(tool(page.levels.length ? 'lock' : 'people', this.noteSeenBy(page), () => void this.pickPageLevels(kind, page)))
+      out.push(tool('trash', `Delete the ${kind}`, () => void this.deletePage(kind, page), true))
     }
     return out
   }
 
-  private async renameNote(note: NoteInfo): Promise<void> {
-    const raw = await ask('What should this note be called?', { value: note.title, ok: 'Rename' })
-    if (raw === null || !raw.trim() || raw.trim() === note.title) return
-    void this.publish((c) => c.saveNote(note.id, raw.trim()))
+  private async renamePage(kind: PageKind, page: WhiteboardInfo): Promise<void> {
+    const raw = await ask(`What should this ${kind} be called?`, { value: page.title, ok: 'Rename' })
+    if (raw === null || !raw.trim() || raw.trim() === page.title) return
+    void this.publish((c) => (kind === 'note' ? c.saveNote(page.id, raw.trim()) : c.saveWhiteboard(page.id, raw.trim())))
   }
 
-  private mayKeepNote(note: NoteInfo): boolean {
-    return !!this.chat && (note.maker === this.chat.me || this.chat.can('channels'))
+  private mayKeepNote(page: WhiteboardInfo): boolean {
+    return !!this.chat && (page.maker === this.chat.me || this.chat.can('channels'))
   }
 
-  private noteSeenBy(note: NoteInfo): string {
+  private noteSeenBy(page: WhiteboardInfo): string {
     const levels = this.chat?.levels() ?? []
-    const names = note.levels.map((id) => levels.find((l) => l.id === id)?.name).filter(Boolean)
+    const names = page.levels.map((id) => levels.find((l) => l.id === id)?.name).filter(Boolean)
     return names.length ? `Who can see it: only ${names.join(', ')}` : 'Who can see it: everybody'
   }
 
-  private async pickNoteLevels(note: NoteInfo): Promise<void> {
+  private async pickPageLevels(kind: PageKind, page: WhiteboardInfo): Promise<void> {
     const levels = this.chat?.levels() ?? []
     const choices = levels.filter((l) => l.id !== OWNER).map((l) => ({ id: l.id, name: l.name, colour: l.colour }))
     const picked = await pickSome(
-      `Who can see ${note.title}`,
+      `Who can see ${page.title}`,
       'Tick nobody for everybody. You, the owner, and whoever can change channels always see it.',
       choices,
-      note.levels,
+      page.levels,
     )
     if (picked === null) return
-    void this.publish((c) => c.setNoteLevels(note.id, picked))
+    void this.publish((c) => (kind === 'note' ? c.setNoteLevels(page.id, picked) : c.setWhiteboardLevels(page.id, picked)))
   }
 
   private copyNote(note: NoteInfo): void {
@@ -1774,38 +1813,40 @@ export class SpaceView {
     )
   }
 
-  private async deleteNote(note: NoteInfo): Promise<void> {
-    const sure = await confirmDanger(`Delete ${note.title}?`, 'It goes for everybody in this space, and it cannot be undone.', 'Delete')
+  private async deletePage(kind: PageKind, page: WhiteboardInfo): Promise<void> {
+    const sure = await confirmDanger(`Delete ${page.title}?`, 'It goes for everybody in this space, and it cannot be undone.', 'Delete')
     if (!sure) return
-    if (this.noteId === note.id) this.openChannel(this.channel)
-    void this.publish((c) => c.dropNote(note.id))
+    if (this.noteId === page.id || this.boardId === page.id) this.openChannel(this.channel)
+    void this.publish((c) => (kind === 'note' ? c.dropNote(page.id) : c.dropWhiteboard(page.id)))
   }
 
-  /** The right click on a note in the list. */
-  private noteActions(note: NoteInfo): MenuItem[] {
+  /** The right click on a note or a whiteboard in the list. */
+  private pageActions(kind: PageKind, page: WhiteboardInfo): MenuItem[] {
     const items: MenuItem[] = [
-      { label: 'Open', run: () => this.openNote(note.id) },
-      { label: 'Rename', run: () => void this.renameNote(note) },
-      { label: 'Copy the markdown', run: () => this.copyNote(note) },
+      { label: 'Open', run: () => this.openPage(kind, page.id) },
+      { label: 'Rename', run: () => void this.renamePage(kind, page) },
     ]
-    if (this.mayKeepNote(note)) {
-      items.push({ label: 'Who can see it', note: this.noteSeenBy(note).replace('Who can see it: ', ''), run: () => void this.pickNoteLevels(note) })
-      items.push({ label: 'Delete', note: 'For everybody in this space', danger: true, run: () => void this.deleteNote(note) })
+    if (kind === 'note') items.push({ label: 'Copy the markdown', run: () => this.copyNote(page as NoteInfo) })
+    if (this.mayKeepNote(page)) {
+      items.push({ label: 'Who can see it', note: this.noteSeenBy(page).replace('Who can see it: ', ''), run: () => void this.pickPageLevels(kind, page) })
+      items.push({ label: 'Delete', note: 'For everybody in this space', danger: true, run: () => void this.deletePage(kind, page) })
     }
     return items
   }
 
-  private async newNote(): Promise<void> {
-    const raw = await ask('What should the note be called?', { placeholder: 'Untitled', ok: 'Make' })
+  private async newPage(kind: PageKind): Promise<void> {
+    const raw = await ask(`What should the ${kind} be called?`, { placeholder: 'Untitled', ok: 'Make' })
     if (raw === null) return
     const bytes = crypto.getRandomValues(new Uint8Array(8))
     const id = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')
-    await this.publish((c) => c.saveNote(id, raw.trim() || 'Untitled', ''))
-    this.openNote(id)
-    this.noteEditor.focus()
+    const title = raw.trim() || 'Untitled'
+    await this.publish((c) => (kind === 'note' ? c.saveNote(id, title, '') : c.saveWhiteboard(id, title)))
+    this.openPage(kind, id)
+    if (kind === 'note') this.noteEditor.focus()
   }
 
-  private openNote(id: string): void {
+  /** Puts a note or a whiteboard in place of the chat. */
+  private openPage(kind: PageKind, id: string): void {
     this.showRail(null)
     if (this.thread) {
       this.chatPanel.keepDraft()
@@ -1814,16 +1855,20 @@ export class SpaceView {
       this.chatPanel.useDraft(this.channel)
     }
     this.closeSearch()
-    this.noteId = id
+    if (kind === 'note' ? this.boardId : this.noteId) this.closePage()
+    if (kind === 'note') this.noteId = id
+    else this.boardId = id
     this.chatPanel.root.classList.add('hidden')
     this.drawNow()
   }
 
-  /** Returns true when a note was open. */
-  private closeNote(): boolean {
-    if (!this.noteId) return false
+  /** Returns true when a note or a whiteboard was open. */
+  private closePage(): boolean {
+    if (!this.noteId && !this.boardId) return false
+    if (this.noteId) this.noteEditor.hide()
+    if (this.boardId) this.boardView.hide()
     this.noteId = null
-    this.noteEditor.hide()
+    this.boardId = null
     this.chatPanel.root.classList.remove('hidden')
     this.channelTitleSig = ''
     return true
@@ -1959,7 +2004,15 @@ export class SpaceView {
     this.noteEditor = new NoteEditor({
       save: (id, title, text) => this.publish((c) => c.saveNote(id, title, text)),
       nameOf: (key) => this.chat?.nameOf(key) || shortKey(key),
-      tools: (note) => this.noteTools(note),
+      tools: (note) => this.pageTools('note', note),
+    })
+    this.boardList = h('div', { class: 'rail-list' })
+    this.boardListSig = null
+    this.boardView = new WhiteboardView({
+      draw: async (id, shapes) => (this.chat ? this.chat.drawOnWhiteboard(id, shapes) : 0),
+      shapes: (id) => this.chat?.whiteboardShapes(id) ?? [],
+      nameOf: (key) => this.chat?.nameOf(key) || shortKey(key),
+      tools: (board) => this.pageTools('whiteboard', board),
     })
     this.peopleList = h('div', { class: 'rail-list' })
     this.voiceBar = h('div', { class: 'voice-bar voice-panel hidden' })
@@ -2037,10 +2090,11 @@ export class SpaceView {
         h('div', { class: 'space-head row' }, [
           this.channelsButton,
           this.channelTitle,
-          // Search first, then the actions. A note has its own in their place.
+          // Search first, then the actions. A note or a whiteboard has its own in their place.
           this.searchWrap,
           this.pinsButton,
           this.noteEditor.tools,
+          this.boardView.tools,
           this.peopleButton,
         ]),
         offline,
@@ -2050,6 +2104,7 @@ export class SpaceView {
         this.stage,
         this.chatPanel.root,
         this.noteEditor.root,
+        this.boardView.root,
       ]),
       right,
     ])
@@ -2086,8 +2141,8 @@ export class SpaceView {
       onDrag(shell, {
         take: (dx, dy, target) => {
           if (!phone() || Math.abs(dx) < Math.abs(dy) * 1.5) return false
-          // What a sideways finger already means: a slider, a video, a box of text, a sheet.
-          if (target.closest('input, textarea, [contenteditable="true"], .stage, .camera-strip, .video-player, .menu, .sheet')) return false
+          // What a sideways finger already means: a slider, a video, a box of text, a sheet, a stroke on a whiteboard.
+          if (target.closest('input, textarea, [contenteditable="true"], .stage, .camera-strip, .video-player, .menu, .sheet, .whiteboard-host')) return false
           if (scrollsThatWay(target, shell, dx, 0)) return false
           if (this.railOpen) {
             if ((this.railOpen === 'left') !== dx < 0) return false
@@ -2301,12 +2356,26 @@ export class SpaceView {
               class: 'ghost icon-only rail-add',
               title: 'Make a note',
               ariaLabel: 'Make a note',
-              on: { click: () => void this.newNote() },
+              on: { click: () => void this.newPage('note') },
             },
             [icon('plus', 18)],
           ),
         ]),
         this.noteList,
+        h('div', { class: 'rail-head' }, [
+          h('span', { class: 'eyebrow', text: 'Whiteboards', title: 'Whiteboards that everybody here can draw on at once.' }),
+          h(
+            'button',
+            {
+              class: 'ghost icon-only rail-add',
+              title: 'Make a whiteboard',
+              ariaLabel: 'Make a whiteboard',
+              on: { click: () => void this.newPage('whiteboard') },
+            },
+            [icon('plus', 18)],
+          ),
+        ]),
+        this.boardList,
         this.threadList,
       ]),
       this.dock.root,
@@ -2854,7 +2923,7 @@ export class SpaceView {
       const open = h(
         'button',
         {
-          class: `rail-item grow${name === this.channel && !this.noteId ? ' on' : ''}${news ? ' unread' : ''}${muted ? ' muted' : ''}`,
+          class: `rail-item grow${name === this.channel && !this.noteId && !this.boardId ? ' on' : ''}${news ? ' unread' : ''}${muted ? ' muted' : ''}`,
           title: channel.topic || `Open ${channel.label}`,
           on: { click: () => this.openChannel(name) },
         },
@@ -4063,7 +4132,7 @@ export class SpaceView {
 
   private openChannel(name: string): void {
     this.showRail(null)
-    const hadNote = this.closeNote()
+    const hadNote = this.closePage()
     if (name === this.channel && !this.thread) {
       if (hadNote) this.draw()
       return

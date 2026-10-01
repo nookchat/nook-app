@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { extname, join } from 'node:path'
-import { FAKE_MEDIA, check, finish, launch, poll, stoppedEarly } from './harness.mjs'
+import { FAKE_MEDIA, answer, check, finish, launch, poll, stoppedEarly } from './harness.mjs'
 import { startServer } from './pg.mjs'
 
 // The built page, served with the headers vercel.json gives it, CSP and all: nothing the app
@@ -95,6 +95,21 @@ try {
   })
   // With no policy it runs, as this page's origin: see test/hostile.test.mjs for why SVG is not a picture.
   check('script in an SVG opened from a blob does not run', svgRan.opened && svgRan.ran === null, JSON.stringify(svgRan))
+
+  // A whiteboard loads Excalidraw, and its fonts from this page, not from another site.
+  const fonts = []
+  alice.on('request', (r) => r.url().includes('.woff2') && fonts.push(r.url()))
+  await alice.click('button[aria-label="Make a whiteboard"]')
+  await answer(alice, 'Sketch')
+  await alice.waitForSelector('.whiteboard-view:not(.hidden) .excalidraw', { timeout: 20_000 })
+  const canvas = await alice.locator('.whiteboard-host canvas.interactive').boundingBox()
+  await alice.mouse.click(canvas.x + 20, canvas.y + canvas.height - 20)
+  await alice.keyboard.press('t')
+  await alice.mouse.click(canvas.x + 300, canvas.y + 200)
+  await alice.keyboard.type('Hello')
+  await alice.keyboard.press('Escape')
+  const fontsHere = await poll(() => fonts.length > 0 && fonts.every((url) => url.startsWith(APP)), 10_000)
+  check('a whiteboard opens, and takes its fonts from this page', fontsHere, fonts.join(' | '))
 
   const found = [...(await breaches(alice)), ...(await breaches(bob))]
   check('nothing the app does breaks the policy', found.length === 0, found.join(' | '))

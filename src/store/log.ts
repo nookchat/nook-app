@@ -18,6 +18,7 @@ const EVENT_KINDS = [
   'close',
   'dm',
   'note',
+  'whiteboard',
   'board',
   'key',
   'push',
@@ -186,7 +187,7 @@ function mayEnter(auth: Authority, key: string, channel: { levels: string[] }): 
 }
 
 /** A note kept to some levels opens to them, to its maker, and to whoever may keep a channel. */
-function mayOpenNote(auth: Authority, key: string, note: NoteInfo): boolean {
+function mayOpenNote(auth: Authority, key: string, note: WhiteboardInfo): boolean {
   return note.levels.length === 0 || key === note.maker || mayEnter(auth, key, note)
 }
 
@@ -899,52 +900,92 @@ export class RoomLog {
    * write to it is ignored. Anybody with the space's key can still open the lines.
    */
   notes(): NoteInfo[] {
-    return this.cached('notes', () => {
+    return this.cached('notes', () => this.foldNotes('note'))
+  }
+
+  /**
+   * Shared whiteboards: kept, seen and deleted as a note is. What is drawn on one is in
+   * whiteboardShapes.
+   */
+  whiteboards(): WhiteboardInfo[] {
+    return this.cached('whiteboards', () => this.foldNotes('whiteboard').map(({ text: _, ...board }) => board))
+  }
+
+  /**
+   * The shapes on a whiteboard, each at its newest version, the deleted ones too, so a device can
+   * tell an old copy from a new one. Two edits of one version: the lower nonce wins, as Excalidraw
+   * does it, so every device ends on the same one.
+   */
+  whiteboardShapes(id: string): WhiteboardShape[] {
+    return this.cached(`whiteboardShapes:${id}`, () => {
+      const board = this.whiteboards().find((b) => b.id === id)
+      if (!board) return []
       const auth = this.authority()
-      const notes = new Map<string, NoteInfo>()
-      const gone = new Set<string>()
       const hooks = new Set(this.hooks().map((hook) => hook.pub))
-      // Its maker wrote to it first, in the order the server kept them. Not first by place, which
-      // anybody can sign as earlier, and so take a note over.
-      const makers = new Map<string, string>()
-      const arrived = this.all()
-        .filter((e) => e.kind === 'note' && e.body.gone !== true)
-        .sort((a, b) => this.arrivedAt(a.id) - this.arrivedAt(b.id))
-      for (const e of arrived) {
-        const id = cleanNoteId(e.body.id)
-        if (id && !makers.has(id)) makers.set(id, e.author)
-      }
+      const shapes = new Map<string, WhiteboardShape>()
       for (const e of this.all()) {
-        if (e.kind !== 'note' || auth.isKicked(e.author) || hooks.has(e.author)) continue
-        const id = cleanNoteId(e.body.id)
-        if (!id || gone.has(id)) continue
-        let note = notes.get(id)
-        if (!note) {
-          if (e.body.gone === true) continue
-          const maker = makers.get(id) ?? e.author
-          note = { id, title: 'Untitled', text: '', maker, by: e.author, at: e.at, lamport: e.lamport, levels: [] }
-          notes.set(id, note)
+        if (e.kind !== 'whiteboard' || e.body.id !== id || !Array.isArray(e.body.shapes)) continue
+        if (auth.isKicked(e.author) || hooks.has(e.author) || !mayOpenNote(auth, e.author, board)) continue
+        for (const raw of e.body.shapes.slice(0, MAX_SHAPES_PER_EVENT)) {
+          const shape = cleanShape(raw)
+          if (!shape) continue
+          const had = shapes.get(shape.id)
+          if (!had || shape.version > had.version || (shape.version === had.version && shape.versionNonce < had.versionNonce)) {
+            shapes.set(shape.id, shape)
+          }
         }
-        const keeper = e.author === note.maker || auth.can(e.author, 'channels')
-        if (e.body.gone === true) {
-          if (!keeper) continue
-          notes.delete(id)
-          gone.add(id)
-          continue
-        }
-        if (!mayOpenNote(auth, e.author, note)) continue
-        if (Array.isArray(e.body.levels) && keeper) note.levels = cleanLevelIds(e.body.levels)
-        if (typeof e.body.title === 'string') note.title = cleanNoteTitle(e.body.title) || 'Untitled'
-        if (typeof e.body.text === 'string') note.text = e.body.text.slice(0, MAX_TEXT)
-        if (typeof e.body.title !== 'string' && typeof e.body.text !== 'string') continue
-        note.by = e.author
-        note.at = e.at
-        note.lamport = e.lamport
       }
-      return [...notes.values()]
-        .filter((note) => mayOpenNote(auth, this.me, note))
-        .sort((a, b) => a.title.localeCompare(b.title))
+      return [...shapes.values()]
     })
+  }
+
+  /** The notes and the whiteboards, which are kept the same way. */
+  private foldNotes(kind: 'note' | 'whiteboard'): NoteInfo[] {
+    const auth = this.authority()
+    const notes = new Map<string, NoteInfo>()
+    const gone = new Set<string>()
+    const hooks = new Set(this.hooks().map((hook) => hook.pub))
+    // Its maker wrote to it first, in the order the server kept them. Not first by place, which
+    // anybody can sign as earlier, and so take a note over.
+    const makers = new Map<string, string>()
+    const arrived = this.all()
+      .filter((e) => e.kind === kind && e.body.gone !== true)
+      .sort((a, b) => this.arrivedAt(a.id) - this.arrivedAt(b.id))
+    for (const e of arrived) {
+      const id = cleanNoteId(e.body.id)
+      if (id && !makers.has(id)) makers.set(id, e.author)
+    }
+    for (const e of this.all()) {
+      if (e.kind !== kind || auth.isKicked(e.author) || hooks.has(e.author)) continue
+      const id = cleanNoteId(e.body.id)
+      if (!id || gone.has(id)) continue
+      let note = notes.get(id)
+      if (!note) {
+        if (e.body.gone === true) continue
+        const maker = makers.get(id) ?? e.author
+        note = { id, title: 'Untitled', text: '', maker, by: e.author, at: e.at, lamport: e.lamport, levels: [] }
+        notes.set(id, note)
+      }
+      const keeper = e.author === note.maker || auth.can(e.author, 'channels')
+      if (e.body.gone === true) {
+        if (!keeper) continue
+        notes.delete(id)
+        gone.add(id)
+        continue
+      }
+      if (!mayOpenNote(auth, e.author, note)) continue
+      if (Array.isArray(e.body.levels) && keeper) note.levels = cleanLevelIds(e.body.levels)
+      if (typeof e.body.title === 'string') note.title = cleanNoteTitle(e.body.title) || 'Untitled'
+      if (kind === 'note' && typeof e.body.text === 'string') note.text = e.body.text.slice(0, MAX_TEXT)
+      const changed = typeof e.body.title === 'string' || (kind === 'note' ? typeof e.body.text === 'string' : Array.isArray(e.body.shapes))
+      if (!changed) continue
+      note.by = e.author
+      note.at = e.at
+      note.lamport = e.lamport
+    }
+    return [...notes.values()]
+      .filter((note) => mayOpenNote(auth, this.me, note))
+      .sort((a, b) => a.title.localeCompare(b.title))
   }
 
   /** Sounds people added to the soundboard. The adder or a channel keeper may rename one or take it off. */
@@ -1637,6 +1678,40 @@ export interface NoteInfo {
   lamport: number
   /** The levels that may see it. Empty is everybody. */
   levels: string[]
+}
+
+/** A whiteboard: a note with shapes in place of text. */
+export type WhiteboardInfo = Omit<NoteInfo, 'text'>
+
+/**
+ * One Excalidraw element, as somebody wrote it. Only the fields the log orders by are checked:
+ * Excalidraw's own restoreElements cleans the rest before the board draws it.
+ */
+export interface WhiteboardShape {
+  id: string
+  type: string
+  version: number
+  versionNonce: number
+  isDeleted?: boolean
+  [field: string]: unknown
+}
+
+/** At most this many shapes in one line of the log. */
+export const MAX_SHAPES_PER_EVENT = 400
+
+/**
+ * What may be drawn. No picture, web page or frame of another site: each would load from
+ * somewhere on every device that opens the board.
+ */
+const SHAPE_TYPES = new Set(['rectangle', 'diamond', 'ellipse', 'arrow', 'line', 'freedraw', 'text', 'frame'])
+
+export function cleanShape(raw: unknown): WhiteboardShape | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const shape = raw as Record<string, unknown>
+  if (typeof shape.id !== 'string' || !/^[\w-]{1,64}$/.test(shape.id)) return null
+  if (typeof shape.type !== 'string' || !SHAPE_TYPES.has(shape.type)) return null
+  if (!Number.isSafeInteger(shape.version) || !Number.isSafeInteger(shape.versionNonce)) return null
+  return shape as WhiteboardShape
 }
 
 /** A pass in an invite: 16 letters of the same alphabet as a code. */

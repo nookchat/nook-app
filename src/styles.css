@@ -6649,9 +6649,29 @@ input[type="text"].gif-search {
 }
 
 .space-grid:not(.note-open) .space-head .note-tools,
+.space-grid.whiteboard-open .space-head .note-tools:not(.whiteboard-tools),
+.space-grid:not(.whiteboard-open) .space-head .whiteboard-tools,
 .space-grid.note-open .space-head .search-wrap,
 .space-grid.note-open .space-head .pins-button {
   display: none;
+}
+
+/* Whiteboards: Excalidraw fills the space under the bar. */
+.whiteboard-view {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.whiteboard-host {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.whiteboard-loading {
+  padding: 18px 24px;
 }
 
 /* The lock's body is low in its box: up a little, it sits in the middle of the round button. */
@@ -6712,6 +6732,11 @@ input[type="text"].gif-search {
   }
 
   .note-status {
+    display: none;
+  }
+
+  /* The board needs every line it can get. */
+  .whiteboard-view > .note-bar {
     display: none;
   }
 }

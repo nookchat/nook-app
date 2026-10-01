@@ -6,11 +6,17 @@ import { dirname, join, relative, sep } from 'node:path'
 import { defineConfig } from 'vite'
 
 const WORKER = 'stream-sw.js'
+/** The app's own code, as against a library's. */
+const SOURCE = new URL('./src/', import.meta.url).pathname
 /** Fetched when a page shows them, not kept by the worker: there are thousands. */
 const EMOJI_DIR = 'emoji'
 // Twemoji 17 from its GitHub release (npm has no newer SVG package than 15).
 const EMOJI_ART = join(dirname(createRequire(import.meta.url).resolve('twemoji-art/package.json')), 'assets', 'svg')
 const EMOJI_NAMES = 'virtual:twemoji'
+/** Excalidraw's fonts, for the whiteboards. Fetched when a board shows them, not kept by the worker. */
+const BOARD_FONTS_DIR = 'excalidraw/fonts'
+// The package lists no package.json in its exports, so its folder is found by name.
+const BOARD_FONTS = new URL('./node_modules/@excalidraw/excalidraw/dist/prod/fonts', import.meta.url).pathname
 
 /** @param {string} dir @returns {string[]} */
 function filesIn(dir) {
@@ -27,17 +33,47 @@ function filesIn(dir) {
 /** @returns {import('vite').Plugin} */
 function keepTheApp() {
   let outDir = 'dist'
+  /**
+   * Code that only a library loads when it wants it, such as Excalidraw's Mermaid diagrams and
+   * languages. The worker leaves it out: it is megabytes, and most people never use it.
+   */
+  const extras = new Set()
   return {
     name: 'nook-keep-the-app',
     apply: 'build',
     configResolved(config) {
       outDir = config.build.outDir
     },
+    generateBundle(_, bundle) {
+      const chunks = Object.values(bundle).filter((file) => file.type === 'chunk')
+      const byName = new Map(chunks.map((chunk) => [chunk.fileName, chunk]))
+      const chunkOf = new Map(chunks.flatMap((chunk) => chunk.moduleIds.map((id) => [id, chunk.fileName])))
+      const ours = (id) => id.startsWith(SOURCE)
+      const needed = new Set()
+      const need = (name) => {
+        const chunk = byName.get(name)
+        if (!chunk || needed.has(name)) return
+        needed.add(name)
+        for (const css of chunk.viteMetadata?.importedCss ?? []) needed.add(css)
+        for (const next of chunk.imports) need(next)
+        // What the app's own code loads later, such as the whiteboards, is kept too. A chunk can
+        // hold a library beside the app's code, so this asks each module, not the chunk.
+        for (const id of chunk.moduleIds.filter(ours)) {
+          for (const later of this.getModuleInfo(id)?.dynamicallyImportedIds ?? []) need(chunkOf.get(later))
+        }
+      }
+      for (const chunk of chunks) if (chunk.isEntry) need(chunk.fileName)
+      for (const chunk of chunks) {
+        if (needed.has(chunk.fileName)) continue
+        extras.add(chunk.fileName)
+        for (const css of chunk.viteMetadata?.importedCss ?? []) if (!needed.has(css)) extras.add(css)
+      }
+    },
     closeBundle() {
       const files = filesIn(outDir)
         .map((path) => relative(outDir, path).split(sep).join('/'))
         .filter((file) => file !== WORKER && file !== 'index.html' && !file.endsWith('.map'))
-        .filter((file) => !file.startsWith(`${EMOJI_DIR}/`))
+        .filter((file) => !file.startsWith(`${EMOJI_DIR}/`) && !file.startsWith(`${BOARD_FONTS_DIR}/`) && !extras.has(file))
         .sort()
       const hash = createHash('sha256')
       for (const file of ['index.html', ...files]) hash.update(file).update(readFileSync(join(outDir, file)))
@@ -90,6 +126,40 @@ function emojiArt() {
   }
 }
 
+/**
+ * Excalidraw's fonts next to the app, so a whiteboard asks no other site for them. The page
+ * points Excalidraw here (src/ui/whiteboard-view.ts).
+ */
+/** @returns {import('vite').Plugin} */
+function boardFonts() {
+  return {
+    name: 'nook-board-fonts',
+    configureServer(server) {
+      server.middlewares.use(`/${BOARD_FONTS_DIR}/`, (req, res, next) => {
+        const name = decodeURIComponent((req.url ?? '').split('?')[0].replace(/^\//, ''))
+        const path = join(BOARD_FONTS, name)
+        if (!name.endsWith('.woff2') || !path.startsWith(BOARD_FONTS + sep)) return next()
+        try {
+          const font = readFileSync(path)
+          res.setHeader('Content-Type', 'font/woff2')
+          res.end(font)
+        } catch {
+          next()
+        }
+      })
+    },
+    generateBundle() {
+      for (const path of filesIn(BOARD_FONTS).filter((file) => file.endsWith('.woff2'))) {
+        this.emitFile({
+          type: 'asset',
+          fileName: `${BOARD_FONTS_DIR}/${relative(BOARD_FONTS, path).split(sep).join('/')}`,
+          source: readFileSync(path),
+        })
+      }
+    },
+  }
+}
+
 /** The commit this is built from, for the About page. Vercel says it; a local build asks git. */
 function commit() {
   const sha = process.env.VERCEL_GIT_COMMIT_SHA
@@ -106,7 +176,7 @@ const VERSION = JSON.parse(readFileSync(new URL('./package.json', import.meta.ur
 export default defineConfig({
   // Relative, so the build works from any sub path on a static host.
   base: './',
-  plugins: [emojiArt(), keepTheApp()],
+  plugins: [emojiArt(), boardFonts(), keepTheApp()],
   define: {
     __NOOK_VERSION__: JSON.stringify(VERSION),
     __NOOK_COMMIT__: JSON.stringify(commit()),

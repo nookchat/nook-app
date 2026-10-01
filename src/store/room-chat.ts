@@ -13,7 +13,9 @@ import {
   cleanHookName,
   DEFAULT_CHANNEL,
   makeEvent,
+  MAX_BODY,
   MAX_DM_BYTES,
+  MAX_SHAPES_PER_EVENT,
   MAX_TEXT,
   oneEmoji,
   RoomLog,
@@ -23,6 +25,8 @@ import {
   type Authority,
   type ChannelInfo,
   type NoteInfo,
+  type WhiteboardInfo,
+  type WhiteboardShape,
   type BoardGroup,
   type BoardSound,
   type EventKind,
@@ -95,6 +99,57 @@ export class RoomChat {
     if (title !== undefined) body.title = cleanNoteTitle(title) || 'Untitled'
     if (text !== undefined) body.text = trimToWire(text, MAX_TEXT)
     return this.write('note', body)
+  }
+
+  whiteboards(): WhiteboardInfo[] {
+    return this.log.whiteboards()
+  }
+
+  whiteboardShapes(id: string): WhiteboardShape[] {
+    return this.log.whiteboardShapes(id)
+  }
+
+  /** Makes the whiteboard when the id is new, or renames it. */
+  saveWhiteboard(id: string, title: string): Promise<LogEvent> {
+    return this.write('whiteboard', { id, title: cleanNoteTitle(title) || 'Untitled' })
+  }
+
+  /**
+   * Writes the shapes that changed, in as few lines as fit. Returns how many were too big for a
+   * line of their own, and so were not sent.
+   */
+  async drawOnWhiteboard(id: string, shapes: readonly WhiteboardShape[]): Promise<number> {
+    // Room for the id and the rest of the body around the shapes.
+    const room = MAX_BODY - 200
+    let batch: WhiteboardShape[] = []
+    let size = 0
+    let tooBig = 0
+    const send = async (): Promise<void> => {
+      if (batch.length) await this.write('whiteboard', { id, shapes: batch })
+      batch = []
+      size = 0
+    }
+    for (const shape of shapes) {
+      const bytes = new TextEncoder().encode(JSON.stringify(shape)).length + 1
+      if (bytes > room) {
+        tooBig += 1
+        continue
+      }
+      if (size + bytes > room || batch.length >= MAX_SHAPES_PER_EVENT) await send()
+      batch.push(shape)
+      size += bytes
+    }
+    await send()
+    return tooBig
+  }
+
+  /** Keeps a whiteboard to some levels. None is everybody. */
+  setWhiteboardLevels(id: string, levels: string[]): Promise<LogEvent> {
+    return this.write('whiteboard', { id, levels })
+  }
+
+  dropWhiteboard(id: string): Promise<LogEvent> {
+    return this.write('whiteboard', { id, gone: true })
   }
 
   boardSounds(): BoardSound[] {
