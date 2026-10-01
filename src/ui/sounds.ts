@@ -38,9 +38,8 @@ export function sharedAudio(): AudioContext | null {
 }
 
 /**
- * The app's own sounds: Google's Material Design sound resources, under CC-BY 4.0. They are
- * in public/sounds, with the licence, each brought to the same loudness. Each is fetched and
- * decoded once, the first time it is wanted or when warmSounds runs.
+ * The app's own sounds: soft, low tones made for Nook, in public/sounds, each at the same
+ * loudness. Each is fetched and decoded once, the first time it is wanted or when warmSounds runs.
  */
 type Cue = 'join' | 'leave' | 'message' | 'mention' | 'ring' | 'mute' | 'unmute' | 'deafen' | 'undeafen' | 'hangup' | 'stream'
 
@@ -58,7 +57,7 @@ const LOUDNESS: Record<Cue, number> = {
   hangup: 0.7,
   stream: 0.7,
 }
-/** The ringtone is a little under eight seconds, and goes again when it ends. */
+/** The ringtone is seven and a half seconds, and goes again after eight. */
 const RING_EVERY_MS = 8000
 
 const clips = new Map<Cue, Promise<AudioBuffer | null>>()

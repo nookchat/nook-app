@@ -3803,9 +3803,15 @@ input[type="text"].space-search {
   color: var(--on-accent);
 }
 
-.send-button:hover:not(:disabled) {
+.send-button:hover:not(:disabled),
+.note-play:hover:not(:disabled) {
   background: var(--accent);
   filter: brightness(1.05);
+}
+
+/* The plane's weight sits up and to the right of its box: nudged so it looks centred. */
+.send-button > .icon {
+  transform: translate(-0.75px, 0.75px);
 }
 
 .send-button:disabled {
@@ -6172,7 +6178,7 @@ input[type="text"].gif-search {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  width: min(330px, calc(100vw - 24px));
+  width: min(480px, calc(100vw - 24px));
   padding: 10px;
   background: var(--surface);
   border: 1px solid var(--line);
@@ -6182,7 +6188,7 @@ input[type="text"].gif-search {
 
 .sound-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 6px;
 }
 
@@ -6192,6 +6198,7 @@ input[type="text"].gif-search {
   flex-direction: column;
   gap: 8px;
   max-height: min(420px, 60vh);
+  overflow-x: hidden;
   overflow-y: auto;
 }
 
@@ -6284,7 +6291,8 @@ input[type="text"].gif-search {
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  padding: 8px 4px;
+  min-width: 0;
+  padding: 8px 6px;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
@@ -6305,8 +6313,12 @@ input[type="text"].gif-search {
 }
 
 .sound-name {
+  max-width: 100%;
+  overflow: hidden;
   font-size: 11px;
   text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .link-card {

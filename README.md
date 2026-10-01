@@ -603,9 +603,5 @@ The emoji pictures are [Twemoji](https://github.com/jdecked/twemoji), by
 Twitter and its contributors, under [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 
 The app's sounds (joining, leaving, a message, a mention, a call ringing, mute,
-deafen and a share that starts) are Google's
-[Material Design sound resources](https://m2.material.io/design/sound/sound-resources.html),
-under [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/), brought to the
-same loudness. They are in `public/sounds`, with the licence and the name of
-each one.
+deafen and a share that starts) were made for Nook, and are in `public/sounds`.
 They are Twemoji 17, from its GitHub release, as the `twemoji-art` package.
