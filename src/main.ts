@@ -10,7 +10,6 @@ import './brand/motion.css'
 import './brand/components.css'
 import './styles.css'
 import { mentionsMe } from './chat'
-import { checkSupport } from './diagnostics'
 import { closeConnections } from './net/connection'
 import { startStreaming } from './net/files'
 import { watchPush } from './net/push'
@@ -426,7 +425,3 @@ window.addEventListener('pagehide', () => {
 window.addEventListener('pageshow', (ev) => {
   if (ev.persisted) window.location.reload()
 })
-
-if (checkSupport().isIOS && !linked) {
-  toast('This device can watch and chat. Apple does not let any browser share a screen.', 'info', 8000)
-}
