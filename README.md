@@ -118,8 +118,10 @@ with voice does it.
 - **Notes**: the bar of a note has Rename, Who can see it, Copy, and Delete.
   A note kept to some levels is out of sight for everybody else, and what
   they write to it is ignored. Its maker, the owner, and whoever can change
-  channels always see it. The list of channels and notes has no buttons; a
-  right click opens the actions.
+  channels always see it. It is hidden, not sealed apart: it is sealed with
+  the space's key, as a channel kept to some levels is, so a changed app in
+  the hands of anybody in the space could read it. The list of channels and
+  notes has no buttons; a right click opens the actions.
 - **Notifications while Nook is closed**: with notifications on, a browser
   also gets them when no Nook page is open, through the browser's own push
   service. The device that sends a message seals the notification for your

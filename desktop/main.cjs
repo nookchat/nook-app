@@ -539,12 +539,19 @@ ipcMain.on('window:control', (ev, action) => {
 function setUpSession() {
   const ses = session.defaultSession
 
-  ses.setPermissionRequestHandler((wc, permission, callback) => {
-    callback(isHome(wc.getURL()) && ALLOWED.has(permission))
+  // The frame that asks must be home's own top frame, not only the page it sits in: a frame put
+  // in the page from somewhere else gets no microphone, camera or screen.
+  ses.setPermissionRequestHandler((wc, permission, callback, details) => {
+    const asker = details?.requestingUrl ?? wc.getURL()
+    callback(isHome(wc.getURL()) && isHome(asker) && details?.isMainFrame !== false && ALLOWED.has(permission))
   })
-  ses.setPermissionCheckHandler((wc, permission) => !!wc && isHome(wc.getURL()) && ALLOWED.has(permission))
+  ses.setPermissionCheckHandler(
+    (wc, permission, origin, details) =>
+      !!wc && isHome(wc.getURL()) && isHome(origin || wc.getURL()) && details?.isMainFrame !== false && ALLOWED.has(permission),
+  )
 
   ses.setDisplayMediaRequestHandler(async (request, callback) => {
+    if (!isHome(request.securityOrigin ?? '') || (request.frame && request.frame.parent)) return callback({})
     try {
       const picked = await pickSource(main)
       if (!picked) return callback({})

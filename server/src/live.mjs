@@ -3,16 +3,24 @@ import { CLUSTERED } from './config.mjs'
 
 const BOOT = randomBytes(8).toString('hex')
 const OUTBOX_MAX = 5000
+/** A signal can be half a megabyte, so the count alone would let the outbox hold gigabytes. */
+const OUTBOX_MAX_BYTES = 64 * 1024 * 1024
 
 const outbox = []
+let outboxBytes = 0
 let counter = 0
 const waiting = new Set()
+
+const sizeOf = (event) => (typeof event.d === 'string' ? event.d.length : 0) + 64
 
 export function emitLive(event) {
   if (!CLUSTERED) return
   counter += 1
   outbox.push({ n: counter, ...event })
-  if (outbox.length > OUTBOX_MAX) outbox.shift()
+  outboxBytes += sizeOf(event)
+  while (outbox.length > OUTBOX_MAX || (outboxBytes > OUTBOX_MAX_BYTES && outbox.length > 1)) {
+    outboxBytes -= sizeOf(outbox.shift())
+  }
   for (const wake of waiting) wake()
   waiting.clear()
 }

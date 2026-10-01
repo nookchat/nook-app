@@ -1,4 +1,4 @@
-import { fromBase64Url, toBase64Url } from '../bytes'
+import { fromBase64Url, toBase64Url, toHex } from '../bytes'
 
 // Wire format: base64url(12 byte IV || AES-GCM ciphertext of the JSON envelope).
 
@@ -41,6 +41,15 @@ export interface Envelope {
   t: number
   type: MsgType
   data?: unknown
+  /**
+   * The sender's public key, and their signature over the space and everything above: see
+   * signedBytes. The space key only says somebody holds it. This says who sent it. A page from
+   * before signatures sends neither.
+   */
+  k?: string
+  s?: string
+  /** Set here, never sent: the key that signed it, checked, or '' when it came unsigned. */
+  signer?: string
 }
 
 export type OutgoingEnvelope = Pick<Envelope, 'type'> & Partial<Pick<Envelope, 'to' | 'data'>>
@@ -57,6 +66,12 @@ export function buildEnvelope(from: string, msg: OutgoingEnvelope): Envelope {
   if (msg.to) env.to = msg.to
   if (msg.data !== undefined) env.data = msg.data
   return env
+}
+
+/** What a signature covers: the space, so it cannot be sent to another, and every field. */
+export async function signedDigest(room: string, env: Envelope): Promise<string> {
+  const text = JSON.stringify([room, env.v, env.id, env.from, env.to ?? '', env.t, env.type, env.data ?? null, env.k ?? ''])
+  return toHex(new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode(text))))
 }
 
 export async function seal(key: CryptoKey, env: Envelope): Promise<string> {
@@ -82,6 +97,8 @@ export async function open(key: CryptoKey, wire: string): Promise<Envelope | nul
     const env = JSON.parse(dec.decode(plain)) as Envelope
     if (env?.v !== 1 || typeof env.id !== 'string' || typeof env.from !== 'string') return null
     if (typeof env.type !== 'string') return null
+    // Only this device says who signed it.
+    delete env.signer
     return env
   } catch {
     return null

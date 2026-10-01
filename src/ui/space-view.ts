@@ -97,6 +97,10 @@ function clockFor(ms: number): string {
   return hours ? `${hours}:${String(minutes).padStart(2, '0')}:${seconds}` : `${minutes}:${seconds}`
 }
 const TTS_EVERY_MS = 5000
+/** Watchers of one share at once. Each is a connection with its own picture, so a few dozen at most. */
+const MAX_WATCHERS = 32
+/** A move to another voice channel counts only this long after it was signed. */
+const MOVE_FRESH_MS = 10 * 60 * 1000
 const TTS_MAX_CHARS = 280
 const TYPING_EVERY_MS = 2000
 const TYPING_FOR_MS = 5000
@@ -674,7 +678,7 @@ export class SpaceView {
         return
       }
       case 'hello': {
-        if (!this.outStream) return
+        if (!this.outStream || !this.mayWatch(env.from)) return
         this.closeWatcher(env.from)
         this.admitWatcher(env.from)
         return
@@ -1127,10 +1131,16 @@ export class SpaceView {
   }
 
   private takeSpoken(from: string, raw: string): boolean {
-    const note = parseNote<{ x?: unknown }>(raw, 'tts')
+    const note = parseNote<{ x?: unknown; c?: unknown }>(raw, 'tts')
     if (!note) return false
     if (typeof note.x !== 'string') return true
-    if (!allowNow(this.ttsHeard, this.keyOf(from), TTS_EVERY_MS)) return true
+    // Spoken to whoever has its text channel open, as the line also lands there, and only from
+    // somebody who may write in it.
+    const channel = typeof note.c === 'string' ? cleanChannel(note.c) : ''
+    const key = this.keyOf(from)
+    const chat = this.chat
+    if (!chat || !channel || channel !== this.channel || chat.authority().isKicked(key) || !chat.mayEnter(key, channel)) return true
+    if (!allowNow(this.ttsHeard, key, TTS_EVERY_MS)) return true
     speak(note.x.slice(0, TTS_MAX_CHARS))
     return true
   }
@@ -2495,13 +2505,12 @@ export class SpaceView {
     if (!chat) return []
     const auth = chat.authority()
     const me = chat.me
-    const mine = auth.levelOf(me).rank
     const avatars = chat.log.avatars()
     return chat.log
       .keyMembers()
       .map((key) => {
         const level = auth.levelOf(key)
-        const choices = auth.mayPlace(me, key) ? auth.list().filter((l) => l.id !== OWNER && l.rank <= mine) : []
+        const choices = auth.mayPlace(me, key) ? auth.list().filter((l) => l.id !== OWNER && auth.mayGive(me, l)) : []
         return {
           key,
           name: key === me ? chat.displayName : chat.nameOf(key) || shortKey(key),
@@ -3373,8 +3382,10 @@ export class SpaceView {
     // Only to a voice channel there is, that this person may go in, and not the one they are in.
     if (!this.chat.channelInfo(true).some((c) => c.name === channel)) return
     if (!this.chat.mayEnter(me, channel, true) || this.voice?.state.channel === channel) return
-    // Replay guard: the signed time must climb per admin key. Clocks differ, so it is not compared with ours.
-    if (at <= (this.newestMoveBy.get(by) ?? 0)) return
+    // Replay guard: the signed time must climb per admin key. That is kept only while the page is
+    // open, so a move must also be recent: one seen before, sent again after a reload, is old by then.
+    // Clocks differ, so recent is a wide window.
+    if (at <= (this.newestMoveBy.get(by) ?? 0) || Math.abs(Date.now() - at) > MOVE_FRESH_MS) return
     this.newestMoveBy.set(by, at)
 
     const who = this.chat.nameOf(by) || 'An admin'
@@ -4118,6 +4129,22 @@ export class SpaceView {
   private closeWatcher(id: string): void {
     this.watchers.get(id)?.close()
     this.watchers.delete(id)
+  }
+
+  /**
+   * Whether this session may watch what is shared here: somebody not removed, who may go in the
+   * voice channel it is shared from, and not past the most watchers at once. In a call, only
+   * the other person.
+   */
+  private mayWatch(session: string): boolean {
+    const chat = this.chat
+    if (!chat || (!this.watchers.has(session) && this.watchers.size >= MAX_WATCHERS)) return false
+    const key = this.keyOf(session)
+    if (chat.authority().isKicked(key)) return false
+    const channel = this.voice?.state.channel
+    if (!channel) return true
+    if (isCallChannel(channel)) return !!this.space.call && key === this.space.call.with
+    return chat.mayEnter(key, channel, true)
   }
 
   private admitWatcher(peerId: string): void {

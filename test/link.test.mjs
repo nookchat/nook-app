@@ -91,12 +91,25 @@ try {
   await three.click('button:text-is("Skip")')
   await three.waitForSelector('button:has-text("I have an account")', { timeout: 10_000 })
 
+  // A link in the address could come from anybody, so it says whose it is and asks, every time.
+  const declined = await makeLink(ana)
+  const keyOf = (page) => page.evaluate(() => localStorage.getItem('nook.identity.v1'))
+  const before = await keyOf(three)
+  await three.goto(declined.link)
+  const asked = await three.waitForSelector('button:has-text("Become Ana")', { timeout: 20_000 }).then(() => true, () => false)
+  check('a link in the address says whose account it is, and asks', asked)
+  await three.click('button:text-is("Keep this device as it is")')
+  await wait(1000)
+  const kept = await keyOf(three)
+  check('keeping the device as it is changes nothing', kept === before && kept !== (await keyOf(ana)))
+
   const second = await makeLink(ana)
   await three.goto(second.link)
+  await three.click('button:has-text("Become Ana")', { timeout: 20_000 })
   await three.waitForURL((url) => !url.hash, { timeout: 20_000 }).catch(() => undefined)
   await wait(1500)
   const asThree = await whoIs(three)
-  check('opening the link does it in one go', asThree.name === 'Ana' && asThree.id === her.id && asThree.spaces.includes('linked'), JSON.stringify(asThree))
+  check('becoming that account takes one click', asThree.name === 'Ana' && asThree.id === her.id && asThree.spaces.includes('linked'), JSON.stringify(asThree))
 
   const third = await makeLink(ana)
   const four = await fresh()

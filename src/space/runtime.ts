@@ -166,7 +166,7 @@ export class SpaceRuntime {
     this.chat = chat
 
     const channel = new Channel(connectionTo(this.server), this.room, serverTag(this.server), this.keys)
-    channel.onEvents = (events) => void this.take(events)
+    channel.onEvents = (events, places) => void this.take(events, places)
     channel.onLeft = (session) => this.drop(session, 'left')
     channel.onHere = (ids, up) => void this.checkHere(ids, up, Date.now())
     // The others reconnect too after a server restart, some later than us, so they get a while to say hello.
@@ -174,7 +174,7 @@ export class SpaceRuntime {
     channel.onRefused = (why) => console.warn(`[nook] the server would not keep a write: ${why}`)
     this.channel = channel
 
-    const bus = new SignalBus(this.keys, this.selfId, [channel])
+    const bus = new SignalBus(this.keys, this.selfId, [channel], this.room.id)
     const mesh = new Mesh(bus, this.selfId, identity.name)
     mesh.extra = () => ({
       key: identity.pubkey,
@@ -199,6 +199,8 @@ export class SpaceRuntime {
       this.emit('peers')
     }
     bus.onMessage = (env) => {
+      // Somebody removed still has the code, and so an older key: what they sign is not heard.
+      if (env.signer && this.chat.authority().isKicked(env.signer)) return
       mesh.handle(env)
       if (env.type === 'announce') {
         this.presence.set(env.from, env)
@@ -360,7 +362,7 @@ export class SpaceRuntime {
   private keysChanged(): void {
     this.keyQueue = this.keyQueue
       .then(() => this.keys.learn(this.chat.log, this.chat.me))
-      .then(() => this.keys.learnHooks(this.chat.log.hooks().map((hook) => hook.key)))
+      .then(() => this.keys.learnHooks(this.chat.log.hooks().map(({ key, pub }) => ({ key, pub }))))
       .then(() => this.keys.hearOnly(this.chat.log.keysSinceBan()))
       .then(() => this.keeper?.consider())
       .catch((err) => console.warn('[nook] a space key did not open', err))
@@ -387,8 +389,8 @@ export class SpaceRuntime {
     await this.chat.showPass(proof)
   }
 
-  private async take(events: unknown[]): Promise<void> {
-    const fresh = await this.chat.absorb(events)
+  private async take(events: unknown[], places: number[]): Promise<void> {
+    const fresh = await this.chat.absorb(events, places)
     if (fresh.length === 0) return
     if (fresh.some((e) => e.kind === 'dm')) void this.chat.readDirect()
     if (fresh.some((e) => e.kind === 'space')) void this.remember({})

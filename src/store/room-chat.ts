@@ -182,15 +182,24 @@ export class RoomChat {
     return top
   }
 
+  /**
+   * The first claim to have made the space, in the order the server kept the lines: whoever made
+   * it wrote first, and nobody can write before that. Not the first by its place in the log,
+   * which its writer picks: anybody could claim with a place before everything, and be taken
+   * for the owner by everybody who came after.
+   */
+  private firstClaim = ''
+
+  private noteClaims(events: LogEvent[]): void {
+    if (this.firstClaim) return
+    const claim = events.find((e) => e.kind === 'role' && e.body.subject === e.author && e.body.role === 'admin')
+    if (claim) this.firstClaim = claim.author
+  }
+
   private pinFounder(): void {
-    if (this.log.founder) return
-    const claim = this.log
-      .all()
-      .find((e) => e.kind === 'role' && e.body.subject === e.author && e.body.role === 'admin')
-    if (claim) {
-      this.log.founder = claim.author
-      this.onFounder?.(claim.author)
-    }
+    if (this.log.founder || !this.firstClaim) return
+    this.log.founder = this.firstClaim
+    this.onFounder?.(this.firstClaim)
   }
 
   get founder(): string {
@@ -563,12 +572,15 @@ export class RoomChat {
     return this.write('profile', { name, avatar: picture })
   }
 
-  async absorb(candidates: unknown[]): Promise<LogEvent[]> {
+  /** `places` is where each came in the order the server sent them; see RoomLog.add. */
+  async absorb(candidates: unknown[], places?: number[]): Promise<LogEvent[]> {
     const fresh: LogEvent[] = []
-    for (const event of await openEvents(candidates, this.log.room)) {
-      if (!event) continue
-      if (this.log.add(event)) fresh.push(event)
-    }
+    const opened = await openEvents(candidates, this.log.room)
+    opened.forEach((event, i) => {
+      if (event && this.log.add(event, places?.[i])) fresh.push(event)
+    })
+    // In the order they came, which is the order the server kept them.
+    this.noteClaims(fresh)
     if (fresh.length) {
       this.pinFounder()
       this.onChange?.()

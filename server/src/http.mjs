@@ -1,4 +1,5 @@
 import { ANY_ORIGIN, RATE_BURST, RATE_PER_S, originAllowed } from './config.mjs'
+import { isIP } from 'node:net'
 import { isPrivateAddress } from './addresses.mjs'
 
 const MAX_BODY = 4 * 1024 * 1024
@@ -74,11 +75,26 @@ export function readJson(req, limit = MAX_BODY) {
 const buckets = new Map()
 
 // Only a proxy on a private address may say who the client is, and the entry it appended is the last.
-function addressOf(req) {
+export function addressOf(req) {
   const peer = req.socket.remoteAddress ?? '?'
   const forwarded = req.headers['x-forwarded-for']
-  if (!forwarded || !isPrivateAddress(peer)) return peer
-  return String(forwarded).split(',').at(-1).trim() || peer
+  if (!forwarded || !isPrivateAddress(peer)) return holderOf(peer)
+  return holderOf(String(forwarded).split(',').at(-1).trim() || peer)
+}
+
+/**
+ * Who an address belongs to, for the limits. One IPv6 home or server is given a whole /64, so
+ * each of its addresses is one holder: counted one by one, a /64 would never be limited.
+ */
+function holderOf(address) {
+  const v4 = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address)
+  if (v4) return v4[1]
+  if (isIP(address) !== 6) return address
+  const [head, tail = ''] = address.toLowerCase().split('::')
+  const front = head ? head.split(':') : []
+  const back = tail ? tail.split(':') : []
+  const full = address.includes('::') ? [...front, ...Array(8 - front.length - back.length).fill('0'), ...back] : front
+  return `${full.slice(0, 4).map((part) => part.replace(/^0+(?=.)/, '')).join(':')}::/64`
 }
 
 export function allow(req) {

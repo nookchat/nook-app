@@ -8,20 +8,8 @@
     />
     <meta name="color-scheme" content="light dark" />
     <meta name="theme-color" content="#FDF6F3" />
-    <script>
-      // The saved theme goes on before the first paint, so the page never flashes the wrong one.
-      ;(function () {
-        var root = document.documentElement
-        try {
-          var saved = localStorage.getItem('nook.theme.v1')
-          if (saved === 'light' || saved === 'dark') root.dataset.theme = saved
-        } catch (e) {}
-        var dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches
-        document.querySelector('meta[name="theme-color"]').content = dark ? '#100C0B' : '#FDF6F3'
-        // The desktop app showed the same screen while the page came, so it does not come in again.
-        if (window.nookDesktop && window.nookDesktop.splash) root.classList.add('boot-held')
-      })()
-    </script>
+    <!-- Before the first paint, and from a file: the page allows no inline script. -->
+    <script src="./boot-theme.js"></script>
     <meta
       name="description"
       content="Spaces with text channels, voice and screen sharing. Run them on your own server, or peer to peer with no server at all. End to end encrypted either way."
@@ -133,15 +121,7 @@
       <div class="boot-bar"><div class="boot-fill creep"></div></div>
       <div class="boot-say">Loading Nook</div>
     </div>
-    <script>
-      // A reload into an update says so from the first paint.
-      ;(function () {
-        try {
-          var at = Number(sessionStorage.getItem('nook.updating.v1') || localStorage.getItem('nook.updating.v1'))
-          if (at && Date.now() - at < 120000) document.querySelector('#boot .boot-say').textContent = 'Updating Nook'
-        } catch (e) {}
-      })()
-    </script>
+    <script src="./boot-update.js"></script>
     <div id="app"></div>
     <noscript>Nook needs JavaScript, because the whole app runs in your browser.</noscript>
     <script type="module" src="/src/main.ts"></script>

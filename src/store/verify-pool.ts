@@ -1,4 +1,4 @@
-import { openEvent, type LogEvent } from './log'
+import { openEvent, plainEnough, type LogEvent } from './log'
 
 const MIN_EVENTS_FOR_WORKERS = 48
 
@@ -32,7 +32,9 @@ async function here(events: unknown[], room: string): Promise<(LogEvent | null)[
   return out
 }
 
-export async function openEvents(events: unknown[], room: string): Promise<(LogEvent | null)[]> {
+export async function openEvents(raw: unknown[], room: string): Promise<(LogEvent | null)[]> {
+  // One nested too deep for a worker to be handed is dropped here, so it cannot stop its page.
+  const events = raw.map((e) => (plainEnough(e) ? e : null))
   if (events.length <= MIN_EVENTS_FOR_WORKERS) return here(events, room)
   const all = pool()
   if (all.length === 0) return here(events, room)
@@ -44,7 +46,12 @@ export async function openEvents(events: unknown[], room: string): Promise<(LogE
       const id = ++job
       return new Promise<(LogEvent | null)[]>((done) => {
         waiting.set(id, done)
-        worker.postMessage({ job: id, room, events: slice })
+        try {
+          worker.postMessage({ job: id, room, events: slice })
+        } catch {
+          waiting.delete(id)
+          done(here(slice, room))
+        }
       })
     }),
   )

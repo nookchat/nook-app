@@ -7,6 +7,8 @@ import { Talking } from './talking'
 import { VOLUMES_CHANGED } from './volume'
 import { playOrHold, watchContext } from './unlock'
 
+/** Others in one voice channel at once: each sends sound straight to each, so far beyond this none would be heard. */
+const MAX_CALLS = 48
 const RETRY_MS = 5000
 const STALE_CALL_MS = 8000
 /** Small enough to send to each person in the channel at once: voice calls are one link per person. */
@@ -350,6 +352,8 @@ export class Voice {
       case 'voffer': {
         if (!this.channel || !this.mic) return
         if (this.admit && !this.admit(env.from, this.channel)) return
+        // A connection, a sound and a meter each: a flood of made up sessions must not open hundreds.
+        if (!this.calls.has(env.from) && this.calls.size >= MAX_CALLS) return
         // The offer can overtake their announcement, and is itself proof they stand here.
         this.standing.set(env.from, this.channel)
         const call = this.call(env.from, false)

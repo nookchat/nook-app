@@ -17,7 +17,8 @@ export function useServedIce(servers: RTCIceServer[] = [], only = false): void {
 export function rtcConfig(servers: RTCIceServer[] = served, only = relayOnly): RTCConfiguration {
   const relay = only && servers.length > 0
   return {
-    iceServers: [...STUN_SERVERS, ...TURN_SERVERS, ...servers],
+    // A server with relays answers STUN too: then nobody else hears where calls come from.
+    iceServers: servers.length > 0 ? [...TURN_SERVERS, ...servers] : [...STUN_SERVERS, ...TURN_SERVERS],
     iceTransportPolicy: relay ? 'relay' : 'all',
     bundlePolicy: 'max-bundle',
     rtcpMuxPolicy: 'require',

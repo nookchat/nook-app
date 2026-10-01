@@ -250,7 +250,8 @@ export class Channel implements Transport {
   readonly room: Room
   readonly keys: SpaceKeys
 
-  onEvents: ((events: unknown[]) => void) | null = null
+  /** Events opened, each with its place in the order the server sent the lines: see RoomLog.add. */
+  onEvents: ((events: unknown[], places: number[]) => void) | null = null
   onLeft: ((session: string) => void) | null = null
   /**
    * The server has sent everybody here now, after a hello sent at `since`. Somebody who
@@ -278,7 +279,10 @@ export class Channel implements Transport {
   private markLoaded: () => void = () => undefined
   private helloAt = 0
   private openInOrder: Promise<void> = Promise.resolve()
-  private waiting: string[] = []
+  /** Lines under a key this device does not hold yet, each with its place among the lines sent. */
+  private waiting: { line: string; place: number }[] = []
+  /** How many lines the server has sent: a line's place. One under a key that comes later keeps it. */
+  private sent = 0
   /** Closed: it has said it left, and a last announce on its way must not have it back. */
   private closed = false
 
@@ -297,28 +301,55 @@ export class Channel implements Transport {
     return sealEvent(key, event).then((wire) => tagged(tag, wire))
   }
 
-  private async openOne(line: unknown): Promise<unknown> {
+  private async openOne(line: unknown, place: number): Promise<unknown> {
     if (typeof line !== 'string') return null
     const { tag, wire } = untag(line)
     const key = this.keys.key(tag)
-    if (key) return openLine(key, wire)
+    if (key) {
+      const event = await openLine(key, wire)
+      return this.keys.mayStand(tag, event) ? event : null
+    }
     if (this.waiting.length >= HELD_LINES_LIMIT) this.waiting.shift()
-    this.waiting.push(line)
+    this.waiting.push({ line, place })
     return null
   }
 
-  /** A key has come: the lines kept for it open now. */
+  /** A key has come: the lines kept for it open now, each still at the place it came in. */
   private readonly openWaiting = (): void => {
-    const ready = this.waiting.filter((line) => this.keys.key(untag(line).tag))
+    const ready = this.waiting.filter((held) => this.keys.key(untag(held.line).tag))
     if (ready.length === 0) return
-    this.waiting = this.waiting.filter((line) => !this.keys.key(untag(line).tag))
-    this.openInOrder = this.openInOrder.then(() => this.deliverLines(ready))
+    this.waiting = this.waiting.filter((held) => !this.keys.key(untag(held.line).tag))
+    this.openInOrder = this.openInOrder.then(() =>
+      this.deliverLines(
+        ready.map((held) => held.line),
+        ready.map((held) => held.place),
+      ),
+    )
   }
 
-  private async deliverLines(lines: unknown[]): Promise<void> {
-    const opened = await Promise.all(lines.map((line) => this.openOne(line)))
-    const events = opened.filter((e) => e !== null)
-    if (events.length) this.onEvents?.(events)
+  /** Lines just sent by the server, numbered in the order they came. */
+  private deliverSent(lines: unknown[]): void {
+    const first = this.sent
+    this.sent += lines.length
+    const places = lines.map((_, i) => first + i)
+    this.openInOrder = this.openInOrder.then(() => this.deliverLines(lines, places))
+  }
+
+  /** Never fails: the lines go in a chain, and one batch that threw would stop every batch after it. */
+  private async deliverLines(lines: unknown[], places: number[]): Promise<void> {
+    try {
+      const opened = await Promise.all(lines.map((line, i) => this.openOne(line, places[i]).catch(() => null)))
+      const events: unknown[] = []
+      const at: number[] = []
+      opened.forEach((e, i) => {
+        if (e === null) return
+        events.push(e)
+        at.push(places[i])
+      })
+      if (events.length) this.onEvents?.(events, at)
+    } catch (err) {
+      console.warn('[nook] some lines did not open', err)
+    }
   }
 
   get serving(): string {
@@ -425,7 +456,7 @@ export class Channel implements Transport {
         if (!Array.isArray(lines)) return
         // Lines arrive in order, so the highest number seen covers everything below it.
         if (at > this.at) this.at = at
-        this.openInOrder = this.openInOrder.then(() => this.deliverLines(lines))
+        this.deliverSent(lines)
         return
       }
       case 'live': {

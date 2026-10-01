@@ -108,6 +108,11 @@ services:
       - --no-tls
       - --no-dtls
       - --no-multicast-peers
+      # Browsers relay over UDP only. A TCP relay (RFC 6062) would let anybody with a credential
+      # open a connection to any port on the internet from this machine.
+      - --no-tcp-relay
+      # Allocations at once, for everybody: a cap on what a leaked credential can hold open.
+      - --total-quota=${NOOK_TURN_QUOTA:-2000}
       # Never relay into private networks.
       - --denied-peer-ip=0.0.0.0-0.255.255.255
       - --denied-peer-ip=10.0.0.0-10.255.255.255
@@ -116,6 +121,17 @@ services:
       - --denied-peer-ip=169.254.0.0-169.254.255.255
       - --denied-peer-ip=172.16.0.0-172.31.255.255
       - --denied-peer-ip=192.168.0.0-192.168.255.255
+      - --denied-peer-ip=192.0.0.0-192.0.0.255
+      - --denied-peer-ip=198.18.0.0-198.19.255.255
+      - --denied-peer-ip=224.0.0.0-255.255.255.255
+      # The same for IPv6: loopback, IPv4 inside IPv6 (mapped and NAT64), 6to4, unique local and link local.
+      - --denied-peer-ip=::-::ffff
+      - --denied-peer-ip=::ffff:0.0.0.0-::ffff:255.255.255.255
+      - --denied-peer-ip=64:ff9b::-64:ff9b::ffff:ffff
+      - --denied-peer-ip=100::-100::ffff:ffff:ffff:ffff
+      - --denied-peer-ip=2002::-2002:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+      - --denied-peer-ip=fc00::-fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+      - --denied-peer-ip=fe80::-febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff
     profiles: ['turn']
 
 volumes:

@@ -13,7 +13,7 @@ const LINK_TTL_MS = 10 * 60 * 1000
 const SALT = 'nook device link v1'
 const enc = new TextEncoder()
 
-interface Bundle {
+export interface Bundle {
   k: string
   n: string
   a?: string
@@ -116,6 +116,11 @@ export function linkInAddress(): { code: string; server: string } | null {
 }
 
 export async function takeOffer(offer: { code: string; server: string }): Promise<string> {
+  return adopt(await openOffer(offer))
+}
+
+/** What a link carries, fetched and opened, so it can be shown before this device takes it. */
+export async function openOffer(offer: { code: string; server: string }): Promise<Bundle> {
   const { id, key } = await derive(offer.code)
   const res = await fetch(`${offer.server}/api/v1/links/${id}`, { mode: 'cors' }).catch(() => null)
   if (!res) throw new Error(`${serverTag(offer.server)} could not be reached. Check the server under the code.`)
@@ -130,6 +135,12 @@ export async function takeOffer(offer: { code: string; server: string }): Promis
   } catch {
     throw new Error('That link would not open. Make a new one on the other device.')
   }
+  if (typeof bundle?.k !== 'string') throw new Error('That link would not open. Make a new one on the other device.')
+  return bundle
+}
+
+/** Makes this device the account a link carried. */
+export function adoptBundle(bundle: Bundle): string {
   return adopt(bundle)
 }
 

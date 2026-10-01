@@ -1,0 +1,8 @@
+# The actions are pinned by commit, so a changed tag never changes what runs. This keeps
+# the pins up to date, one reviewed change at a time.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

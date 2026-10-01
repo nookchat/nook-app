@@ -3,7 +3,7 @@ import { icon } from './icons'
 import { qrSvg } from './qr'
 import { toast } from './toast'
 import { serverTag } from '../backend'
-import { backupFile, linkInAddress, offerLink, readBackup, readOffer, restoreBackup, takeOffer } from '../net/link'
+import { adoptBundle, backupFile, linkInAddress, offerLink, openOffer, readBackup, readOffer, restoreBackup, takeOffer, type Bundle } from '../net/link'
 import { saveFile } from '../net/files'
 import { loadIdentity, nameChosen } from '../store/identity'
 import { newSpaceServer } from '../store/server-spaces'
@@ -402,6 +402,33 @@ export function enterLinkCode(): void {
   link.el.querySelector<HTMLInputElement>('input[aria-label="The link or code"]')?.focus()
 }
 
+/** Shows who a link from the address would make this device, and waits for a choice. */
+function askToBecome(card: HTMLElement, words: HTMLElement, bundle: Bundle): Promise<boolean> {
+  const incoming = bundle.n || 'another account'
+  const current = loadIdentity().name
+  words.textContent = `This link makes this device ${incoming}.`
+  const warn = h('div', { class: 'link-warn tiny' }, [
+    icon('shield', 14),
+    h('span', {
+      text: 'Only go on if you made this link yourself, on your other device, just now. Whoever made it holds the key this device would use, and could read what you write from here on.',
+    }),
+  ])
+  const parts: HTMLElement[] = [warn]
+  if (nameChosen()) {
+    const save = h('button', { class: 'ghost', text: 'Save a backup of this account first' })
+    save.addEventListener('click', () => showBackup())
+    parts.push(h('p', { class: 'small faint', text: `This device is ${current} now. That account goes from this device.` }), save)
+  }
+  const keep = h('button', { class: 'primary big welcome-go', text: 'Keep this device as it is' })
+  const become = h('button', { class: 'danger', text: `Become ${incoming}` })
+  card.append(...parts, keep, become)
+  keep.focus()
+  return new Promise((done) => {
+    keep.addEventListener('click', () => done(false))
+    become.addEventListener('click', () => done(true))
+  })
+}
+
 export async function linkFromAddress(mount: HTMLElement): Promise<boolean> {
   const offer = linkInAddress()
   if (!offer) return false
@@ -409,13 +436,13 @@ export async function linkFromAddress(mount: HTMLElement): Promise<boolean> {
   const card = h('div', { class: 'welcome-card' }, [h('h1', { class: 'welcome-title', text: 'Linking this device' }), words])
   mount.replaceChildren(h('main', { class: 'welcome' }, [card]))
   const clean = (): void => history.replaceState(null, '', `${window.location.pathname}${window.location.search}`)
-  if (!mayReplace('you on the other device')) {
-    clean()
-    return false
-  }
   try {
-    const name = await takeOffer(offer)
+    const bundle = await openOffer(offer)
     clean()
+    // Anybody can send a link like this. Taking it makes this device whoever made it, with a key
+    // they hold: they would read what is written from here on. So it is said plainly, every time.
+    if (!(await askToBecome(card, words, bundle))) return false
+    const name = adoptBundle(bundle)
     words.textContent = name ? `Linked. Welcome back, ${name}.` : 'Linked.'
     restart(name)
     return true

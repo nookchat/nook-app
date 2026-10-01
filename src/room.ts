@@ -1,6 +1,6 @@
 import { serverTag, serverUrl } from './backend'
 import { toHex } from './bytes'
-import { endpoints, learn } from './net/cluster'
+import { confirmedEndpoints, hint } from './net/cluster'
 
 const enc = new TextEncoder()
 
@@ -138,8 +138,7 @@ function linkTail(secret: string, locked: boolean, server: string, pass = ''): s
 }
 
 function endpointsInOrder(server: string): string[] {
-  const first = serverUrl(server)
-  return [first, ...endpoints(first).filter((u) => u !== first)].slice(0, MAX_LINK_SERVERS)
+  return confirmedEndpoints(server).slice(0, MAX_LINK_SERVERS)
 }
 
 export interface LinkInfo {
@@ -158,11 +157,11 @@ export function parseLink(raw: string): LinkInfo | null {
   const pass = tilde >= 0 ? head.slice(tilde + 1).toUpperCase() : ''
   const named = at >= 0 ? unescapeServerTag(trimmed.slice(at + 1)).split(',').map(serverUrl) : []
   const server = at >= 0 ? named[0] : undefined
-  if (server && named.length > 1) learn(server, named.slice(1).filter(Boolean))
   if (at >= 0 && !server) return null
   const locked = code.toUpperCase().endsWith(LOCKED_SUFFIX)
   const secret = parseSecret(locked ? code.slice(0, -LOCKED_SUFFIX.length) : code)
   if (!secret) return null
+  if (server && named.length > 1) hint(server, named.slice(1).filter(Boolean))
   if (pass.length === PASS_LENGTH && [...pass].every((ch) => CROCKFORD_BASE32.includes(ch))) passes.set(secret, pass)
   return server ? { secret, locked, server } : { secret, locked }
 }

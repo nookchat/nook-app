@@ -1,4 +1,4 @@
-import { APP_URL, FAKE_MEDIA, check, finish, launch, stoppedEarly } from './harness.mjs'
+import { APP_URL, FAKE_MEDIA, check, finish, launch, poll, stoppedEarly } from './harness.mjs'
 
 // Leaving the page is leaving the space. A reload, as an update does, or a closed tab takes
 // you out of voice, for the others at once, and nothing puts you back in by itself.
@@ -34,7 +34,9 @@ try {
   await alice.click('.voice-join')
   await bob.click('.voice-join')
   const met = await until(bob, aliceInLounge)
-  check('both are in the lounge', met && (await inLounge(alice)) && (await inLounge(bob)))
+  // Each side's own join, and the other's, land in either order.
+  const bothIn = await poll(async () => (await inLounge(alice)) && (await inLounge(bob)), 20_000)
+  check('both are in the lounge', met && bothIn)
 
   // A reload with nothing said first, as a crash or F5 does.
   await alice.reload()

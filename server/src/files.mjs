@@ -7,6 +7,7 @@ import { pipeline } from 'node:stream/promises'
 import { FILES, MAX_FILE_BYTES, MAX_ROOM_FILE_BYTES, PEER_HEADERS, PEERS } from './config.mjs'
 import { pool } from './db.mjs'
 import { ApiError, corsHeaders } from './http.mjs'
+import { ROOM } from './store.mjs'
 
 export const FILE_ID = /^[0-9a-f]{64}$/
 
@@ -79,7 +80,10 @@ export async function keep(room, source, expectedId = '') {
 
 export async function send(req, res, room, id) {
   let size = await sizeOf(room, id)
-  if (size === null && (await fromPeers(room, id))) size = await sizeOf(room, id)
+  // A peer asking is never sent on to the peers: two servers that both lack a file would ask
+  // each other for it for ever. Anybody may say they are a peer; that only spares this server work.
+  const fromAPeer = req.headers.authorization !== undefined || req.headers['x-nook-peer'] !== undefined
+  if (size === null && !fromAPeer && (await fromPeers(room, id))) size = await sizeOf(room, id)
   if (size === null) throw new ApiError(404, 'not_found', 'There is no such file here.')
   const headers = {
     ...corsHeaders(req),
@@ -106,15 +110,29 @@ export async function send(req, res, room, id) {
   await pipeline(createReadStream(pathOf(room, id)), res).catch(() => undefined)
 }
 
-async function fromPeers(room, id) {
-  for (const peer of PEERS) {
-    try {
-      if (await fetchFrom(peer, room, id)) return true
-    } catch {
-      /* that peer is down or lacks it; try the next */
+/** Fetches from the peers at once, for the whole server: anybody can ask for a file that is nowhere. */
+const MAX_PEER_FETCHES = 8
+const fetching = new Map()
+
+function fromPeers(room, id) {
+  if (PEERS.length === 0) return Promise.resolve(false)
+  const key = `${room}/${id}`
+  // Many asking for one file wait on one fetch.
+  const held = fetching.get(key)
+  if (held) return held
+  if (fetching.size >= MAX_PEER_FETCHES) return Promise.resolve(false)
+  const work = (async () => {
+    for (const peer of PEERS) {
+      try {
+        if (await fetchFrom(peer, room, id)) return true
+      } catch {
+        /* that peer is down or lacks it; try the next */
+      }
     }
-  }
-  return false
+    return false
+  })().finally(() => fetching.delete(key))
+  fetching.set(key, work)
+  return work
 }
 
 async function fetchFrom(peer, room, id) {
@@ -146,6 +164,11 @@ export async function pullFiles(peer, after, remember) {
     if (!res.ok) throw new Error(`${peer} said ${res.status}`)
     const page = await res.json()
     for (const file of page.files) {
+      // What a peer names becomes a path here, so it has the shape this server's own routes check.
+      if (!ROOM.test(String(file.room)) || !FILE_ID.test(String(file.id))) {
+        after = file.change
+        continue
+      }
       // Stop at the first that will not come, so it is retried, not skipped.
       if (!(await has(file.room, file.id)) && !(await fetchFrom(peer, file.room, file.id))) return after
       after = file.change

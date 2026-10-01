@@ -125,9 +125,11 @@ try {
   // A webhook never gets a copy of the space's key: its link would open the whole space.
   const keyed = await alice.evaluate(async () => {
     const { RoomLog } = await import('/src/store/log.ts')
+    const { publicKeyOf } = await import('/src/store/identity.ts')
     const key = (n) => String(n).repeat(64).slice(0, 64)
     const OWNER = key(1)
-    const HOOK = key(2)
+    // A webhook's key is the one its seed makes, as makeHook gives them.
+    const HOOK = publicKeyOf('a'.repeat(64))
     let n = 0
     const ev = (author, kind, body) => ({ id: `${++n}`.padStart(64, '0'), room: 'r', author, lamport: n, kind, at: 1, body, sig: 'x'.repeat(128) })
     const log = new RoomLog('r')

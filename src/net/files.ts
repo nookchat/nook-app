@@ -432,10 +432,13 @@ export class SpaceFiles {
   private async fetchOpen(
     id: string,
     key: string,
-    type: string,
+    asked: string,
     onProgress?: Progress,
     file?: Attachment,
   ): Promise<Blob> {
+    // The sender names the type. A blob: address has this page's origin, so a type the browser
+    // would run as a document (HTML, SVG, XML) never goes on one: such a file is only bytes to save.
+    const type = blobType(asked)
     let last: unknown = null
     for (const base of this.bases()) {
       try {
@@ -465,6 +468,14 @@ export class SpaceFiles {
     }
     throw last ?? new Error('No server had that file.')
   }
+}
+
+/** Pictures, sound and video that a browser shows and never runs. Anything else is plain bytes. */
+const SHOWN_TYPES = /^(image\/(jpeg|png|gif|webp|avif|bmp)|(video|audio)\/[\w.+-]+)$/
+
+export function blobType(asked: string): string {
+  const type = asked.toLowerCase()
+  return SHOWN_TYPES.test(type) ? type : 'application/octet-stream'
 }
 
 interface StreamInfo {

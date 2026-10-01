@@ -7,7 +7,9 @@ import { videoPlayer } from './video-player'
 
 type Kind = 'image' | 'video' | 'audio' | 'file'
 
-const IMAGE = /^image\/(jpeg|png|gif|webp|avif|bmp|svg\+xml)$/
+// No SVG: it is a document that can carry script. Opened in a tab of its own, from a blob: address,
+// it would run as this page. It comes as a file to save.
+const IMAGE = /^image\/(jpeg|png|gif|webp|avif|bmp)$/
 const VIDEO = /^video\/(mp4|webm|ogg|quicktime)$/
 
 function kindOf(file: { type: string }): Kind {

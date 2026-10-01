@@ -3,7 +3,7 @@ import { CLUSTER_SECRET, CLUSTERED, PEER_HEADERS, PEERS, PUBLIC_URL } from './co
 import { pool } from './db.mjs'
 import { pullFiles } from './files.mjs'
 import { fromPeerLive, peerGone } from './sockets.mjs'
-import { append, kept, takeClaim, takePerson } from './store.mjs'
+import { append, kept, MAX_LINE, MAX_PERSON, PERSON, ROOM, takeClaim, takePerson } from './store.mjs'
 
 const PULL_LINES = 500
 const WAIT_S = 20
@@ -108,13 +108,23 @@ async function pullChanges(peer, at, kind, field, take) {
   at[field] = after
 }
 
+const HASH = /^[0-9a-f]{64}$/
+/** A record's time from a peer: no further ahead of this clock than this, so it cannot freeze the record. */
+const PERSON_LEAD_MS = 5 * 60 * 1000
+
 const pullRooms = (peer, at) =>
-  pullChanges(peer, at, 'rooms', 'rooms_after', (r) => takeClaim(r.room, Buffer.from(r.token_hash, 'hex')))
+  pullChanges(peer, at, 'rooms', 'rooms_after', (r) =>
+    ROOM.test(String(r.room)) && HASH.test(String(r.token_hash)) ? takeClaim(r.room, Buffer.from(r.token_hash, 'hex')) : undefined,
+  )
 
 const pullPeople = (peer, at) =>
-  pullChanges(peer, at, 'people', 'people_after', (p) =>
-    takePerson(p.id, Buffer.from(p.token_hash, 'hex'), p.blob, p.updated),
-  )
+  pullChanges(peer, at, 'people', 'people_after', (p) => {
+    const updated = Number(p.updated)
+    if (!PERSON.test(String(p.id)) || !HASH.test(String(p.token_hash)) || typeof p.blob !== 'string' || p.blob.length > MAX_PERSON) return
+    // A time far ahead would win over every real write after it, for good.
+    if (!Number.isSafeInteger(updated) || updated > Date.now() + PERSON_LEAD_MS) return
+    return takePerson(p.id, Buffer.from(p.token_hash, 'hex'), p.blob, updated)
+  })
 
 async function pullLines(peer, at) {
   const page = await ask(
@@ -125,6 +135,8 @@ async function pullLines(peer, at) {
   const byRoom = new Map()
   const claims = new Map()
   for (const row of page.lines) {
+    if (!ROOM.test(String(row.room)) || typeof row.body !== 'string' || row.body.length === 0 || row.body.length > MAX_LINE) continue
+    if (row.token_hash && !HASH.test(String(row.token_hash))) continue
     const list = byRoom.get(row.room)
     if (list) list.push(row.body)
     else byRoom.set(row.room, [row.body])

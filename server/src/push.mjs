@@ -1,4 +1,8 @@
 import { createECDH, createHash, createPrivateKey, randomBytes, sign } from 'node:crypto'
+import http from 'node:http'
+import https from 'node:https'
+import { isIP } from 'node:net'
+import { isPrivateAddress, publicLookup } from './addresses.mjs'
 import { CLUSTER_SECRET, CLUSTERED, PUBLIC_URL, PUSH_LOCAL } from './config.mjs'
 import { pool } from './db.mjs'
 import { ApiError } from './http.mjs'
@@ -110,8 +114,13 @@ function allowed(endpoint) {
   return true
 }
 
-/** Passes one sealed notification on. `gone` says the device no longer takes them. */
+/**
+ * Passes one sealed notification on. `gone` says the device no longer takes them. With `via`,
+ * the device took its pushes through another Nook server, whose key it was made with: this one
+ * hands it on there, so that server sees this one, not the address of whoever wrote.
+ */
 export async function push(body) {
+  if (typeof body?.via === 'string' && body.via) return relay(body.via, body)
   const endpoint = endpointOf(body?.endpoint)
   const sealed = typeof body?.body === 'string' ? Buffer.from(body.body, 'base64url') : null
   if (!sealed || sealed.length < 86 || sealed.length > MAX_PUSH_BYTES) {
@@ -137,4 +146,55 @@ export async function push(body) {
   if (res.status === 404 || res.status === 410) return { ok: false, gone: true }
   if (!res.ok) throw new ApiError(502, 'upstream', `The push service said ${res.status}.`)
   return { ok: true }
+}
+
+const RELAY_TIMEOUT_MS = 15_000
+
+function relay(via, body) {
+  let url
+  try {
+    url = new URL('/api/v1/push', via)
+  } catch {
+    throw new ApiError(400, 'bad_via', 'That is not a server.')
+  }
+  const local = PUSH_LOCAL && url.protocol === 'http:' && /^(localhost|127\.0\.0\.1)$/.test(url.hostname)
+  const literal = url.hostname.replace(/^\[|\]$/g, '')
+  if ((!local && url.protocol !== 'https:') || url.username || url.password || via.length > 1024) {
+    throw new ApiError(400, 'bad_via', 'That is not a server.')
+  }
+  // A literal address never reaches the lookup, so it is checked here.
+  if (!local && isIP(literal) && isPrivateAddress(literal)) throw new ApiError(400, 'bad_via', 'That is not a server.')
+  const { via: _, ...rest } = body
+  const payload = Buffer.from(JSON.stringify(rest))
+  const client = url.protocol === 'https:' ? https : http
+  return new Promise((done, reject) => {
+    const req = client.request(
+      url,
+      {
+        method: 'POST',
+        lookup: publicLookup(local),
+        headers: { 'content-type': 'application/json', 'content-length': payload.length },
+        signal: AbortSignal.timeout(RELAY_TIMEOUT_MS),
+      },
+      (res) => {
+        let text = ''
+        res.setEncoding('utf8')
+        res.on('data', (chunk) => {
+          if (text.length < 4096) text += chunk
+        })
+        res.on('end', () => {
+          if (res.statusCode === 429) return reject(new ApiError(429, 'slow_down', 'That device has had enough for now.'))
+          if (res.statusCode !== 200) return reject(new ApiError(502, 'upstream', `${url.host} said ${res.statusCode}.`))
+          try {
+            const answer = JSON.parse(text)
+            done({ ok: answer?.ok === true, gone: answer?.gone === true || undefined })
+          } catch {
+            done({ ok: true })
+          }
+        })
+      },
+    )
+    req.on('error', () => reject(new ApiError(502, 'upstream', `${url.host} did not answer.`)))
+    req.end(payload)
+  })
 }

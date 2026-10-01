@@ -1,6 +1,6 @@
 import { fromBase64, toBase64, toHex } from '../bytes'
 import { sharedKey } from '../store/identity'
-import { KEY_ID, passProof, type RoomLog } from '../store/log'
+import { HOOK_KINDS, KEY_ID, passProof, type RoomLog } from '../store/log'
 
 /**
  * A space starts with one key, made from its code. When somebody is removed, the device of
@@ -23,6 +23,8 @@ const BOXES_PER_EVENT = 200
 /** Somebody else who may do it waits a while first, so only one of them does. */
 const OTHERS_WAIT_MS = [2000, 6000]
 const GRANT_WAIT_MS = [800, 5000]
+/** How far ahead of this clock a removal may count. */
+const KICK_LEAD_MS = 5 * 60 * 1000
 
 const enc = new TextEncoder()
 
@@ -79,8 +81,12 @@ export class SpaceKeys {
   readonly changed = new Set<() => void>()
 
   private readonly held = new Map<string, CryptoKey>()
-  /** Each webhook's own key, by its id. Lines open with it; nothing is written with it here. */
-  private readonly hookKeys = new Map<string, CryptoKey>()
+  /**
+   * Each webhook's own key, by its id, and the webhooks that post with it. Their lines open with
+   * it; nothing is written with it here. The server holds this key too, so a line under it counts
+   * only when that webhook wrote it, and only as a post (see HOOK_KINDS).
+   */
+  private readonly hookKeys = new Map<string, { key: CryptoKey; pubs: Set<string> }>()
   /** Raw bytes of each key held, to seal copies for somebody new. */
   private readonly raw = new Map<string, Uint8Array>()
   private readonly tried = new Set<string>()
@@ -90,20 +96,40 @@ export class SpaceKeys {
 
   constructor(readonly base: CryptoKey) {}
 
-  /** The key a tag names, or undefined when this device does not hold it yet. */
+  /** The key a line under this tag opens with, or undefined when this device does not hold it yet. */
   key(tag: string): CryptoKey | undefined {
-    return tag ? this.held.get(tag) ?? this.hookKeys.get(tag) : this.base
+    return tag ? this.held.get(tag) ?? this.hookKeys.get(tag)?.key : this.base
+  }
+
+  /** The key a signal under this tag opens with. Never a webhook's: a webhook sends no signals. */
+  signalKey(tag: string): CryptoKey | undefined {
+    return tag ? this.held.get(tag) : this.base
+  }
+
+  /**
+   * Whether a line opened under this tag may stand. Under a space key, anything may. Under a
+   * webhook's key, only a post by that webhook: the server holds that key, and must not be able
+   * to write anything else with it, nor write as anybody else.
+   */
+  mayStand(tag: string, event: unknown): boolean {
+    if (!tag || this.held.has(tag)) return true
+    const hook = this.hookKeys.get(tag)
+    if (!hook || !event || typeof event !== 'object') return false
+    const { author, kind } = event as { author?: unknown; kind?: unknown }
+    return typeof author === 'string' && hook.pubs.has(author) && typeof kind === 'string' && HOOK_KINDS.has(kind)
   }
 
   /** Takes the key of each webhook in the log, so what they post opens. */
-  async learnHooks(keys: string[]): Promise<void> {
+  async learnHooks(hooks: { key: string; pub: string }[]): Promise<void> {
     let learned = false
-    for (const key of keys) {
+    for (const { key, pub } of hooks) {
       const raw = fromBase64(key)
       if (raw.length !== 32) continue
       const id = await idOf(raw)
-      if (this.hookKeys.has(id)) continue
-      this.hookKeys.set(id, await importKey(raw))
+      const held = this.hookKeys.get(id)
+      if (held?.pubs.has(pub)) continue
+      if (held) held.pubs.add(pub)
+      else this.hookKeys.set(id, { key: await importKey(raw), pubs: new Set([pub]) })
       learned = true
     }
     if (learned) for (const fn of this.changed) fn()
@@ -260,7 +286,9 @@ export class KeyKeeper {
     const auth = this.log.authority()
     if (!this.me || auth.isKicked(this.me) || this.log.closed()) return null
     const newest = this.log.keyEpochs().at(-1)
-    const lastKick = Math.max(0, ...auth.kickedAt.values())
+    // A removal placed far ahead would never be covered: a key covers at most a day past its own
+    // place, so each new one would call for another. Past the clock, it counts as now.
+    const lastKick = Math.min(Math.max(0, ...auth.kickedAt.values()), Date.now() + KICK_LEAD_MS)
     // A key covers every removal up to the one it was made for, whatever the clocks say.
     if (lastKick > (newest?.covers ?? 0)) {
       if (!auth.can(this.me, 'remove')) return null
@@ -268,6 +296,8 @@ export class KeyKeeper {
       return { kind: 'rotate', after: lastKick, mine: kick?.author === this.me }
     }
     if (!newest || !this.keys.has(newest.id)) return null
+    // Not until the removal it was made for is here too: see RoomLog.holdsRemovalFor.
+    if (!this.log.holdsRemovalFor(newest.id)) return null
     const boxed = this.log.keyHolders(newest.id)
     const people = this.log.keyMembers().filter((p) => !boxed.has(p) && this.mayHave(p))
     return people.length ? { kind: 'grant', id: newest.id, people } : null

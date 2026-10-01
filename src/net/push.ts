@@ -1,4 +1,5 @@
 import { defaultServer, serverUrl } from '../backend'
+import { health } from './server-api'
 import { fromBase64Url, toBase64Url } from '../bytes'
 import { mentionsMe } from '../chat'
 import type { SpaceRuntime } from '../space/runtime'
@@ -230,14 +231,34 @@ export async function sealPush(target: { p256dh: string; auth: string }, message
   return toBase64Url(join(head, minePublic, sealed))
 }
 
-async function send(target: PushTarget, message: unknown, tag: string): Promise<void> {
+const relays = new Map<string, Promise<boolean>>()
+
+/** Whether this server hands a push on to another: then the other never sees who wrote. */
+function askRelay(server: string): Promise<boolean> {
+  let held = relays.get(server)
+  if (!held) {
+    held = health(server).then((h) => h.pushRelay === true)
+    relays.set(server, held)
+  }
+  return held
+}
+
+/**
+ * The person's device names the server it takes pushes through, which any member can set. So
+ * the push goes through the space's own server when that server hands it on: the one they named
+ * sees that server, not this device's address. An older server does not, and gets it straight.
+ */
+async function send(target: PushTarget, message: unknown, tag: string, server: string): Promise<void> {
   try {
     const body = await sealPush(target, message)
-    await fetch(`${target.via}/api/v1/push`, {
+    const push = { endpoint: target.endpoint, body, ttl: PUSH_TTL_S, urgency: 'high', topic: tag.slice(0, 32) }
+    const own = serverUrl(server)
+    const through = own && serverUrl(target.via) !== own && (await askRelay(own)) ? own : target.via
+    await fetch(`${through}/api/v1/push`, {
       method: 'POST',
       mode: 'cors',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ endpoint: target.endpoint, body, ttl: PUSH_TTL_S, urgency: 'high', topic: tag.slice(0, 32) }),
+      body: JSON.stringify(through === target.via ? push : { ...push, via: target.via }),
       signal: AbortSignal.timeout(15_000),
     })
   } catch {
@@ -274,7 +295,7 @@ async function pushNow(space: SpaceRuntime, event: LogEvent): Promise<void> {
     for (const target of targets.get(to) ?? []) {
       if (target.dnd) continue
       const body = target.text ? text || 'Sent you a message' : 'Sent you a message'
-      jobs.push(send(target, { t: who, b: body.slice(0, MAX_BODY_CHARS), tag, room: space.room.id, dm: chat.me }, tag))
+      jobs.push(send(target, { t: who, b: body.slice(0, MAX_BODY_CHARS), tag, room: space.room.id, dm: chat.me }, tag, space.server))
     }
     await Promise.all(jobs)
     return
@@ -291,7 +312,7 @@ async function pushNow(space: SpaceRuntime, event: LogEvent): Promise<void> {
       const said = text || (files ? 'Sent a file' : '')
       const body = target.text && said ? said : mention ? 'Mentioned you' : 'Sent a message'
       const message = { t: `${who} (#${channel}, ${spaceName})`, b: body.slice(0, MAX_BODY_CHARS), tag, room: space.room.id, ch: channel }
-      jobs.push(send(target, message, tag))
+      jobs.push(send(target, message, tag, space.server))
     }
   }
   await Promise.all(jobs)

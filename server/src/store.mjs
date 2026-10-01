@@ -111,9 +111,14 @@ async function trimOldestHalf(client, room) {
 
 export async function since(room, after, limit = PAGE_LINES, most = PAGE_LINES) {
   const take = Math.max(1, Math.min(limit || PAGE_LINES, most))
+  // The database stops at the page's bytes, so a room of big lines never comes into memory whole.
+  // The first line past them still comes, so the loop below knows there is more.
   const { rows } = await pool.query(
-    'select seq, body from lines where room = $1 and seq > $2 order by seq limit $3',
-    [room, after, take + 1],
+    `select seq, body from (
+       select seq, body, sum(octet_length(body)) over (order by seq rows unbounded preceding) as run
+       from lines where room = $1 and seq > $2 order by seq limit $3
+     ) page where run - octet_length(body) <= $4 order by seq`,
+    [room, after, take + 1, PAGE_BYTES],
   )
   let more = rows.length > take
   const count = more ? take : rows.length

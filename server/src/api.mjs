@@ -2,7 +2,7 @@ import { clusterUrls, fromPeer, linesFor, peerHealth, peopleFor, roomsFor } from
 import { HAS_TURN, MAX_FILE_BYTES, PREVIEWS, TURN_ONLY, VERSION, originAllowed } from './config.mjs'
 import { FILE_ID, filesFor, keep, send } from './files.mjs'
 import { gifService, gifs, hasGifs } from './gifs.mjs'
-import { ApiError, allow, corsHeaders, fail, readJson, reply } from './http.mjs'
+import { ApiError, addressOf, allow, corsHeaders, fail, readJson, reply } from './http.mjs'
 import { LINK_ID, MAX_LINK, putLink, takeLink } from './links.mjs'
 import { liveFor } from './live.mjs'
 import { openapi } from './openapi.mjs'
@@ -58,13 +58,16 @@ function health() {
     gifs: hasGifs(),
     gifService: gifService(),
     push: true,
+    // Hands a push on to the server a device took its pushes through: see push.mjs.
+    pushRelay: true,
     files: { max: MAX_FILE_BYTES },
     cluster: clusterUrls(),
     peers: peerHealth(),
   }
 }
 
-async function readEvents(url, room) {
+async function readEvents(req, url, room) {
+  limited(req)
   const after = int(url.searchParams.get('after') ?? url.searchParams.get('from'))
   const page = await since(room, after, int(url.searchParams.get('limit')), MAX_PAGE_LINES)
   return { at: page.at, events: page.lines, more: page.more }
@@ -146,10 +149,13 @@ export async function handle(req, res) {
       const [, , a, b, c] = parts
       if (a === 'health' && method === 'GET') return reply(res, 200, health())
       if (a === 'openapi.json' && method === 'GET') return reply(res, 200, openapi)
-      if (a === 'ice' && method === 'GET') return reply(res, 200, iceServers())
+      if (a === 'ice' && method === 'GET') {
+        limited(req)
+        return reply(res, 200, iceServers())
+      }
       if (a === 'spaces' && c === 'events') {
         const room = roomOf(b)
-        if (method === 'GET') return reply(res, 200, await readEvents(url, room))
+        if (method === 'GET') return reply(res, 200, await readEvents(req, url, room))
         if (method === 'POST') return reply(res, 200, await writeEvents(req, room))
       }
       if (a === 'spaces' && c === 'files') {
@@ -164,7 +170,7 @@ export async function handle(req, res) {
       if (a === 'links' && b && !c) {
         if (!LINK_ID.test(b)) throw new ApiError(400, 'bad_link', 'That is not a link id.')
         limited(req)
-        if (method === 'PUT') return reply(res, 200, putLink(b, (await readJson(req, MAX_LINK + 1024))?.blob))
+        if (method === 'PUT') return reply(res, 200, putLink(b, (await readJson(req, MAX_LINK + 1024))?.blob, addressOf(req)))
         if (method === 'GET') return reply(res, 200, takeLink(b))
       }
       if (a === 'people' && b && !c) {

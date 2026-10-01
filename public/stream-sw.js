@@ -198,7 +198,15 @@ async function serve(ev, token) {
       start = Math.max(0, size - Number(asked[2]))
     }
   }
-  const headers = { 'content-type': info.type, 'accept-ranges': 'bytes', 'cache-control': 'no-store' }
+  // Only sound or video goes out under this page's origin, never anything a browser would run.
+  const type = /^(video|audio)\/[\w.+-]+$/i.test(info.type) ? info.type : 'application/octet-stream'
+  const headers = {
+    'content-type': type,
+    'accept-ranges': 'bytes',
+    'cache-control': 'no-store',
+    'x-content-type-options': 'nosniff',
+    'content-security-policy': 'sandbox',
+  }
   if (size === 0 || start >= size || end < start) {
     return new Response(null, { status: 416, headers: { ...headers, 'content-range': `bytes */${size}` } })
   }

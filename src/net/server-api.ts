@@ -93,6 +93,8 @@ export interface ServerHealth {
   gifs?: boolean
   /** Absent on a server that does not take files. */
   files?: { max: number }
+  /** It hands a push on to another server: see server/src/push.mjs. */
+  pushRelay?: boolean
   peers: { url: string; up: boolean }[]
 }
 
@@ -106,6 +108,7 @@ export async function health(server: string): Promise<ServerHealth> {
       version: body.version,
       gifs: body.gifs,
       files: body.files && typeof body.files.max === 'number' ? { max: body.files.max } : undefined,
+      pushRelay: body.pushRelay === true,
       peers: Array.isArray(body.peers) ? body.peers : [],
     }
   } catch {

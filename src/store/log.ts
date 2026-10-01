@@ -1,5 +1,5 @@
 import { toHex } from '../bytes'
-import { sign, verify } from './identity'
+import { publicKeyOf, sign, verify } from './identity'
 
 const EVENT_KINDS = [
   'said',
@@ -36,6 +36,8 @@ export const KEY_ID = /^[0-9a-f]{32}$/
 const PERSON_KEY = /^[0-9a-f]{64}$/
 /** A webhook's id: digits, as Discord's are, so a tool that checks the link's shape takes it. */
 export const HOOK_ID = /^[1-9][0-9]{16,19}$/
+/** What a webhook writes: a post, a change to one, and its own deletion. Nothing else of its counts. */
+export const HOOK_KINDS: ReadonlySet<string> = new Set<EventKind>(['said', 'edit', 'retract', 'hook'])
 const KEY_COVERS_MS = 24 * 60 * 60 * 1000
 
 /** A level's id, or 'kicked'. */
@@ -100,7 +102,19 @@ export class Authority {
     readonly letBackAt: Map<string, number> = new Map(),
     /** Every ban there has been, in order, those since lifted too. */
     readonly bans: number[] = [],
+    /** When each removal still standing came to this device: see RoomLog.arrivedAt. */
+    readonly kickedArrival: Map<string, number> = new Map(),
   ) {}
+
+  /**
+   * Whether what this person wrote is left out because they were removed: written after the
+   * removal by its place in the log, or come after the removal did, whatever place it claims.
+   */
+  removedBy(author: string, lamport: number, arrived: number): boolean {
+    const at = this.kickedAt.get(author)
+    if (at === undefined) return false
+    return lamport > at || arrived > (this.kickedArrival.get(author) ?? Infinity)
+  }
 
   isBanned(key: string): boolean {
     return this.bannedAt.has(key)
@@ -144,6 +158,12 @@ export class Authority {
       this.can(who, 'remove') &&
       this.levelOf(subject).rank <= this.levelOf(who).rank
     )
+  }
+
+  /** Whether this person may put somebody on this level: none above theirs, and none that can do more than they can. */
+  mayGive(who: string, level: Level): boolean {
+    const mine = this.levelOf(who)
+    return level.rank <= mine.rank && level.can.every((p) => mine.can.includes(p))
   }
 
   /** The owner's own level: only its name and colour, and only by the owner. */
@@ -240,16 +260,60 @@ export async function makeEvent(
   return { ...base, id, sig: sign(id) }
 }
 
+/** Deeper than any event the app writes, and far short of what stringify or a worker can carry. */
+const MAX_DEPTH = 24
+const MAX_NODES = 20_000
+/**
+ * Keys that change how a value turns into a string or a number, or what it inherits. An object
+ * that has one of its own makes String() throw, and every fold of the log reads bodies that way.
+ */
+const UNSAFE_KEYS = new Set(['__proto__', 'toString', 'valueOf', 'toLocaleString', 'toJSON'])
+
+/**
+ * Whether a value from the wire is plain enough to fold: shallow, not huge, and with no key that
+ * changes what it turns into. Walked without recursion, so a value nested thousands deep cannot
+ * overflow the stack here. One that is not is dropped whole, as if it never came.
+ */
+export function plainEnough(value: unknown): boolean {
+  const stack: [unknown, number][] = [[value, 0]]
+  let nodes = 0
+  while (stack.length) {
+    const [v, depth] = stack.pop()!
+    if (v === null || typeof v !== 'object') continue
+    if (depth >= MAX_DEPTH || ++nodes > MAX_NODES) return false
+    if (Array.isArray(v)) {
+      for (const item of v) stack.push([item, depth + 1])
+      continue
+    }
+    for (const key of Object.keys(v)) {
+      if (UNSAFE_KEYS.has(key)) return false
+      stack.push([(v as Record<string, unknown>)[key], depth + 1])
+    }
+  }
+  return true
+}
+
 export async function openEvent(raw: unknown, room: string): Promise<LogEvent | null> {
-  if (!raw || typeof raw !== 'object') return null
+  try {
+    return await openChecked(raw, room)
+  } catch {
+    // One bad line is dropped. It must never take the rest of its page down with it.
+    return null
+  }
+}
+
+async function openChecked(raw: unknown, room: string): Promise<LogEvent | null> {
+  if (!raw || typeof raw !== 'object' || !plainEnough(raw)) return null
   const e = { ...(raw as Partial<LogEvent>) }
   // Room and id are never read from the wire: hashing the supplied room stops replay into another space.
   e.room = room
   if (typeof e.sig !== 'string' || !/^[0-9a-f]{128}$/.test(e.sig)) return null
   if (typeof e.author !== 'string' || !/^[0-9a-f]{64}$/.test(e.author)) return null
   if (typeof e.lamport !== 'number' || !Number.isInteger(e.lamport) || e.lamport < 0) return null
+  // A place far past any clock: it would stay the newest in its channel, ahead of all that comes.
+  if (e.lamport > Date.now() + MAX_FUTURE_MS) return null
   if (typeof e.at !== 'number' || !Number.isFinite(e.at)) return null
-  if (!KNOWN_KINDS.has(String(e.kind))) return null
+  if (typeof e.kind !== 'string' || !KNOWN_KINDS.has(e.kind)) return null
   if (!e.body || typeof e.body !== 'object' || Array.isArray(e.body)) return null
 
   const body = e.body as Record<string, unknown>
@@ -290,6 +354,8 @@ export function cleanAvatar(raw: unknown): string {
 }
 
 const MAX_CLOCK_LEAD_MS = 5 * 60 * 1000
+/** An event placed further ahead of this device's clock than this is not taken. */
+const MAX_FUTURE_MS = 30 * 24 * 60 * 60 * 1000
 
 function compare(a: LogEvent, b: LogEvent): number {
   if (a.lamport !== b.lamport) return a.lamport - b.lamport
@@ -303,6 +369,13 @@ export class RoomLog {
   // Trust on first use: pinned the first time this device sees the space.
   founder = ''
   private readonly byId = new Map<string, LogEvent>()
+  /**
+   * The order events came to this device: the order the server kept them, as a page is read from
+   * the start each time. A place in the log is the writer's to pick; this order is not.
+   */
+  private readonly arrival = new Map<string, number>()
+  /** The furthest place yet. What this device writes goes just after it. */
+  private furthest = -1
   private clock = 0
   private ordered: LogEvent[] | null = null
   /** Whether `ordered` went out since the last add: then an add copies it, and does not push. */
@@ -319,10 +392,17 @@ export class RoomLog {
     return Math.max(this.clock + 1, Date.now())
   }
 
-  /** Returns true when the event was new. */
-  add(event: LogEvent): boolean {
+  /**
+   * Returns true when the event was new. `place` is where it came among the lines the server
+   * sent, which is the order it kept them. One with no place, as this device's own, goes after
+   * everything here so far.
+   */
+  add(event: LogEvent, place?: number): boolean {
     if (this.byId.has(event.id)) return false
     this.byId.set(event.id, event)
+    const at = place ?? this.furthest + 1e-6
+    if (at > this.furthest) this.furthest = at
+    this.arrival.set(event.id, at)
     this.advance(event.lamport)
     const ordered = this.ordered
     if (ordered && (ordered.length === 0 || compare(ordered[ordered.length - 1], event) < 0)) {
@@ -338,6 +418,11 @@ export class RoomLog {
       this.ordered = null
     }
     return true
+  }
+
+  /** Where an event came in the order this device got them. */
+  arrivedAt(id: string): number {
+    return this.arrival.get(id) ?? Infinity
   }
 
   private advance(lamport: number): void {
@@ -361,77 +446,136 @@ export class RoomLog {
     return this.cached('authority', () => this.foldAuthority())
   }
 
+  /**
+   * Who may do what. In the agreed order, each change is checked against who could make it at
+   * that point. The place an event claims is its writer's to pick, so on its own a person who
+   * was removed, or put on a lower level, could sign a change with a place just before that, and
+   * undo it. So a change to somebody is first judged against only what had come before it; if it
+   * stands then, what that person signs later with a place before it does not count.
+   */
   private foldAuthority(): Authority {
-    const all = this.everything()
+    return this.foldAuthorityOf(this.authorityEvents()).auth
+  }
+
+  /** The changes to levels that count, in the agreed order. */
+  private authorityEvents(): LogEvent[] {
+    return this.cached('authorityEvents', () => {
+      const events = this.everything().filter((e) => e.kind === 'level' || e.kind === 'role')
+      const dropped = this.backdated(events)
+      return dropped.size ? events.filter((e) => !dropped.has(e.id)) : events
+    })
+  }
+
+  /** Who could do what just before this place in the log. */
+  private authorityAt(lamport: number): Authority {
+    return this.cached(`authorityAt:${lamport}`, () =>
+      this.foldAuthorityOf(this.authorityEvents().filter((e) => e.lamport < lamport)).auth,
+    )
+  }
+
+  /** The changes signed with a place before a change to their writer that had already come. */
+  private backdated(events: LogEvent[]): Set<string> {
+    const dropped = new Set<string>()
+    const subjectOf = (e: LogEvent): string => (e.kind === 'role' && typeof e.body.subject === 'string' ? e.body.subject : '')
+    // Changes to somebody by somebody else, and whether anything of theirs came after with an earlier place.
+    const about = events.filter((d) => {
+      const subject = subjectOf(d)
+      if (!PERSON_KEY.test(subject) || subject === d.author) return false
+      const came = this.arrivedAt(d.id)
+      return events.some((e) => e.author === subject && e.lamport < d.lamport && this.arrivedAt(e.id) > came)
+    })
+    if (about.length === 0) return dropped
+    about.sort((a, b) => this.arrivedAt(a.id) - this.arrivedAt(b.id))
+    for (const d of about) {
+      if (dropped.has(d.id)) continue
+      const came = this.arrivedAt(d.id)
+      const before = events.filter((e) => !dropped.has(e.id) && this.arrivedAt(e.id) <= came)
+      if (!this.foldAuthorityOf(before).took.has(d.id)) continue
+      const subject = subjectOf(d)
+      for (const e of events) {
+        if (e.author === subject && e.lamport < d.lamport && this.arrivedAt(e.id) > came) dropped.add(e.id)
+      }
+    }
+    return dropped
+  }
+
+  private foldAuthorityOf(all: LogEvent[]): { auth: Authority; took: Set<string> } {
     const levels = new Map<string, Level>(STARTING_LEVELS.map((l) => [l.id, { ...l, can: [...l.can] }]))
     const placed = new Map<string, string>()
     const kickedAt = new Map<string, number>()
+    const kickedArrival = new Map<string, number>()
     const founder = this.founder
     const bannedAt = new Map<string, number>()
     const letBackAt = new Map<string, number>()
     const bans: number[] = []
-    const auth = new Authority(founder, levels, placed, kickedAt, bannedAt, letBackAt, bans)
+    const auth = new Authority(founder, levels, placed, kickedAt, bannedAt, letBackAt, bans, kickedArrival)
+    const took = new Set<string>()
 
-    for (const e of all) {
+    const step = (e: LogEvent): boolean => {
       if (e.kind === 'level') {
         const id = String(e.body.id ?? '')
-        if (!/^[a-z0-9]{1,16}$/.test(id)) continue
+        if (!/^[a-z0-9]{1,16}$/.test(id)) return false
         const was = levels.get(id)
         if (id === OWNER) {
           // A name and a colour: what the owner may do, and where the level sits, never change.
           const name = String(e.body.name ?? '').slice(0, 24).trim()
-          if (!was || !auth.mayEdit(e.author, was) || e.body.gone === true || !name) continue
+          if (!was || !auth.mayEdit(e.author, was) || e.body.gone === true || !name) return false
           levels.set(id, { ...was, name, colour: cleanColour(e.body.colour) })
-          continue
+          return true
         }
-        if (was && !auth.mayEdit(e.author, was)) continue
-        if (!was && !auth.can(e.author, 'levels')) continue
+        if (was && !auth.mayEdit(e.author, was)) return false
+        if (!was && !auth.can(e.author, 'levels')) return false
         const mine = auth.levelOf(e.author)
         if (e.body.gone === true) {
-          if (id === MEMBER || !was) continue
+          if (id === MEMBER || !was) return false
           levels.delete(id)
           for (const [key, at] of placed) if (at === id) placed.delete(key)
-          continue
+          return true
         }
         const name = String(e.body.name ?? '').slice(0, 24).trim()
-        if (!name) continue
+        if (!name) return false
         const rank = id === MEMBER ? 0 : Number(e.body.rank)
-        if (!Number.isFinite(rank) || (id !== MEMBER && (rank <= 0 || rank >= mine.rank))) continue
+        if (!Number.isFinite(rank) || (id !== MEMBER && (rank <= 0 || rank >= mine.rank))) return false
         const asked = Array.isArray(e.body.can) ? e.body.can.map(String) : []
         const can = ALL.filter((p) => asked.includes(p) && mine.can.includes(p))
         levels.set(id, { id, name, colour: cleanColour(e.body.colour), rank, can })
-        continue
+        return true
       }
-      if (e.kind !== 'role') continue
+      if (e.kind !== 'role') return false
       const subject = String(e.body.subject ?? '')
-      if (!/^[0-9a-f]{64}$/.test(subject) || subject === founder) continue
+      if (!/^[0-9a-f]{64}$/.test(subject) || subject === founder) return false
       const role = String(e.body.role ?? '')
       if (role === 'kicked') {
-        if (!auth.mayRemove(e.author, subject)) continue
+        if (!auth.mayRemove(e.author, subject)) return false
         kickedAt.set(subject, e.lamport)
+        kickedArrival.set(subject, this.arrivedAt(e.id))
         if (e.body.ban === true) {
           bannedAt.set(subject, e.lamport)
           bans.push(e.lamport)
         }
-        continue
+        return true
       }
       const level = levels.get(role)
-      if (!level || level.id === OWNER) continue
+      if (!level || level.id === OWNER) return false
       if (kickedAt.has(subject)) {
-        if (!auth.mayRemove(e.author, subject) && !auth.mayPlace(e.author, subject)) continue
+        if (!auth.mayRemove(e.author, subject) && !auth.mayPlace(e.author, subject)) return false
         kickedAt.delete(subject)
+        kickedArrival.delete(subject)
         bannedAt.delete(subject)
         letBackAt.set(subject, e.lamport)
         if (level.id === MEMBER) {
           placed.delete(subject)
-          continue
+          return true
         }
       }
-      if (!auth.mayPlace(e.author, subject) || level.rank > auth.levelOf(e.author).rank) continue
+      if (!auth.mayPlace(e.author, subject) || !auth.mayGive(e.author, level)) return false
       if (level.id === MEMBER) placed.delete(subject)
       else placed.set(subject, level.id)
+      return true
     }
-    return auth
+
+    for (const e of all) if (step(e)) took.add(e.id)
+    return { auth, took }
   }
 
   roles(): Map<string, Role> {
@@ -545,12 +689,16 @@ export class RoomLog {
     return this.cached('visible', () => {
       const ok = this.admitted()
       const raw = this.everything()
-      if (!ok) return raw
+      const hooks = new Set(this.hooks().map((hook) => hook.pub))
+      // A webhook only posts. Its key is in the log, so anything else signed with it is not its own.
+      const asHook = (e: LogEvent): boolean => HOOK_KINDS.has(e.kind)
+      if (!ok) return hooks.size === 0 ? raw : raw.filter((e) => !hooks.has(e.author) || asHook(e))
       const auth = this.authority()
       // A removed person's own events stay: the removal already decides what of theirs is shown.
-      const hooks = new Set(this.hooks().map((hook) => hook.pub))
-      return raw.filter(
-        (e) => ok.has(e.author) || auth.isKicked(e.author) || hooks.has(e.author) || e.kind === 'key' || e.kind === 'join',
+      return raw.filter((e) =>
+        hooks.has(e.author)
+          ? asHook(e)
+          : ok.has(e.author) || auth.isKicked(e.author) || e.kind === 'key' || e.kind === 'join',
       )
     })
   }
@@ -755,14 +903,26 @@ export class RoomLog {
       const auth = this.authority()
       const notes = new Map<string, NoteInfo>()
       const gone = new Set<string>()
+      const hooks = new Set(this.hooks().map((hook) => hook.pub))
+      // Its maker wrote to it first, in the order the server kept them. Not first by place, which
+      // anybody can sign as earlier, and so take a note over.
+      const makers = new Map<string, string>()
+      const arrived = this.all()
+        .filter((e) => e.kind === 'note' && e.body.gone !== true)
+        .sort((a, b) => this.arrivedAt(a.id) - this.arrivedAt(b.id))
+      for (const e of arrived) {
+        const id = cleanNoteId(e.body.id)
+        if (id && !makers.has(id)) makers.set(id, e.author)
+      }
       for (const e of this.all()) {
-        if (e.kind !== 'note' || auth.isKicked(e.author)) continue
+        if (e.kind !== 'note' || auth.isKicked(e.author) || hooks.has(e.author)) continue
         const id = cleanNoteId(e.body.id)
         if (!id || gone.has(id)) continue
         let note = notes.get(id)
         if (!note) {
           if (e.body.gone === true) continue
-          note = { id, title: 'Untitled', text: '', maker: e.author, by: e.author, at: e.at, lamport: e.lamport, levels: [] }
+          const maker = makers.get(id) ?? e.author
+          note = { id, title: 'Untitled', text: '', maker, by: e.author, at: e.at, lamport: e.lamport, levels: [] }
           notes.set(id, note)
         }
         const keeper = e.author === note.maker || auth.can(e.author, 'channels')
@@ -887,18 +1047,19 @@ export class RoomLog {
    * it, and so may whoever may move messages, to a channel there is that the mover may enter.
    * It keeps its time.
    */
-  private moved(auth: Authority, kicked: Map<string, number>): Map<string, string> {
+  private moved(auth: Authority): Map<string, string> {
     const writers = new Map<string, string>()
     const to = new Map<string, string>()
     const there = new Map(this.everyChannel().map((c) => [c.name, c]))
+    const hooks = new Set(this.hooks().map((hook) => hook.pub))
     for (const e of this.all()) {
       if (e.kind === 'said' || e.kind === 'poll') {
         writers.set(e.id, e.author)
         continue
       }
-      if (e.kind !== 'relocate') continue
-      const removedAt = kicked.get(e.author)
-      if (removedAt !== undefined && e.lamport > removedAt) continue
+      // Anybody can sign as a webhook: its key is in the log. It moves nothing, its own posts neither.
+      if (e.kind !== 'relocate' || hooks.has(e.author)) continue
+      if (auth.removedBy(e.author, e.lamport, this.arrivedAt(e.id))) continue
       const target = String(e.body.target ?? '')
       const writer = writers.get(target)
       if (!writer || (e.author !== writer && !auth.can(e.author, 'relocate'))) continue
@@ -924,11 +1085,10 @@ export class RoomLog {
     const index = new Map<string, Message>()
     const names = new Map<string, string>()
     const auth = this.authority()
-    const kicked = auth.kickedAt
     const cleared = this.resetAt()
     const removed = this.deletedChannels()
     const kept = this.keptChannels()
-    const moved = this.moved(auth, kicked)
+    const moved = this.moved(auth)
     const hookBy = new Map(this.hooks().map((hook) => [hook.pub, hook]))
     // What a webhook posts after it stopped, or after it was deleted, is not shown.
     const hookLate = (e: LogEvent, hook: HookInfo): boolean =>
@@ -951,8 +1111,7 @@ export class RoomLog {
       const hook = hookBy.get(e.author)
       if (hook && (hookLate(e, hook) || (e.kind !== 'said' && e.kind !== 'edit' && e.kind !== 'retract'))) continue
       if (hook && e.kind === 'said' && channelOf(e) !== hook.channel) continue
-      const removedAt = kicked.get(e.author)
-      if (removedAt !== undefined && e.lamport > removedAt) continue
+      if (auth.removedBy(e.author, e.lamport, this.arrivedAt(e.id))) continue
       if (e.kind === 'profile') {
         const name = String(e.body.name ?? '').slice(0, 24)
         if (name) names.set(e.author, name)
@@ -1158,6 +1317,9 @@ export class RoomLog {
           const seed = String(e.body.seed ?? '')
           const channel = cleanChannel(String(e.body.channel ?? ''))
           if (!PERSON_KEY.test(pub) || !/^[A-Za-z0-9+/]{43}=$/.test(key) || !/^[0-9a-f]{64}$/.test(seed) || !channel) continue
+          // Its key is the one its seed makes. Otherwise a manager could name somebody's own key a
+          // webhook's, and what that person writes would be taken for the webhook's.
+          if (publicKeyOf(seed) !== pub) continue
           const stop = epochs.find((k) => k.covers > e.lamport)
           byId.set(id, {
             id,
@@ -1183,11 +1345,12 @@ export class RoomLog {
 
   keyEpochs(): { id: string; lamport: number; covers: number }[] {
     return this.cached('keyEpochs', () => {
-      const auth = this.authority()
       const out: { id: string; lamport: number; covers: number }[] = []
       const seen = new Set<string>()
       for (const e of this.everything()) {
-        if (e.kind !== 'key' || e.body.new !== true || !auth.can(e.author, 'remove')) continue
+        // Made by somebody who could remove people then: one put on a lower level later does not
+        // undo the keys they made, and one raised later did not make theirs as somebody trusted.
+        if (e.kind !== 'key' || e.body.new !== true || !this.authorityAt(e.lamport).can(e.author, 'remove')) continue
         const id = String(e.body.id ?? '')
         if (!KEY_ID.test(id) || seen.has(id)) continue
         seen.add(id)
@@ -1198,6 +1361,19 @@ export class RoomLog {
       }
       return out
     })
+  }
+
+  /**
+   * Whether this device holds the removal a key was made for. A server that keeps the removal
+   * back, and passes on the new key, would have the removed person look like somebody still
+   * here who lacks it, and be given a copy.
+   */
+  holdsRemovalFor(id: string): boolean {
+    const made = this.everything().find((e) => e.kind === 'key' && e.body.new === true && e.body.id === id)
+    const after = Number(made?.body.after) || 0
+    if (!made || after <= 0) return true
+    // At or after: a removal placed ahead of the clock is made a key for as if it were now.
+    return this.everything().some((e) => e.kind === 'role' && e.body.role === 'kicked' && e.lamport >= after)
   }
 
   /** Every copy of a key sealed for this person. Whoever sealed it, it opens only to the key its id names. */
@@ -1215,14 +1391,29 @@ export class RoomLog {
     })
   }
 
-  /** Who has a copy of this key. */
+  /**
+   * Who has a copy of this key: whoever made it, and whoever was given one by somebody who had
+   * it. A copy from anybody else is not counted: somebody without the key could write a box
+   * that opens to nothing, and the person named in it would never be given the real one.
+   */
   keyHolders(id: string): Set<string> {
     return this.cached(`keyHolders:${id}`, () => {
-      const out = new Set<string>()
-      for (const e of this.everything()) {
-        if (e.kind !== 'key' || e.body.id !== id) continue
-        const boxes = e.body.boxes
-        if (boxes && typeof boxes === 'object') for (const person of Object.keys(boxes)) out.add(person)
+      const copies = this.everything().filter((e) => e.kind === 'key' && e.body.id === id)
+      const made = copies.find((e) => e.body.new === true)
+      const out = new Set<string>(made ? [made.author] : [])
+      // Round again while it grows: a copy counts once its giver counts.
+      for (let grew = true; grew; ) {
+        grew = false
+        for (const e of copies) {
+          if (!out.has(e.author)) continue
+          const boxes = e.body.boxes
+          if (!boxes || typeof boxes !== 'object') continue
+          for (const person of Object.keys(boxes)) {
+            if (!PERSON_KEY.test(person) || out.has(person)) continue
+            out.add(person)
+            grew = true
+          }
+        }
       }
       return out
     })
@@ -1254,8 +1445,10 @@ export class RoomLog {
 
   private foldAvatars(): Map<string, string> {
     const out = new Map<string, string>()
+    const auth = this.authority()
     for (const e of this.all()) {
-      if (e.kind !== 'profile') continue
+      // Somebody removed keeps the name and picture they had: they cannot pass as somebody else.
+      if (e.kind !== 'profile' || auth.removedBy(e.author, e.lamport, this.arrivedAt(e.id))) continue
       const picture = cleanAvatar(e.body.avatar)
       if (picture) out.set(e.author, picture)
       else if (e.body.avatar === '') out.delete(e.author)
@@ -1269,8 +1462,9 @@ export class RoomLog {
 
   private foldNames(): Map<string, string> {
     const names = new Map<string, string>()
+    const auth = this.authority()
     for (const e of this.all()) {
-      if (e.kind !== 'profile') continue
+      if (e.kind !== 'profile' || auth.removedBy(e.author, e.lamport, this.arrivedAt(e.id))) continue
       const name = String(e.body.name ?? '').slice(0, 24)
       if (name) names.set(e.author, name)
     }
@@ -1517,7 +1711,8 @@ export function cleanFiles(raw: unknown): Attachment[] {
       id,
       key,
       size: Math.floor(size),
-      name: String(f.name ?? '').slice(0, 120).trim() || 'file',
+      // No control or direction marks: one could turn `fdp.exe` round to show as `exe.pdf`.
+      name: String(f.name ?? '').replace(/[\p{Cc}\p{Cf}]/gu, '').slice(0, 120).trim() || 'file',
       type: /^[\w.+-]+\/[\w.+-]+$/.test(String(f.type ?? '')) ? String(f.type).slice(0, 80) : 'application/octet-stream',
     }
     const w = bounded(f.w, 20_000)

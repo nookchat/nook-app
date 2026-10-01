@@ -1,5 +1,6 @@
-import { createHash } from 'node:crypto'
-import { MAX_ROOM_SOCKETS, originAllowed } from './config.mjs'
+import { createHash, randomBytes } from 'node:crypto'
+import { MAX_IP_SOCKETS, MAX_ROOM_SOCKETS, originAllowed } from './config.mjs'
+import { addressOf } from './http.mjs'
 import { emitLive } from './live.mjs'
 import { append, kept, MAX_LINE, mayWrite, newest, ROOM, since } from './store.mjs'
 
@@ -9,6 +10,19 @@ const MAX_SIGNAL = 512 * 1024
 const MAX_ROOMS_PER_SOCKET = 500
 // A peer that dies silently is dropped within two pings.
 const PING_MS = 10_000
+/**
+ * What may wait to go out on one socket. A page that does not read would otherwise have the
+ * server hold everything sent to its room, for as long as it answers pings. Past this it is
+ * closed, and it comes back from where it was, as after any drop.
+ */
+const MAX_QUEUED = 16 * 1024 * 1024
+/** A page of history waits for the one before it to go out, past this. */
+const DRAIN_AT = 1024 * 1024
+/** A socket with bytes waiting that has taken none of them in this long is dropped. */
+const STUCK_MS = 60_000
+/** Signals a socket may send: bytes a second, and the most at once. Far over what a call needs. */
+const SIGNAL_BYTES_PER_S = 2 * 1024 * 1024
+const SIGNAL_BURST = 8 * 1024 * 1024
 const SESSION_ID = /^[0-9a-f]{1,32}$/
 /**
  * Every page says it is here once a minute. A session not heard from for this long has gone,
@@ -74,7 +88,6 @@ function wsFrame(opcode, payload) {
   return frame
 }
 
-const PING = wsFrame(9, Buffer.alloc(0))
 
 const textFrame = (message) => wsFrame(1, JSON.stringify(message))
 
@@ -87,8 +100,39 @@ function roomFrames(room, message) {
 function send(member, frame, live = true) {
   const { socket } = member
   if (socket.destroyed) return
-  if (live && member.streaming) member.held.push(frame)
-  else socket.write(frame)
+  if (live && member.streaming) {
+    member.held.push(frame)
+    member.heldBytes += frame.length
+    if (member.heldBytes > MAX_QUEUED) socket.destroy()
+  } else if (socket.writableLength > MAX_QUEUED) {
+    socket.destroy()
+  } else {
+    socket.write(frame)
+  }
+}
+
+/** Waits until what is queued on the socket has mostly gone out, or the socket has. */
+function drained(socket) {
+  if (socket.destroyed || socket.writableLength < DRAIN_AT) return Promise.resolve()
+  return new Promise((done) => {
+    const finish = () => {
+      socket.off('drain', finish)
+      socket.off('close', finish)
+      done()
+    }
+    socket.on('drain', finish)
+    socket.on('close', finish)
+  })
+}
+
+/** Takes the bytes of one signal from the socket's allowance, or says it has none left. */
+function mayRelay(socket, bytes) {
+  const now = Date.now()
+  socket.nookBudget = Math.min(SIGNAL_BURST, socket.nookBudget + ((now - socket.nookBudgetAt) / 1000) * SIGNAL_BYTES_PER_S)
+  socket.nookBudgetAt = now
+  if (socket.nookBudget < bytes) return false
+  socket.nookBudget -= bytes
+  return true
 }
 
 function deliver(member, message, live = true) {
@@ -144,7 +188,7 @@ function join(socket, room, single) {
   let members = roomMembers.get(room)
   if (members?.size >= MAX_ROOM_SOCKETS || socket.nookRooms.size >= MAX_ROOMS_PER_SOCKET) return null
   if (!members) roomMembers.set(room, (members = new Set()))
-  member = { socket, room, single, state: null, streaming: false, held: [] }
+  member = { socket, room, single, state: null, streaming: false, held: [], heldBytes: 0 }
   members.add(member)
   socket.nookRooms.set(room, member)
   return member
@@ -168,9 +212,14 @@ function gone(room, id) {
 async function stream(member, from, live) {
   member.streaming = true
   member.held = []
+  member.heldBytes = 0
   let cursor = from
   try {
     for (;;) {
+      // The next page is read only once the last one is mostly out: a page that does not read
+      // keeps one page here, not the whole room.
+      await drained(member.socket)
+      if (member.socket.destroyed) return
       const page = await since(member.room, cursor)
       if (page.lines.length || !page.more) {
         deliver(member, { t: 'page', at: page.at, lines: page.lines, more: page.more }, false)
@@ -192,6 +241,7 @@ async function stream(member, from, live) {
     member.streaming = false
     for (const frame of member.held) if (!member.socket.destroyed) member.socket.write(frame)
     member.held = []
+    member.heldBytes = 0
   }
 }
 
@@ -209,6 +259,8 @@ async function onMessage(socket, single, payload) {
   const isSingle = single !== null
 
   if (message.t === 'leave') {
+    // Only the newest rooms left are kept: a socket can leave rooms it never joined.
+    if (socket.nookLeft.size >= MAX_ROOMS_PER_SOCKET) socket.nookLeft.delete(socket.nookLeft.values().next().value)
     socket.nookLeft.add(room)
     const member = socket.nookRooms.get(room)
     if (member) part(member)
@@ -249,6 +301,7 @@ async function onMessage(socket, single, payload) {
     }
     case 'sig': {
       if (typeof message.d !== 'string' || message.d.length > MAX_SIGNAL) return
+      if (!mayRelay(socket, message.d.length)) return
       toRoom(room, { t: 'sig', d: message.d }, member)
       emitLive({ room, kind: 'sig', d: message.d })
       return
@@ -256,6 +309,7 @@ async function onMessage(socket, single, payload) {
     case 'state': {
       if (typeof message.d !== 'string' || message.d.length > MAX_SIGNAL) return
       if (typeof message.id !== 'string' || !SESSION_ID.test(message.id)) return
+      if (!mayRelay(socket, message.d.length)) return
       const was = member.state?.id
       member.state = { id: message.id, d: message.d, at: Date.now() }
       if (was && was !== message.id) gone(room, was)
@@ -277,7 +331,10 @@ kept.on('lines', (room, rows, writer) => {
   toRoom(room, { t: 'ev', at: rows[rows.length - 1].seq, lines: rows.map((r) => r.body) }, writer)
 })
 
-function open(req, socket, single) {
+/** Open sockets from each address. */
+const perAddress = new Map()
+
+function open(req, socket, single, address) {
   const key = req.headers['sec-websocket-key']
   const accept = createHash('sha1').update(key + WS_MAGIC).digest('base64')
   socket.write(
@@ -288,14 +345,23 @@ function open(req, socket, single) {
   )
   socket.setNoDelay(true)
   socket.nookAlive = true
+  socket.nookPing = null
   socket.nookRooms = new Map()
   socket.nookLeft = new Set()
+  socket.nookBudget = SIGNAL_BURST
+  socket.nookBudgetAt = Date.now()
+  socket.nookFlushed = 0
+  socket.nookFlushedAt = Date.now()
   sockets.add(socket)
+  perAddress.set(address, (perAddress.get(address) ?? 0) + 1)
 
   const away = () => {
     if (socket.nookGone) return
     socket.nookGone = true
     sockets.delete(socket)
+    const left = (perAddress.get(address) ?? 1) - 1
+    if (left > 0) perAddress.set(address, left)
+    else perAddress.delete(address)
     for (const member of socket.nookRooms.values()) part(member)
   }
   const goodbye = (code) => {
@@ -361,7 +427,12 @@ function open(req, socket, single) {
         continue
       }
       if (opcode === 10) {
-        socket.nookAlive = true
+        // Only a pong that gives back the ping's own bytes counts (RFC 6455 5.5.3), as a browser's
+        // does: one sent unasked would keep alive a socket that reads nothing.
+        if (socket.nookPing && payload.equals(socket.nookPing)) {
+          socket.nookPing = null
+          socket.nookAlive = true
+        }
         continue
       }
       if (opcode !== 1 || !fin) return goodbye(1003)
@@ -370,6 +441,12 @@ function open(req, socket, single) {
   })
 
   socket.on('close', away)
+  // The HTTP server keeps half-closed sockets. A page that hung up is gone: it must not count
+  // against its address until the next ping finds it.
+  socket.on('end', () => {
+    away()
+    socket.destroy()
+  })
   socket.on('error', () => {
     away()
     socket.destroy()
@@ -391,7 +468,13 @@ export function upgrade(req, socket) {
     socket.destroy()
     return
   }
-  open(req, socket, one ? one[1] : null)
+  const address = addressOf(req)
+  if ((perAddress.get(address) ?? 0) >= MAX_IP_SOCKETS) {
+    socket.write('HTTP/1.1 429 Too Many Requests\r\n\r\n')
+    socket.destroy()
+    return
+  }
+  open(req, socket, one ? one[1] : null, address)
 }
 
 export function closeAll() {
@@ -421,14 +504,25 @@ function dropStale() {
 
 setInterval(() => {
   dropStale()
+  const now = Date.now()
   for (const socket of sockets) {
     if (!socket.nookAlive) {
       socket.destroy()
       continue
     }
+    // Bytes waiting, and none of them taken for a while: a page that stopped reading.
+    const flushed = socket.bytesWritten - socket.writableLength
+    if (socket.writableLength === 0 || flushed > socket.nookFlushed) {
+      socket.nookFlushed = flushed
+      socket.nookFlushedAt = now
+    } else if (now - socket.nookFlushedAt > STUCK_MS) {
+      socket.destroy()
+      continue
+    }
     socket.nookAlive = false
+    socket.nookPing = randomBytes(8)
     try {
-      socket.write(PING)
+      socket.write(wsFrame(9, socket.nookPing))
     } catch {
       socket.destroy()
     }

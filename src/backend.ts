@@ -64,16 +64,57 @@ export async function checkServer(url: string): Promise<boolean> {
   }
 }
 
-export async function fetchIce(url: string): Promise<{ iceServers: RTCIceServer[]; relayOnly: boolean }> {
+type Ice = { iceServers: RTCIceServer[]; relayOnly: boolean }
+
+const ICE_KEY = 'nook.ice.v1'
+const NO_ICE: Ice = { iceServers: [], relayOnly: false }
+
+/** The newest answer from each server, with when its credentials run out. */
+function heldIce(): Record<string, Ice & { until: number }> {
+  try {
+    const raw = JSON.parse(localStorage.getItem(ICE_KEY) ?? '{}') as unknown
+    return raw && typeof raw === 'object' ? (raw as Record<string, Ice & { until: number }>) : {}
+  } catch {
+    return {}
+  }
+}
+
+/** A TURN credential's name starts with the second it runs out (RFC 7635 style, as server/src/turn.mjs). */
+function untilOf(servers: RTCIceServer[]): number {
+  const times = servers.map((s) => Number(String(s.username ?? '').split(':')[0]) * 1000).filter((t) => Number.isFinite(t) && t > 0)
+  return times.length ? Math.min(...times) : 0
+}
+
+/**
+ * The server's relays. When it does not answer, the last answer it gave, while its credentials
+ * last: a relay-only server is that so nobody learns anybody's address, and a slow answer must
+ * not turn that into straight connections.
+ */
+export async function fetchIce(url: string): Promise<Ice> {
+  const key = serverUrl(url)
   try {
     const res = await ask(url, '/api/v1/ice')
-    if (!res?.ok) return { iceServers: [], relayOnly: false }
+    if (!res?.ok) return lastIce(key)
     const body = (await res.json()) as { iceServers?: unknown; relayOnly?: unknown }
     const iceServers = Array.isArray(body.iceServers)
       ? (body.iceServers.filter((s) => s && typeof s === 'object' && 'urls' in (s as object)) as RTCIceServer[])
       : []
-    return { iceServers, relayOnly: body.relayOnly === true && iceServers.length > 0 }
+    const ice = { iceServers, relayOnly: body.relayOnly === true && iceServers.length > 0 }
+    try {
+      const all = heldIce()
+      all[key] = { ...ice, until: untilOf(iceServers) }
+      localStorage.setItem(ICE_KEY, JSON.stringify(all))
+    } catch {
+      /* not kept: only this answer */
+    }
+    return ice
   } catch {
-    return { iceServers: [], relayOnly: false }
+    return lastIce(key)
   }
+}
+
+function lastIce(key: string): Ice {
+  const held = heldIce()[key]
+  if (!held || held.until - Date.now() < 60_000) return NO_ICE
+  return { iceServers: held.iceServers, relayOnly: held.relayOnly }
 }

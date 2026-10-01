@@ -262,7 +262,7 @@ relays it, and cannot open it.
 | Every event in a space (messages, edits, reactions, names, channels) | AES-GCM, with a key made from the space code and its password, until somebody is removed. Then a new space key, below | Anybody holding the invite link, or after a removal, the people still in the space |
 | Private messages | Also sealed with a key only the two people can work out | The two people |
 | Files | AES-GCM, with a key made for each file, which travels only inside its sealed message | Whoever can read that message |
-| Signals (handshakes, presence, typing) | AES-GCM, the same space key | The same people |
+| Signals (handshakes, presence, typing) | AES-GCM, the same space key, and signed by the sender's identity key | The same people. A signal names the key that signed it, so nobody can speak, ring or answer a call as somebody else |
 | Notifications while Nook is closed | Web Push encryption (RFC 8291), by the device that wrote the message, for the browser that shows it | That browser. The server and the push service pass on bytes they cannot open |
 | Your list of spaces and read marks | AES-GCM, with a key made from your identity key | Your devices |
 | Calls and screen shares | DTLS-SRTP, negotiated between the browsers | The people in the call. TURN relays packets it cannot open |
@@ -364,7 +364,9 @@ calls try to go straight between browsers.
 | `NOOK_TENOR_KEY` | (empty) | The same with Tenor, when no Klipy key is set. A key comes from https://developers.google.com/tenor |
 | `NOOK_GIPHY_KEY` | (empty) | The same with Giphy, when neither of the others is set. A key comes from https://developers.giphy.com |
 | `NOOK_MAX_ROOM_SOCKETS` | `200` | Connections one space may hold |
-| `NOOK_RATE`, `NOOK_RATE_BURST` | `30`, `120` | Requests one address may make per second, and in a burst |
+| `NOOK_MAX_IP_SOCKETS` | `64` | Connections one address may hold, for every space together. An IPv6 address counts by its /64 |
+| `NOOK_RATE`, `NOOK_RATE_BURST` | `30`, `120` | Requests one address may make per second, and in a burst. An IPv6 address counts by its /64 |
+| `NOOK_TURN_QUOTA` | `2000` | Relays coturn holds open at once, for everybody (in docker-compose.yml) |
 | `NOOK_FILES` | `/data/files` | Where uploaded files are kept, sealed |
 | `NOOK_MAX_FILE_BYTES` | `104857600` | The largest one file may be, sealed |
 | `NOOK_MAX_ROOM_FILE_BYTES` | `5368709120` | How much in files one space may keep |

@@ -57,6 +57,8 @@ export const CLUSTERED = PEERS.length > 0 && CLUSTER_SECRET.length >= 16
 export const PEER_HEADERS = { authorization: `Bearer ${CLUSTER_SECRET}`, 'x-nook-peer': PUBLIC_URL }
 
 export const MAX_ROOM_SOCKETS = Number(env.NOOK_MAX_ROOM_SOCKETS ?? 200)
+/** Open sockets from one address: a household or an office has a few people, each with a few tabs. */
+export const MAX_IP_SOCKETS = Number(env.NOOK_MAX_IP_SOCKETS ?? 64)
 
 export const RATE_PER_S = Number(env.NOOK_RATE ?? 30)
 export const RATE_BURST = Number(env.NOOK_RATE_BURST ?? 120)

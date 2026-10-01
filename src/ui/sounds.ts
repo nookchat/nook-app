@@ -174,11 +174,24 @@ export function isNews(at: number): boolean {
   return Date.now() - at < NEWS_MAX_AGE_MS
 }
 
+const MAX_QUEUED_LINES = 3
+let queued: number[] = []
+
+/** Lines handed to speech in the last minute, about as many as can still be waiting. */
+function queuedLines(): number {
+  const now = Date.now()
+  queued = queued.filter((at) => now - at < 60_000)
+  return queued.length
+}
+
 export function speak(text: string): void {
   if (!soundsOn()) return
   const line = text.trim()
   if (!line) return
   try {
+    // A few lines wait their turn. More than that is somebody filling the queue: those are dropped.
+    if (window.speechSynthesis.pending && queuedLines() >= MAX_QUEUED_LINES) return
+    queued.push(Date.now())
     window.speechSynthesis.speak(new SpeechSynthesisUtterance(line))
   } catch {
     /* no speech synthesis */

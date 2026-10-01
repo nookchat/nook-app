@@ -144,6 +144,22 @@ export function sign(idHex: string): string {
   return toHex(schnorr.sign(fromHex(idHex), priv!))
 }
 
+const madeBy = new Map<string, string>()
+
+/** The public key a secret key makes, hex, or '' when it is not one. Remembered: it costs a curve multiply. */
+export function publicKeyOf(secretHex: string): string {
+  let pub = madeBy.get(secretHex)
+  if (pub === undefined) {
+    try {
+      pub = /^[0-9a-f]{64}$/.test(secretHex) ? toHex(schnorr.getPublicKey(fromHex(secretHex))) : ''
+    } catch {
+      pub = ''
+    }
+    madeBy.set(secretHex, pub)
+  }
+  return pub
+}
+
 export function verify(idHex: string, sigHex: string, pubkeyHex: string): boolean {
   try {
     if (!/^[0-9a-f]{64}$/.test(idHex)) return false
