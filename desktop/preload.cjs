@@ -62,6 +62,22 @@ contextBridge.exposeInMainWorld('nookDesktop', {
     ipcRenderer.on('window:looking', heard)
     return () => ipcRenderer.removeListener('window:looking', heard)
   },
+  /**
+   * A system notification, shown by the shell, so it shows with the window put away in the tray.
+   * `picture` is a PNG or JPEG data URL. Called with `id` when it is clicked, once the window is back.
+   */
+  notify: (note) =>
+    ipcRenderer.send('notify:show', {
+      id: String(note?.id ?? ''),
+      title: String(note?.title ?? ''),
+      body: String(note?.body ?? ''),
+      picture: typeof note?.picture === 'string' ? note.picture : '',
+    }),
+  onNotifyClick: (fn) => {
+    const heard = (_ev, id) => fn(String(id))
+    ipcRenderer.on('notify:click', heard)
+    return () => ipcRenderer.removeListener('notify:click', heard)
+  },
   /** The unread count on the Dock or taskbar icon. `overlay` is a PNG data URL, for Windows. */
   setBadge: (count, overlay) => ipcRenderer.send('badge:set', Number(count) || 0, typeof overlay === 'string' ? overlay : ''),
   /** The sound of a YouTube video, for the soundboard: { title, bytes, type } or { error }. */

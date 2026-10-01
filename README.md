@@ -543,6 +543,10 @@ trackpad pinch, or `+` and `-`, zooms. A drag moves a zoomed picture.
   can still read as visible to the page, as it does on Windows. While you
   are away a mention or a direct message notifies you, and the channel on
   screen stays unread until you come back.
+- **Notifications, in the desktop app:** the shell shows them
+  (`notify:show` in `desktop/main.cjs`), not the page, so one shows while the
+  window is put away in the tray. A click brings the window back and opens
+  what it was about. A desktop app from before this makes them in the page.
 - **Desktop updates:** the desktop app looks for a newer version in the
   [GitHub releases](https://github.com/nookchat/nook-app/releases) at start
   and every 4 hours (`desktop/updates.cjs`), and downloads it. The page offers

@@ -15,6 +15,7 @@ const {
   Menu,
   nativeImage,
   nativeTheme,
+  Notification,
   protocol,
   screen,
   session,
@@ -191,6 +192,31 @@ function paintTray() {
   tray.setToolTip(trayTooltip(trayUnread))
   tray.setContextMenu(Menu.buildFromTemplate(trayMenuItems(trayUnread, { open: bringBack, quit: () => app.quit() })))
 }
+
+// A notification from the page, shown here, so it shows with the window put away in the tray. A
+// notification the page makes itself goes through its window, which is hidden then. Kept in a set
+// while it shows: one that is collected stops answering a click.
+const showing = new Set()
+
+ipcMain.on('notify:show', (ev, note) => {
+  if (!isHome(ev.sender.getURL()) || !Notification.isSupported() || !note || typeof note !== 'object') return
+  const options = { title: String(note.title || 'Nook').slice(0, 200), body: String(note.body || '').slice(0, 200), silent: false }
+  if (typeof note.picture === 'string' && /^data:image\/(png|jpeg);base64,/.test(note.picture) && note.picture.length < 400000) {
+    const picture = nativeImage.createFromDataURL(note.picture)
+    if (!picture.isEmpty()) options.icon = picture
+  }
+  const shown = new Notification(options)
+  showing.add(shown)
+  const sender = ev.sender
+  shown.on('click', () => {
+    bringBack()
+    if (!sender.isDestroyed()) sender.send('notify:click', String(note.id || ''))
+  })
+  const done = () => showing.delete(shown)
+  shown.on('close', done)
+  shown.on('failed', done)
+  shown.show()
+})
 
 ipcMain.on('tray:get', (ev) => {
   ev.returnValue = keepsInTray()

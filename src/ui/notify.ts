@@ -102,6 +102,42 @@ export function setNotifyText(on: boolean): void {
   changed()
 }
 
+interface DesktopNotify {
+  notify?: (note: { id: string; title: string; body: string; picture: string }) => void
+  onNotifyClick?: (fn: (id: string) => void) => () => void
+}
+
+const shell = (): DesktopNotify | undefined => (window as unknown as { nookDesktop?: DesktopNotify }).nookDesktop
+
+/** What a notification the desktop app shows does when clicked, by its id. */
+const clicks = new Map<string, () => void>()
+let hearing = false
+let counted = 0
+
+/**
+ * Shows a notification through the desktop app, which keeps showing them with its window put away
+ * in the tray. False when this desktop app is too old to, and the page shows it itself.
+ */
+function showInShell(title: string, body: string, go: (() => void) | undefined, picture: string | undefined): boolean {
+  const desktop = shell()
+  if (!desktop?.notify || !desktop.onNotifyClick) return false
+  if (!hearing) {
+    hearing = true
+    desktop.onNotifyClick((id) => {
+      const run = clicks.get(id)
+      clicks.delete(id)
+      window.focus()
+      run?.()
+    })
+  }
+  const id = String(++counted)
+  if (go) clicks.set(id, go)
+  // The oldest go when many pile up.
+  if (clicks.size > 50) clicks.delete(clicks.keys().next().value as string)
+  desktop.notify({ id, title, body: body.slice(0, 160), picture: picture?.startsWith('data:image/') ? picture : '' })
+  return true
+}
+
 /**
  * A system notification, as Discord does: while you are looking at Nook there is none.
  * `tag` stops the same message showing twice; `picture` is the sender's face.
@@ -111,6 +147,7 @@ export function notify(title: string, body: string, go?: () => void, more: { tag
   // Counted on the desktop app's icon even when no notification shows: off, or Do not disturb.
   noteMissed()
   if (notifyState() !== 'on' || doNotDisturb()) return
+  if (showInShell(title, body, go, more.picture)) return
   try {
     const note = new Notification(title, {
       body: body.slice(0, 160),
@@ -149,6 +186,7 @@ export async function testNotify(): Promise<TestResult> {
   try {
     // The desktop app shows the page's own, as it does every real one: Electron may not show a worker's.
     const desktop = 'nookDesktop' in window
+    if (showInShell(title, options.body ?? '', undefined, undefined)) return 'shown'
     const worker = !desktop && 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration() : undefined
     if (worker) await worker.showNotification(title, options)
     else new Notification(title, options)
