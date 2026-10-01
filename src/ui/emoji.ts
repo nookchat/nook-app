@@ -473,7 +473,8 @@ export function openEmojiPicker(options: PickerOptions): void {
   const pick = (ch: string): void => {
     noteEmoji(ch)
     options.onPick(ch)
-    if (options.sticky) paint(search.value)
+    // On a phone the sheet covers the message box: it goes once the emoji is in.
+    if (options.sticky && !phone()) paint(search.value)
     else close()
   }
 

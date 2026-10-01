@@ -19,7 +19,8 @@ export class NoteEditor {
   private readonly source: HTMLTextAreaElement
   private readonly reader: HTMLElement
   private readonly status: HTMLElement
-  private readonly tools = h('div', { class: 'note-tools row' })
+  /** The note's buttons. The space puts them in its head, in place of search and the pins. */
+  readonly tools = h('div', { class: 'note-tools row' })
   private note: NoteInfo | null = null
   /** What we last sent or took in, to tell our own changes from theirs. */
   private shownText = ''
@@ -48,7 +49,7 @@ export class NoteEditor {
 
     this.root = h('div', { class: 'note-view hidden' }, [
       // The name is in the channel head above: once is enough.
-      h('div', { class: 'note-bar row' }, [this.status, h('span', { class: 'grow' }), this.tools]),
+      h('div', { class: 'note-bar row' }, [this.status]),
       h('div', { class: 'note-panes' }, [this.source, this.reader]),
     ])
   }

@@ -1051,8 +1051,22 @@ main.settings {
   margin-bottom: 6px;
 }
 
-.settings-close {
+.settings-close,
+.settings-back {
   color: var(--fg-dim);
+}
+
+/* Only a phone goes back to the list; a wide screen has the list beside the page. */
+.settings-back,
+.settings-nav-title .settings-close {
+  display: none;
+}
+
+@media (max-width: 780px) {
+  .settings-back,
+  .settings-nav-title .settings-close {
+    display: inline-flex;
+  }
 }
 
 button.pop-close {
@@ -6447,7 +6461,8 @@ input[type="text"].gif-search {
     display: none;
   }
 
-  .chat-line {
+  .chat-line,
+  .press-menu {
     -webkit-user-select: none;
     user-select: none;
     -webkit-touch-callout: none;
@@ -6625,11 +6640,10 @@ input[type="text"].gif-search {
   gap: 2px;
 }
 
-.note-tools button.icon-only {
-  width: 32px;
-  min-width: 32px;
-  min-height: 32px;
-  border-radius: var(--icon-btn-radius);
+.space-grid:not(.note-open) .space-head .note-tools,
+.space-grid.note-open .space-head .search-wrap,
+.space-grid.note-open .space-head .pins-button {
+  display: none;
 }
 
 /* The lock's body is low in its box: up a little, it sits in the middle of the round button. */
@@ -7223,29 +7237,48 @@ input[type="range"].threshold::-moz-range-thumb {
     gap: 0;
   }
 
-  .settings-nav {
-    flex-direction: row;
-    align-items: center;
-    overflow-x: auto;
-    overflow-y: hidden;
-    padding: 10px 12px;
-    border: 0;
-    border-bottom: 1px solid var(--border);
-    border-radius: 0;
+  /* A phone: the tabs fill the screen as a list, and a page opens over them. */
+  .settings-frame {
+    grid-template-rows: minmax(0, 1fr);
   }
 
-  .settings-nav-title,
-  .settings-nav-group,
-  .settings-nav-foot {
+  .settings-frame.page-open .settings-nav,
+  .settings-frame:not(.page-open) .settings-main {
     display: none;
   }
 
+  .settings-nav {
+    padding: 12px 12px 24px;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .settings-nav-title {
+    gap: 8px;
+    padding: 0 0 10px 12px;
+  }
+
   button.settings-tab {
-    flex: 0 0 auto;
+    min-height: 48px;
+  }
+
+  /* Each tab is a row of the list, not the one that is open. */
+  button.settings-tab.on {
+    background: transparent;
+    color: var(--fg-dim);
   }
 
   .settings-main {
-    padding: 16px 16px 0;
+    padding: 8px 12px 0;
+  }
+
+  .settings-main > .settings-head {
+    gap: 4px;
+  }
+
+  .settings-title {
+    font-size: 20px;
+    line-height: 26px;
   }
 
   .field-pair,

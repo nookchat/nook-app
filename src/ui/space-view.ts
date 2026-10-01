@@ -1638,6 +1638,7 @@ export class SpaceView {
       toast('That note was deleted.', 'warn')
       this.closeNote()
     }
+    this.shell.classList.toggle('note-open', !!note)
     if (note) {
       this.noteEditor.show(note)
       this.renderNoteHead(note.title)
@@ -1727,7 +1728,7 @@ export class SpaceView {
   private noteTools(note: NoteInfo): HTMLElement[] {
     const tool = (name: IconName, label: string, run: () => void, danger = false): HTMLElement =>
       h('button', { class: `ghost icon-only tool-${name}${danger ? ' danger' : ''}`, title: label, ariaLabel: label, on: { click: run } }, [
-        icon(name, 17),
+        icon(name, 20),
       ])
     const out = [tool('edit', 'Rename', () => void this.renameNote(note))]
     if (this.mayKeepNote(note)) {
@@ -1996,7 +1997,7 @@ export class SpaceView {
     ])
 
     this.pinsButton = h('button', {
-      class: 'ghost icon-only hidden',
+      class: 'ghost icon-only pins-button hidden',
       ariaLabel: 'Pinned messages',
       title: 'Pinned in this channel',
       on: { click: () => this.openPins() },
@@ -2036,9 +2037,10 @@ export class SpaceView {
         h('div', { class: 'space-head row' }, [
           this.channelsButton,
           this.channelTitle,
-          // Search first, then the actions.
+          // Search first, then the actions. A note has its own in their place.
           this.searchWrap,
           this.pinsButton,
+          this.noteEditor.tools,
           this.peopleButton,
         ]),
         offline,

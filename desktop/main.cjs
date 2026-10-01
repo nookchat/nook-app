@@ -19,6 +19,7 @@ const {
   screen,
   session,
   shell,
+  Tray,
   WebContentsView,
 } = require('electron')
 const fs = require('node:fs')
@@ -116,9 +117,66 @@ function openLink(url) {
   const link = appLink(url)
   if (!main || !link) return
   main.loadURL(link)
+  bringBack()
+}
+
+/** Shows the window again, from the tray, the Dock, or a second start. */
+function bringBack() {
+  if (!main) return createWindow()
   if (main.isMinimized()) main.restore()
+  main.show()
   main.focus()
 }
+
+/**
+ * Close puts the window away to the tray, as Discord does: a call and the messages keep going.
+ * Quit, from the tray or the app menu, ends it. The choice is kept in a file, on by default.
+ */
+const TRAY_FILE = () => path.join(app.getPath('userData'), 'close-to-tray.txt')
+let closeToTray = null
+/** True once the app is on its way out: then a close is a close. */
+let quitting = false
+let tray = null
+
+function keepsInTray() {
+  if (closeToTray === null) {
+    try {
+      closeToTray = fs.readFileSync(TRAY_FILE(), 'utf8').trim() !== 'off'
+    } catch {
+      closeToTray = true
+    }
+  }
+  return closeToTray
+}
+
+function makeTray() {
+  if (tray) return
+  const picture = nativeImage.createFromPath(path.join(__dirname, 'tray.png'))
+  tray = new Tray(picture)
+  tray.setToolTip('Nook')
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: 'Open Nook', click: bringBack },
+      { type: 'separator' },
+      { label: 'Quit Nook', click: () => app.quit() },
+    ]),
+  )
+  // A click on the icon opens the window on Windows and Linux. On macOS a click opens the menu.
+  if (process.platform !== 'darwin') tray.on('click', bringBack)
+}
+
+ipcMain.on('tray:get', (ev) => {
+  ev.returnValue = keepsInTray()
+})
+ipcMain.on('tray:set', (ev, on) => {
+  if (!isHome(ev.sender.getURL())) return
+  closeToTray = !!on
+  try {
+    fs.writeFileSync(TRAY_FILE(), closeToTray ? 'on' : 'off')
+  } catch {
+    /* no place to keep it: the next start closes to the tray */
+  }
+})
 
 const MIN_SIZE = { width: 380, height: 500 }
 /** Where the window was when it last closed: its place, its screen, and whether it filled it. */
@@ -275,6 +333,15 @@ function createWindow() {
   })
   if (place && saved.maximized) main.maximize()
   rememberPlace(main, place ? { ...saved, bounds: place } : null)
+  main.on('close', (ev) => {
+    if (quitting || installing || !keepsInTray()) return
+    ev.preventDefault()
+    // Full screen on macOS hides into a blank space: out of full screen first.
+    if (main.isFullScreen()) {
+      main.once('leave-full-screen', () => main?.hide())
+      main.setFullScreen(false)
+    } else main.hide()
+  })
   main.on('closed', () => {
     main = null
   })
@@ -581,19 +648,23 @@ if (!app.requestSingleInstanceLock()) {
   app.on('second-instance', (_ev, argv) => {
     const link = argv.find((a) => appLink(a))
     if (link) openLink(link)
-    else if (main) {
-      if (main.isMinimized()) main.restore()
-      main.focus()
-    }
+    else bringBack()
   })
 
   app.whenReady().then(() => {
     setUpSession()
     createWindow()
+    makeTray()
     updates = watchUpdates(tellUpdate)
+    // The Dock icon brings back a window put away to the tray.
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) createWindow()
+      if (main) bringBack()
+      else if (BrowserWindow.getAllWindows().length === 0) createWindow()
     })
+  })
+
+  app.on('before-quit', () => {
+    quitting = true
   })
 
   // A quit from outside, as a shutdown sends, is a quit like any other: an update goes in on it.

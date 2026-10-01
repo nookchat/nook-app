@@ -209,6 +209,8 @@ export function asSheet(pop: HTMLElement, close: () => void): void {
  * own long press (the text selection, the callout, Android's right click) out of it.
  */
 export function onLongPress(el: HTMLElement, open: (ev: { target: Element; clientX: number; clientY: number }) => boolean): void {
+  // No selection and no callout on a finger's press: see .press-menu in the styles.
+  el.classList.add('press-menu')
   let timer = 0
   let from: { x: number; y: number } | null = null
   let fired = 0
@@ -231,6 +233,8 @@ export function onLongPress(el: HTMLElement, open: (ev: { target: Element; clien
         fired = Date.now()
         navigator.vibrate?.(8)
         from = null
+        window.getSelection()?.removeAllRanges()
+        holdTapsUntilLift()
       }, 450)
     },
     { passive: true },
@@ -256,6 +260,40 @@ export function onLongPress(el: HTMLElement, open: (ev: { target: Element; clien
       ev.stopImmediatePropagation()
     }
   })
+}
+
+/**
+ * After a long press opens a menu, the finger that held it is still down. Nothing takes a tap
+ * from it: not the menu that opened under it, not the page, and no words get selected. The next
+ * tap, with the finger lifted and put down again, works as usual.
+ */
+function holdTapsUntilLift(): void {
+  let lifted = false
+  const swallow = (ev: Event): void => {
+    ev.preventDefault()
+    ev.stopPropagation()
+  }
+  const lift = (ev: TouchEvent): void => {
+    if (ev.touches.length > 0) return
+    lifted = true
+    // The click a browser makes from the lift comes after the touchend: it is held too.
+    window.setTimeout(done, 400)
+  }
+  const fresh = (): void => {
+    if (lifted) done()
+  }
+  const done = (): void => {
+    window.removeEventListener('click', swallow, true)
+    window.removeEventListener('selectstart', swallow, true)
+    window.removeEventListener('touchend', lift, true)
+    window.removeEventListener('touchcancel', lift, true)
+    window.removeEventListener('touchstart', fresh, true)
+  }
+  window.addEventListener('click', swallow, true)
+  window.addEventListener('selectstart', swallow, true)
+  window.addEventListener('touchend', lift, true)
+  window.addEventListener('touchcancel', lift, true)
+  window.addEventListener('touchstart', fresh, true)
 }
 
 /**

@@ -1,7 +1,7 @@
 import { checkForUpdate } from '../net/updates'
 import { h } from './dom'
 import { icon } from './icons'
-import { actionRow, card, note } from './settings-shell'
+import { actionRow, card, note, toggle } from './settings-shell'
 
 const RELEASES = 'https://github.com/nookchat/nook-app/releases'
 const HOW_IT_WORKS = './how-it-works.html'
@@ -13,6 +13,8 @@ interface DesktopShell {
   version?: () => Promise<string>
   checkUpdate?: () => Promise<DesktopCheck>
   installUpdate?: () => void
+  closesToTray?: () => boolean
+  setCloseToTray?: (on: boolean) => void
 }
 
 const desktop = (): DesktopShell | null => (window as Window & { nookDesktop?: DesktopShell }).nookDesktop ?? null
@@ -95,7 +97,15 @@ export function aboutSettings(): HTMLElement {
       ]),
       h('span', { class: 'row' }, [restart, download, shellCheck]),
     ])
-    cards.push(card('Desktop app', row, shellSaid))
+    const { closesToTray, setCloseToTray } = shell
+    // An older desktop app has no tray.
+    const trayRow =
+      closesToTray && setCloseToTray
+        ? h('div', { class: 'switch-list' }, [
+            toggle('Close to the tray', closesToTray, setCloseToTray, 'Close keeps Nook running in the tray. Quit it from the tray icon.'),
+          ])
+        : null
+    cards.push(card('Desktop app', row, shellSaid, trayRow))
   }
 
   const releases = h('a', { class: 'button-link' }, [icon('link', 15), 'Releases on GitHub'])

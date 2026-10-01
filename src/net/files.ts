@@ -14,6 +14,13 @@ const TAG_BYTES = 16
 /** Plain bytes in each sealed piece. The service worker in public/stream-sw.js reads the same layout. */
 export const CHUNK_BYTES = 256 * 1024
 const LOOK_TIMEOUT_MS = 8000
+/** A video bigger than this is made smaller before it goes up, if that saves enough. */
+const SHRINK_VIDEO_FROM = 8 * 1024 * 1024
+/** A picture bigger than this, or longer than SHRINK_PICTURE_PX, is made smaller before it goes up. */
+const SHRINK_PICTURE_FROM = 1024 * 1024
+const SHRINK_PICTURE_PX = 2560
+/** A smaller copy is kept only when it saves at least this much of the file. */
+const WORTH_KEEPING = 0.8
 
 async function sealBytes(key: CryptoKey, plain: ArrayBuffer): Promise<Blob> {
   const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES))
@@ -117,6 +124,8 @@ export type Stage = (words: string, why?: string, part?: number) => void
 
 const WHY_CONVERT =
   'Files are encrypted on your device, so the server cannot see them to convert them. Your device converts this video so everyone can play it.'
+const WHY_SHRINK =
+  'Files are encrypted on your device, so the server cannot see them to compress them. Your device makes this video smaller, so it goes up and plays sooner.'
 
 interface Look {
   w?: number
@@ -133,6 +142,36 @@ function drawn(source: CanvasImageSource, w: number, h: number, most: number): H
   canvas.height = Math.max(1, Math.round(h * scale))
   canvas.getContext('2d')?.drawImage(source, 0, 0, canvas.width, canvas.height)
   return canvas
+}
+
+/**
+ * A big photo made smaller: no longer than SHRINK_PICTURE_PX, as WebP, or JPEG where this browser
+ * cannot make WebP. The same file when it is small already, moves, or would not get much smaller.
+ */
+async function shrinkPicture(file: File): Promise<File> {
+  if (!/^image\/(jpeg|png|webp)$/.test(file.type)) return file
+  let bitmap: ImageBitmap
+  try {
+    bitmap = await createImageBitmap(file)
+  } catch {
+    return file
+  }
+  try {
+    const { width: w, height: h } = bitmap
+    if (file.size <= SHRINK_PICTURE_FROM && Math.max(w, h) <= SHRINK_PICTURE_PX) return file
+    const canvas = drawn(bitmap, w, h, SHRINK_PICTURE_PX)
+    const encode = (type: string, quality: number): Promise<Blob | null> =>
+      new Promise((ok) => canvas.toBlob(ok, type, quality))
+    let blob = await encode('image/webp', 0.85)
+    // Safari gives back a PNG for WebP. A JPEG has no see-through parts, so only a JPEG becomes one.
+    if (blob?.type !== 'image/webp') blob = file.type === 'image/jpeg' ? await encode('image/jpeg', 0.85) : null
+    if (!blob || blob.size > file.size * WORTH_KEEPING) return file
+    const ext = blob.type === 'image/webp' ? '.webp' : '.jpg'
+    const name = `${file.name.replace(/\.[^.]+$/, '') || 'picture'}${ext}`
+    return new File([blob], name, { type: blob.type, lastModified: file.lastModified })
+  } finally {
+    bitmap.close()
+  }
 }
 
 async function lookAtImage(file: File): Promise<Look> {
@@ -344,6 +383,17 @@ export class SpaceFiles {
       const converted = quick ?? (await reencode(file, say))
       if (signal.aborted) throw new DOMException('Stopped', 'AbortError')
       if (converted) file = converted
+    } else if (file.type.startsWith('video/') && file.size > SHRINK_VIDEO_FROM) {
+      const say = (part: number): void => onStage?.(`Compressing · ${Math.floor(part * 100)}%`, WHY_SHRINK, part)
+      say(0)
+      // Only the quick way: a video every browser plays already is not worth playing through.
+      const smaller = await convertQuickly(file, say, signal).catch((err: unknown) => {
+        if (signal.aborted) throw err
+        return null
+      })
+      if (smaller && smaller.size <= file.size * WORTH_KEEPING) file = smaller
+    } else if (file.type.startsWith('image/')) {
+      file = await shrinkPicture(file)
     }
     if (/^(video|audio)\/(mp4|quicktime|x-m4a|m4a)$/.test(file.type) || /\.(mp4|m4v|mov|m4a)$/i.test(file.name)) {
       file = await faststart(file)

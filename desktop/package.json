@@ -25,6 +25,8 @@
       "*.cjs",
       "picker.html",
       "splash.html",
+      "tray.png",
+      "tray@2x.png",
       "fonts/**"
     ],
     "directories": {

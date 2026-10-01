@@ -51,6 +51,9 @@ contextBridge.exposeInMainWorld('nookDesktop', {
   checkUpdate: () => ipcRenderer.invoke('update:check'),
   /** Restarts into the update when it has downloaded, or opens the download page. */
   installUpdate: () => ipcRenderer.send('update:install'),
+  /** Whether close puts the window away to the tray, and a change to it. */
+  closesToTray: () => ipcRenderer.sendSync('tray:get') === true,
+  setCloseToTray: (on) => ipcRenderer.send('tray:set', !!on),
   /** The unread count on the Dock or taskbar icon. `overlay` is a PNG data URL, for Windows. */
   setBadge: (count, overlay) => ipcRenderer.send('badge:set', Number(count) || 0, typeof overlay === 'string' ? overlay : ''),
   /** The sound of a YouTube video, for the soundboard: { title, bytes, type } or { error }. */

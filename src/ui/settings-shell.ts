@@ -1,4 +1,5 @@
 import { clear, h } from './dom'
+import { closeOnBack, phone } from './gestures'
 import { icon, type IconName } from './icons'
 
 export interface SettingsTab {
@@ -20,9 +21,14 @@ interface ShellOptions {
   close(): void
 }
 
-/** Settings as Discord lays them out: the tabs on the left, one page at a time on the right. */
+/**
+ * Settings as Discord lays them out: the tabs on the left, one page at a time on the right. On a
+ * phone the tabs are a list that fills the screen, and a page opens over it with a way back.
+ */
 export function settingsShell(options: ShellOptions): HTMLElement {
   const nav = h('nav', { class: 'settings-nav', ariaLabel: `${options.title} tabs` })
+  const frame = h('div', { class: 'settings-frame' })
+  let leaveHistory: ((stepBack?: boolean) => void) | null = null
   const page = h('div', { class: 'settings-page' })
   const heading = h('h1', { class: 'settings-title grow' })
   const buttons = new Map<string, HTMLButtonElement>()
@@ -34,7 +40,14 @@ export function settingsShell(options: ShellOptions): HTMLElement {
   }
   const close = (): void => {
     window.removeEventListener('keydown', onEscape, true)
+    leaveHistory?.(false)
+    leaveHistory = null
     options.close()
+  }
+  const toList = (): void => {
+    frame.classList.remove('page-open')
+    leaveHistory?.()
+    leaveHistory = null
   }
   window.addEventListener('keydown', onEscape, true)
 
@@ -49,9 +62,23 @@ export function settingsShell(options: ShellOptions): HTMLElement {
     clear(page)
     page.append(tab.build())
     page.scrollTop = 0
+    if (!phone() || frame.classList.contains('page-open')) return
+    frame.classList.add('page-open')
+    // The back gesture goes to the list, as it does in an app.
+    leaveHistory = closeOnBack(() => {
+      leaveHistory = null
+      frame.classList.remove('page-open')
+    })
   }
 
-  nav.append(h('div', { class: 'settings-nav-title', text: options.title }))
+  const closeButton = (): HTMLElement =>
+    h(
+      'button',
+      { class: 'ghost icon-only settings-close', ariaLabel: 'Close settings', title: 'Close (Esc)', on: { click: close } },
+      [icon('close', 20)],
+    )
+
+  nav.append(h('div', { class: 'row settings-nav-title' }, [h('span', { class: 'grow truncate', text: options.title }), closeButton()]))
   let group: string | undefined
   for (const [i, tab] of options.tabs.entries()) {
     if (i === 0 || tab.group !== group) {
@@ -69,24 +96,23 @@ export function settingsShell(options: ShellOptions): HTMLElement {
   }
   if (options.foot) nav.append(h('div', { class: 'settings-nav-foot' }, [options.foot]))
 
-  const root = h('main', { class: 'settings' }, [
-    h('div', { class: 'settings-frame' }, [
-      nav,
-      h('section', { class: 'settings-main' }, [
-        h('div', { class: 'row settings-head' }, [
-          heading,
-          h(
-            'button',
-            { class: 'ghost icon-only settings-close', ariaLabel: 'Close settings', title: 'Close (Esc)', on: { click: close } },
-            [icon('close', 20)],
-          ),
+  frame.append(
+    nav,
+    h('section', { class: 'settings-main' }, [
+      h('div', { class: 'row settings-head' }, [
+        h('button', { class: 'ghost icon-only settings-back', ariaLabel: 'Back to settings', title: 'Back', on: { click: toList } }, [
+          icon('chevron-left', 20),
         ]),
-        page,
+        heading,
+        closeButton(),
       ]),
+      page,
     ]),
-  ])
+  )
+  const root = h('main', { class: 'settings' }, [frame])
 
-  show(options.start ?? options.tabs[0]?.id ?? '')
+  // A phone opens on the list, unless it was asked for one page.
+  if (options.start || !phone()) show(options.start ?? options.tabs[0]?.id ?? '')
   return root
 }
 

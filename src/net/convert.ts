@@ -5,6 +5,8 @@
 
 /** The longest side of a converted video, as reencode keeps it. */
 const LONGEST = 1920
+/** A little under Mediabunny's medium: about 2.5 Mbit/s at 1080p, where medium is 3. */
+const QUALITY = 0.4
 
 /** The video as H.264 MP4, or null when this browser cannot convert it this way. */
 export async function convertQuickly(
@@ -33,7 +35,7 @@ export async function convertQuickly(
       input,
       output,
       tracks: 'primary',
-      video: { codec: 'avc', width, height, fit: 'contain', quality: mb.QUALITY_MEDIUM, forceTranscode: true },
+      video: { codec: 'avc', width, height, fit: 'contain', quality: new mb.Quality(QUALITY), forceTranscode: true },
       // AAC is copied as it is; anything else becomes AAC.
       audio: { codec: 'aac' },
       showWarnings: false,
