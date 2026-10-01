@@ -34,6 +34,14 @@ export function fitKeyboard(): void {
       root.style.removeProperty('--keyboard')
     }
   }
+  // The page is the height of the screen and does not scroll. iOS still scrolls it to show a box
+  // and may leave it so, which slides the top of the app under the status bar: back to the top, as
+  // long as the page is not zoomed in.
+  if (window.matchMedia('(pointer: coarse)').matches) {
+    window.addEventListener('scroll', () => {
+      if (Math.abs(view.scale - 1) < 0.01 && (window.scrollY !== 0 || window.scrollX !== 0)) window.scrollTo(0, 0)
+    })
+  }
   view.addEventListener('resize', fit)
   view.addEventListener('scroll', fit)
   fit()

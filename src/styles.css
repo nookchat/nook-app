@@ -6712,6 +6712,19 @@ input[type="text"].gif-search {
     text-size-adjust: 100%;
   }
 
+  /* No pull past the end, anywhere: not the page, and not a list or a chat that has reached its end.
+     The page itself does not scroll, so nothing can slide the top of it under the status bar. */
+  html,
+  body {
+    overflow: hidden;
+  }
+
+  html,
+  body,
+  * {
+    overscroll-behavior: none;
+  }
+
   input,
   textarea,
   [contenteditable]:not([contenteditable='false']) {
