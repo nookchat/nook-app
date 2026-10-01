@@ -28,7 +28,11 @@
       "tray.png",
       "tray@1.25x.png",
       "tray@1.5x.png",
+      "tray@1.75x.png",
       "tray@2x.png",
+      "tray@2.5x.png",
+      "tray@3x.png",
+      "tray@4x.png",
       "fonts/**"
     ],
     "directories": {
