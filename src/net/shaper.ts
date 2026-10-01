@@ -1,8 +1,9 @@
 import { LOUD_DB, MIC_CHANGED, QUIET_DB, micSettings } from './mic'
 import { watchContext } from './unlock'
+import { buildVoice, type Effect } from './voice-effects'
 
 /**
- * The last step before the mic is sent: the input volume, then a gate that
+ * The last step before the mic is sent: the input volume, the voice changer, then a gate that
  * closes below the threshold when the sensitivity is set by hand.
  */
 export interface Shaped {
@@ -29,7 +30,6 @@ export function shape(input: MediaStream): Shaped {
   const out = ctx.createMediaStreamDestination()
   source.connect(volume)
   volume.connect(analyser)
-  volume.connect(gate)
   gate.connect(out)
 
   // The sent track follows the mute of the one it came from.
@@ -38,9 +38,46 @@ export function shape(input: MediaStream): Shaped {
   if (inTrack && outTrack) outTrack.enabled = inTrack.enabled
 
   let settings = micSettings()
+
+  // The voice changer sits between the volume and the gate. While an effect is still loading,
+  // nothing is connected: the voice a person means to change is never sent as it is.
+  let voice = ''
+  let effect: Effect | null = null
+  let building = 0
+  const useVoice = (id: string): void => {
+    voice = id
+    const mine = ++building
+    for (const to of [gate, effect?.input]) {
+      if (!to) continue
+      try {
+        volume.disconnect(to)
+      } catch {
+        /* it was not joined */
+      }
+    }
+    effect?.stop()
+    effect = null
+    if (id === 'off') {
+      volume.connect(gate)
+      return
+    }
+    void buildVoice(ctx, settings.voice)
+      .then((made) => {
+        if (mine !== building || !made) {
+          made?.stop()
+          return
+        }
+        effect = made
+        volume.connect(made.input)
+        made.output.connect(gate)
+      })
+      .catch(() => undefined)
+  }
+
   const apply = (): void => {
     settings = micSettings()
     volume.gain.setTargetAtTime(settings.inputVolume, ctx.currentTime, 0.02)
+    if (settings.voice !== voice) useVoice(settings.voice)
   }
   apply()
   window.addEventListener(MIC_CHANGED, apply)
@@ -71,6 +108,8 @@ export function shape(input: MediaStream): Shaped {
     close: () => {
       window.clearInterval(timer)
       window.removeEventListener(MIC_CHANGED, apply)
+      building++
+      effect?.stop()
       out.stream.getTracks().forEach((t) => t.stop())
       void ctx.close().catch(() => undefined)
     },

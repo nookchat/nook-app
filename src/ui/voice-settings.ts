@@ -11,6 +11,8 @@ import {
   playOn,
   QUIET_DB,
   setMicSettings,
+  VOICES,
+  cleanVoice,
 } from '../net/mic'
 import { shape, type Shaped } from '../net/shaper'
 import { knownServers } from '../store/server-spaces'
@@ -294,6 +296,30 @@ export function voiceSettings(processing: HTMLElement | null = null): HTMLElemen
     relayButton.disabled = false
   })
 
+  // The voice changer: it works in the mic test and in a call at once, and a call picks the change up as it is made.
+  const voices = h('div', { class: 'voice-choices', role: 'radiogroup', ariaLabel: 'Voice changer' })
+  const paintVoices = (): void => {
+    const chosen = micSettings().voice
+    for (const button of voices.querySelectorAll('button')) {
+      const on = button.dataset.voice === chosen
+      button.classList.toggle('on', on)
+      button.setAttribute('aria-checked', String(on))
+    }
+  }
+  for (const voice of VOICES) {
+    const button = h('button', { class: 'voice-choice', role: 'radio', title: voice.about }, [
+      h('span', { class: 'voice-choice-name', text: voice.label }),
+      h('span', { class: 'tiny faint voice-choice-about', text: voice.about }),
+    ])
+    button.dataset.voice = voice.id
+    button.addEventListener('click', () => {
+      changeMic({ voice: cleanVoice(voice.id) })
+      paintVoices()
+    })
+    voices.append(button)
+  }
+  paintVoices()
+
   const root = h('div', { class: 'stack settings-stack' }, [
     section(
       'Devices',
@@ -308,6 +334,11 @@ export function voiceSettings(processing: HTMLElement | null = null): HTMLElemen
       'Mic test',
       h('div', { class: 'tiny faint', text: 'Talk, and watch the bar. Hear yourself plays back what others would hear.' }),
       h('div', { class: 'mic-test' }, [h('div', { class: 'row wrap' }, [testButton, hearButton]), which]),
+    ),
+    section(
+      'Voice changer',
+      h('div', { class: 'tiny faint', text: 'Changes what the others hear. Start the mic test and choose Hear yourself to try one.' }),
+      voices,
     ),
     section(
       'Input sensitivity',

@@ -6,6 +6,24 @@ export const MIC_CHANGED = 'nook:mic'
 export const QUIET_DB = -60
 export const LOUD_DB = -10
 
+/** What the voice changer can make of your voice. `off` sends it as it is. */
+export const VOICES = [
+  { id: 'off', label: 'Off', about: 'Your own voice' },
+  { id: 'deep', label: 'Deep', about: 'Lower, like a bigger person' },
+  { id: 'high', label: 'High', about: 'Higher, lighter' },
+  { id: 'chipmunk', label: 'Chipmunk', about: 'Much higher and quick' },
+  { id: 'monster', label: 'Monster', about: 'Very low and rough' },
+  { id: 'robot', label: 'Robot', about: 'A buzz in the voice' },
+  { id: 'radio', label: 'Radio', about: 'Thin, like a walkie-talkie' },
+  { id: 'echo', label: 'Echo', about: 'Your voice comes back after you' },
+] as const
+
+export type VoiceId = (typeof VOICES)[number]['id']
+
+export function cleanVoice(raw: unknown): VoiceId {
+  return VOICES.find((v) => v.id === raw)?.id ?? 'off'
+}
+
 export interface MicSettings {
   echo: boolean
   denoise: boolean
@@ -24,6 +42,8 @@ export interface MicSettings {
   autoSensitivity: boolean
   /** In dBFS, from QUIET_DB to LOUD_DB. */
   threshold: number
+  /** The voice changer's effect. */
+  voice: VoiceId
 }
 
 const DEFAULTS: MicSettings = {
@@ -35,6 +55,7 @@ const DEFAULTS: MicSettings = {
   outputVolume: 1,
   autoSensitivity: true,
   threshold: -45,
+  voice: 'off',
 }
 
 function within(value: unknown, min: number, max: number, fallback: number): number {
@@ -57,6 +78,7 @@ export function micSettings(): MicSettings {
       outputVolume: within(saved.outputVolume, 0, 1, DEFAULTS.outputVolume),
       autoSensitivity: saved.autoSensitivity !== false,
       threshold: within(saved.threshold, QUIET_DB, LOUD_DB, DEFAULTS.threshold),
+      voice: cleanVoice(saved.voice),
     }
   } catch {
     return { ...DEFAULTS }

@@ -830,7 +830,7 @@ export class SpaceView {
   }
 
   private onMeshData(from: string, raw: string): void {
-    if (this.takeTyping(from, raw) || this.takeSound(from, raw)) return
+    if (this.takeTyping(from, raw) || this.takeSound(from, raw) || this.takeRemoteSound(from, raw)) return
     this.takeSpoken(from, raw)
   }
 
@@ -996,6 +996,64 @@ export class SpaceView {
     }
     void this.play(sound.id).then((seconds) => this.ringFor(from, sound.label, seconds))
     return true
+  }
+
+  /**
+   * Where another device of yours is in a voice channel, when this one is not in voice: the
+   * session to ask and the channel it is in. A phone in your hand can then play sounds for it.
+   */
+  private callElsewhere(): { session: string; channel: string } | null {
+    const voice = this.voice
+    const me = this.chat?.me
+    if (!voice || !me || voice.state.channel) return null
+    for (const peer of this.mesh?.peers() ?? []) {
+      if (peer.id === this.selfId || peer.key !== me) continue
+      const channel = voice.whereIs(peer.id)
+      if (channel && !isCallChannel(channel)) return { session: peer.id, channel }
+    }
+    return null
+  }
+
+  /** Asks the device of yours that is in the call to play the sound. It is not played here. */
+  private sendRemoteSound(id: string): void {
+    const away = this.callElsewhere()
+    if (!away) {
+      toast('Your other device has left the call.', 'warn')
+      return
+    }
+    const now = Date.now()
+    if (now - this.soundSentAt < SOUND_EVERY_MS) return
+    this.soundSentAt = now
+    this.mesh?.sendTo(away.session, JSON.stringify({ t: 'remote', s: id, v: away.channel }))
+  }
+
+  /**
+   * A sound asked for by another device of yours. Only your own key may ask, and only while this
+   * device is in that channel: it then plays the sound as itself, as if it had been clicked here.
+   */
+  private takeRemoteSound(from: string, raw: string): boolean {
+    const note = parseNote<{ s?: unknown; v?: unknown }>(raw, 'remote')
+    if (!note) return false
+    if (from === this.selfId || this.keyOf(from) !== this.chat?.me) return true
+    const here = this.voice?.state.channel
+    if (!here || isCallChannel(here) || note.v !== here || typeof note.s !== 'string') return true
+    this.sendSound(note.s)
+    return true
+  }
+
+  private openRemoteBoard(anchor: HTMLElement): void {
+    if (!this.chat?.can('soundboard')) {
+      toast('Your level cannot use the soundboard.', 'warn')
+      return
+    }
+    this.warmClips()
+    openSoundboard({
+      anchor,
+      onPick: (id) => this.sendRemoteSound(id),
+      sounds: this.allSounds(),
+      groups: this.allGroups(),
+      onManage: () => void this.openSpaceSettings('soundboard'),
+    })
   }
 
   private openBoard(anchor: HTMLElement | null): void {
@@ -3458,8 +3516,30 @@ export class SpaceView {
 
   private renderVoiceBar(): void {
     const state = this.voice?.state
-    this.voiceBar.classList.toggle('hidden', !state?.channel)
-    if (state?.channel) {
+    const away = state?.channel || !this.chat?.can('soundboard') ? null : this.callElsewhere()
+    this.voiceBar.classList.toggle('hidden', !state?.channel && !away)
+    if (away) {
+      // Not in voice here, but in it on another device of yours: this one is its soundboard.
+      clear(this.voiceBar)
+      const open: HTMLButtonElement = h(
+        'button',
+        {
+          class: 'small primary',
+          title: 'Play a sound in the call on your other device',
+          on: { click: () => this.openRemoteBoard(open) },
+        },
+        [icon('music', 16), 'Soundboard'],
+      )
+      this.voiceBar.append(
+        h('div', { class: 'voice-bar-top' }, [
+          h('div', { class: 'voice-bar-text' }, [
+            h('span', { class: 'voice-bar-state good' }, [h('span', { class: 'truncate', text: 'In a call on another device' })]),
+            h('span', { class: 'tiny faint truncate', text: `${away.channel} / ${this.chat?.spaceName() || 'this space'}` }),
+          ]),
+          open,
+        ]),
+      )
+    } else if (state?.channel) {
       clear(this.voiceBar)
       const call = isCallChannel(state.channel)
       const grade = this.linkGrade()

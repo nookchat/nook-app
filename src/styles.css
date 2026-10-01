@@ -8481,3 +8481,41 @@ input.invalid:focus {
     text-align: center;
   }
 }
+
+/* The voice changer's choices: a grid of buttons, one chosen. */
+.voice-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.voice-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  padding: 10px 12px;
+  text-align: left;
+  white-space: normal;
+}
+
+.voice-choice-name {
+  font-weight: 600;
+}
+
+.voice-choice.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+
+.voice-choice.on:hover:not(:disabled) {
+  background: var(--accent);
+  filter: brightness(1.05);
+}
+
+.voice-choice.on .voice-choice-about {
+  color: inherit;
+  opacity: 0.85;
+}
