@@ -549,6 +549,11 @@ export class RoomChat {
     if (fresh) this.onDirect?.()
   }
 
+  /** The files a direct message carries, once readDirect has opened it. */
+  directFiles(id: string): Attachment[] {
+    return this.openedFiles.get(id) ?? []
+  }
+
   /** What a direct message to or from you says, once readDirect has opened it. */
   directText(id: string): string {
     return this.opened.get(id) ?? ''

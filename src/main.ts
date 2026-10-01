@@ -21,9 +21,9 @@ import { watchForDesktopUpdates, watchForUpdates } from './net/updates'
 import { warmEmoji } from './ui/emoji'
 import { clearLink, readLink, setLinkSecret } from './room'
 import { spaces } from './space/registry'
-import type { SpaceRuntime } from './space/runtime'
+import { filesFor, type SpaceRuntime } from './space/runtime'
 import { nameChosen, shortKey } from './store/identity'
-import { cleanChannel, DEFAULT_CHANNEL, type LogEvent } from './store/log'
+import { cleanChannel, cleanFiles, DEFAULT_CHANNEL, type Attachment, type LogEvent } from './store/log'
 import { channelMuted } from './store/mute'
 import { newSpaceServer } from './store/server-spaces'
 import { ROOMS_CHANGED } from './store/notes'
@@ -37,7 +37,7 @@ import { installCalls } from './ui/call'
 import { loggingOut } from './ui/log-out'
 import { clear } from './ui/dom'
 import { HomeView, type DirectRef } from './ui/home-view'
-import { notify, notifyText, notifyWhat, offerNotify } from './ui/notify'
+import { noticePicture, notify, notifyText, notifyWhat, offerNotify } from './ui/notify'
 import { createWindow, type WindowChrome } from './ui/shell'
 import { tabBar, type Tab } from './ui/tab-bar'
 import { chirpMention, isNews, warmSounds } from './ui/sounds'
@@ -227,6 +227,17 @@ async function enter(
 
 spaces.fresh.add((space, events) => void alertAbout(space, events))
 
+/** What a message with no words says, for what it carries. */
+function wordsForFiles(files: Attachment[]): string {
+  if (files.length === 0) return 'Sent a message'
+  return files.every((f) => /^image\//.test(f.type)) ? (files.length > 1 ? 'Sent pictures' : 'Sent a picture') : 'Sent a file'
+}
+
+/** The picture a notification shows, when the person sees what was said and the message has one. */
+function pictureOf(space: SpaceRuntime, files: Attachment[]): Promise<string> | undefined {
+  return notifyText() && files.length ? noticePicture(files, filesFor(space)) : undefined
+}
+
 /**
  * A notification for what came in, as Discord does: who, where, and what they said.
  * Mentions and direct messages always, and every message if you asked for that.
@@ -253,8 +264,9 @@ async function alertAbout(space: SpaceRuntime, events: LogEvent[]): Promise<void
       }
       offerNotify()
       await chat.readDirect()
-      const text = notifyText() ? chat.directText(e.id) || 'Sent you a file' : 'Sent you a message'
-      notify(who, text, open, { tag: e.id, picture })
+      const sent = chat.directFiles(e.id)
+      const text = notifyText() ? chat.directText(e.id) || wordsForFiles(sent) : 'Sent you a message'
+      notify(who, text, open, { tag: e.id, picture, image: pictureOf(space, sent) })
       continue
     }
     if (e.kind !== 'said') continue
@@ -275,8 +287,9 @@ async function alertAbout(space: SpaceRuntime, events: LogEvent[]): Promise<void
       chirpMention()
       toast(`${who} mentioned you in ${spaceName}`, 'info', 8000, { label: 'Go', run: () => openSpace(space) }, 'wiggle')
     }
-    const body = notifyText() ? text : mention ? 'Mentioned you' : 'Sent a message'
-    notify(`${who} (#${channel}, ${spaceName})`, body, open, { tag: e.id, picture })
+    const sent = cleanFiles(e.body.files)
+    const body = notifyText() ? text || wordsForFiles(sent) : mention ? 'Mentioned you' : 'Sent a message'
+    notify(`${who} (#${channel}, ${spaceName})`, body, open, { tag: e.id, picture, image: pictureOf(space, sent) })
   }
 }
 

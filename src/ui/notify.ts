@@ -1,5 +1,7 @@
 import { doNotDisturb } from '../store/status'
 import { lookingAtNook, noteMissed } from './looking'
+import type { SpaceFiles } from '../net/files'
+import type { Attachment } from '../store/log'
 import { toast } from './toast'
 
 const KEY = 'nook.notify.v1'
@@ -10,6 +12,39 @@ const ICON = 'icons/app-icon-rounded-192.png'
 const OFFERED_KEY = 'nook.notify.offered.v1'
 /** After the first mention's own toast, so the two do not land at once. */
 const OFFER_AFTER_MS = 2500
+
+/** A notification does not wait longer than this for the picture it shows. */
+const IMAGE_WAIT_MS = 2500
+/** The picture in a notification is no wider than this. */
+const IMAGE_PX = 640
+const STILL = /^image\/(jpeg|png|gif|webp|avif|bmp)$/
+const MOST_PICTURE_BYTES = 30 * 1024 * 1024
+
+/**
+ * The first picture of a message, opened on this device and made small, as a JPEG data URL for
+ * the desktop app to show in a notification. A video gives its first frame. '' when there is none.
+ */
+export async function noticePicture(files: Attachment[], source: SpaceFiles): Promise<string> {
+  const pick = files.find((f) => STILL.test(f.type) && f.size <= MOST_PICTURE_BYTES) ?? files.find((f) => f.poster)
+  if (!pick) return ''
+  try {
+    const blob = STILL.test(pick.type) ? await source.open(pick) : await source.poster(pick)
+    if (!blob) return ''
+    const bitmap = await createImageBitmap(blob)
+    try {
+      const scale = Math.min(1, IMAGE_PX / bitmap.width)
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale))
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale))
+      canvas.getContext('2d')?.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+      return canvas.toDataURL('image/jpeg', 0.82)
+    } finally {
+      bitmap.close()
+    }
+  } catch {
+    return ''
+  }
+}
 
 /** Said on window when notifications are turned on or off, or what they are for changes. */
 export const NOTIFY_CHANGED = 'nook:notify'
@@ -103,7 +138,7 @@ export function setNotifyText(on: boolean): void {
 }
 
 interface DesktopNotify {
-  notify?: (note: { id: string; title: string; body: string; picture: string }) => void
+  notify?: (note: { id: string; title: string; body: string; picture: string; image: string }) => void
   onNotifyClick?: (fn: (id: string) => void) => () => void
 }
 
@@ -118,7 +153,13 @@ let counted = 0
  * Shows a notification through the desktop app, which keeps showing them with its window put away
  * in the tray. False when this desktop app is too old to, and the page shows it itself.
  */
-function showInShell(title: string, body: string, go: (() => void) | undefined, picture: string | undefined): boolean {
+function showInShell(
+  title: string,
+  body: string,
+  go: (() => void) | undefined,
+  picture: string | undefined,
+  image = '',
+): boolean {
   const desktop = shell()
   if (!desktop?.notify || !desktop.onNotifyClick) return false
   if (!hearing) {
@@ -134,7 +175,7 @@ function showInShell(title: string, body: string, go: (() => void) | undefined, 
   if (go) clicks.set(id, go)
   // The oldest go when many pile up.
   if (clicks.size > 50) clicks.delete(clicks.keys().next().value as string)
-  desktop.notify({ id, title, body: body.slice(0, 160), picture: picture?.startsWith('data:image/') ? picture : '' })
+  desktop.notify({ id, title, body: body.slice(0, 160), picture: picture?.startsWith('data:image/') ? picture : '', image })
   return true
 }
 
@@ -142,11 +183,23 @@ function showInShell(title: string, body: string, go: (() => void) | undefined, 
  * A system notification, as Discord does: while you are looking at Nook there is none.
  * `tag` stops the same message showing twice; `picture` is the sender's face.
  */
-export function notify(title: string, body: string, go?: () => void, more: { tag?: string; picture?: string } = {}): void {
+export function notify(
+  title: string,
+  body: string,
+  go?: () => void,
+  more: { tag?: string; picture?: string; image?: Promise<string> } = {},
+): void {
   if (lookingAtNook()) return
   // Counted on the desktop app's icon even when no notification shows: off, or Do not disturb.
   noteMissed()
   if (notifyState() !== 'on' || doNotDisturb()) return
+  if (more.image && shell()?.notify) {
+    // The picture is opened first, but the notification does not wait for it for long.
+    void Promise.race([more.image, new Promise<string>((done) => window.setTimeout(() => done(''), IMAGE_WAIT_MS))]).then(
+      (image) => void showInShell(title, body, go, more.picture, image),
+    )
+    return
+  }
   if (showInShell(title, body, go, more.picture)) return
   try {
     const note = new Notification(title, {

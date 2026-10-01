@@ -197,6 +197,45 @@ function paintTray() {
 // notification the page makes itself goes through its window, which is hidden then. Kept in a set
 // while it shows: one that is collected stops answering a click.
 const showing = new Set()
+const NOTICE_DIR = () => path.join(app.getPath('temp'), 'nook-notices')
+let noticeCount = 0
+
+const xmlEscape = (text) =>
+  String(text).replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' })[c])
+
+/** A PNG or JPEG data URL written to a file in the notices folder: its path, or null. */
+function noticeFile(dataUrl) {
+  const hit = /^data:image\/(png|jpeg);base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl)
+  if (!hit || dataUrl.length > 4_000_000) return null
+  try {
+    fs.mkdirSync(NOTICE_DIR(), { recursive: true })
+    const file = path.join(NOTICE_DIR(), `${Date.now()}-${noticeCount++}.${hit[1] === 'png' ? 'png' : 'jpg'}`)
+    fs.writeFileSync(file, Buffer.from(hit[2], 'base64'))
+    return file
+  } catch {
+    return null
+  }
+}
+
+/** Windows: the title and words, the sender's face as a round logo, and the message's picture across the foot. */
+function noticeXml(title, body, imageFile, faceFile) {
+  const src = (file) => xmlEscape(require('node:url').pathToFileURL(file).href)
+  return (
+    '<toast><visual><binding template="ToastGeneric">' +
+    `<text>${xmlEscape(title)}</text>` +
+    (body ? `<text>${xmlEscape(body)}</text>` : '') +
+    (faceFile ? `<image placement="appLogoOverride" hint-crop="circle" src="${src(faceFile)}"/>` : '') +
+    `<image placement="hero" src="${src(imageFile)}"/>` +
+    '</binding></visual></toast>'
+  )
+}
+
+// A folder left by a run that did not end well is emptied at start.
+try {
+  fs.rmSync(path.join(require('node:os').tmpdir(), 'nook-notices'), { recursive: true, force: true })
+} catch {
+  /* nothing to clear */
+}
 
 ipcMain.on('notify:show', (ev, note) => {
   if (!isHome(ev.sender.getURL()) || !Notification.isSupported() || !note || typeof note !== 'object') return
@@ -205,6 +244,15 @@ ipcMain.on('notify:show', (ev, note) => {
     const picture = nativeImage.createFromDataURL(note.picture)
     if (!picture.isEmpty()) options.icon = picture
   }
+  const files = []
+  // The message's picture: across the foot on Windows. Elsewhere the system has no place for one, and
+  // the small picture beside the words is the message's own when the sender's face is not there.
+  const faceFile = typeof note.picture === 'string' ? noticeFile(note.picture) : null
+  const imageFile = typeof note.image === 'string' && note.image ? noticeFile(note.image) : null
+  if (faceFile) files.push(faceFile)
+  if (imageFile) files.push(imageFile)
+  if (imageFile && process.platform === 'win32') options.toastXml = noticeXml(options.title, options.body, imageFile, faceFile)
+  else if (imageFile && !options.icon) options.icon = nativeImage.createFromPath(imageFile)
   const shown = new Notification(options)
   showing.add(shown)
   const sender = ev.sender
@@ -212,7 +260,10 @@ ipcMain.on('notify:show', (ev, note) => {
     bringBack()
     if (!sender.isDestroyed()) sender.send('notify:click', String(note.id || ''))
   })
-  const done = () => showing.delete(shown)
+  const done = () => {
+    showing.delete(shown)
+    for (const file of files) fs.rm(file, { force: true }, () => {})
+  }
   shown.on('close', done)
   shown.on('failed', done)
   shown.show()

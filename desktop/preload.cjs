@@ -64,7 +64,7 @@ contextBridge.exposeInMainWorld('nookDesktop', {
   },
   /**
    * A system notification, shown by the shell, so it shows with the window put away in the tray.
-   * `picture` is a PNG or JPEG data URL. Called with `id` when it is clicked, once the window is back.
+   * `picture` is the sender's face and `image` a picture from the message, both PNG or JPEG data URLs. Called with `id` when it is clicked, once the window is back.
    */
   notify: (note) =>
     ipcRenderer.send('notify:show', {
@@ -72,6 +72,7 @@ contextBridge.exposeInMainWorld('nookDesktop', {
       title: String(note?.title ?? ''),
       body: String(note?.body ?? ''),
       picture: typeof note?.picture === 'string' ? note.picture : '',
+      image: typeof note?.image === 'string' ? note.image : '',
     }),
   onNotifyClick: (fn) => {
     const heard = (_ev, id) => fn(String(id))

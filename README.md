@@ -548,6 +548,11 @@ trackpad pinch, or `+` and `-`, zooms. A drag moves a zoomed picture.
   (`notify:show` in `desktop/main.cjs`), not the page, so one shows while the
   window is put away in the tray. A click brings the window back and opens
   what it was about. A desktop app from before this makes them in the page.
+  A message with a picture, or a video, shows it: opened on your device, made
+  640 pixels wide, and shown across the foot of the notification on Windows
+  (`noticePicture` in `src/ui/notify.ts`). It waits 2.5 seconds for the picture
+  at most. Where the text of messages is hidden, so is the picture. macOS and
+  Linux have no place for a large one, and keep the sender's face.
 - **The Windows icon** (`desktop/build/icon.ico`) is the ghost alone, with its
   dark outline and no tile behind it, so it reads on a light taskbar and a dark
   one. It holds each size from 16 to 256, drawn from `desktop/tray.svg`, with
