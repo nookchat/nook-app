@@ -23,10 +23,15 @@ export function fitKeyboard(): void {
     root.classList.toggle('keyboard-open', open)
     if (open) {
       root.style.setProperty('--app-height', `${Math.round(view.height)}px`)
+      // How much of the bottom of the window the keyboard covers: a sheet that sticks to the window's
+      // bottom is lifted by it. A browser that resizes the window for the keyboard covers none.
+      const covered = Math.max(0, Math.round(window.innerHeight - view.height - view.offsetTop))
+      root.style.setProperty('--keyboard', `${covered}px`)
       // iOS scrolls the page to show the box; the page is already the right height, so it stays put.
       if (window.scrollY !== 0) window.scrollTo(0, 0)
     } else {
       root.style.removeProperty('--app-height')
+      root.style.removeProperty('--keyboard')
     }
   }
   view.addEventListener('resize', fit)

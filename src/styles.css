@@ -8288,9 +8288,16 @@ input.invalid:focus {
     animation: sheet-in 240ms var(--ease-out) backwards;
   }
 
-  /* The keyboard covers the home bar. */
+  /* The keyboard covers the home bar, and on iOS it lies over the bottom of the window: the
+     sheet stands on top of it, so a search box in the sheet is not behind it. */
   html.keyboard-open .sheet.sheet {
+    bottom: var(--keyboard, 0px);
     padding-bottom: 10px;
+  }
+
+  /* What is left over the keyboard is short: the grid takes what the search box and the tabs leave. */
+  html.keyboard-open .gif-pop.sheet .gif-grid {
+    max-height: max(120px, calc(var(--app-height, 100dvh) - 190px));
   }
 
   .sheet-grab {
