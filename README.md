@@ -547,6 +547,10 @@ trackpad pinch, or `+` and `-`, zooms. A drag moves a zoomed picture.
   (`notify:show` in `desktop/main.cjs`), not the page, so one shows while the
   window is put away in the tray. A click brings the window back and opens
   what it was about. A desktop app from before this makes them in the page.
+- **The Windows icon** (`desktop/build/icon.ico`) is the ghost alone, with its
+  dark outline and no tile behind it, so it reads on a light taskbar and a dark
+  one. It holds each size from 16 to 256, drawn from `desktop/tray.svg`, with
+  the cheeks from 32 up. macOS and Linux keep the tile in `desktop/build/icon.png`.
 - **Desktop updates:** the desktop app looks for a newer version in the
   [GitHub releases](https://github.com/nookchat/nook-app/releases) at start
   and every 4 hours (`desktop/updates.cjs`), and downloads it. The page offers
