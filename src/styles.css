@@ -6699,6 +6699,40 @@ input[type="text"].gif-search {
   color: var(--fg-dim);
 }
 
+/* On a phone the page is an app, not a document: a long press selects no words, opens no callout,
+   and a tap leaves no grey flash. Only where a person types, or where the page asks for a whole
+   piece to be taken (user-select: all, such as an invite code), is there anything to select. */
+@media (pointer: coarse) {
+  html {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  input,
+  textarea,
+  [contenteditable]:not([contenteditable='false']) {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+
+  /* iOS ignores the inherited none on these, and lifts a picture or a link out on a long press. */
+  img,
+  svg,
+  a,
+  button,
+  canvas,
+  video {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-user-drag: none;
+  }
+}
+
 /* A finger has no hover: a long press opens the message's menu as a sheet (src/ui/gestures.ts),
    and the press does not select the words or open the browser's own callout. */
 @media (hover: none) {
