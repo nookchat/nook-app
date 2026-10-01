@@ -46,31 +46,66 @@ async function sealPieces(key: CryptoKey, file: Blob, chunk: number): Promise<Bl
   return new Blob(parts, { type: 'application/octet-stream' })
 }
 
-async function openPieces(keyText: string, sealed: ArrayBuffer, size: number, chunk: number): Promise<Blob> {
-  const key = await crypto.subtle.importKey('raw', fromBase64Url(keyText), 'AES-GCM', false, ['decrypt'])
-  const count = Math.max(1, Math.ceil(size / chunk))
-  const parts: BlobPart[] = []
-  let at = 0
-  for (let i = 0; i < count; i++) {
-    const plain = i < count - 1 ? chunk : size - i * chunk
-    const length = IV_BYTES + plain + TAG_BYTES
-    if (at + length > sealed.byteLength) throw new Error('The file arrived cut short.')
-    const iv = new Uint8Array(sealed, at, IV_BYTES)
-    const box = new Uint8Array(sealed, at + IV_BYTES, plain + TAG_BYTES)
-    parts.push(
-      await crypto.subtle.decrypt(
-        { name: 'AES-GCM', iv, additionalData: pieceLabel(i, i === count - 1) as BufferSource },
-        key,
-        box,
-      ),
-    )
-    at += length
+/** Opens a file sealed piece by piece as its bytes come, each piece the moment it is whole. */
+class PieceOpener {
+  private readonly count: number
+  private readonly held: Uint8Array
+  private readonly opening: Promise<ArrayBuffer>[] = []
+  private filled = 0
+  private next = 0
+  private pieceEnd: number
+
+  constructor(
+    private readonly key: Promise<CryptoKey>,
+    private readonly size: number,
+    private readonly chunk: number,
+  ) {
+    this.count = Math.max(1, Math.ceil(size / chunk))
+    this.held = new Uint8Array(this.count * (IV_BYTES + TAG_BYTES) + size)
+    this.pieceEnd = this.sealedLength(0)
   }
-  return new Blob(parts)
+
+  private sealedLength(i: number): number {
+    return IV_BYTES + (i < this.count - 1 ? this.chunk : this.size - i * this.chunk) + TAG_BYTES
+  }
+
+  add(bytes: Uint8Array): void {
+    const room = this.held.length - this.filled
+    // Past the end of the last piece is not part of the file.
+    const part = bytes.length > room ? bytes.subarray(0, room) : bytes
+    this.held.set(part, this.filled)
+    this.filled += part.length
+    while (this.next < this.count && this.filled >= this.pieceEnd) {
+      const i = this.next
+      const at = this.pieceEnd - this.sealedLength(i)
+      const iv = this.held.subarray(at, at + IV_BYTES)
+      const box = this.held.subarray(at + IV_BYTES, this.pieceEnd)
+      const opened = this.key.then((key) =>
+        crypto.subtle.decrypt(
+          { name: 'AES-GCM', iv: iv as BufferSource, additionalData: pieceLabel(i, i === this.count - 1) as BufferSource },
+          key,
+          box as BufferSource,
+        ),
+      )
+      opened.catch(() => undefined)
+      this.opening.push(opened)
+      this.next++
+      if (this.next < this.count) this.pieceEnd += this.sealedLength(this.next)
+    }
+  }
+
+  async done(): Promise<Blob> {
+    if (this.next < this.count) throw new Error('The file arrived cut short.')
+    return new Blob(await Promise.all(this.opening))
+  }
+}
+
+function importKey(keyText: string): Promise<CryptoKey> {
+  return crypto.subtle.importKey('raw', fromBase64Url(keyText) as BufferSource, 'AES-GCM', false, ['decrypt'])
 }
 
 async function openBytes(keyText: string, sealed: ArrayBuffer): Promise<ArrayBuffer> {
-  const key = await crypto.subtle.importKey('raw', fromBase64Url(keyText), 'AES-GCM', false, ['decrypt'])
+  const key = await importKey(keyText)
   const iv = new Uint8Array(sealed, 0, IV_BYTES)
   return crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, new Uint8Array(sealed, IV_BYTES))
 }
@@ -450,17 +485,20 @@ export class SpaceFiles {
         if (!res.ok || !res.body) throw new Error(`The server said ${res.status}.`)
         const total = Number(res.headers.get('content-length') ?? 0)
         const reader = res.body.getReader()
+        // Sealed in pieces: each is opened while the rest arrives. Sealed whole, as the first files were: at the end.
+        const pieces = file?.chunk ? new PieceOpener(importKey(key), file.size, file.chunk) : null
         const parts: Uint8Array[] = []
         let done = 0
         for (;;) {
           const chunk = await reader.read()
           if (chunk.done) break
-          parts.push(chunk.value)
+          if (pieces) pieces.add(chunk.value)
+          else parts.push(chunk.value)
           done += chunk.value.length
           onProgress?.(done, total)
         }
+        if (pieces) return new Blob([await pieces.done()], { type })
         const sealed = await new Blob(parts as BlobPart[]).arrayBuffer()
-        if (file?.chunk) return new Blob([await openPieces(key, sealed, file.size, file.chunk)], { type })
         return new Blob([await openBytes(key, sealed)], { type })
       } catch (err) {
         last = err

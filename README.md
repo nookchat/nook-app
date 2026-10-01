@@ -343,6 +343,20 @@ on it. A channel draws its newest few screens, and a scroll up draws more.
 | Append one message | 3.5 ms |
 | A signal between two sockets | 0.1 ms |
 
+`node test/file-speed.mjs` sends a 36 MB, 1080p video, then plays it on another
+device: here, and over a line that a proxy slows down (`LATENCY_MS` each way,
+`MBPS` at most). AES-GCM itself opens all 36 MB in about 10 ms, so the time is the
+line's. A video streams in windows that double from 2 MB to 8 MB, and the next
+window is asked for one round trip before the last one ends, so the line does
+not wait and does not carry two windows at once. A window that the player lets
+go stops downloading.
+
+| What, 200 ms round trip | 30 Mbit/s | 200 Mbit/s |
+| --- | --- | --- |
+| First frame | 300 ms | 226 ms |
+| Jump to 60% | 898 ms | 302 ms |
+| Stream all 36 MB | 11.2 s | 2.1 s |
+
 Nothing polls. The page says who it is when that changes, the server says when
 somebody arrives or goes, and the only timer is the server's 10 second ping.
 
@@ -355,6 +369,7 @@ CHECKS=all npm test  # every check, against the stack (npm test alone is off for
 npm test chat files  # only these checks
 npm run speed        # how long opening, switching and sending take
 npm run bench        # how fast the server reads, writes and passes on
+npm run file-speed   # how fast a video goes up, comes down, plays and jumps
 npm run tour         # screenshots of every screen, in test-output/tour/
 ```
 

@@ -225,11 +225,14 @@ async function serve(ev, token) {
   })
 }
 
-async function fetchSealed(info, from, to) {
+async function fetchSealed(info, from, to, signal) {
   let last = null
   for (const url of info.urls) {
+    if (signal.aborted) break
     try {
-      const res = await fetch(url, { mode: 'cors', headers: { range: `bytes=${from}-${to}` } })
+      // Past the browser's cache: it lets one request at a time at a file's address, so a
+      // window would wait for the one before it to answer. The pieces are kept here instead.
+      const res = await fetch(url, { mode: 'cors', cache: 'no-store', headers: { range: `bytes=${from}-${to}` }, signal })
       if (res.status === 206 && res.body) return { res, skip: 0 }
       // A server without ranges sends it all: read past what comes before.
       if (res.status === 200 && res.body) return { res, skip: from }
@@ -258,9 +261,15 @@ function remember(name, entry) {
   }
 }
 
-/** Pieces fetched in one go: enough to play on, not the whole rest of the file. */
-function windowOf(info) {
-  return Math.max(2, Math.floor((2 * 1024 * 1024) / info.chunk))
+/**
+ * Pieces fetched in one go. The first window after a jump is enough to start on; each next
+ * one is twice as big, up to the most, so a far server is not asked again every 2 MB.
+ */
+const FIRST_WINDOW_BYTES = 2 * 1024 * 1024
+const MOST_WINDOW_BYTES = 8 * 1024 * 1024
+
+function windowOf(info, size) {
+  return Math.max(2, Math.floor(size / info.chunk))
 }
 
 const TELL_EVERY_BYTES = 64 * 1024
@@ -278,107 +287,244 @@ async function teller(id, from, total) {
   }
 }
 
-/** Starts fetching from piece `first`, up to a window's worth, skipping what is held. */
-function fetchWindow(info, key, first) {
+/**
+ * Starts fetching from piece `first`, up to `size` bytes of pieces, skipping what is held.
+ * The bytes go into one buffer as they come, and each piece is opened the moment it is
+ * whole, while the rest still arrives. Nobody left who wants it, it stops.
+ */
+function fetchWindow(info, key, first, size, reader) {
   const total = pieces(info)
   let last = first
-  while (last + 1 < total && last + 1 < first + windowOf(info) && !cache.has(`${info.id}:${last + 1}`)) last++
+  while (last + 1 < total && last + 1 < first + windowOf(info, size) && !cache.has(`${info.id}:${last + 1}`)) last++
 
+  const stop = new AbortController()
+  const win = { first, last, size, readers: new Set([reader]), stop, done: false, near: false, onNear: [] }
   const waiting = []
   for (let i = first; i <= last; i++) {
     let settle
     const promise = new Promise((ok, fail) => (settle = { ok, fail }))
     promise.catch(() => undefined)
-    const entry = { promise, bytes: 0 }
+    const entry = { promise, bytes: 0, win }
     remember(`${info.id}:${i}`, entry)
     waiting.push({ index: i, settle, entry })
   }
 
+  const fail = (wait, err) => {
+    if (cache.get(`${info.id}:${wait.index}`) === wait.entry && wait.entry.bytes === 0) cache.delete(`${info.id}:${wait.index}`)
+    wait.settle.fail(err)
+  }
+
   void (async () => {
+    let next = 0
     try {
       const from = sealedAt(info, first)
       const to = sealedAt(info, last) + IV_BYTES + plainOf(info, last) + TAG_BYTES - 1
-      const { res, skip } = await fetchSealed(info, from, to)
-      const reader = res.body.getReader()
+      const asked = performance.now()
+      const { res, skip } = await fetchSealed(info, from, to, stop.signal)
+      const answered = performance.now()
+      const body = res.body.getReader()
       const tell = await teller(info.id, from, to - from + 1)
-      let held = new Uint8Array(0)
+      const held = new Uint8Array(to - from + 1)
+      let filled = 0
       let toSkip = skip
-      for (const wait of waiting) {
-        const need = IV_BYTES + plainOf(info, wait.index) + TAG_BYTES
-        while (held.length < need) {
-          const { done, value } = await reader.read()
-          if (done) throw new Error('The file arrived cut short.')
-          let chunk = value
-          if (toSkip > 0) {
-            const drop = Math.min(toSkip, chunk.length)
-            toSkip -= drop
-            chunk = chunk.subarray(drop)
-          }
-          if (!chunk.length) continue
-          tell(chunk.length)
-          const joined = new Uint8Array(held.length + chunk.length)
-          joined.set(held)
-          joined.set(chunk, held.length)
-          held = joined
+      let pieceEnd = IV_BYTES + plainOf(info, first) + TAG_BYTES
+      while (next < waiting.length) {
+        const { done, value } = await body.read()
+        if (done) throw new Error('The file arrived cut short.')
+        let chunk = value
+        if (toSkip > 0) {
+          const drop = Math.min(toSkip, chunk.length)
+          toSkip -= drop
+          chunk = chunk.subarray(drop)
         }
-        const sealed = held.subarray(0, need)
-        held = held.slice(need)
-        const opened = new Uint8Array(
-          await crypto.subtle.decrypt(
-            { name: 'AES-GCM', iv: sealed.subarray(0, IV_BYTES), additionalData: label(wait.index, wait.index === total - 1) },
-            key,
-            sealed.subarray(IV_BYTES),
-          ),
-        )
-        wait.entry.bytes = opened.length
-        // Counted only while held: one dropped while it was on its way never counted.
-        if (cache.get(`${info.id}:${wait.index}`) === wait.entry) cachedBytes += opened.length
-        wait.settle.ok(opened)
+        chunk = chunk.subarray(0, held.length - filled)
+        if (!chunk.length) continue
+        tell(chunk.length)
+        held.set(chunk, filled)
+        filled += chunk.length
+        // What is left comes within about one round trip at this speed: the next window
+        // may be asked for now, and its first bytes come as these end. The first bytes come
+        // in a rush, so the speed counts only after a round trip; the last window's till then.
+        if (!win.near) {
+          const took = performance.now() - answered
+          const rtt = answered - asked
+          const rate = took >= Math.max(100, rtt) ? filled / took : lineRate
+          if (rate && (held.length - filled) / rate <= rtt * 1.25) nearEnd(win)
+        }
+        while (next < waiting.length && filled >= pieceEnd) {
+          const wait = waiting[next]
+          const at = pieceEnd - (IV_BYTES + plainOf(info, wait.index) + TAG_BYTES)
+          crypto.subtle
+            .decrypt(
+              { name: 'AES-GCM', iv: held.subarray(at, at + IV_BYTES), additionalData: label(wait.index, wait.index === total - 1) },
+              key,
+              held.subarray(at + IV_BYTES, pieceEnd),
+            )
+            .then(
+              (box) => {
+                const opened = new Uint8Array(box)
+                wait.entry.bytes = opened.length
+                // Counted only while held: one dropped while it was on its way never counted.
+                if (cache.get(`${info.id}:${wait.index}`) === wait.entry) cachedBytes += opened.length
+                wait.settle.ok(opened)
+              },
+              (err) => fail(wait, err),
+            )
+          next++
+          if (next < waiting.length) pieceEnd += IV_BYTES + plainOf(info, waiting[next].index) + TAG_BYTES
+        }
       }
-      reader.cancel().catch(() => undefined)
+      body.cancel().catch(() => undefined)
+      const took = performance.now() - answered
+      if (held.length >= 512 * 1024 && took > 0) lineRate = lineRate ? (lineRate + held.length / took) / 2 : held.length / took
     } catch (err) {
-      for (const wait of waiting) {
-        if (cache.get(`${info.id}:${wait.index}`) === wait.entry && wait.entry.bytes === 0) cache.delete(`${info.id}:${wait.index}`)
-        wait.settle.fail(err)
-      }
+      for (const wait of waiting.slice(next)) fail(wait, err)
+    } finally {
+      win.done = true
+      nearEnd(win)
     }
   })()
 }
 
-function piece(info, key, index) {
+/** Bytes a millisecond the last whole windows came at, or 0 before one has. */
+let lineRate = 0
+
+function nearEnd(win) {
+  if (win.near) return
+  win.near = true
+  for (const fn of win.onNear.splice(0)) fn()
+}
+
+/** Runs `fn` once the window is near its end, at once when it is already. */
+function whenNear(win, fn) {
+  if (win.near) fn()
+  else win.onNear.push(fn)
+}
+
+/** A player that stops one request often asks for the bytes beside it at once: they wait this long for it. */
+const LET_GO_MS = 400
+
+/** file id -> windows on their way that no reader wants, waiting out LET_GO_MS */
+const unwanted = new Map()
+/** file id -> the readers of it still open, each with the piece it is at */
+const live = new Map()
+
+/** Another reader of the file is at or just before this window, so it may want it soon. */
+function nearAReader(info, win) {
+  for (const r of live.get(info.id) ?? []) if (r.at <= win.last && win.first <= r.at + windowOf(info, MOST_WINDOW_BYTES)) return true
+  return false
+}
+
+/**
+ * A reader no longer wants these pieces. A window nobody wants stops downloading after
+ * LET_GO_MS, or at once when a reader asks for another part of the file.
+ */
+function letGo(info, reader) {
+  reader.gone = true
+  const readers = live.get(info.id)
+  readers?.delete(reader)
+  if (readers && !readers.size) live.delete(info.id)
+  for (const win of reader.windows) {
+    win.readers.delete(reader)
+    if (win.done || win.readers.size > 0) continue
+    // The player already reads elsewhere in the file: nobody will come back for this.
+    if (live.has(info.id) && !nearAReader(info, win)) {
+      win.stop.abort()
+      continue
+    }
+    let wins = unwanted.get(info.id)
+    if (!wins) unwanted.set(info.id, (wins = new Set()))
+    wins.add(win)
+    setTimeout(() => {
+      wins.delete(win)
+      if (!wins.size && unwanted.get(info.id) === wins) unwanted.delete(info.id)
+      if (!win.done && win.readers.size === 0) win.stop.abort()
+    }, LET_GO_MS)
+  }
+  reader.windows.clear()
+}
+
+/** The player went elsewhere in the file: what it let go is not wanted after all. */
+function stopUnwanted(info) {
+  for (const win of unwanted.get(info.id) ?? []) if (!win.done && win.readers.size === 0) win.stop.abort()
+  unwanted.delete(info.id)
+}
+
+/** The entry for one piece, fetching its window when it is not held or on its way. */
+function piece(info, key, index, reader) {
   const name = `${info.id}:${index}`
   let entry = cache.get(name)
+  // On its way in a window that was just stopped: it will never come, so ask again.
+  if (entry && entry.bytes === 0 && entry.win.stop.signal.aborted) {
+    cache.delete(name)
+    entry = undefined
+  }
   if (!entry) {
-    fetchWindow(info, key, index)
+    // After a jump, small; reading on from a window of its own, twice as big.
+    const size = reader.lastSize ? Math.min(MOST_WINDOW_BYTES, reader.lastSize * 2) : FIRST_WINDOW_BYTES
+    reader.lastSize = size
+    stopUnwanted(info)
+    fetchWindow(info, key, index, size, reader)
     entry = cache.get(name)
   } else {
     // Used again: move it to the back, so it is the last to go.
     cache.delete(name)
     cache.set(name, entry)
   }
-  return entry.promise
+  if (!entry.win.done) {
+    entry.win.readers.add(reader)
+    reader.windows.add(entry.win)
+  }
+  return entry
 }
 
 async function piecesStream(info, key, first, last, start, end) {
   const total = pieces(info)
   let index = first
+  const reader = { windows: new Set(), lastSize: 0, gone: false, followed: new WeakSet(), at: first }
+  if (!live.has(info.id)) live.set(info.id, new Set())
+  live.get(info.id).add(reader)
+  /**
+   * This piece, and the next window asked for when this one is near its end, so the line
+   * never waits. Not sooner: the bytes wanted now come quickest with the line to themselves.
+   */
+  const want = (index) => {
+    const entry = piece(info, key, index, reader)
+    const win = entry.win
+    const ahead = win.last + 1
+    if (!reader.followed.has(win) && ahead <= last && ahead < total) {
+      reader.followed.add(win)
+      whenNear(win, () => {
+        if (!reader.gone && !cache.has(`${info.id}:${ahead}`)) piece(info, key, ahead, reader)
+      })
+    }
+    return entry
+  }
   // The first piece is waited for here, so a failure is a failed response, not a broken body.
-  await piece(info, key, first)
+  try {
+    await want(first).promise
+  } catch (err) {
+    letGo(info, reader)
+    throw err
+  }
   return new ReadableStream({
     async pull(controller) {
       if (index > last) {
+        letGo(info, reader)
         controller.close()
         return
       }
-      const opened = await piece(info, key, index)
-      // Read ahead while this one is played.
-      const ahead = index + Math.ceil(windowOf(info) / 2)
-      if (ahead <= last && ahead < total && !cache.has(`${info.id}:${ahead}`)) piece(info, key, ahead)
+      reader.at = index
+      const opened = await want(index).promise
       const base = index * info.chunk
       const lo = Math.max(0, start - base)
       const hi = Math.min(opened.length, end - base + 1)
       controller.enqueue(opened.subarray(lo, hi))
       index++
+    },
+    // The player jumped elsewhere, or stopped.
+    cancel() {
+      letGo(info, reader)
     },
   })
 }
