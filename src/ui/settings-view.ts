@@ -20,7 +20,7 @@ import { gameCard } from './game-card'
 import { songCard } from './song-card'
 import { enterLinkCode, lastBackup, showBackup, showLinkCode } from './link-device'
 import { paintFolders } from './recordings'
-import { askNotify, notifyState, notifyText, notifyWhat, setNotifyText, setNotifyWhat, stopNotify } from './notify'
+import { askNotify, notifyState, notifyText, notifyWhat, setNotifyText, setNotifyWhat, stopNotify, testNotify } from './notify'
 import { setSounds, soundsOn } from './sounds'
 import { card, note, settingsShell, switchRow, toggle, type SettingsTab } from './settings-shell'
 import { shortcutSettings } from './shortcuts'
@@ -236,6 +236,28 @@ export function settingsView(actions: SettingsActions): HTMLElement {
   })
   paintNotify()
 
+  // A notification now, to see that this device shows them at all.
+  const testResult = h('p', { class: 'tiny faint notify-test-result', role: 'status' })
+  const testButton = h('button', {
+    class: 'ghost notify-test',
+    text: 'Send a test notification',
+    on: {
+      click: async () => {
+        testButton.disabled = true
+        const result = await testNotify()
+        testButton.disabled = false
+        paintNotify()
+        testResult.textContent = {
+          shown: 'Sent. If nothing showed, check the notification settings of your system, and its Focus or Do Not Disturb.',
+          blocked: 'Blocked by the browser. Allow notifications for this site in its settings, then try again.',
+          unsupported: 'This browser has no notifications.',
+          quiet: 'Your status is Do not disturb, so Nook shows no notifications. Change your status, then try again.',
+          failed: 'It did not show. Turn notifications on above, then try again.',
+        }[result]
+      },
+    },
+  })
+
   const mic = (key: 'echo' | 'denoise' | 'gain' | 'smart', label: string, about: string): HTMLButtonElement =>
     toggle(label, () => micSettings()[key], (next) => setMicSettings({ ...micSettings(), [key]: next }), about)
 
@@ -428,6 +450,7 @@ export function settingsView(actions: SettingsActions): HTMLElement {
               toggle('Sounds', soundsOn, setSounds, 'A chirp for new messages'),
             ]),
           ),
+          card('Check this device', h('div', { class: 'row' }, [testButton]), testResult),
         ])
       },
     },

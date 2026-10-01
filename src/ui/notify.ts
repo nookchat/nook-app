@@ -125,6 +125,36 @@ export function notify(title: string, body: string, go?: () => void, more: { tag
   }
 }
 
+export type TestResult = 'shown' | 'blocked' | 'unsupported' | 'quiet' | 'failed'
+
+/**
+ * A notification now, from Settings, to see that this device shows them. Unlike a real one it
+ * shows while you look at Nook. In a browser it goes through the service worker where there is
+ * one, as a push does, and as an iPhone needs; else, and in the desktop app, through the page.
+ */
+export async function testNotify(): Promise<TestResult> {
+  if (!supported()) return 'unsupported'
+  if (notifyState() !== 'on' && (await askNotify()) !== 'on') return notifyState() === 'blocked' ? 'blocked' : 'failed'
+  if (doNotDisturb()) return 'quiet'
+  const title = 'Nook'
+  const options: NotificationOptions = {
+    body: 'Notifications work on this device.',
+    tag: 'nook-test',
+    icon: new URL(ICON, document.baseURI).href,
+    silent: false,
+  }
+  try {
+    // The desktop app shows the page's own, as it does every real one: Electron may not show a worker's.
+    const desktop = 'nookDesktop' in window
+    const worker = !desktop && 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration() : undefined
+    if (worker) await worker.showNotification(title, options)
+    else new Notification(title, options)
+    return 'shown'
+  } catch {
+    return 'failed'
+  }
+}
+
 /**
  * A browser asks for leave to notify only after a click, so the first mention or direct
  * message that arrives while they are off offers them, once per device, in a toast.

@@ -133,6 +133,9 @@ with voice does it.
   tldraw needs a license key on a real domain: build with
   `VITE_TLDRAW_LICENSE_KEY` set. Without one, the whiteboards are not shown
   at all, except on localhost, where tldraw works without a key.
+- **A test notification**: Settings, Notifications, Send a test notification
+  shows one at once on this device, and says why when it cannot: the browser
+  blocks them, the status is Do not disturb, or the browser has none.
 - **Notifications while Nook is closed**: with notifications on, a browser
   also gets them when no Nook page is open, through the browser's own push
   service. The device that sends a message seals the notification for your
