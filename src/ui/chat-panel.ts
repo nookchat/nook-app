@@ -396,14 +396,14 @@ export class ChatPanel {
     this.voiceButton = h(
       'button',
       {
-        class: 'ghost icon-only voice-button hidden',
+        class: 'ghost icon-only note-button hidden',
         title: 'Record a voice message',
         ariaLabel: 'Record a voice message',
         on: { click: () => void this.startVoice() },
       },
       [icon('mic', 20)],
     )
-    this.voiceBar = h('div', { class: 'row voice-bar hidden' })
+    this.voiceBar = h('div', { class: 'row note-bar hidden' })
     // In the desktop app: a clip from your Steam, NVIDIA or other recordings, as an attached file.
     this.clipButton = h(
       'button',
@@ -839,7 +839,7 @@ export class ChatPanel {
       return
     }
     this.voice = recording
-    const time = h('span', { class: 'voice-time', text: '0:00' })
+    const time = h('span', { class: 'note-time', text: '0:00' })
     const meter = h('i')
     const cancel = h('button', { class: 'ghost icon-only', title: 'Throw it away', ariaLabel: 'Throw the voice message away' }, [
       icon('trash', 18),
@@ -847,7 +847,7 @@ export class ChatPanel {
     const send = h('button', { class: 'send-button', title: 'Send the voice message', ariaLabel: 'Send the voice message' }, [
       icon('send', 19),
     ])
-    this.voiceBar.replaceChildren(cancel, h('span', { class: 'voice-dot' }), time, h('span', { class: 'voice-meter' }, [meter]), send)
+    this.voiceBar.replaceChildren(cancel, h('span', { class: 'note-dot' }), time, h('span', { class: 'note-meter' }, [meter]), send)
     this.voiceBar.classList.remove('hidden')
     this.root.classList.add('recording')
     const tick = window.setInterval(() => {

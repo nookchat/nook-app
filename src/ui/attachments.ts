@@ -240,10 +240,10 @@ document.addEventListener('play', pauseOtherPlayers, true)
 /** A voice message: a play button, how far it has played, and how long it is. */
 function voiceCard(file: Attachment, source: SpaceFiles | null): HTMLElement {
   const total = file.dur ?? 0
-  const time = h('span', { class: 'voice-time tiny', text: total ? duration(total) : '' })
+  const time = h('span', { class: 'note-time tiny', text: total ? duration(total) : '' })
   const fill = h('i')
-  const play = h('button', { class: 'voice-play', title: 'Play', ariaLabel: 'Play the voice message' }, [icon('play', 17)])
-  const track = h('span', { class: 'voice-track', role: 'progressbar', ariaLabel: 'Voice message' }, [fill])
+  const play = h('button', { class: 'note-play', title: 'Play', ariaLabel: 'Play the voice message' }, [icon('play', 17)])
+  const track = h('span', { class: 'note-track', role: 'progressbar', ariaLabel: 'Voice message' }, [fill])
   const card = h('div', { class: 'att-voice' }, [play, track, time])
   let audio: HTMLAudioElement | null = null
   const rest = (): void => {
