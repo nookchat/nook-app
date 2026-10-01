@@ -27,6 +27,7 @@ const path = require('node:path')
 const { watchGames } = require('./games.cjs')
 const { watchSpotify } = require('./spotify.cjs')
 const { editMenu } = require('./edit-menu.cjs')
+const { dotPlace, laidOver, trayMenuItems, trayTooltip } = require('./tray.cjs')
 const { pickerBounds, restoreBounds, screenOf } = require('./placement.cjs')
 const { watchUpdates } = require('./updates.cjs')
 const recordings = require('./recordings.cjs')
@@ -149,20 +150,43 @@ function keepsInTray() {
   return closeToTray
 }
 
+/** What waits for you, as the page last said: the count, and its red circle as a PNG. */
+let trayUnread = 0
+let trayCount = ''
+
 function makeTray() {
   if (tray) return
-  const picture = nativeImage.createFromPath(path.join(__dirname, 'tray.png'))
-  tray = new Tray(picture)
-  tray.setToolTip('Nook')
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: 'Open Nook', click: bringBack },
-      { type: 'separator' },
-      { label: 'Quit Nook', click: () => app.quit() },
-    ]),
-  )
+  tray = new Tray(nativeImage.createFromPath(path.join(__dirname, 'tray.png')))
+  paintTray()
   // A click on the icon opens the window on Windows and Linux. On macOS a click opens the menu.
   if (process.platform !== 'darwin') tray.on('click', bringBack)
+}
+
+/** The tray's icon with the count in its corner, at each size the icon comes in. */
+function trayPicture() {
+  const plain = nativeImage.createFromPath(path.join(__dirname, 'tray.png'))
+  if (!(trayUnread > 0) || !trayCount) return plain
+  const count = nativeImage.createFromDataURL(trayCount)
+  if (count.isEmpty()) return plain
+  const badged = nativeImage.createEmpty()
+  for (const scaleFactor of [1, 2]) {
+    const pixels = plain.toBitmap({ scaleFactor })
+    const size = Math.round(Math.sqrt(pixels.length / 4))
+    if (!size || size * size * 4 !== pixels.length) continue
+    const { dot, x, y } = dotPlace(size)
+    const small = count.resize({ width: dot, height: dot, quality: 'best' }).toBitmap()
+    if (small.length !== dot * dot * 4) continue
+    const png = nativeImage.createFromBitmap(laidOver(pixels, size, small, dot, x, y), { width: size, height: size }).toPNG()
+    badged.addRepresentation({ scaleFactor, buffer: png })
+  }
+  return badged.isEmpty() ? plain : badged
+}
+
+function paintTray() {
+  if (!tray) return
+  tray.setImage(trayPicture())
+  tray.setToolTip(trayTooltip(trayUnread))
+  tray.setContextMenu(Menu.buildFromTemplate(trayMenuItems(trayUnread, { open: bringBack, quit: () => app.quit() })))
 }
 
 ipcMain.on('tray:get', (ev) => {
@@ -523,14 +547,18 @@ ipcMain.on('update:install', (ev) => {
 })
 
 // The unread count: a number on the Dock on macOS, and on Linux where the launcher
-// shows one; a small red circle over the taskbar button on Windows.
+// shows one; a small red circle over the taskbar button on Windows; and on the tray's icon.
 ipcMain.on('badge:set', (ev, count, overlay) => {
   if (!isHome(ev.sender.getURL())) return
   const n = Number.isInteger(count) && count > 0 ? Math.min(count, 9999) : 0
+  const ok = n > 0 && typeof overlay === 'string' && overlay.startsWith('data:image/png;base64,') && overlay.length < 20_000
+  // The tray's icon has the same count, on every system, while the window is put away.
+  trayUnread = n
+  trayCount = ok ? overlay : ''
+  paintTray()
   if (process.platform === 'win32') {
     const win = BrowserWindow.fromWebContents(ev.sender)
     if (!win) return
-    const ok = n > 0 && typeof overlay === 'string' && overlay.startsWith('data:image/png;base64,') && overlay.length < 20_000
     win.setOverlayIcon(ok ? nativeImage.createFromDataURL(overlay) : null, ok ? `${n} unread` : '')
     return
   }
