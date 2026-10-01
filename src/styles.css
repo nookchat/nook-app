@@ -3208,6 +3208,11 @@ input[type="text"].space-search {
   .chat-compose {
     padding-bottom: 10px;
   }
+
+  /* On the keyboard, the box sits close to it. */
+  html.keyboard-open .chat-compose {
+    padding-bottom: 6px;
+  }
 }
 
 .chat-panel {

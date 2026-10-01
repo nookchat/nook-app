@@ -7,9 +7,19 @@ export function fitKeyboard(): void {
   const view = window.visualViewport
   if (!view) return
   const root = document.documentElement
+  /**
+   * The tallest the view has been at each width: the height with no keyboard. A browser that
+   * resizes the page for the keyboard (Android, and Safari that follows interactive-widget)
+   * makes the window as short as the view, so the window's height alone cannot tell.
+   */
+  const tallest = new Map<number, number>()
   const fit = (): void => {
-    // Zoomed in, the view is small for another reason.
-    const open = Math.abs(view.scale - 1) < 0.01 && view.height < window.innerHeight - 120
+    const width = Math.round(window.innerWidth)
+    const full = Math.max(tallest.get(width) ?? 0, view.height, window.innerHeight)
+    tallest.set(width, full)
+    // Zoomed in, the view is small for another reason. A computer's window is short for its own.
+    const open =
+      window.matchMedia('(pointer: coarse)').matches && Math.abs(view.scale - 1) < 0.01 && view.height < full - 120
     root.classList.toggle('keyboard-open', open)
     if (open) {
       root.style.setProperty('--app-height', `${Math.round(view.height)}px`)
