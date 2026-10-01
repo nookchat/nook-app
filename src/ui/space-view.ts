@@ -74,7 +74,7 @@ import type { HookActions, MemberRow, SoundboardActions } from './space-settings
 import { hookUrl } from '../space/webhook'
 import { actionFor, type Action } from './shortcuts'
 import { NoteEditor } from './notes-view'
-import { WhiteboardView } from './whiteboard-view'
+import { WHITEBOARDS, WhiteboardView } from './whiteboard-view'
 import { placeNear } from './emoji'
 import { asSheet, closeOnBack, onDrag, phone, PHONE, scrollsThatWay } from './gestures'
 import { loadAvatar, squareThumb } from './avatar'
@@ -1729,7 +1729,7 @@ export class SpaceView {
   }
 
   private renderWhiteboards(): void {
-    if (this.heldForPress()) return
+    if (!WHITEBOARDS || this.heldForPress()) return
     const boards = this.chat?.whiteboards() ?? []
     const sig = [this.boardId, ...boards.map((b) => `${b.id}\t${b.title}\t${b.levels.join()}\t${b.maker}`)].join('\n')
     if (this.boardListSig === sig) return
@@ -2363,20 +2363,24 @@ export class SpaceView {
           ),
         ]),
         this.noteList,
-        h('div', { class: 'rail-head' }, [
-          h('span', { class: 'eyebrow', text: 'Whiteboards', title: 'Whiteboards that everybody here can draw on at once.' }),
-          h(
-            'button',
-            {
-              class: 'ghost icon-only rail-add',
-              title: 'Make a whiteboard',
-              ariaLabel: 'Make a whiteboard',
-              on: { click: () => void this.newPage('whiteboard') },
-            },
-            [icon('plus', 18)],
-          ),
-        ]),
-        this.boardList,
+        ...(WHITEBOARDS
+          ? [
+              h('div', { class: 'rail-head' }, [
+                h('span', { class: 'eyebrow', text: 'Whiteboards', title: 'Whiteboards that everybody here can draw on at once.' }),
+                h(
+                  'button',
+                  {
+                    class: 'ghost icon-only rail-add',
+                    title: 'Make a whiteboard',
+                    ariaLabel: 'Make a whiteboard',
+                    on: { click: () => void this.newPage('whiteboard') },
+                  },
+                  [icon('plus', 18)],
+                ),
+              ]),
+              this.boardList,
+            ]
+          : []),
         this.threadList,
       ]),
       this.dock.root,

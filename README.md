@@ -131,8 +131,8 @@ with voice does it.
   on every device that opens it, and tldraw's fonts and icons come from
   Nook, not a CDN. tldraw and React load the first time a board opens.
   tldraw needs a license key on a real domain: build with
-  `VITE_TLDRAW_LICENSE_KEY` set, or a board stops drawing after five
-  seconds. On localhost it works without one.
+  `VITE_TLDRAW_LICENSE_KEY` set. Without one, the whiteboards are not shown
+  at all, except on localhost, where tldraw works without a key.
 - **Notifications while Nook is closed**: with notifications on, a browser
   also gets them when no Nook page is open, through the browser's own push
   service. The device that sends a message seals the notification for your

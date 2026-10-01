@@ -12,6 +12,13 @@ export interface WhiteboardHooks {
   tools(board: WhiteboardInfo): HTMLElement[]
 }
 
+/**
+ * tldraw draws only on localhost without a license key: on a real domain it stops after five
+ * seconds. With no key in the build, the whiteboards are not shown at all. Build with
+ * VITE_TLDRAW_LICENSE_KEY set and they come back.
+ */
+export const WHITEBOARDS = !!import.meta.env.VITE_TLDRAW_LICENSE_KEY || /^(localhost|127\.\d+\.\d+\.\d+|\[::1\])$/.test(location.hostname)
+
 /** One shared whiteboard, drawn with tldraw. It loads the first time a board opens. */
 export class WhiteboardView {
   readonly root: HTMLElement
