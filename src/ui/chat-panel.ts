@@ -5,6 +5,7 @@ import { seesRecordings } from '../net/recordings'
 import { cleanName, EVERYONE, findMentions, mentionsMe } from '../chat'
 import { shortKey } from '../store/identity'
 import { canRecordVoice, recordVoice, voiceSeconds, type VoiceRecording } from '../media/voice-note'
+import { confirmDanger } from './ask'
 import { AttachTray, attachmentBlock } from './attachments'
 import { clear, copyText, h, roleInk } from './dom'
 import {
@@ -1904,8 +1905,8 @@ export class ChatPanel {
             title: `Delete this message from ${who}`,
             ariaLabel: 'Delete this message',
             on: {
-              click: () => {
-                if (!window.confirm(`Delete this message from ${who}?`)) return
+              click: async () => {
+                if (!(await confirmDanger('Delete this message?', `It is from ${who}.`, 'Delete'))) return
                 this.actions?.retract(m.id)
               },
             },
@@ -1989,8 +1990,8 @@ export class ChatPanel {
         label: 'Delete',
         lead: lead('trash'),
         danger: true,
-        run: () => {
-          if (!mine && !window.confirm(`Delete this message from ${who}?`)) return
+        run: async () => {
+          if (!mine && !(await confirmDanger('Delete this message?', `It is from ${who}.`, 'Delete'))) return
           this.actions?.retract(m.id)
         },
       })

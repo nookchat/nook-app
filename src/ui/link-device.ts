@@ -1,3 +1,4 @@
+import { confirmDanger } from './ask'
 import { h, copyText } from './dom'
 import { icon } from './icons'
 import { qrSvg } from './qr'
@@ -181,8 +182,8 @@ interface Taker {
   stop(): void
 }
 
-function mayReplace(who: string): boolean {
-  return !nameChosen() || window.confirm(`This device stops being ${loadIdentity().name} and becomes ${who}. Go on?`)
+async function mayReplace(who: string): Promise<boolean> {
+  return !nameChosen() || confirmDanger('Replace this account?', `This device stops being ${loadIdentity().name} and becomes ${who}.`, 'Go on')
 }
 
 export function backupTaker(): Taker & { take(file: File): void } {
@@ -206,7 +207,7 @@ export function backupTaker(): Taker & { take(file: File): void } {
   let text = ''
   const restore = async (): Promise<void> => {
     const seen = readBackup(text)
-    if (!seen || !mayReplace(seen.name || 'the person in the backup')) return
+    if (!seen || !(await mayReplace(seen.name || 'the person in the backup'))) return
     go.disabled = true
     try {
       restart(await restoreBackup(text, password.value))
@@ -308,7 +309,7 @@ export function linkTaker(done?: () => void): Taker {
       toast(server.value.trim() ? 'That is not a code. A code is three groups of four.' : 'Type the server too. It is under the code.', 'warn')
       return
     }
-    if (!mayReplace('you on the other device')) return
+    if (!(await mayReplace('you on the other device'))) return
     busy = true
     go.disabled = true
     go.textContent = 'Linking…'

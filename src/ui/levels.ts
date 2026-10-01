@@ -1,5 +1,6 @@
 import { MEMBER, OWNER, PERMISSIONS, type Level, type Permission } from '../store/log'
 import type { RoomChat } from '../store/room-chat'
+import { confirmDanger } from './ask'
 import { h, roleInk } from './dom'
 import { icon } from './icons'
 import { toast } from './toast'
@@ -187,8 +188,8 @@ export function levelsEditor(options: LevelsOptions): HTMLElement {
               class: 'ghost small danger',
               text: 'Delete level',
               on: {
-                click: () => {
-                  if (!window.confirm(`Delete the level ${level.name}? Its people go back to being members.`)) return
+                click: async () => {
+                  if (!(await confirmDanger(`Delete the level ${level.name}?`, 'Its people go back to being members.', 'Delete'))) return
                   opened = ''
                   void options.publish((c) => c.dropLevel(level.id)).then(draw)
                 },

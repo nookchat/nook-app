@@ -1027,7 +1027,7 @@ export class SpaceView {
   /** Asks first. `id` is the wire id, with CUSTOM before it. */
   private async removeSound(id: string): Promise<void> {
     const sound = this.findSound(id)
-    if (!sound || !window.confirm(`Take ${sound.label} off the soundboard for everybody?`)) return
+    if (!sound || !(await confirmDanger(`Take ${sound.label} off the soundboard?`, 'It goes for everybody.', 'Take off'))) return
     await this.publish((c) => c.dropBoardSound(id.slice(CUSTOM.length)))
   }
 
@@ -1039,7 +1039,7 @@ export class SpaceView {
   /** Asks first. Its sounds stay, outside any group. */
   private async removeGroup(id: string): Promise<void> {
     const group = this.allGroups().find((g) => g.id === id)
-    if (!group || !window.confirm(`Take the group ${group.label} off for everybody? Its sounds stay, outside any group.`)) return
+    if (!group || !(await confirmDanger(`Take the group ${group.label} off?`, 'It goes for everybody. Its sounds stay, outside any group.', 'Take off'))) return
     await this.publish((c) => c.dropBoardGroup(id))
   }
 
@@ -1235,9 +1235,11 @@ export class SpaceView {
         label: 'Delete',
         note: 'Takes the channel and everything said in it',
         danger: true,
-        run: () => {
-          const ok = window.confirm(
-            `Delete ${channel.label}? Everything said in it goes with it, on every device that reads the log. It cannot be undone.`,
+        run: async () => {
+          const ok = await confirmDanger(
+            `Delete ${channel.label}?`,
+            'Everything said in it goes with it, on every device that reads the log. It cannot be undone.',
+            'Delete',
           )
           if (!ok) return
           if (this.channel === channel.name) this.openChannel(DEFAULT_CHANNEL)
@@ -1268,8 +1270,8 @@ export class SpaceView {
       label: 'Delete',
       note: 'Anybody in it now is taken out',
       danger: true,
-      run: () => {
-        if (!window.confirm(`Delete the voice channel ${channel.label}? Anybody in it now is taken out.`)) return
+      run: async () => {
+        if (!(await confirmDanger(`Delete the voice channel ${channel.label}?`, 'Anybody in it now is taken out.', 'Delete'))) return
         if (this.voice?.state.channel === channel.name) this.leaveVoice()
         void this.publish((c) => c.dropChannel(channel.name, true))
       },
@@ -2545,7 +2547,7 @@ export class SpaceView {
   private hooksStopNote(): string {
     const live = this.chat?.hooks().filter((hook) => hook.stoppedAt === null).length ?? 0
     if (live === 0) return ''
-    return `\n\nThis also stops the space's ${live === 1 ? 'webhook' : 'webhooks'}. Make new links in Space settings, under Webhooks.`
+    return `This also stops the space's ${live === 1 ? 'webhook' : 'webhooks'}. Make new links in Space settings, under Webhooks.`
   }
 
   /** The webhooks, for the space settings. */
@@ -2608,7 +2610,7 @@ export class SpaceView {
       drop: async (id) => {
         const hook = find(id)
         if (!hook) return
-        if (!window.confirm(`Delete the webhook ${hook.name}?\n\nIts link stops working at once. What it posted stays.`)) return
+        if (!(await confirmDanger(`Delete the webhook ${hook.name}?`, 'Its link stops working at once. What it posted stays.', 'Delete'))) return
         await this.publish((c) => c.dropHook(id))
         reopen()
       },
@@ -2637,7 +2639,7 @@ export class SpaceView {
         members: () => this.memberRows(),
         setLevel: (key, level) => this.setRole(key, level),
         kick: async (key) => {
-          if (!window.confirm(`Remove ${this.chat?.nameOf(key) || shortKey(key)} from this space?${this.hooksStopNote()}`)) return
+          if (!(await confirmDanger(`Remove ${this.chat?.nameOf(key) || shortKey(key)} from this space?`, this.hooksStopNote(), 'Remove'))) return
           await this.setRole(key, 'kicked')
         },
         ban: (key) => this.ban(key),
@@ -2755,10 +2757,12 @@ export class SpaceView {
 
   private async leaveSpace(): Promise<void> {
     const name = this.chat?.spaceName() || 'this space'
-    const ok = window.confirm(
+    const ok = await confirmDanger(
+      `Leave ${name}?`,
       this.server
-        ? `Leave ${name}? It comes off your list on every device. Its history stays on ${serverTag(this.server)}, and the link still works if you want back in.`
-        : `Leave ${name}? Its history goes from this device. Everybody else keeps theirs, and the link still works if you want back in.`,
+        ? `It comes off your list on every device. Its history stays on ${serverTag(this.server)}, and the link still works if you want back in.`
+        : 'Its history goes from this device. Everybody else keeps theirs, and the link still works if you want back in.',
+      'Leave',
     )
     if (!ok) return
     await this.forget(false)
@@ -2771,8 +2775,10 @@ export class SpaceView {
       return
     }
     const name = this.chat.spaceName() || 'this space'
-    const ok = window.confirm(
-      `Delete ${name} for everybody? Every device in it now, and every device that syncs later, forgets the space and its history. It cannot be undone, and anybody who exported a copy first still has that copy.`,
+    const ok = await confirmDanger(
+      `Delete ${name} for everybody?`,
+      'Every device in it now, and every device that syncs later, forgets the space and its history. It cannot be undone, and anybody who exported a copy first still has that copy.',
+      'Delete',
     )
     if (!ok) return
     this.closing = true
@@ -2807,8 +2813,10 @@ export class SpaceView {
   /** A removal that also closes the old invites: after it, only a link made since lets a new person in. */
   private async ban(key: string): Promise<void> {
     const name = this.chat?.nameOf(key) || shortKey(key)
-    const sure = window.confirm(
-      `Ban ${name} from this space?\n\nThey are removed, and the old invite links stop letting anybody new in. Send new people a new link from Invite people.${this.hooksStopNote()}`,
+    const sure = await confirmDanger(
+      `Ban ${name} from this space?`,
+      `They are removed, and the old invite links stop letting anybody new in. Send new people a new link from Invite people. ${this.hooksStopNote()}`.trim(),
+      'Ban',
     )
     if (sure) await this.setRole(key, 'kicked', true)
   }
@@ -3756,8 +3764,8 @@ export class SpaceView {
           label: 'Remove',
           note: 'Everything they write after this is ignored by everybody',
           danger: true,
-          run: () => {
-            if (!window.confirm(`Remove ${name} from this space?${this.hooksStopNote()}`)) return
+          run: async () => {
+            if (!(await confirmDanger(`Remove ${name} from this space?`, this.hooksStopNote(), 'Remove'))) return
             void this.setRole(key, 'kicked')
           },
         })
@@ -4250,14 +4258,15 @@ export class SpaceView {
   }
 
   private async resetSpace(): Promise<void> {
-    const ok = window.confirm(
-      'Clear the history in this space for everybody?\n\n' +
-        'Messages, polls and pins go, on every device that is in the space or ' +
-        'joins it later. Names, channels and who runs the place stay.\n\n' +
+    const ok = await confirmDanger(
+      'Clear the history in this space for everybody?',
+      'Messages, polls and pins go, on every device that is in the space or ' +
+        'joins it later. Names, channels and who runs the place stay. ' +
         (this.server
           ? 'The server stops handing the old history to anybody. A copy somebody already saved stays theirs.'
           : 'Anybody who has already saved a copy of the history keeps it. There is ' +
             'no server to take it back from them.'),
+      'Clear history',
     )
     if (!ok) return
     await this.publish((c) => c.reset())

@@ -6,6 +6,7 @@ import { spaces } from '../space/registry'
 import { bookFor } from '../store/server-spaces'
 import { listSpaces } from '../store/spaces'
 import { onContextMenu } from './menu'
+import { confirmDanger } from './ask'
 import { h } from './dom'
 import { ghost, lockup } from './ghost'
 import { icon } from './icons'
@@ -20,7 +21,7 @@ interface SpaceListActions {
 /** Takes a space off your list on every device, with no need to open it. The link still works. */
 async function leave(room: string, server: string, name: string): Promise<void> {
   if (!server) return
-  if (!window.confirm(`Leave ${name}? It comes off your list on every device. The link still works if you want back in.`)) return
+  if (!(await confirmDanger(`Leave ${name}?`, 'It comes off your list on every device. The link still works if you want back in.', 'Leave'))) return
   spaces.drop(room)
   const book = bookFor(server)
   await book.forget(room)
