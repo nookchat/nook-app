@@ -60,6 +60,7 @@ export type IconName =
   | 'pause'
   | 'file'
   | 'whiteboard'
+  | 'star'
   | 'music'
   | 'chevron-right'
   | 'phone'
@@ -190,6 +191,7 @@ const ICONS: Record<IconName, string | Drawing> = {
   file: 'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5',
   // A board with a stroke of a pen on it.
   whiteboard: `${rect(3, 4, 18, 13, 2)}M7 13c1.5-4 3-4 4.5-1s3 3 5.5-2M9 21l3-4 3 4`,
+  star: 'M12 3.5l2.6 5.3 5.8.85-4.2 4.1 1 5.8L12 16.8l-5.2 2.75 1-5.8-4.2-4.1 5.8-.85z',
   music: 'M9 18V6l10-2v12M9 18a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0zM19 16a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z',
   device: `${rect(7, 3, 10, 18, 2)}M11 18h2`,
   info: { line: `${circle(12, 12, 9)}M12 11v5.5`, solid: circle(12, 7.8, 1.1) },

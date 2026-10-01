@@ -5973,6 +5973,65 @@ input[type="text"].gif-search {
   outline: 2px solid var(--focus-ring);
 }
 
+.gif-tabs {
+  gap: 2px;
+}
+
+.gif-tab {
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-size: var(--size-small);
+  color: var(--fg-dim);
+}
+
+.gif-tab.on {
+  background: var(--surface-2);
+  color: var(--fg);
+}
+
+/* A GIF with its star in the corner: seen on hover, or always once it is a favourite. */
+.gif-cell {
+  position: relative;
+}
+
+.gif-star {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 0.55);
+  color: #fff;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.gif-cell:hover .gif-star,
+.gif-star:focus-visible,
+.gif-star.on {
+  opacity: 1;
+}
+
+.gif-star.on {
+  color: #f5c518;
+}
+
+.gif-star.on .icon path {
+  fill: currentColor;
+}
+
+/* No hover on a touch screen: every star shows. */
+@media (hover: none) {
+  .gif-star {
+    opacity: 1;
+  }
+}
+
 .sound-pop {
   position: fixed;
   z-index: 70;

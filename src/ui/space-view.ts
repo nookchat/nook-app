@@ -30,7 +30,7 @@ import { loadSettings, saveSettings, type HostSettings } from '../settings'
 import { cleanName, mentionsMe } from '../chat'
 import { addServer, bookFor } from '../store/server-spaces'
 import { loadIdentity, saveDisplayName, shortKey, signClaim, verifyClaim } from '../store/identity'
-import { gifLink, isClip, type Gif } from '../store/gifs'
+import { favouriteGifs, gifLink, isClip, isFavouriteGif, toggleFavouriteGif, type Gif } from '../store/gifs'
 import {
   DEFAULT_CHANNEL,
   DEFAULT_VOICE,
@@ -3996,9 +3996,35 @@ export class SpaceView {
       value: term.trim(),
     })
 
+    // All is the search; Favourites is what you starred, and needs no server.
+    let view: 'all' | 'favourites' = 'all'
+    const tab = (which: typeof view, label: string): HTMLButtonElement =>
+      h('button', {
+        class: 'ghost gif-tab',
+        text: label,
+        role: 'tab',
+        on: {
+          click: () => {
+            if (view === which) return
+            view = which
+            paintTabs()
+            void run()
+          },
+        },
+      })
+    const allTab = tab('all', 'All')
+    const favouritesTab = tab('favourites', 'Favourites')
+    const paintTabs = (): void => {
+      for (const [button, which] of [[allTab, 'all'], [favouritesTab, 'favourites']] as const) {
+        button.setAttribute('aria-selected', String(view === which))
+        button.classList.toggle('on', view === which)
+      }
+    }
+    paintTabs()
+
     const pop = h('div', { class: 'gif-pop', role: 'dialog', ariaLabel: 'GIFs' }, [
       h('div', { class: 'row spread' }, [
-        h('span', { class: 'eyebrow', text: 'GIFs' }),
+        h('div', { class: 'row gif-tabs', role: 'tablist', ariaLabel: 'Which GIFs' }, [allTab, favouritesTab]),
         h(
           'button',
           {
@@ -4056,9 +4082,39 @@ export class SpaceView {
       void this.publish((c) => c.say(gifLink(g), this.channel))
     }
 
+    /** A GIF with its star, which keeps it in Favourites. */
+    const choice = (g: Gif): HTMLElement => {
+      const cell = gifCell(g)
+      cell.addEventListener('click', () => send(g))
+      const star = h('button', { class: 'gif-star', on: { click: (ev) => {
+        ev.stopPropagation()
+        toggleFavouriteGif(g)
+        paintStar()
+        // Taken out while looking at the favourites: it goes from the list at once.
+        if (view === 'favourites') void run()
+      } } }, [icon('star', 16)])
+      const paintStar = (): void => {
+        const on = isFavouriteGif(g)
+        star.classList.toggle('on', on)
+        star.title = on ? 'Take out of favourites' : 'Add to favourites'
+        star.setAttribute('aria-label', star.title)
+        star.setAttribute('aria-pressed', String(on))
+      }
+      paintStar()
+      return h('div', { class: 'gif-cell' }, [cell, star])
+    }
+
     let asking = 0
     const run = async (): Promise<void> => {
       const mine = ++asking
+      if (view === 'favourites') {
+        const starred = favouriteGifs()
+        clear(grid)
+        clear(status)
+        grid.append(...starred.map(choice))
+        if (starred.length === 0) status.textContent = 'No favourites yet. Press the star on a GIF to keep it here.'
+        return
+      }
       const wanted = box.value.trim()
       status.textContent = 'Looking...'
       // Grey tiles hold the grid's shape while the answer comes.
@@ -4068,11 +4124,7 @@ export class SpaceView {
       const { gifs, from } = await this.findGifs(wanted)
       if (mine !== asking || !pop.isConnected) return
       clear(grid)
-      for (const g of gifs) {
-        const cell = gifCell(g)
-        cell.addEventListener('click', () => send(g))
-        grid.append(cell)
-      }
+      grid.append(...gifs.map(choice))
       if (gifs.length > 0) {
         clear(status)
         return
@@ -4082,6 +4134,11 @@ export class SpaceView {
     }
 
     box.addEventListener('input', () => {
+      // A search is for all the GIFs there are.
+      if (view !== 'all') {
+        view = 'all'
+        paintTabs()
+      }
       if (timer !== null) window.clearTimeout(timer)
       timer = window.setTimeout(() => void run(), 400)
     })
