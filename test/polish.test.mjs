@@ -64,6 +64,8 @@ try {
       .length
     const shown = [...document.querySelectorAll('.chat-row .chat-text')].map((e) => e.textContent)
     panel.root.style.height = '600px'
+    // A person's wheel: only a person lets the log go from the newest message.
+    panel.log.dispatchEvent(new WheelEvent('wheel', { deltaY: -600 }))
     panel.log.scrollTop = 0
     panel.log.dispatchEvent(new Event('scroll'))
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))

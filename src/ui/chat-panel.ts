@@ -290,6 +290,9 @@ export class ChatPanel {
   private directName = ''
   private readMark = 0
   private pinned = true
+  /** When a person last moved the log themselves: only that lets it go from the newest message. */
+  private handScrolledAt = 0
+  private lastTop = 0
   private suggestions: HTMLDivElement | null = null
   private suggestAt = -1
   private suggestKind: SuggestKind | null = null
@@ -467,18 +470,41 @@ export class ChatPanel {
       if (Date.now() - pressedAt > 600) this.jumpToNewest()
     })
     this.toBottom.addEventListener('pointerleave', () => this.showJump())
+    // A wheel, a finger, the keys, or the scroll bar: a person moving the log.
+    const byHand = (): void => {
+      this.handScrolledAt = Date.now()
+    }
+    for (const name of ['wheel', 'touchmove', 'keydown'] as const) this.log.addEventListener(name, byHand, { passive: true })
+    this.log.addEventListener('pointerdown', (ev) => ev.target === this.log && byHand())
+    this.log.addEventListener('pointermove', (ev) => ev.buttons && ev.target === this.log && byHand())
     this.log.addEventListener('scroll', () => {
-      this.pinned = this.isAtBottom()
+      // Only a person lets go of the newest message: a hand on it, or the log going up, which a
+      // picture or a card that grows never does. Growing, it must not: after a reload that would
+      // leave you somewhere in the middle.
+      const top = this.log.scrollTop
+      const up = top < this.lastTop - 1
+      this.lastTop = top
+      if (!this.pinned || up || Date.now() - this.handScrolledAt < 1000) this.pinned = this.isAtBottom()
+      else if (!this.isAtBottom()) this.toNewest()
       this.showJump()
       if (this.log.scrollTop < 400 && this.hiddenAbove > 0) this.drawOlder()
     })
     // Media events do not bubble, hence the capture.
     this.log.addEventListener('load', () => this.followMedia(), true)
     this.log.addEventListener('loadedmetadata', () => this.followMedia(), true)
-    new ResizeObserver(() => {
-      if (this.pinned) this.log.scrollTop = this.log.scrollHeight
+    // The log, and every row in it: a row that grows (a picture, a link card, an embed) keeps
+    // the newest message in view while the log follows it.
+    const grows = new ResizeObserver(() => {
+      if (this.pinned && !this.isAtBottom()) this.toNewest()
       this.showJump()
-    }).observe(this.log)
+    })
+    grows.observe(this.log)
+    new MutationObserver((changes) => {
+      for (const change of changes) {
+        for (const node of change.addedNodes) if (node instanceof Element) grows.observe(node)
+        for (const node of change.removedNodes) if (node instanceof Element) grows.unobserve(node)
+      }
+    }).observe(this.log, { childList: true })
     this.title = h('span', { class: 'eyebrow', text: title })
     this.backButton = h('button', {
       class: 'ghost tiny-btn hidden',
@@ -689,7 +715,7 @@ export class ChatPanel {
 
   private jumpToNewest(): void {
     this.pinned = true
-    this.log.scrollTop = this.log.scrollHeight
+    this.toNewest()
     this.toBottom.classList.add('hidden')
   }
 
@@ -991,7 +1017,7 @@ export class ChatPanel {
 
   render(messages: Message[], joins: Join[] = []): void {
     this.lastFeed = { messages, joins }
-    const stuck = this.isAtBottom()
+    let stuck = this.pinned || this.isAtBottom()
 
     const all = messages
     let byId: Map<string, Message> | null = null
@@ -1002,6 +1028,9 @@ export class ChatPanel {
     if (this.windowKey !== this.draftKey) {
       this.windowKey = this.draftKey
       this.windowSize = WINDOW_STEP
+      // Another channel or conversation opens at its newest message.
+      stuck = true
+      this.pinned = true
       if (this.readMark > 0) {
         const first = messages.findIndex((m) => m.lamport > this.readMark && m.author !== this.me)
         if (first >= 0) {
@@ -1112,7 +1141,7 @@ export class ChatPanel {
 
     this.reconcile(items, sameView)
     if (stuck) {
-      this.log.scrollTop = this.log.scrollHeight
+      this.toNewest()
       this.pinned = true
     }
     this.showJump()
@@ -1622,6 +1651,8 @@ export class ChatPanel {
     }
     const row = this.log.querySelector(`[data-id="${id}"]`)
     if (!(row instanceof HTMLElement)) return
+    // Off to an older message: the log stops following the newest.
+    this.pinned = false
     row.scrollIntoView({ block: 'center', behavior: 'smooth' })
     this.found = { id, at: Date.now() }
     row.classList.remove('found')
@@ -1971,9 +2002,15 @@ export class ChatPanel {
     if (!this.pinned) return
     requestAnimationFrame(() => {
       if (!this.pinned) return
-      this.log.scrollTop = this.log.scrollHeight
+      this.toNewest()
       this.showJump()
     })
+  }
+
+  /** The log at its newest message, and where that is noted, so a move up from it is seen. */
+  private toNewest(): void {
+    this.log.scrollTop = this.log.scrollHeight
+    this.lastTop = this.log.scrollTop
   }
 
   private isAtBottom(): boolean {
