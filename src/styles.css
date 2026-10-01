@@ -8519,3 +8519,23 @@ input.invalid:focus {
   color: inherit;
   opacity: 0.85;
 }
+
+/* On the home screen, when another device of yours is in a call: its soundboard, with no space open. */
+.remote-board {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.remote-board-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.remote-board-row .voice-bar-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}

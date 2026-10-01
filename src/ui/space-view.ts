@@ -998,33 +998,9 @@ export class SpaceView {
     return true
   }
 
-  /**
-   * Where another device of yours is in a voice channel, when this one is not in voice: the
-   * session to ask and the channel it is in. A phone in your hand can then play sounds for it.
-   */
-  private callElsewhere(): { session: string; channel: string } | null {
-    const voice = this.voice
-    const me = this.chat?.me
-    if (!voice || !me || voice.state.channel) return null
-    for (const peer of this.mesh?.peers() ?? []) {
-      if (peer.id === this.selfId || peer.key !== me) continue
-      const channel = voice.whereIs(peer.id)
-      if (channel && !isCallChannel(channel)) return { session: peer.id, channel }
-    }
-    return null
-  }
-
   /** Asks the device of yours that is in the call to play the sound. It is not played here. */
   private sendRemoteSound(id: string): void {
-    const away = this.callElsewhere()
-    if (!away) {
-      toast('Your other device has left the call.', 'warn')
-      return
-    }
-    const now = Date.now()
-    if (now - this.soundSentAt < SOUND_EVERY_MS) return
-    this.soundSentAt = now
-    this.mesh?.sendTo(away.session, JSON.stringify({ t: 'remote', s: id, v: away.channel }))
+    if (!this.space.askSound(id)) toast('Your other device has left the call.', 'warn')
   }
 
   /**
@@ -3516,7 +3492,7 @@ export class SpaceView {
 
   private renderVoiceBar(): void {
     const state = this.voice?.state
-    const away = state?.channel || !this.chat?.can('soundboard') ? null : this.callElsewhere()
+    const away = state?.channel || !this.chat?.can('soundboard') ? null : this.space.callElsewhere()
     this.voiceBar.classList.toggle('hidden', !state?.channel && !away)
     if (away) {
       // Not in voice here, but in it on another device of yours: this one is its soundboard.

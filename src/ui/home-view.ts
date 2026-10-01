@@ -6,6 +6,7 @@ import { saveScreen } from '../store/screen'
 import { callControls, voiceDock } from './call'
 import { ChatPanel, avatarOf } from './chat-panel'
 import { h, onPress } from './dom'
+import { remoteBoard } from './remote-board'
 import { openStatusMenu, myStatusDot } from './status-menu'
 import { STATUS_CHANGED } from '../store/status'
 import { icon } from './icons'
@@ -55,6 +56,7 @@ export class HomeView {
   private unlisten: (() => void) | null = null
   private callBits: { stop(): void } | null = null
   private readonly dock = voiceDock(null)
+  private readonly remote = remoteBoard()
 
   constructor(root: HTMLElement, chrome: WindowChrome, actions: HomeActions, open: DirectRef | null = null) {
     this.root = root
@@ -93,6 +95,7 @@ export class HomeView {
         h('div', { class: 'rail-head' }, [h('span', { class: 'eyebrow', text: 'Direct messages' })]),
         this.list,
       ]),
+      this.remote.el,
       this.dock.root,
       me,
     ])
@@ -121,6 +124,7 @@ export class HomeView {
     this.unlisten?.()
     this.callBits?.stop()
     this.dock.stop()
+    this.remote.stop()
   }
 
   private drawMe(): void {

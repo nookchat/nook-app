@@ -76,6 +76,9 @@ interface Ringing {
   session: string
 }
 
+/** As often as a sound may be asked for, the same as it may be played. */
+const REMOTE_EVERY_MS = 120
+
 export const isCallChannel = (channel: string | null): boolean => !!channel && channel.startsWith('call-')
 
 const runningSpaces = new Set<SpaceRuntime>()
@@ -125,6 +128,7 @@ export class SpaceRuntime {
   private iceReady: Promise<void> = Promise.resolve()
   private ringTimer = 0
   private voiceWas: string | null = null
+  private remoteAskedAt = 0
   private stillHere = 0
   /** When the minute's check last ran. A page that slept has heard nobody, and drops nobody for it. */
   private lastLook = 0
@@ -427,6 +431,32 @@ export class SpaceRuntime {
     const set = this.listeners[what] as Set<typeof fn>
     set.add(fn)
     return () => set.delete(fn)
+  }
+
+  /**
+   * Where another device of yours is in a voice channel, when this one is not in voice: the
+   * session to ask and the channel it is in. This device can then play sounds for it.
+   */
+  callElsewhere(): { session: string; channel: string } | null {
+    const me = this.chat?.me
+    if (!this.voice || !me || this.voice.state.channel) return null
+    for (const peer of this.mesh?.peers() ?? []) {
+      if (peer.id === this.selfId || peer.key !== me) continue
+      const channel = this.voice.whereIs(peer.id)
+      if (channel && !isCallChannel(channel)) return { session: peer.id, channel }
+    }
+    return null
+  }
+
+  /** Asks the device of yours that is in the call to play a sound. False when there is none. */
+  askSound(id: string): boolean {
+    const away = this.callElsewhere()
+    if (!away) return false
+    const now = Date.now()
+    if (now - this.remoteAskedAt < REMOTE_EVERY_MS) return true
+    this.remoteAskedAt = now
+    this.mesh.sendTo(away.session, JSON.stringify({ t: 'remote', s: id, v: away.channel }))
+    return true
   }
 
   announce(): void {

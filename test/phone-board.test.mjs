@@ -83,12 +83,33 @@ try {
   await phone.click('.voice-bar button:has-text("Soundboard")')
   await phone.waitForSelector('button[aria-label="Play Honk for everybody"]', { timeout: 15_000 })
   await bob.waitForTimeout(2000)
+  // The ring is set once the sound has started playing there, so it also says the computer played it.
+  const computerHears = alice.waitForFunction(sounding, null, { timeout: 10_000 }).then(() => true, () => false)
   await phone.click('button[aria-label="Play Honk for everybody"]')
   const heard = await bob.waitForFunction(sounding, null, { timeout: 10_000 }).then(() => true, () => false)
   check('somebody in the call hears it from the computer, with the ring round Alice', heard)
 
-  const onComputer = await alice.waitForFunction(sounding, null, { timeout: 100 }).then(() => true, () => false)
-  check('the computer rings too, as if it was clicked there', onComputer)
+  check('the computer in the call plays it for its own person too', await computerHears)
+  check(
+    'and does not say that its own sounds are off',
+    !(await alice.$$eval('.toast', (els) => els.some((t) => t.textContent.includes('sounds are off')))),
+  )
+
+  // The phone need not have the space open: from Home, the same soundboard is there.
+  await phone.keyboard.press('Escape')
+  await phone.click('button[aria-label="Switch space"]')
+  await phone.click('.menu.switcher .menu-item:has-text("Home")')
+  await phone.waitForSelector('.home-grid-shell')
+  const fromHome = await phone
+    .waitForSelector('.remote-board:not(.hidden) button:has-text("Soundboard")', { timeout: 15_000 })
+    .then(() => true, () => false)
+  check('on Home, with no space open, the phone offers the soundboard', fromHome)
+  await bob.waitForFunction(() => !document.querySelector('.voice-member.sounding'), null, { timeout: 8000 }).catch(() => undefined)
+  await phone.click('.remote-board button:has-text("Soundboard")')
+  await phone.waitForSelector('button[aria-label="Play Honk for everybody"]', { timeout: 15_000 })
+  await phone.click('button[aria-label="Play Honk for everybody"]')
+  const heardAgain = await bob.waitForFunction(sounding, null, { timeout: 10_000 }).then(() => true, () => false)
+  check('and a sound played there is heard in the call', heardAgain)
 } catch (err) {
   stoppedEarly(err)
 } finally {
