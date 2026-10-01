@@ -4,6 +4,7 @@ import { icon } from './icons'
 import { actionRow, card, note } from './settings-shell'
 
 const RELEASES = 'https://github.com/nookchat/nook-app/releases'
+const HOW_IT_WORKS = './how-it-works.html'
 const CHECK_WAIT_MS = 15_000
 
 type DesktopCheck = { state: 'newest' | 'available' | 'downloading' | 'ready' | 'failed' | 'dev'; version?: string }
@@ -101,6 +102,17 @@ export function aboutSettings(): HTMLElement {
   releases.href = RELEASES
   releases.target = '_blank'
   releases.rel = 'noopener noreferrer'
+  const howItWorks = h('a', { class: 'button-link' }, [icon('shield', 15), 'How Nook works'])
+  howItWorks.href = HOW_IT_WORKS
+  howItWorks.target = '_blank'
+  howItWorks.rel = 'noopener noreferrer'
+  cards.push(
+    card(
+      'How Nook works',
+      note('What Nook encrypts, what a server can see, and how voice, calls and screen share work.'),
+      h('div', { class: 'row wrap' }, [howItWorks]),
+    ),
+  )
   cards.push(
     card(
       'Releases',

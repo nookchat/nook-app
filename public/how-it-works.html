@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#FDF6F3">
+<meta name="description" content="How Nook works: spaces, features, what is encrypted, what a server can see, and how voice, calls and screen share work.">
+<title>How Nook works</title>
+<link rel="icon" href="./favicon.ico">
+<script src="./boot-theme.js"></script>
+<style>
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+  --surface-0: #FDF6F3;
+  --surface-1: #FFFEFD;
+  --surface-2: #F6EBE7;
+  --border: #ECDFDA;
+  --border-strong: #8F837E;
+  --text-primary: #191412;
+  --text-secondary: #5F5551;
+  --text-muted: #6F6561;
+  --brand: #191412;
+  --on-brand: #FDF6F3;
+  --accent: #FF8A5B;
+  --on-accent: #191412;
+  --accent-soft: #FFE1D3;
+  --accent-text: #B83E10;
+  --focus-ring: #B83E10;
+  --warning: #9A6412;
+}
+[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-0: #100C0B;
+  --surface-1: #1A1513;
+  --surface-2: #26201D;
+  --border: #312A27;
+  --border-strong: #736965;
+  --text-primary: #F8EDE9;
+  --text-secondary: #B6ADA9;
+  --text-muted: #938A87;
+  --brand: #FDF6F3;
+  --on-brand: #191412;
+  --accent: #FF8A5B;
+  --on-accent: #191412;
+  --accent-soft: #4A2C24;
+  --accent-text: #FF9E78;
+  --focus-ring: #FF9E78;
+  --warning: #F2C14E;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --surface-0: #100C0B;
+    --surface-1: #1A1513;
+    --surface-2: #26201D;
+    --border: #312A27;
+    --border-strong: #736965;
+    --text-primary: #F8EDE9;
+    --text-secondary: #B6ADA9;
+    --text-muted: #938A87;
+    --brand: #FDF6F3;
+    --on-brand: #191412;
+    --accent: #FF8A5B;
+    --on-accent: #191412;
+    --accent-soft: #4A2C24;
+    --accent-text: #FF9E78;
+    --focus-ring: #FF9E78;
+    --warning: #F2C14E;
+  }
+}
+:root {
+  --font-display: "Bricolage Grotesque", "DM Sans", system-ui, sans-serif;
+  --font-sans: "DM Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--surface-0);
+  color: var(--text-primary);
+  font: 400 16px/24px var(--font-sans);
+}
+main { max-width: 760px; margin: 0 auto; padding: 24px 16px 64px; }
+a { color: var(--accent-text); }
+a:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: 6px; }
+.back {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px; border: 1px solid var(--border-strong); border-radius: 999px;
+  color: var(--text-primary); text-decoration: none; font-size: 14px; font-weight: 500;
+}
+.back:hover { background: var(--surface-2); }
+h1 {
+  font: 800 40px/44px var(--font-display); letter-spacing: -0.025em;
+  margin: 32px 0 12px;
+}
+h2 {
+  font: 700 24px/30px var(--font-display); letter-spacing: -0.015em;
+  margin: 40px 0 12px;
+}
+.lead { font-size: 17px; line-height: 26px; color: var(--text-secondary); margin: 0 0 8px; }
+p, ul, ol { margin: 0 0 12px; }
+li { margin: 4px 0; }
+code {
+  font: 400 13px/20px var(--font-mono);
+  background: var(--surface-2); border-radius: 6px; padding: 1px 6px;
+  overflow-wrap: anywhere;
+}
+.table { overflow-x: auto; margin: 0 0 16px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface-1); }
+table { width: 100%; border-collapse: collapse; font-size: 15px; line-height: 22px; }
+th, td { text-align: left; vertical-align: top; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+tr:last-child td { border-bottom: 0; }
+th { font-weight: 600; color: var(--text-secondary); font-size: 13px; line-height: 16px; letter-spacing: 0.01em; background: var(--surface-2); }
+td:first-child { font-weight: 500; }
+.note {
+  border: 1px solid var(--border); border-left: 3px solid var(--accent);
+  background: var(--surface-1); border-radius: 14px; padding: 12px 16px; margin: 0 0 16px;
+}
+.note strong { color: var(--text-primary); }
+.caution { border-left-color: var(--warning); }
+footer { margin-top: 48px; color: var(--text-muted); font-size: 14px; }
+@media (max-width: 560px) {
+  h1 { font-size: 32px; line-height: 36px; }
+  th, td { padding: 8px 10px; }
+  table { font-size: 14px; line-height: 20px; }
+}
+</style>
+</head>
+<body>
+<main>
+  <a class="back" href="./">&larr; Open Nook</a>
+
+  <h1>How Nook works</h1>
+  <p class="lead">Nook is a chat app with text, voice, camera and screen share, like Discord. Each device encrypts everything before it sends it. The servers keep and pass on data that they cannot read.</p>
+
+  <h2>The parts</h2>
+  <div class="table"><table>
+    <thead><tr><th>Part</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td>The page</td><td>The app in your browser, the desktop app, or the phone home screen. All encryption happens here.</td></tr>
+      <tr><td>A server</td><td>It stores encrypted messages and files, and passes them on. Anybody can run one with Docker.</td></tr>
+      <tr><td>A cluster</td><td>Several servers that keep copies of the same spaces. If one server stops, the app moves to the next one.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2>Spaces and invites</h2>
+  <p>A <strong>space</strong> is a group. It has text channels, voice channels, notes and people.</p>
+  <p>A space is a code, such as <code>K7M2-9QPT-VB2W</code>. The code is also the key that opens the messages. The invite link puts the code after the <code>#</code>. A browser never sends that part to a server, so the server never sees the code.</p>
+  <div class="note"><strong>Important:</strong> anybody with the invite link can join and read the space. Give the link only to people you trust.</div>
+
+  <h2>Features</h2>
+  <ul>
+    <li>Text channels, with replies, reactions, pins, edits, search, emoji and GIFs.</li>
+    <li>Direct messages. Home shows them from all of your spaces.</li>
+    <li>Files, pictures and videos, up to 100 MB each.</li>
+    <li>Voice channels, with mute, deafen, noise removal, and a volume for each person.</li>
+    <li>Camera in voice channels and calls.</li>
+    <li>Screen share from a voice channel, up to 1080p.</li>
+    <li>One-to-one calls from a direct message.</li>
+    <li>Levels (Owner, Admin, Moderator, Member, and your own levels) that control who can do what.</li>
+    <li>Remove and ban people.</li>
+    <li>Notes, a soundboard, and a status (Online, Idle, Do not disturb, Invisible).</li>
+    <li>Notifications, also when Nook is closed (in a browser).</li>
+    <li>Webhooks that take the same format as Discord webhooks.</li>
+    <li>Desktop app only: game activity, a window picker, and clips from game recordings.</li>
+    <li>Link a new device with a QR code, or save a backup file.</li>
+  </ul>
+
+  <h2>Your identity</h2>
+  <p>Your device makes a secret key the first time you open Nook. This key is "you". It signs everything that you write. Every other device checks each signature. Thus a server cannot change a message or write a fake message in your name.</p>
+  <p>The key is on your devices only. If you lose all your devices and you have no backup, you lose the account.</p>
+  <div class="note caution"><strong>Caution:</strong> anybody with your backup file can be you. Keep the file in a private place, and use a password.</div>
+
+  <h2>How a message travels</h2>
+  <ol>
+    <li>You write a message.</li>
+    <li>Your device signs it with your identity key.</li>
+    <li>Your device encrypts it with the space key (AES-GCM).</li>
+    <li>The server stores the encrypted message and sends it to the others.</li>
+    <li>Each device decrypts the message and checks the signature.</li>
+  </ol>
+
+  <h2>What is encrypted</h2>
+  <div class="table"><table>
+    <thead><tr><th>What</th><th>How</th><th>Who can read it</th></tr></thead>
+    <tbody>
+      <tr><td>Messages, edits, reactions, names, channels</td><td>AES-GCM, with a key made from the space code</td><td>People with the invite. After a removal, only the people still in the space.</td></tr>
+      <tr><td>Direct messages</td><td>Also a key that only the two people share</td><td>The two people</td></tr>
+      <tr><td>Files</td><td>AES-GCM, a new key for each file, sent inside the message</td><td>People who can read that message</td></tr>
+      <tr><td>Typing, presence, call setup</td><td>The space key, and signed</td><td>People in the space</td></tr>
+      <tr><td>Your list of spaces, read marks, settings</td><td>A key made from your identity</td><td>Only your devices</td></tr>
+      <tr><td>Notifications when Nook is closed</td><td>Web Push encryption, made by the device of the sender</td><td>Only your browser</td></tr>
+      <tr><td>Voice, camera, screen share</td><td>DTLS-SRTP, between the browsers</td><td>The people in the call</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2>What is not secret</h2>
+  <p>The server must see some data to do its work:</p>
+  <ul>
+    <li>Which spaces exist, and how big they are. The space ID is a hash, so it does not show the code.</li>
+    <li>How many files a space has, and the size of each file.</li>
+    <li>Who connects, from which IP address, at what time, and how much data they send.</li>
+    <li>Which links people share, if link previews are on. The server owner can set <code>NOOK_PREVIEWS=0</code> to stop this.</li>
+    <li>What people search for in GIF search.</li>
+    <li>When a device gets a push notification. The server does not see the sender or the text.</li>
+  </ul>
+  <p>Some features have limits:</p>
+  <ul>
+    <li><strong>Webhooks:</strong> the server reads a webhook message while it posts it. It stores only the encrypted copy.</li>
+    <li><strong>Notes for some levels only:</strong> these notes are hidden, but they use the normal space key. A changed app in the hands of a space member can read them.</li>
+    <li><strong>Old messages after a removal:</strong> a removed person keeps the messages that they read before. Nook cannot take those back.</li>
+  </ul>
+
+  <h2>Removals and bans</h2>
+  <p>When an admin removes a person, the device of the admin makes a new space key at once. It sends a copy of the key to each person who stays. Nobody has to click anything. The removed person cannot read new messages.</p>
+  <p>The removed person can still join again with the old code, as a new person. A <strong>ban</strong> stops this. After a ban, a new invite needs a pass, and the old code alone does not let anybody in.</p>
+
+  <h2>Voice, calls and screen share</h2>
+  <p>Nook has no media server. Sound and video go from browser to browser with WebRTC.</p>
+  <ul>
+    <li><strong>Voice channel:</strong> each person connects to each other person in the channel. Each person sends their voice to every other person. One channel can hold about 48 people.</li>
+    <li><strong>Call:</strong> a call is a private voice channel for two people. You start it with the phone button in a direct message, and it rings the other person.</li>
+    <li><strong>Camera:</strong> in a voice channel or a call, each camera is a small tile above the chat.</li>
+    <li><strong>Screen share:</strong> the person who shares sends one video stream to each viewer. A viewer must pick a share to see it.</li>
+  </ul>
+  <p>The setup messages for a call are encrypted and signed. So a server cannot step into the middle of a call.</p>
+  <p><strong>TURN relay:</strong> by default, all sound and video go through the TURN relay of the server. This hides the IP address of each person from the others. The relay cannot decrypt the media. A server owner can set <code>NOOK_TURN_ONLY=0</code> to try a direct connection first.</p>
+  <p>Voice and screen share continue if the server restarts, because the media goes between the browsers.</p>
+
+  <h2>Where data is kept</h2>
+  <div class="table"><table>
+    <thead><tr><th>What</th><th>Where</th></tr></thead>
+    <tbody>
+      <tr><td>Messages, channels, levels</td><td>Postgres on the server, and on every server of the cluster, encrypted</td></tr>
+      <tr><td>Files</td><td>The disk of the server, encrypted</td></tr>
+      <tr><td>Your identity key</td><td>Your devices only</td></tr>
+      <tr><td>Voice and video</td><td>Nowhere. Nook does not record calls.</td></tr>
+    </tbody>
+  </table></div>
+
+  <footer>To run your own server, read the <a href="https://github.com/nookchat/nook-app/blob/main/docs/self-hosting.md" rel="noopener noreferrer">self-hosting guide</a>.</footer>
+</main>
+</body>
+</html>

@@ -98,6 +98,22 @@ try {
 
   const found = [...(await breaches(alice)), ...(await breaches(bob))]
   check('nothing the app does breaks the policy', found.length === 0, found.join(' | '))
+
+  // The worker sends every other address to the app: this page must come as itself.
+  const kept = await alice.evaluate(() => !!navigator.serviceWorker.controller)
+  await alice.goto(`${APP}how-it-works.html`)
+  const howItWorks = await alice.evaluate(() => ({
+    title: document.title,
+    themed: document.querySelector('meta[name="theme-color"]')?.content,
+    app: !!document.querySelector('#app, .space-name, input[aria-label="Space name"]'),
+  }))
+  check(
+    'How Nook works opens as its own page, through the worker, with its theme',
+    kept && howItWorks.title === 'How Nook works' && !howItWorks.app && /^#/.test(howItWorks.themed ?? ''),
+    JSON.stringify(howItWorks),
+  )
+  const pageBreaches = await breaches(alice)
+  check('and breaks no policy', pageBreaches.length === 0, pageBreaches.join(' | '))
 } catch (err) {
   stoppedEarly(err)
 } finally {

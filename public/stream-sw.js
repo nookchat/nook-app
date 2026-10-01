@@ -107,13 +107,14 @@ self.addEventListener('fetch', (ev) => {
     return
   }
   if (!APP) return
-  // Every page of the app is the same page: the room is in the #, which is never sent.
-  if (ev.request.mode === 'navigate') {
-    ev.respondWith(fromApp(APP_HOME, ev.request))
-    return
-  }
   url.hash = ''
   url.search = ''
+  // Every page of the app is the same page: the room is in the #, which is never sent.
+  // A page of its own, such as how-it-works.html, is itself.
+  if (ev.request.mode === 'navigate') {
+    ev.respondWith(fromApp(url.href.endsWith('.html') && APP_FILES.has(url.href) ? url.href : APP_HOME, ev.request))
+    return
+  }
   if (APP_FILES.has(url.href)) ev.respondWith(fromApp(url.href, ev.request))
   else if (url.href.startsWith(EMOJI_HOME)) ev.respondWith(emojiArt(url.href, ev.request))
 })
