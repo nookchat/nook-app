@@ -2,6 +2,8 @@
 
 interface ImportMetaEnv {
   readonly VITE_NOOK_SERVER?: string
+  /** tldraw needs one for the whiteboards to work on a real domain. */
+  readonly VITE_TLDRAW_LICENSE_KEY?: string
 }
 
 interface ImportMeta {

@@ -1843,6 +1843,7 @@ export class SpaceView {
     await this.publish((c) => (kind === 'note' ? c.saveNote(id, title, '') : c.saveWhiteboard(id, title)))
     this.openPage(kind, id)
     if (kind === 'note') this.noteEditor.focus()
+    else this.boardView.focus()
   }
 
   /** Puts a note or a whiteboard in place of the chat. */
@@ -2009,8 +2010,8 @@ export class SpaceView {
     this.boardList = h('div', { class: 'rail-list' })
     this.boardListSig = null
     this.boardView = new WhiteboardView({
-      draw: async (id, shapes) => (this.chat ? this.chat.drawOnWhiteboard(id, shapes) : 0),
-      shapes: (id) => this.chat?.whiteboardShapes(id) ?? [],
+      draw: async (id, records) => (this.chat ? this.chat.drawOnWhiteboard(id, records) : 0),
+      records: (id) => this.chat?.whiteboardRecords(id) ?? [],
       nameOf: (key) => this.chat?.nameOf(key) || shortKey(key),
       tools: (board) => this.pageTools('whiteboard', board),
     })
@@ -2109,7 +2110,7 @@ export class SpaceView {
       right,
     ])
 
-    this.root.append(h('main', {}, [this.shell]))
+    this.root.append(this.spaceMain())
     this.holdRailsWhilePressed()
     this.swipeRails()
   }
@@ -2488,10 +2489,23 @@ export class SpaceView {
     this.peopleButton.setAttribute('aria-pressed', String(open))
   }
 
+  /**
+   * The space's main, which never scrolls sideways: its overflow is hidden, so nobody can scroll it
+   * back. The browser still does when it shows an element that is off to the side, as tldraw's do
+   * on a phone, and the side bars come into view.
+   */
+  private spaceMain(): HTMLElement {
+    const main = h('main', {}, [this.shell])
+    main.addEventListener('scroll', () => {
+      if (main.scrollLeft !== 0) main.scrollLeft = 0
+    })
+    return main
+  }
+
   private closeSettings(): void {
     this.settingsOpen = null
     clear(this.root)
-    this.root.append(h('main', {}, [this.shell]))
+    this.root.append(this.spaceMain())
     this.drawNow()
   }
 

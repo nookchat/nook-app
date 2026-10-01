@@ -96,14 +96,14 @@ try {
   // With no policy it runs, as this page's origin: see test/hostile.test.mjs for why SVG is not a picture.
   check('script in an SVG opened from a blob does not run', svgRan.opened && svgRan.ran === null, JSON.stringify(svgRan))
 
-  // A whiteboard loads Excalidraw, and its fonts from this page, not from another site.
+  // A whiteboard loads tldraw, and its fonts from this page, not from another site.
   const fonts = []
   alice.on('request', (r) => r.url().includes('.woff2') && fonts.push(r.url()))
   await alice.click('button[aria-label="Make a whiteboard"]')
   await answer(alice, 'Sketch')
-  await alice.waitForSelector('.whiteboard-view:not(.hidden) .excalidraw', { timeout: 20_000 })
-  const canvas = await alice.locator('.whiteboard-host canvas.interactive').boundingBox()
-  await alice.mouse.click(canvas.x + 20, canvas.y + canvas.height - 20)
+  await alice.waitForSelector('.whiteboard-view:not(.hidden) .tl-canvas', { timeout: 20_000 })
+  const canvas = await alice.locator('.whiteboard-host .tl-canvas').boundingBox()
+  await alice.mouse.click(canvas.x + 40, canvas.y + canvas.height / 2)
   await alice.keyboard.press('t')
   await alice.mouse.click(canvas.x + 300, canvas.y + 200)
   await alice.keyboard.type('Hello')

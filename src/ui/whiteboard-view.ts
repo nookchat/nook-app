@@ -1,24 +1,18 @@
-import type { WhiteboardInfo, WhiteboardShape } from '../store/log'
+import type { WhiteboardEntry, WhiteboardInfo } from '../store/log'
 import { h } from './dom'
 import { toast } from './toast'
 import type { Canvas } from './whiteboard-canvas'
 
 export interface WhiteboardHooks {
-  /** Writes the shapes that changed. Resolves to how many were too big to send. */
-  draw(id: string, shapes: readonly WhiteboardShape[]): Promise<number>
-  shapes(id: string): WhiteboardShape[]
+  /** Writes the records that changed. Resolves to how many were too big to send. */
+  draw(id: string, records: readonly WhiteboardEntry[]): Promise<number>
+  records(id: string): WhiteboardEntry[]
   nameOf(key: string): string
   /** The buttons in the whiteboard's bar, for what may be done to it. */
   tools(board: WhiteboardInfo): HTMLElement[]
 }
 
-/** Where Excalidraw finds its fonts: copied next to the app, so a board loads nothing from elsewhere. */
-function useOwnFonts(): void {
-  const own = window as unknown as { EXCALIDRAW_ASSET_PATH?: string }
-  own.EXCALIDRAW_ASSET_PATH = new URL('excalidraw/', document.baseURI).href
-}
-
-/** One shared whiteboard, drawn with Excalidraw. It loads the first time a board opens. */
+/** One shared whiteboard, drawn with tldraw. It loads the first time a board opens. */
 export class WhiteboardView {
   readonly root: HTMLElement
   /** The board's buttons. The space puts them in its head, in place of search and the pins. */
@@ -36,7 +30,7 @@ export class WhiteboardView {
     this.hooks = hooks
     this.host = h('div', { class: 'whiteboard-host' })
     this.status = h('span', { class: 'tiny faint note-status' })
-    this.root = h('div', { class: 'whiteboard-view hidden' }, [
+    this.root = h('div', { class: 'whiteboard-view hidden', tabIndex: -1 }, [
       h('div', { class: 'note-bar row' }, [this.status]),
       this.host,
     ])
@@ -53,25 +47,29 @@ export class WhiteboardView {
     this.paintStatus()
     this.tools.replaceChildren(...this.hooks.tools(board))
     if (!other) {
-      this.canvas?.take(this.hooks.shapes(board.id))
+      this.canvas?.take(this.hooks.records(board.id))
       return
     }
     this.close()
     this.root.classList.remove('hidden')
     this.host.replaceChildren(h('p', { class: 'faint whiteboard-loading', text: 'Opening the whiteboard...' }))
     const ticket = ++this.opening
-    useOwnFonts()
     import('./whiteboard-canvas')
       .then(({ mountCanvas }) => {
         if (ticket !== this.opening || !this.board) return
         this.host.replaceChildren()
         const id = this.board.id
-        this.canvas = mountCanvas(this.host, this.hooks.shapes(id), (shapes) => this.send(id, shapes))
+        this.canvas = mountCanvas(this.host, this.hooks.records(id), (records) => this.send(id, records))
       })
       .catch(() => {
         if (ticket !== this.opening) return
         this.host.replaceChildren(h('p', { class: 'faint whiteboard-loading', text: 'The whiteboard did not load. Check the connection, then open it again.' }))
       })
+  }
+
+  /** Takes the focus from whatever opened the board, such as a button in a side bar that is shut now. */
+  focus(): void {
+    this.root.focus()
   }
 
   hide(): void {
@@ -87,11 +85,11 @@ export class WhiteboardView {
     this.host.replaceChildren()
   }
 
-  private send(id: string, shapes: readonly WhiteboardShape[]): void {
+  private send(id: string, records: readonly WhiteboardEntry[]): void {
     this.sending += 1
     this.paintStatus()
     void this.hooks
-      .draw(id, shapes)
+      .draw(id, records)
       .then((tooBig) => {
         if (tooBig > 0) toast(tooBig === 1 ? 'One drawing is too big to share. Draw it in smaller parts.' : `${tooBig} drawings are too big to share. Draw them in smaller parts.`, 'warn')
       })

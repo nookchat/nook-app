@@ -6656,7 +6656,7 @@ input[type="text"].gif-search {
   display: none;
 }
 
-/* Whiteboards: Excalidraw fills the space under the bar. */
+/* Whiteboards: tldraw fills the space under the bar. */
 .whiteboard-view {
   flex: 1 1 auto;
   min-height: 0;
@@ -6668,6 +6668,13 @@ input[type="text"].gif-search {
   position: relative;
   flex: 1 1 auto;
   min-height: 0;
+}
+
+/* The board takes the focus, and shows it with its own selection, not a ring around it all. */
+.whiteboard-view:focus,
+.whiteboard-host .tl-container:focus,
+.whiteboard-host .tl-container:focus-visible {
+  outline: none;
 }
 
 .whiteboard-loading {

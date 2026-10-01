@@ -15,7 +15,7 @@ import {
   makeEvent,
   MAX_BODY,
   MAX_DM_BYTES,
-  MAX_SHAPES_PER_EVENT,
+  MAX_RECORDS_PER_EVENT,
   MAX_TEXT,
   oneEmoji,
   RoomLog,
@@ -26,7 +26,7 @@ import {
   type ChannelInfo,
   type NoteInfo,
   type WhiteboardInfo,
-  type WhiteboardShape,
+  type WhiteboardEntry,
   type BoardGroup,
   type BoardSound,
   type EventKind,
@@ -105,8 +105,8 @@ export class RoomChat {
     return this.log.whiteboards()
   }
 
-  whiteboardShapes(id: string): WhiteboardShape[] {
-    return this.log.whiteboardShapes(id)
+  whiteboardRecords(id: string): WhiteboardEntry[] {
+    return this.log.whiteboardRecords(id)
   }
 
   /** Makes the whiteboard when the id is new, or renames it. */
@@ -115,28 +115,28 @@ export class RoomChat {
   }
 
   /**
-   * Writes the shapes that changed, in as few lines as fit. Returns how many were too big for a
-   * line of their own, and so were not sent.
+   * Writes the records that changed, and the ones taken away, in as few lines as fit. Returns how
+   * many were too big for a line of their own, and so were not sent.
    */
-  async drawOnWhiteboard(id: string, shapes: readonly WhiteboardShape[]): Promise<number> {
-    // Room for the id and the rest of the body around the shapes.
+  async drawOnWhiteboard(id: string, records: readonly WhiteboardEntry[]): Promise<number> {
+    // Room for the id and the rest of the body around the records.
     const room = MAX_BODY - 200
-    let batch: WhiteboardShape[] = []
+    let batch: WhiteboardEntry[] = []
     let size = 0
     let tooBig = 0
     const send = async (): Promise<void> => {
-      if (batch.length) await this.write('whiteboard', { id, shapes: batch })
+      if (batch.length) await this.write('whiteboard', { id, records: batch })
       batch = []
       size = 0
     }
-    for (const shape of shapes) {
-      const bytes = new TextEncoder().encode(JSON.stringify(shape)).length + 1
+    for (const record of records) {
+      const bytes = new TextEncoder().encode(JSON.stringify(record)).length + 1
       if (bytes > room) {
         tooBig += 1
         continue
       }
-      if (size + bytes > room || batch.length >= MAX_SHAPES_PER_EVENT) await send()
-      batch.push(shape)
+      if (size + bytes > room || batch.length >= MAX_RECORDS_PER_EVENT) await send()
+      batch.push(record)
       size += bytes
     }
     await send()

@@ -122,14 +122,17 @@ with voice does it.
   the space's key, as a channel kept to some levels is, so a changed app in
   the hands of anybody in the space could read it. The list of channels and
   notes has no buttons; a right click opens the actions.
-- **Whiteboards**, under the notes, open [Excalidraw](https://excalidraw.com)
-  in place of the chat, and everybody in the space can draw on one at once.
-  Each change to a shape is a line in the log, sealed like a note, so two
-  people drawing at once lose nothing; two changes to one shape end the same
-  on every device. A whiteboard has a note's Rename, Who can see it and
-  Delete. It takes no pictures or web pages, which would load from elsewhere
-  on every device that opens it, and its fonts come from Nook, not a CDN.
-  Excalidraw and React load the first time a board opens.
+- **Whiteboards**, under the notes, open [tldraw](https://tldraw.dev) in
+  place of the chat, and everybody in the space can draw on one at once.
+  Each change to a shape is a line in the log, sealed like a note, and the
+  last write to a shape, in the order of the log, wins on every device. A
+  whiteboard has a note's Rename, Who can see it and Delete. It takes no
+  pictures, videos, bookmarks or web pages, which would load from elsewhere
+  on every device that opens it, and tldraw's fonts and icons come from
+  Nook, not a CDN. tldraw and React load the first time a board opens.
+  tldraw needs a license key on a real domain: build with
+  `VITE_TLDRAW_LICENSE_KEY` set, or a board stops drawing after five
+  seconds. On localhost it works without one.
 - **Notifications while Nook is closed**: with notifications on, a browser
   also gets them when no Nook page is open, through the browser's own push
   service. The device that sends a message seals the notification for your

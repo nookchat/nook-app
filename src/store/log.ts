@@ -905,37 +905,33 @@ export class RoomLog {
 
   /**
    * Shared whiteboards: kept, seen and deleted as a note is. What is drawn on one is in
-   * whiteboardShapes.
+   * whiteboardRecords.
    */
   whiteboards(): WhiteboardInfo[] {
     return this.cached('whiteboards', () => this.foldNotes('whiteboard').map(({ text: _, ...board }) => board))
   }
 
   /**
-   * The shapes on a whiteboard, each at its newest version, the deleted ones too, so a device can
-   * tell an old copy from a new one. Two edits of one version: the lower nonce wins, as Excalidraw
-   * does it, so every device ends on the same one.
+   * The tldraw records on a whiteboard: its shapes, the arrows' bindings, and its pages. The last
+   * write to a record, in the order of the log, wins, so every device ends on the same board. A
+   * record taken away stays as { id, gone: true }, so a device that still has it lets it go.
    */
-  whiteboardShapes(id: string): WhiteboardShape[] {
-    return this.cached(`whiteboardShapes:${id}`, () => {
+  whiteboardRecords(id: string): WhiteboardEntry[] {
+    return this.cached(`whiteboardRecords:${id}`, () => {
       const board = this.whiteboards().find((b) => b.id === id)
       if (!board) return []
       const auth = this.authority()
       const hooks = new Set(this.hooks().map((hook) => hook.pub))
-      const shapes = new Map<string, WhiteboardShape>()
+      const records = new Map<string, WhiteboardEntry>()
       for (const e of this.all()) {
-        if (e.kind !== 'whiteboard' || e.body.id !== id || !Array.isArray(e.body.shapes)) continue
+        if (e.kind !== 'whiteboard' || e.body.id !== id || !Array.isArray(e.body.records)) continue
         if (auth.isKicked(e.author) || hooks.has(e.author) || !mayOpenNote(auth, e.author, board)) continue
-        for (const raw of e.body.shapes.slice(0, MAX_SHAPES_PER_EVENT)) {
-          const shape = cleanShape(raw)
-          if (!shape) continue
-          const had = shapes.get(shape.id)
-          if (!had || shape.version > had.version || (shape.version === had.version && shape.versionNonce < had.versionNonce)) {
-            shapes.set(shape.id, shape)
-          }
+        for (const raw of e.body.records.slice(0, MAX_RECORDS_PER_EVENT)) {
+          const entry = cleanWhiteboardEntry(raw)
+          if (entry) records.set(entry.id, entry)
         }
       }
-      return [...shapes.values()]
+      return [...records.values()]
     })
   }
 
@@ -977,7 +973,7 @@ export class RoomLog {
       if (Array.isArray(e.body.levels) && keeper) note.levels = cleanLevelIds(e.body.levels)
       if (typeof e.body.title === 'string') note.title = cleanNoteTitle(e.body.title) || 'Untitled'
       if (kind === 'note' && typeof e.body.text === 'string') note.text = e.body.text.slice(0, MAX_TEXT)
-      const changed = typeof e.body.title === 'string' || (kind === 'note' ? typeof e.body.text === 'string' : Array.isArray(e.body.shapes))
+      const changed = typeof e.body.title === 'string' || (kind === 'note' ? typeof e.body.text === 'string' : Array.isArray(e.body.records))
       if (!changed) continue
       note.by = e.author
       note.at = e.at
@@ -1683,35 +1679,36 @@ export interface NoteInfo {
 /** A whiteboard: a note with shapes in place of text. */
 export type WhiteboardInfo = Omit<NoteInfo, 'text'>
 
-/**
- * One Excalidraw element, as somebody wrote it. Only the fields the log orders by are checked:
- * Excalidraw's own restoreElements cleans the rest before the board draws it.
- */
-export interface WhiteboardShape {
+/** One tldraw record, as somebody wrote it. tldraw's own store checks the rest before the board draws it. */
+export interface WhiteboardRecord {
   id: string
-  type: string
-  version: number
-  versionNonce: number
-  isDeleted?: boolean
+  typeName: string
+  type?: string
   [field: string]: unknown
 }
 
-/** At most this many shapes in one line of the log. */
-export const MAX_SHAPES_PER_EVENT = 400
+export type WhiteboardEntry = WhiteboardRecord | { id: string; gone: true }
 
+/** At most this many records in one line of the log. */
+export const MAX_RECORDS_PER_EVENT = 400
+
+/** The records of a board that are shared. Not the document, which each device has of its own. */
+const RECORD_TYPES = new Set(['shape', 'binding', 'page'])
 /**
- * What may be drawn. No picture, web page or frame of another site: each would load from
- * somewhere on every device that opens the board.
+ * No picture, video, bookmark or web page: each would load from somewhere on every device that
+ * opens the board.
  */
-const SHAPE_TYPES = new Set(['rectangle', 'diamond', 'ellipse', 'arrow', 'line', 'freedraw', 'text', 'frame'])
+const LOADS_FROM_ELSEWHERE = new Set(['image', 'video', 'bookmark', 'embed'])
 
-export function cleanShape(raw: unknown): WhiteboardShape | null {
+export function cleanWhiteboardEntry(raw: unknown): WhiteboardEntry | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
-  const shape = raw as Record<string, unknown>
-  if (typeof shape.id !== 'string' || !/^[\w-]{1,64}$/.test(shape.id)) return null
-  if (typeof shape.type !== 'string' || !SHAPE_TYPES.has(shape.type)) return null
-  if (!Number.isSafeInteger(shape.version) || !Number.isSafeInteger(shape.versionNonce)) return null
-  return shape as WhiteboardShape
+  const record = raw as Record<string, unknown>
+  if (typeof record.id !== 'string' || !/^(shape|binding|page):[\w-]{1,64}$/.test(record.id)) return null
+  if (record.gone === true) return { id: record.id, gone: true }
+  if (typeof record.typeName !== 'string' || !RECORD_TYPES.has(record.typeName)) return null
+  if (!record.id.startsWith(`${record.typeName}:`)) return null
+  if (record.typeName === 'shape' && (typeof record.type !== 'string' || LOADS_FROM_ELSEWHERE.has(record.type))) return null
+  return record as WhiteboardRecord
 }
 
 /** A pass in an invite: 16 letters of the same alphabet as a code. */

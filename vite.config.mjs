@@ -13,10 +13,11 @@ const EMOJI_DIR = 'emoji'
 // Twemoji 17 from its GitHub release (npm has no newer SVG package than 15).
 const EMOJI_ART = join(dirname(createRequire(import.meta.url).resolve('twemoji-art/package.json')), 'assets', 'svg')
 const EMOJI_NAMES = 'virtual:twemoji'
-/** Excalidraw's fonts, for the whiteboards. Fetched when a board shows them, not kept by the worker. */
-const BOARD_FONTS_DIR = 'excalidraw/fonts'
+/** tldraw's fonts, icons and words, for the whiteboards. Fetched when a board shows them, not kept by the worker. */
+const BOARD_ASSETS_DIR = 'tldraw'
+const BOARD_ASSET_KINDS = ['fonts', 'icons', 'translations', 'embed-icons']
 // The package lists no package.json in its exports, so its folder is found by name.
-const BOARD_FONTS = new URL('./node_modules/@excalidraw/excalidraw/dist/prod/fonts', import.meta.url).pathname
+const BOARD_ASSETS = new URL('./node_modules/@tldraw/assets', import.meta.url).pathname
 
 /** @param {string} dir @returns {string[]} */
 function filesIn(dir) {
@@ -34,7 +35,7 @@ function filesIn(dir) {
 function keepTheApp() {
   let outDir = 'dist'
   /**
-   * Code that only a library loads when it wants it, such as Excalidraw's Mermaid diagrams and
+   * Code that only a library loads when it wants it, such as a diagram tool or a language
    * languages. The worker leaves it out: it is megabytes, and most people never use it.
    */
   const extras = new Set()
@@ -73,7 +74,7 @@ function keepTheApp() {
       const files = filesIn(outDir)
         .map((path) => relative(outDir, path).split(sep).join('/'))
         .filter((file) => file !== WORKER && file !== 'index.html' && !file.endsWith('.map'))
-        .filter((file) => !file.startsWith(`${EMOJI_DIR}/`) && !file.startsWith(`${BOARD_FONTS_DIR}/`) && !extras.has(file))
+        .filter((file) => !file.startsWith(`${EMOJI_DIR}/`) && !file.startsWith(`${BOARD_ASSETS_DIR}/`) && !extras.has(file))
         .sort()
       const hash = createHash('sha256')
       for (const file of ['index.html', ...files]) hash.update(file).update(readFileSync(join(outDir, file)))
@@ -127,34 +128,27 @@ function emojiArt() {
 }
 
 /**
- * Excalidraw's fonts next to the app, so a whiteboard asks no other site for them. The page
- * points Excalidraw here (src/ui/whiteboard-view.ts).
+ * tldraw's fonts, icons and words next to the app, so a whiteboard asks no other site for them.
+ * The page points tldraw here (src/ui/whiteboard-canvas.ts).
  */
 /** @returns {import('vite').Plugin} */
-function boardFonts() {
+function boardAssets() {
+  const files = BOARD_ASSET_KINDS.flatMap((kind) => filesIn(join(BOARD_ASSETS, kind)))
+  const known = new Set(files.map((path) => relative(BOARD_ASSETS, path).split(sep).join('/')))
+  const TYPES = { woff2: 'font/woff2', svg: 'image/svg+xml', json: 'application/json', png: 'image/png' }
   return {
-    name: 'nook-board-fonts',
+    name: 'nook-board-assets',
     configureServer(server) {
-      server.middlewares.use(`/${BOARD_FONTS_DIR}/`, (req, res, next) => {
+      server.middlewares.use(`/${BOARD_ASSETS_DIR}/`, (req, res, next) => {
         const name = decodeURIComponent((req.url ?? '').split('?')[0].replace(/^\//, ''))
-        const path = join(BOARD_FONTS, name)
-        if (!name.endsWith('.woff2') || !path.startsWith(BOARD_FONTS + sep)) return next()
-        try {
-          const font = readFileSync(path)
-          res.setHeader('Content-Type', 'font/woff2')
-          res.end(font)
-        } catch {
-          next()
-        }
+        if (!known.has(name)) return next()
+        res.setHeader('Content-Type', TYPES[name.split('.').pop()] ?? 'application/octet-stream')
+        res.end(readFileSync(join(BOARD_ASSETS, name)))
       })
     },
     generateBundle() {
-      for (const path of filesIn(BOARD_FONTS).filter((file) => file.endsWith('.woff2'))) {
-        this.emitFile({
-          type: 'asset',
-          fileName: `${BOARD_FONTS_DIR}/${relative(BOARD_FONTS, path).split(sep).join('/')}`,
-          source: readFileSync(path),
-        })
+      for (const name of known) {
+        this.emitFile({ type: 'asset', fileName: `${BOARD_ASSETS_DIR}/${name}`, source: readFileSync(join(BOARD_ASSETS, name)) })
       }
     },
   }
@@ -176,7 +170,7 @@ const VERSION = JSON.parse(readFileSync(new URL('./package.json', import.meta.ur
 export default defineConfig({
   // Relative, so the build works from any sub path on a static host.
   base: './',
-  plugins: [emojiArt(), boardFonts(), keepTheApp()],
+  plugins: [emojiArt(), boardAssets(), keepTheApp()],
   define: {
     __NOOK_VERSION__: JSON.stringify(VERSION),
     __NOOK_COMMIT__: JSON.stringify(commit()),
