@@ -132,6 +132,8 @@ const CSS = `
     position: absolute; top: 0; left: 50%; height: 100%; transform: translateX(-50%);
     max-width: calc(100% - 320px); display: flex; align-items: center; gap: 6px; pointer-events: none;
   }
+  /* The loading and updating screen covers the page: its title is not shown until the app is. */
+  html:has(#boot:not(.gone)) #nook-titlebar .title { visibility: hidden; }
   #nook-titlebar .title-face { flex: 0 0 auto; display: inline-flex; }
   #nook-titlebar .title-face:empty { display: none; }
   #nook-titlebar .title-words { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
