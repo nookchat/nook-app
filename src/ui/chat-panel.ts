@@ -4,6 +4,7 @@ import type { LinkPreview } from '../net/server-api'
 import { seesRecordings } from '../net/recordings'
 import { cleanName, EVERYONE, findMentions, mentionsMe } from '../chat'
 import { shortKey } from '../store/identity'
+import { canRecordVoice, recordVoice, type VoiceRecording } from '../media/voice-note'
 import { AttachTray, attachmentBlock } from './attachments'
 import { clear, copyText, h, roleInk } from './dom'
 import {
@@ -269,6 +270,9 @@ export class ChatPanel {
   private readonly roomLeft: HTMLSpanElement
   private readonly tray: AttachTray
   private readonly attachButton: HTMLButtonElement
+  private readonly voiceButton: HTMLButtonElement
+  private readonly voiceBar: HTMLDivElement
+  private voice: VoiceRecording | null = null
   private readonly clipButton: HTMLButtonElement
   private readonly fileInput: HTMLInputElement
   private readonly dropCover: HTMLDivElement
@@ -389,6 +393,17 @@ export class ChatPanel {
       },
       [icon('paperclip', 20)],
     )
+    this.voiceButton = h(
+      'button',
+      {
+        class: 'ghost icon-only voice-button hidden',
+        title: 'Record a voice message',
+        ariaLabel: 'Record a voice message',
+        on: { click: () => void this.startVoice() },
+      },
+      [icon('mic', 20)],
+    )
+    this.voiceBar = h('div', { class: 'row voice-bar hidden' })
     // In the desktop app: a clip from your Steam, NVIDIA or other recordings, as an attached file.
     this.clipButton = h(
       'button',
@@ -542,6 +557,7 @@ export class ChatPanel {
         this.replyBar,
         this.nameRow,
         this.tray.root,
+        this.voiceBar,
         h('div', { class: 'row compose-box' }, [
           this.attachButton,
           this.clipButton,
@@ -559,6 +575,7 @@ export class ChatPanel {
           this.roomLeft,
           this.gifButton,
           this.emojiButton,
+          this.voiceButton,
           this.sendButton,
         ]),
       ]),
@@ -570,6 +587,8 @@ export class ChatPanel {
   setFiles(files: SpaceFiles | null): void {
     this.files = files
     this.attachButton.classList.toggle('hidden', !files)
+    this.voiceButton.classList.toggle('hidden', !files || !canRecordVoice())
+    this.showSend()
     this.clipButton.classList.toggle('hidden', !files || !seesRecordings())
   }
 
@@ -793,7 +812,56 @@ export class ChatPanel {
 
   /** The send button shows only when there is something to send. */
   private showSend(): void {
-    this.sendButton.classList.toggle('empty', !this.textInput.value.trim() && this.tray.count === 0)
+    const empty = !this.textInput.value.trim() && this.tray.count === 0
+    this.sendButton.classList.toggle('empty', empty)
+    // The microphone shows while there is nothing to send, and gives way to the send button after.
+    this.voiceButton.classList.toggle('empty', !empty)
+  }
+
+  /** The row with the time and the level, in place of the box, while a voice message is recorded. */
+  private async startVoice(): Promise<void> {
+    if (this.voice || !this.files || !this.enabled || this.editing) return
+    let recording: VoiceRecording
+    try {
+      recording = await recordVoice(() => void end(true))
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Nook could not record.', 'warn', 6000)
+      return
+    }
+    this.voice = recording
+    const time = h('span', { class: 'voice-time', text: '0:00' })
+    const meter = h('i')
+    const cancel = h('button', { class: 'ghost icon-only', title: 'Throw it away', ariaLabel: 'Throw the voice message away' }, [
+      icon('trash', 18),
+    ])
+    const send = h('button', { class: 'send-button', title: 'Send the voice message', ariaLabel: 'Send the voice message' }, [
+      icon('send', 19),
+    ])
+    this.voiceBar.replaceChildren(cancel, h('span', { class: 'voice-dot' }), time, h('span', { class: 'voice-meter' }, [meter]), send)
+    this.voiceBar.classList.remove('hidden')
+    this.root.classList.add('recording')
+    const tick = window.setInterval(() => {
+      const s = Math.floor(recording.seconds())
+      time.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+      meter.style.transform = `scaleX(${Math.max(0.04, recording.level())})`
+    }, 80)
+    const end = async (keep: boolean): Promise<void> => {
+      if (this.voice !== recording) return
+      window.clearInterval(tick)
+      this.voice = null
+      this.voiceBar.classList.add('hidden')
+      this.root.classList.remove('recording')
+      if (!keep) return recording.cancel()
+      const file = await recording.finish()
+      if (!file) {
+        toast('That was too short. Hold on a little longer.', 'warn')
+        return
+      }
+      this.tray.add([file])
+      this.submit()
+    }
+    cancel.addEventListener('click', () => void end(false))
+    send.addEventListener('click', () => void end(true))
   }
 
   private showSuggestions(kind: SuggestKind, at: number, options: HTMLElement[]): void {

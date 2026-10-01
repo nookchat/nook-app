@@ -1,4 +1,5 @@
 import { saveFile, sizeLabel, unwatchStream, UploadRefused, type Progress, type SpaceFiles } from '../net/files'
+import { VOICE_NAME } from '../media/voice-note'
 import { MAX_FILES, type Attachment } from '../store/log'
 import { h } from './dom'
 import { closeOnBack } from './gestures'
@@ -236,8 +237,69 @@ function pauseOtherPlayers(ev: Event): void {
 
 document.addEventListener('play', pauseOtherPlayers, true)
 
+/** A voice message: a play button, how far it has played, and how long it is. */
+function voiceCard(file: Attachment, source: SpaceFiles | null): HTMLElement {
+  const total = file.dur ?? 0
+  const time = h('span', { class: 'voice-time tiny', text: total ? duration(total) : '' })
+  const fill = h('i')
+  const play = h('button', { class: 'voice-play', title: 'Play', ariaLabel: 'Play the voice message' }, [icon('play', 17)])
+  const track = h('span', { class: 'voice-track', role: 'progressbar', ariaLabel: 'Voice message' }, [fill])
+  const card = h('div', { class: 'att-voice' }, [play, track, time])
+  let audio: HTMLAudioElement | null = null
+  const rest = (): void => {
+    play.replaceChildren(icon('play', 17))
+    play.title = 'Play'
+    play.setAttribute('aria-label', 'Play the voice message')
+    fill.style.transform = 'scaleX(0)'
+    time.textContent = total ? duration(total) : ''
+  }
+  play.addEventListener('click', async () => {
+    if (!source) return
+    if (audio && !audio.paused) {
+      audio.pause()
+      return
+    }
+    if (!audio) {
+      play.disabled = true
+      try {
+        const el = h('audio', { class: 'att-audio hidden' })
+        el.src = await source.url(file)
+        el.addEventListener('play', () => {
+          play.replaceChildren(icon('pause', 17))
+          play.title = 'Pause'
+          play.setAttribute('aria-label', 'Pause the voice message')
+        })
+        el.addEventListener('pause', () => {
+          if (!el.ended) {
+            play.replaceChildren(icon('play', 17))
+            play.title = 'Play'
+            play.setAttribute('aria-label', 'Play the voice message')
+          }
+        })
+        el.addEventListener('ended', rest)
+        el.addEventListener('timeupdate', () => {
+          if (!total) return
+          const at = Math.min(total, el.currentTime)
+          fill.style.transform = `scaleX(${at / total})`
+          time.textContent = duration(at)
+        })
+        card.append(el)
+        audio = el
+      } catch {
+        toast('Could not open the voice message.', 'warn')
+        return
+      } finally {
+        play.disabled = false
+      }
+    }
+    await audio.play().catch(() => undefined)
+  })
+  return card
+}
+
 function fileCard(file: Attachment, source: SpaceFiles | null): HTMLElement {
   const kind = kindOf(file)
+  if (kind === 'audio' && VOICE_NAME.test(file.name)) return voiceCard(file, source)
   const extension = /\.([a-z0-9]{1,6})$/i.exec(file.name)?.[1]?.toUpperCase() ?? ''
   const label = [sizeLabel(file.size), extension].filter(Boolean).join(' · ')
   const detail = h('span', { class: 'tiny faint', text: label })

@@ -4,6 +4,7 @@ import { endpoints } from './cluster'
 import { convertQuickly } from './convert'
 import { faststart } from './faststart'
 import { health } from './server-api'
+import { voiceSeconds } from '../media/voice-note'
 
 const DEFAULT_MAX_BYTES = 100 * 1024 * 1024
 const CACHE_BYTES = 400 * 1024 * 1024
@@ -379,6 +380,7 @@ export class SpaceFiles {
   }
 
   async send(file: File, onProgress: Progress, signal: AbortSignal, onStage?: Stage): Promise<Attachment> {
+    const recorded = voiceSeconds(file)
     if (file.type.startsWith('video/')) {
       // Every video is made again. HEVC must be, for the browsers that cannot show it.
       const hevc = await isHevc(file)
@@ -401,6 +403,7 @@ export class SpaceFiles {
       file = await faststart(file)
     }
     const look = await lookAt(file)
+    if (recorded) look.dur = recorded
     const key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt'])
     const raw = new Uint8Array(await crypto.subtle.exportKey('raw', key))
     const sealed = await sealPieces(key, file, CHUNK_BYTES)

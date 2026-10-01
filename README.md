@@ -75,6 +75,10 @@ with voice does it.
   pasted in. Each is encrypted on your device with a key of its own before it
   goes up. Pictures show in the message and open full screen; videos show
   their first frame and play in place; anything else is a card with Save.
+- **Voice messages**: the microphone in the message box, where the send button is
+  while the box is empty, records a message of five minutes at most. The bin throws it
+  away and send sends it. It is a file like any other, so it is sealed on your device,
+  and it shows as a play button with the time, not as a file.
 - **Watching** is a choice. A share is offered in the strip above the
   conversation, and nothing is on your screen until you pick it. Pick two, and
   the stage splits. Close, or `Esc`, takes them all off.
