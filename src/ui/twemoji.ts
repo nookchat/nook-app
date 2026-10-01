@@ -81,7 +81,22 @@ function paintText(node: Text): void {
  * same width, so the copy lines up with the box. While the text has an emoji,
  * the box's own text is clear, and the caret and the selection stay the box's.
  */
-export function emojiField(field: HTMLTextAreaElement): HTMLElement {
+/** A stretch of a text box drawn as a tag, as a mention is: in the colour of the person's level, if any. */
+export interface FieldMark {
+  at: number
+  length: number
+  /** A CSS colour, or empty for the plain tag. */
+  colour: string
+}
+
+/** Said on a text box to draw its copy again, when what its marks find has changed. */
+export const REDRAW_FIELD = 'nook:redraw-field'
+
+/**
+ * A text box with a copy behind it that draws what the box cannot: emoji as Twemoji pictures,
+ * and each mark as a tag. The box's own text goes clear only while the copy has something to draw.
+ */
+export function emojiField(field: HTMLTextAreaElement, marks: (text: string) => FieldMark[] = () => []): HTMLElement {
   const mirror = document.createElement('div')
   mirror.className = 'emoji-mirror'
   mirror.setAttribute('aria-hidden', 'true')
@@ -95,11 +110,31 @@ export function emojiField(field: HTMLTextAreaElement): HTMLElement {
     mirror.style.right = `${field.offsetWidth - field.clientWidth}px`
     mirror.scrollTop = field.scrollTop
   }
+  /** The text as it reads: emoji as pictures where there are any, else the words. */
+  const words = (text: string): Node[] => (MAYBE.test(text) && emojiNodes(text, 'twemoji-glyph')) || [document.createTextNode(text)]
+  const drawn = (text: string): Node[] | null => {
+    const found = marks(text)
+    if (found.length === 0) return MAYBE.test(text) ? emojiNodes(text, 'twemoji-glyph') : null
+    const out: Node[] = []
+    let at = 0
+    for (const mark of found) {
+      if (mark.at < at) continue
+      if (mark.at > at) out.push(...words(text.slice(at, mark.at)))
+      const tag = document.createElement('span')
+      tag.className = 'field-mark'
+      if (mark.colour) tag.style.setProperty('--who', mark.colour)
+      tag.append(...words(text.slice(mark.at, mark.at + mark.length)))
+      out.push(tag)
+      at = mark.at + mark.length
+    }
+    if (at < text.length) out.push(...words(text.slice(at)))
+    return out
+  }
   const draw = (): void => {
     const text = field.value
     if (text === drawnFor) return fit()
     drawnFor = text
-    const nodes = MAYBE.test(text) ? emojiNodes(text, 'twemoji-glyph') : null
+    const nodes = drawn(text)
     field.classList.toggle('mirrored', nodes !== null)
     mirror.replaceChildren(...(nodes ?? []))
     // A last line break shows as a line in the box, but not in the copy without something after it.
@@ -118,6 +153,10 @@ export function emojiField(field: HTMLTextAreaElement): HTMLElement {
     },
   })
   field.addEventListener('input', draw)
+  field.addEventListener(REDRAW_FIELD, () => {
+    drawnFor = null
+    draw()
+  })
   field.addEventListener('scroll', fit)
   new ResizeObserver(fit).observe(field)
   return wrap

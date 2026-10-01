@@ -3724,6 +3724,21 @@ input[type="text"].space-search {
   background: color-mix(in srgb, var(--focus-ring) 28%, transparent);
 }
 
+/* A mention in the box, as it will look in the message. Its width is the box's own text, so no
+   padding and no bolder weight: the tag's colour spreads out round it as a shadow instead. */
+.emoji-mirror .field-mark {
+  color: var(--accent-text);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+  border-radius: 2px;
+}
+
+.emoji-mirror .field-mark[style*="--who"] {
+  color: color-mix(in srgb, var(--who) var(--who-keep), var(--text-primary));
+  background: color-mix(in srgb, var(--who) 16%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--who) 16%, transparent);
+}
+
 /* A picture the width of the device's own emoji, so a copy of typed text lines up with it. */
 .twemoji-glyph {
   position: relative;

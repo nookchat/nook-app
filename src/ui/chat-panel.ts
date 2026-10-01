@@ -24,7 +24,7 @@ import { closeMenu, onContextMenu, type MenuEntry } from './menu'
 import { asSheet, phone } from './gestures'
 import { fitNear } from './place'
 import { toast } from './toast'
-import { emojiField } from './twemoji'
+import { emojiField, REDRAW_FIELD } from './twemoji'
 
 const FALLBACK_REACTIONS = ['👍', '😂', '🔥', '❤️', '👀']
 const QUICK_ROW_LENGTH = 5
@@ -546,7 +546,16 @@ export class ChatPanel {
           this.attachButton,
           this.clipButton,
           this.fileInput,
-          emojiField(this.textInput),
+          // A mention in the box looks as it will in the message: a tag in the colour of their level.
+          emojiField(this.textInput, (text) =>
+            this.names.size && text.includes('@')
+              ? findMentions(text, this.names).map((hit) => ({
+                  at: hit.at,
+                  length: hit.length,
+                  colour: hit.key === EVERYONE ? '' : this.colourOf(hit.key),
+                }))
+              : [],
+          ),
           this.roomLeft,
           this.gifButton,
           this.emojiButton,
@@ -612,6 +621,8 @@ export class ChatPanel {
   setNames(names: Map<string, string>, avatars?: Map<string, string>): void {
     this.names = names
     if (avatars) this.avatars = avatars
+    // A name that came, or a level that changed colour, changes how a mention in the box looks.
+    if (this.textInput.value.includes('@')) this.textInput.dispatchEvent(new Event(REDRAW_FIELD))
   }
 
   setTitle(text: string): void {
