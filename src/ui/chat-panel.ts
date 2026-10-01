@@ -4,7 +4,7 @@ import type { LinkPreview } from '../net/server-api'
 import { seesRecordings } from '../net/recordings'
 import { cleanName, EVERYONE, findMentions, mentionsMe } from '../chat'
 import { shortKey } from '../store/identity'
-import { canRecordVoice, recordVoice, type VoiceRecording } from '../media/voice-note'
+import { canRecordVoice, recordVoice, voiceSeconds, type VoiceRecording } from '../media/voice-note'
 import { AttachTray, attachmentBlock } from './attachments'
 import { clear, copyText, h, roleInk } from './dom'
 import {
@@ -828,50 +828,114 @@ export class ChatPanel {
     this.voiceButton.classList.toggle('empty', !empty)
   }
 
-  /** The row with the time and the level, in place of the box, while a voice message is recorded. */
+  /**
+   * The row in place of the box while a voice message is made. First it records, with the time and
+   * the level, and Stop ends it. Then you can play it back, and send it or throw it away.
+   */
   private async startVoice(): Promise<void> {
     if (this.voice || !this.files || !this.enabled || this.editing) return
     let recording: VoiceRecording
     try {
-      recording = await recordVoice(() => void end(true))
+      recording = await recordVoice(() => void stop())
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Nook could not record.', 'warn', 6000)
       return
     }
     this.voice = recording
-    const time = h('span', { class: 'note-time', text: '0:00' })
-    const meter = h('i')
-    const cancel = h('button', { class: 'ghost icon-only', title: 'Throw it away', ariaLabel: 'Throw the voice message away' }, [
+    const clock = (s: number): string => `${Math.floor(s / 60)}:${String(Math.floor(s) % 60).padStart(2, '0')}`
+    const bin = h('button', { class: 'ghost icon-only', title: 'Throw it away', ariaLabel: 'Throw the voice message away' }, [
       icon('trash', 18),
     ])
-    const send = h('button', { class: 'send-button', title: 'Send the voice message', ariaLabel: 'Send the voice message' }, [
-      icon('send', 19),
-    ])
-    this.voiceBar.replaceChildren(cancel, h('span', { class: 'note-dot' }), time, h('span', { class: 'note-meter' }, [meter]), send)
+    const time = h('span', { class: 'note-time', text: '0:00' })
+    const meter = h('i')
+    const stopButton = h('button', { class: 'note-stop', title: 'Stop recording', ariaLabel: 'Stop recording' }, [icon('stop', 16)])
+    this.voiceBar.replaceChildren(bin, h('span', { class: 'note-dot' }), time, h('span', { class: 'note-meter' }, [meter]), stopButton)
     this.voiceBar.classList.remove('hidden')
     this.root.classList.add('recording')
-    const tick = window.setInterval(() => {
-      const s = Math.floor(recording.seconds())
-      time.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
-      meter.style.transform = `scaleX(${Math.max(0.04, recording.level())})`
-    }, 80)
-    const end = async (keep: boolean): Promise<void> => {
-      if (this.voice !== recording) return
+
+    let listen: HTMLAudioElement | null = null
+    let ended = false
+    const leave = (): void => {
+      ended = true
       window.clearInterval(tick)
+      if (listen) {
+        listen.pause()
+        URL.revokeObjectURL(listen.src)
+        listen = null
+      }
       this.voice = null
       this.voiceBar.classList.add('hidden')
       this.root.classList.remove('recording')
-      if (!keep) return recording.cancel()
+    }
+    const tick = window.setInterval(() => {
+      time.textContent = clock(recording.seconds())
+      meter.style.transform = `scaleX(${Math.max(0.04, recording.level())})`
+    }, 80)
+
+    const stop = async (): Promise<void> => {
+      if (ended || this.voice !== recording) return
+      window.clearInterval(tick)
+      stopButton.disabled = true
       const file = await recording.finish()
+      if (ended) return
       if (!file) {
+        leave()
         toast('That was too short. Hold on a little longer.', 'warn')
         return
       }
-      this.tray.add([file])
-      this.submit()
+      review(file)
     }
-    cancel.addEventListener('click', () => void end(false))
-    send.addEventListener('click', () => void end(true))
+
+    /** The finished recording: play it back, then send it or throw it away. */
+    const review = (file: File): void => {
+      const total = voiceSeconds(file) ?? 0
+      const audio = new Audio(URL.createObjectURL(file))
+      listen = audio
+      const play = h('button', { class: 'note-play', title: 'Play', ariaLabel: 'Play the voice message' }, [icon('play', 17)])
+      const fill = h('i')
+      const track = h('span', { class: 'note-track', role: 'progressbar', ariaLabel: 'Voice message' }, [fill])
+      const left = h('span', { class: 'note-time', text: clock(total) })
+      const send = h('button', { class: 'send-button', title: 'Send the voice message', ariaLabel: 'Send the voice message' }, [
+        icon('send', 19),
+      ])
+      const face = (playing: boolean): void => {
+        play.replaceChildren(icon(playing ? 'pause' : 'play', 17))
+        play.title = playing ? 'Pause' : 'Play'
+        play.setAttribute('aria-label', playing ? 'Pause the voice message' : 'Play the voice message')
+      }
+      play.addEventListener('click', () => {
+        if (audio.paused) void audio.play().catch(() => undefined)
+        else audio.pause()
+      })
+      audio.addEventListener('play', () => face(true))
+      audio.addEventListener('pause', () => face(false))
+      audio.addEventListener('ended', () => {
+        face(false)
+        fill.style.transform = 'scaleX(0)'
+        left.textContent = clock(total)
+      })
+      audio.addEventListener('timeupdate', () => {
+        if (!total) return
+        const at = Math.min(total, audio.currentTime)
+        fill.style.transform = `scaleX(${at / total})`
+        left.textContent = clock(at)
+      })
+      bin.addEventListener('click', leave)
+      send.addEventListener('click', () => {
+        leave()
+        this.tray.add([file])
+        this.submit()
+      })
+      this.voiceBar.replaceChildren(bin, play, track, left, send)
+      play.focus()
+    }
+
+    bin.addEventListener('click', () => {
+      if (listen) return
+      leave()
+      recording.cancel()
+    })
+    stopButton.addEventListener('click', () => void stop())
   }
 
   private showSuggestions(kind: SuggestKind, at: number, options: HTMLElement[]): void {

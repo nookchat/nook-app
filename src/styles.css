@@ -4398,21 +4398,31 @@ input[type="range"].vp-volume {
   gap: 12px;
   width: min(320px, 100%);
   padding: 8px 14px 8px 8px;
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-md);
   background: var(--surface);
   border: 1px solid var(--line-soft);
 }
 
-.note-play {
+.note-play,
+.note-stop {
   flex: 0 0 auto;
   display: grid;
   place-items: center;
   width: 36px;
   height: 36px;
   padding: 0;
-  border-radius: 50%;
+  border-radius: var(--icon-btn-radius-small);
   background: var(--accent);
   color: var(--on-accent);
+}
+
+.note-stop {
+  background: color-mix(in srgb, var(--danger) 16%, var(--surface-1));
+  color: var(--bad);
+}
+
+.note-stop:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 24%, var(--surface-1));
 }
 
 .note-track {
@@ -4446,7 +4456,7 @@ input[type="range"].vp-volume {
   align-items: center;
   gap: 12px;
   padding: 6px 6px 6px 8px;
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-md);
   background: var(--surface);
   border: 1px solid var(--line-soft);
 }
