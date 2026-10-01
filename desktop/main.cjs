@@ -394,6 +394,8 @@ function createWindow() {
     backgroundColor: pageColour(),
     title: 'Nook',
     autoHideMenuBar: true,
+    // The click that brings the window forward also presses what is under it, as in a browser.
+    acceptFirstMouse: true,
     // The page draws its own title bar. macOS keeps its three buttons over it.
     ...(process.platform === 'darwin'
       ? { titleBarStyle: 'hidden', trafficLightPosition: { x: 12, y: 10 } }
@@ -518,6 +520,7 @@ async function pickSource(parent) {
     maximizable: false,
     title: 'Share your screen',
     autoHideMenuBar: true,
+    acceptFirstMouse: true,
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'picker-preload.cjs'),
