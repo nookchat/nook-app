@@ -54,6 +54,14 @@ contextBridge.exposeInMainWorld('nookDesktop', {
   /** Whether close puts the window away to the tray, and a change to it. */
   closesToTray: () => ipcRenderer.sendSync('tray:get') === true,
   setCloseToTray: (on) => ipcRenderer.send('tray:set', !!on),
+  /** Whether you look at the window now: shown, not minimized, and in front. */
+  looking: () => ipcRenderer.sendSync('window:looking') === true,
+  /** Called with true or false as that changes. Returns a function that stops it. */
+  onLooking: (fn) => {
+    const heard = (_ev, now) => fn(now === true)
+    ipcRenderer.on('window:looking', heard)
+    return () => ipcRenderer.removeListener('window:looking', heard)
+  },
   /** The unread count on the Dock or taskbar icon. `overlay` is a PNG data URL, for Windows. */
   setBadge: (count, overlay) => ipcRenderer.send('badge:set', Number(count) || 0, typeof overlay === 'string' ? overlay : ''),
   /** The sound of a YouTube video, for the soundboard: { title, bytes, type } or { error }. */

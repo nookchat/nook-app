@@ -121,6 +121,15 @@ function openLink(url) {
   bringBack()
 }
 
+/** True while you look at the window: shown, not minimized, and in front. */
+function lookingAt(win) {
+  return !!win && !win.isDestroyed() && win.isVisible() && !win.isMinimized() && win.isFocused()
+}
+
+ipcMain.on('window:looking', (ev) => {
+  ev.returnValue = lookingAt(BrowserWindow.fromWebContents(ev.sender))
+})
+
 /** Shows the window again, from the tray, the Dock, or a second start. */
 function bringBack() {
   if (!main) return createWindow()
@@ -376,9 +385,14 @@ function createWindow() {
   main.on('unmaximize', () => tell('window:maximized', false))
   main.on('enter-full-screen', () => tell('window:fullscreen', true))
   main.on('leave-full-screen', () => tell('window:fullscreen', false))
+  // Whether you look at the window: shown, not minimized, and in front. The page cannot tell on
+  // its own: with background throttling off, a window put away in the tray still reads as visible.
+  const looking = () => tell('window:looking', lookingAt(main))
+  for (const name of ['show', 'hide', 'focus', 'blur', 'minimize', 'restore']) main.on(name, looking)
   main.webContents.on('did-finish-load', () => {
     tell('window:maximized', main.isMaximized())
     tell('window:fullscreen', main.isFullScreen())
+    looking()
   })
 
   showSplash(main)

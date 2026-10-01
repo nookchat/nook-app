@@ -9,10 +9,10 @@ const GAP_SHARE = 0.07
 /** Nook's red, as the page's badge has it, in the order Electron keeps a pixel: blue, green, red, alpha. */
 const RED = [0x48, 0x2e, 0xc2]
 
-/** What waits, in words: the same count the Dock and the page's tab show. */
+/** What waits, in words: what would have notified you since you last looked, as the Dock says it. */
 function unreadWords(n) {
   if (!(n > 0)) return ''
-  return n === 1 ? '1 unread mention or message' : `${n > 9999 ? '9999+' : n} unread mentions and messages`
+  return n === 1 ? '1 new notification' : `${n > 9999 ? '9999+' : n} new notifications`
 }
 
 function trayTooltip(n) {

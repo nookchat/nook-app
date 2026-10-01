@@ -75,6 +75,7 @@ import { hookUrl } from '../space/webhook'
 import { actionFor, type Action } from './shortcuts'
 import { NoteEditor } from './notes-view'
 import { WHITEBOARDS, WhiteboardView } from './whiteboard-view'
+import { LOOKING_CHANGED, nookInView } from './looking'
 import { placeNear } from './emoji'
 import { asSheet, closeOnBack, onDrag, phone, PHONE, scrollsThatWay } from './gestures'
 import { loadAvatar, squareThumb } from './avatar'
@@ -514,6 +515,7 @@ export class SpaceView {
     this.timers.push(window.setInterval(() => void this.sampleLink(), LINK_EVERY_MS))
     this.boardButton.addEventListener('click', () => this.openBoard(this.boardButton))
     document.addEventListener('visibilitychange', this.onVisible)
+    window.addEventListener(LOOKING_CHANGED, this.onVisible)
     window.addEventListener(PLAYING_CHANGED, this.onPlaying)
     window.addEventListener(LISTENING_CHANGED, this.onPlaying)
     window.addEventListener(MUTED_CHANGED, this.onPlaying)
@@ -623,6 +625,7 @@ export class SpaceView {
     this.railBack?.(false)
     this.railBack = null
     document.removeEventListener('visibilitychange', this.onVisible)
+    window.removeEventListener(LOOKING_CHANGED, this.onVisible)
     window.removeEventListener(PLAYING_CHANGED, this.onPlaying)
     window.removeEventListener(LISTENING_CHANGED, this.onPlaying)
     window.removeEventListener(MUTED_CHANGED, this.onPlaying)
@@ -1163,7 +1166,8 @@ export class SpaceView {
   }
 
   private markRead(channel: string): void {
-    if (document.hidden) return
+    // Not while the window is away, in the tray or behind another: it waits until you look.
+    if (!nookInView()) return
     const top = this.chat?.highWater(channel) ?? 0
     if (top <= (this.read[channel] ?? 0)) return
     this.read[channel] = top

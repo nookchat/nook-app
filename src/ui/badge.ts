@@ -2,10 +2,13 @@ import { spaces } from '../space/registry'
 import { MUTED_CHANGED } from '../store/mute'
 import { ROOMS_CHANGED } from '../store/notes'
 import { PREFS_CHANGED } from '../store/prefs'
+import { desktopSaysLooking, missed, MISSED_CHANGED } from './looking'
 
 /**
- * What waits for you, on the tab's icon and, in the desktop app, on the Dock or taskbar
- * icon: the unread messages that mention you, in every space, and unread direct messages.
+ * What waits for you. On the tab's icon: the unread messages that mention you, in every space,
+ * and unread direct messages. In the desktop app, on the Dock, the taskbar and the tray, as
+ * Discord does: what would have notified you since you last looked at the window, back to none
+ * when you do. A desktop app from before 0.3.17 does not say when you look, and gets the unread.
  */
 
 const RED = '#C22E48'
@@ -17,6 +20,7 @@ interface DesktopBadge {
 }
 
 let shown = -1
+let shownDesktop = -1
 let timer = 0
 let icon: HTMLImageElement | null = null
 
@@ -85,11 +89,16 @@ function paintFavicon(n: number): void {
 
 function paint(): void {
   const n = unreadNow()
-  if (n === shown) return
-  shown = n
-  paintFavicon(n)
+  if (n !== shown) {
+    shown = n
+    paintFavicon(n)
+  }
   const desktop = (window as unknown as { nookDesktop?: DesktopBadge }).nookDesktop
-  desktop?.setBadge?.(n, n > 0 ? overlayWith(n) : '')
+  if (!desktop?.setBadge) return
+  const count = desktopSaysLooking() ? missed() : n
+  if (count === shownDesktop) return
+  shownDesktop = count
+  desktop.setBadge(count, count > 0 ? overlayWith(count) : '')
 }
 
 function recountSoon(): void {
@@ -107,6 +116,7 @@ export function watchUnread(): void {
   window.addEventListener(ROOMS_CHANGED, recountSoon)
   window.addEventListener(MUTED_CHANGED, recountSoon)
   window.addEventListener(PREFS_CHANGED, recountSoon)
+  window.addEventListener(MISSED_CHANGED, recountSoon)
   document.addEventListener('visibilitychange', recountSoon)
   recountSoon()
 }

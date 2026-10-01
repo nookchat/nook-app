@@ -6,15 +6,15 @@ import { check, finish } from './harness.mjs'
 const { dotPlace, trayMenuItems, trayTooltip, withDot } = createRequire(import.meta.url)('../desktop/tray.cjs')
 
 check('with nothing waiting the tooltip is the name alone', trayTooltip(0) === 'Nook')
-check('one waiting is said as one', trayTooltip(1) === 'Nook · 1 unread mention or message', trayTooltip(1))
-check('more are counted', trayTooltip(12) === 'Nook · 12 unread mentions and messages', trayTooltip(12))
+check('one waiting is said as one', trayTooltip(1) === 'Nook · 1 new notification', trayTooltip(1))
+check('more are counted', trayTooltip(12) === 'Nook · 12 new notifications', trayTooltip(12))
 
 const done = []
 const act = { open: () => done.push('open'), quit: () => done.push('quit') }
 const label = (items) => items.map((i) => i.label ?? '-').join(' | ')
 check('the menu is Open and Quit when nothing waits', label(trayMenuItems(0, act)) === 'Open Nook | - | Quit Nook', label(trayMenuItems(0, act)))
 const waiting = trayMenuItems(3, act)
-check('with messages waiting, the count comes first', label(waiting) === '3 unread mentions and messages | - | Open Nook | - | Quit Nook', label(waiting))
+check('with messages waiting, the count comes first', label(waiting) === '3 new notifications | - | Open Nook | - | Quit Nook', label(waiting))
 waiting[0].click()
 waiting.at(-1).click()
 check('the count opens the window, and Quit quits', done.join() === 'open,quit', done.join())

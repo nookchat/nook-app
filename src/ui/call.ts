@@ -4,6 +4,7 @@ import { avatarOf } from './chat-panel'
 import { h } from './dom'
 import { icon } from './icons'
 import { notify } from './notify'
+import { lookingAtNook } from './looking'
 import { ring } from './sounds'
 import { toast } from './toast'
 
@@ -66,7 +67,7 @@ export function installCalls(openDirect: (space: SpaceRuntime, key: string) => v
       })
       document.body.append(card)
       stopRing = ring()
-      if (document.hidden) notify(`${name} is calling`, `In ${space.chat.spaceName() || 'a space'}`, () => window.focus())
+      if (!lookingAtNook()) notify(`${name} is calling`, `In ${space.chat.spaceName() || 'a space'}`, () => window.focus())
       return
     }
     if (news.kind === 'rang-out' && card && !spaces.all().some((s) => s.ringing)) {

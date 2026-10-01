@@ -31,6 +31,7 @@ import { findSpace } from './store/spaces'
 import { lastScreen } from './store/screen'
 import { ask } from './ui/ask'
 import { watchUnread } from './ui/badge'
+import { lookingAtNook, watchLooking } from './ui/looking'
 import { bootDone, bootStep } from './ui/boot'
 import { installCalls } from './ui/call'
 import { loggingOut } from './ui/log-out'
@@ -62,6 +63,7 @@ const mount = app
 bootStep(30, 'Loading Nook')
 
 watchTheme()
+watchLooking()
 watchUnread()
 warmSounds()
 startStreaming()
@@ -244,7 +246,7 @@ async function alertAbout(space: SpaceRuntime, events: LogEvent[]): Promise<void
     if (e.kind === 'dm') {
       if (String(e.body.to ?? '') !== chat.me) continue
       const open = (): void => void showHome({ room: space.room.id, key: e.author })
-      const looking = reading?.room === space.room.id && reading.key === e.author && !document.hidden
+      const looking = reading?.room === space.room.id && reading.key === e.author && lookingAtNook()
       if (!looking) {
         chirpMention()
         toast(`${who} sent you a message`, 'info', 8000, { label: 'Read', run: open }, 'peek')

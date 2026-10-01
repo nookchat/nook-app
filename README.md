@@ -530,8 +530,15 @@ trackpad pinch, or `+` and `-`, zooms. A drag moves a zoomed picture.
 - **The tray:** closing the desktop app puts it in the tray (the menu bar on
   macOS), as Discord does. The tray's icon is the ghost alone, drawn from
   `desktop/tray.svg` at each size Windows asks for. A red dot in its corner
-  says unread mentions or direct messages wait, and its tooltip and the top
-  of its menu say how many, with Open Nook and Quit Nook (`desktop/tray.cjs`).
+  says something came that would notify you while you were away, and its
+  tooltip and the top of its menu say how many, with Open Nook and Quit
+  Nook (`desktop/tray.cjs`). The Dock and the taskbar have the same count,
+  and it goes back to none when you open the window.
+- **Away, in the desktop app:** the app tells the page when its window is
+  shown and in front (`src/ui/looking.ts`). A window put away in the tray
+  can still read as visible to the page, as it does on Windows. While you
+  are away a mention or a direct message notifies you, and the channel on
+  screen stays unread until you come back.
 - **Desktop updates:** the desktop app looks for a newer version in the
   [GitHub releases](https://github.com/nookchat/nook-app/releases) at start
   and every 4 hours (`desktop/updates.cjs`), and downloads it. The page offers

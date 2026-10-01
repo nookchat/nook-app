@@ -1,4 +1,5 @@
 import { doNotDisturb } from '../store/status'
+import { lookingAtNook, noteMissed } from './looking'
 import { toast } from './toast'
 
 const KEY = 'nook.notify.v1'
@@ -106,8 +107,10 @@ export function setNotifyText(on: boolean): void {
  * `tag` stops the same message showing twice; `picture` is the sender's face.
  */
 export function notify(title: string, body: string, go?: () => void, more: { tag?: string; picture?: string } = {}): void {
+  if (lookingAtNook()) return
+  // Counted on the desktop app's icon even when no notification shows: off, or Do not disturb.
+  noteMissed()
   if (notifyState() !== 'on' || doNotDisturb()) return
-  if (typeof document !== 'undefined' && !document.hidden && document.hasFocus()) return
   try {
     const note = new Notification(title, {
       body: body.slice(0, 160),
