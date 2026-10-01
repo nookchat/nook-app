@@ -1,9 +1,13 @@
 // The icon in the tray (the menu bar on macOS, the notification area on Windows): what it says
-// about the messages that wait for you, as Discord's does. Plain functions, so the checks can run
-// them without Electron: main.cjs turns them into the Tray's picture, tooltip and menu.
+// about the messages that wait for you, as Discord's does: a red dot on the icon, and the count
+// in its tooltip and menu. Plain functions, so the checks can run them without Electron: main.cjs
+// turns them into the Tray's picture, tooltip and menu.
 
-/** The count drawn on the icon, as wide as the tray's icon is tall times this. */
-const DOT_SHARE = 0.7
+/** The dot, as wide as the icon times this, with a clear ring this much of the icon around it. */
+const DOT_SHARE = 0.36
+const GAP_SHARE = 0.07
+/** Nook's red, as the page's badge has it, in the order Electron keeps a pixel: blue, green, red, alpha. */
+const RED = [0x48, 0x2e, 0xc2]
 
 /** What waits, in words: the same count the Dock and the page's tab show. */
 function unreadWords(n) {
@@ -23,29 +27,36 @@ function trayMenuItems(n, act) {
   return items
 }
 
-/** How big the count is, and where it goes: the bottom right corner of an icon `size` pixels square. */
+/** Where the dot goes on an icon `size` pixels square: its middle, its radius and its clear ring. */
 function dotPlace(size) {
-  const dot = Math.max(6, Math.round(size * DOT_SHARE))
-  return { dot, x: size - dot, y: size - dot }
+  const r = Math.max(2.5, (size * DOT_SHARE) / 2)
+  const gap = Math.max(1, size * GAP_SHARE)
+  return { cx: size - r, cy: r, r, gap }
 }
 
 /**
- * Lays the count over the icon. Both are raw 4-byte pixels, alpha last, as Electron's toBitmap
- * gives them, and with the colour already times the alpha, as Electron keeps them: so a pixel of
- * the count covers the icon by its own alpha. Returns a new buffer; the icon's is left as it was.
+ * The icon with a red dot in its top right corner, and a clear ring that parts it from the icon,
+ * as Discord's has. The pixels are raw, 4 bytes each, blue, green, red, alpha, with the colour
+ * already times the alpha, as Electron's toBitmap gives them. Returns a new buffer.
  */
-function laidOver(icon, size, count, dot, x, y) {
+function withDot(icon, size) {
   const out = Buffer.from(icon)
-  for (let row = 0; row < dot; row++) {
-    for (let col = 0; col < dot; col++) {
-      const at = ((y + row) * size + (x + col)) * 4
-      const from = (row * dot + col) * 4
-      if (at < 0 || at + 3 >= out.length) continue
-      const cover = count[from + 3] / 255
-      for (let c = 0; c < 4; c++) out[at + c] = Math.round(count[from + c] + out[at + c] * (1 - cover))
+  const { cx, cy, r, gap } = dotPlace(size)
+  // How much of a pixel a circle covers, for a soft edge.
+  const cover = (d, radius) => Math.min(1, Math.max(0, radius - d + 0.5))
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy)
+      const clear = cover(d, r + gap)
+      if (clear <= 0) continue
+      const at = (y * size + x) * 4
+      for (let c = 0; c < 4; c++) out[at + c] = Math.round(out[at + c] * (1 - clear))
+      const dot = cover(d, r)
+      for (let c = 0; c < 3; c++) out[at + c] = Math.round(RED[c] * dot + out[at + c] * (1 - dot))
+      out[at + 3] = Math.round(255 * dot + out[at + 3] * (1 - dot))
     }
   }
   return out
 }
 
-module.exports = { dotPlace, laidOver, trayMenuItems, trayTooltip, unreadWords }
+module.exports = { dotPlace, trayMenuItems, trayTooltip, unreadWords, withDot }

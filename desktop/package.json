@@ -26,6 +26,8 @@
       "picker.html",
       "splash.html",
       "tray.png",
+      "tray@1.25x.png",
+      "tray@1.5x.png",
       "tray@2x.png",
       "fonts/**"
     ],

@@ -27,7 +27,7 @@ const path = require('node:path')
 const { watchGames } = require('./games.cjs')
 const { watchSpotify } = require('./spotify.cjs')
 const { editMenu } = require('./edit-menu.cjs')
-const { dotPlace, laidOver, trayMenuItems, trayTooltip } = require('./tray.cjs')
+const { trayMenuItems, trayTooltip, withDot } = require('./tray.cjs')
 const { pickerBounds, restoreBounds, screenOf } = require('./placement.cjs')
 const { watchUpdates } = require('./updates.cjs')
 const recordings = require('./recordings.cjs')
@@ -150,9 +150,8 @@ function keepsInTray() {
   return closeToTray
 }
 
-/** What waits for you, as the page last said: the count, and its red circle as a PNG. */
+/** How many mentions and direct messages wait for you, as the page last said. */
 let trayUnread = 0
-let trayCount = ''
 
 function makeTray() {
   if (tray) return
@@ -162,24 +161,19 @@ function makeTray() {
   if (process.platform !== 'darwin') tray.on('click', bringBack)
 }
 
-/** The tray's icon with the count in its corner, at each size the icon comes in. */
+/** The tray's icon, with a red dot when something waits, at each size the icon comes in. */
 function trayPicture() {
   const plain = nativeImage.createFromPath(path.join(__dirname, 'tray.png'))
-  if (!(trayUnread > 0) || !trayCount) return plain
-  const count = nativeImage.createFromDataURL(trayCount)
-  if (count.isEmpty()) return plain
-  const badged = nativeImage.createEmpty()
-  for (const scaleFactor of [1, 2]) {
+  if (!(trayUnread > 0)) return plain
+  const dotted = nativeImage.createEmpty()
+  for (const scaleFactor of plain.getScaleFactors()) {
     const pixels = plain.toBitmap({ scaleFactor })
     const size = Math.round(Math.sqrt(pixels.length / 4))
     if (!size || size * size * 4 !== pixels.length) continue
-    const { dot, x, y } = dotPlace(size)
-    const small = count.resize({ width: dot, height: dot, quality: 'best' }).toBitmap()
-    if (small.length !== dot * dot * 4) continue
-    const png = nativeImage.createFromBitmap(laidOver(pixels, size, small, dot, x, y), { width: size, height: size }).toPNG()
-    badged.addRepresentation({ scaleFactor, buffer: png })
+    const png = nativeImage.createFromBitmap(withDot(pixels, size), { width: size, height: size }).toPNG()
+    dotted.addRepresentation({ scaleFactor, buffer: png })
   }
-  return badged.isEmpty() ? plain : badged
+  return dotted.isEmpty() ? plain : dotted
 }
 
 function paintTray() {
@@ -552,9 +546,8 @@ ipcMain.on('badge:set', (ev, count, overlay) => {
   if (!isHome(ev.sender.getURL())) return
   const n = Number.isInteger(count) && count > 0 ? Math.min(count, 9999) : 0
   const ok = n > 0 && typeof overlay === 'string' && overlay.startsWith('data:image/png;base64,') && overlay.length < 20_000
-  // The tray's icon has the same count, on every system, while the window is put away.
+  // The tray's icon has a dot for the same count, on every system, while the window is put away.
   trayUnread = n
-  trayCount = ok ? overlay : ''
   paintTray()
   if (process.platform === 'win32') {
     const win = BrowserWindow.fromWebContents(ev.sender)

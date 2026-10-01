@@ -528,9 +528,10 @@ trackpad pinch, or `+` and `-`, zooms. A drag moves a zoomed picture.
   size and screen, maximized if it was (`desktop/placement.cjs`). If that
   screen is gone, it opens in the middle of the main screen.
 - **The tray:** closing the desktop app puts it in the tray (the menu bar on
-  macOS), as Discord does. The tray's icon has the count of unread mentions
-  and direct messages in its corner, and says it in its tooltip and at the
-  top of its menu, with Open Nook and Quit Nook (`desktop/tray.cjs`).
+  macOS), as Discord does. The tray's icon is the ghost alone, drawn from
+  `desktop/tray.svg` at each size Windows asks for. A red dot in its corner
+  says unread mentions or direct messages wait, and its tooltip and the top
+  of its menu say how many, with Open Nook and Quit Nook (`desktop/tray.cjs`).
 - **Desktop updates:** the desktop app looks for a newer version in the
   [GitHub releases](https://github.com/nookchat/nook-app/releases) at start
   and every 4 hours (`desktop/updates.cjs`), and downloads it. The page offers
