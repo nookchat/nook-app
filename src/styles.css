@@ -7945,32 +7945,57 @@ input.invalid:focus {
   position: absolute;
   top: 0;
   bottom: 0;
-  background: color-mix(in srgb, var(--brand) 16%, transparent);
-  box-shadow: inset 0 2px 0 var(--brand), inset 0 -2px 0 var(--brand);
+  background: color-mix(in srgb, var(--brand) 14%, transparent);
+  box-shadow: inset 0 1px 0 var(--brand), inset 0 -1px 0 var(--brand);
 }
 
 .clip-handle {
   position: absolute;
   top: -4px;
   bottom: -4px;
-  width: 14px;
-  margin-left: -7px;
-  border-radius: 5px;
-  background: var(--brand);
+  width: 16px;
+  margin-left: -8px;
+  background: transparent;
   cursor: ew-resize;
   touch-action: none;
 }
 
+/* A thin line, on the inside of the part, so the waveform at the cut stays in view. The handle itself is wider, to grab. */
+.clip-handle::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--brand);
+}
+
+.clip-handle.start::before {
+  left: 8px;
+}
+
+.clip-handle.end::before {
+  left: 6px;
+}
+
+/* A small flag at the top, to see and to take hold of. */
 .clip-handle::after {
   content: '';
   position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 2px;
-  height: 16px;
-  margin: -8px 0 0 -1px;
-  border-radius: 1px;
-  background: var(--on-brand);
+  top: 0;
+  width: 8px;
+  height: 6px;
+  background: var(--brand);
+}
+
+.clip-handle.start::after {
+  left: 8px;
+  border-radius: 0 3px 3px 0;
+}
+
+.clip-handle.end::after {
+  left: 0;
+  border-radius: 3px 0 0 3px;
 }
 
 .clip-handle:focus-visible {
