@@ -96,6 +96,8 @@ contextBridge.exposeInMainWorld('nookDesktop', {
     list: () => ipcRenderer.invoke('recordings:list'),
     /** Where each fragment of a Steam recording is in its file, or null. */
     index: (id) => ipcRenderer.invoke('recordings:index', String(id)),
+    /** A JPEG from the system's thumbnail of a plain video, or null. */
+    thumb: (id) => ipcRenderer.invoke('recordings:thumb', String(id)),
     /** Shows the recording in the file manager. */
     show: (id) => ipcRenderer.send('recordings:show', String(id)),
   },

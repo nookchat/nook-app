@@ -11,6 +11,7 @@ const fs = require('node:fs')
 const fsp = require('node:fs/promises')
 const os = require('node:os')
 const path = require('node:path')
+const { Readable } = require('node:stream')
 
 const TYPES = {
   '.mp4': 'video/mp4',
@@ -682,6 +683,12 @@ async function list(opts) {
   }
 }
 
+/** The path of a plain video file by its id, or null: a Steam recording is many files, and an unknown id none. */
+function plainFile(id) {
+  const entry = current.get(id)
+  return entry && entry.kind === 'file' ? entry.file : null
+}
+
 /** What to show in the file manager: the file, or the folder of a Steam recording. */
 function place(id) {
   return current.get(id)?.show ?? null
@@ -1083,6 +1090,12 @@ function parseRange(text, total) {
 }
 
 function bodyStream(layout, start, end) {
+  // One plain file, with nothing patched: the disk is read ahead as the page takes it, which is much
+  // quicker for a recording of gigabytes than a read and a new buffer for each piece.
+  const only = layout.parts.length === 1 ? layout.parts[0] : null
+  if (only && only.file && !only.buf && only.patches.length === 0 && only.from === 0) {
+    return Readable.toWeb(fs.createReadStream(only.file, { start, end: end - 1, highWaterMark: 4 * 1024 * 1024 }))
+  }
   let at = start
   return new ReadableStream({
     async pull(controller) {
@@ -1159,6 +1172,7 @@ module.exports = {
   list,
   index,
   place,
+  plainFile,
   respond,
   // For the tests: the parts that need no list.
   joinSteam,

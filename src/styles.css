@@ -4969,6 +4969,14 @@ button.to-bottom:hover:not(:disabled) {
   padding: 1px 5px;
 }
 
+.mention[data-who] {
+  cursor: pointer;
+}
+
+.mention[data-who]:hover {
+  text-decoration: underline;
+}
+
 .mention.me {
   background: var(--accent);
   color: var(--on-accent);

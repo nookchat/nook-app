@@ -625,6 +625,19 @@ ipcMain.handle('recordings:remove', (ev, folder) =>
 ipcMain.handle('recordings:restore', (ev) => (isHome(ev.sender.getURL()) ? recordings.restoreFolders(recordingPlaces()) : []))
 ipcMain.handle('recordings:list', (ev) => (isHome(ev.sender.getURL()) ? recordings.list(recordingPlaces()) : []))
 ipcMain.handle('recordings:index', (ev, id) => (isHome(ev.sender.getURL()) && typeof id === 'string' ? recordings.index(id) : null))
+// A picture of a plain video, from the system's own thumbnails (Explorer's, Finder's), which are
+// quick for a file of gigabytes where the page would have to read the video to draw one.
+ipcMain.handle('recordings:thumb', async (ev, id) => {
+  if (!isHome(ev.sender.getURL()) || typeof id !== 'string') return null
+  const file = recordings.plainFile(id)
+  if (!file || typeof nativeImage.createThumbnailFromPath !== 'function') return null
+  try {
+    const picture = await nativeImage.createThumbnailFromPath(file, { width: 480, height: 270 })
+    return picture.isEmpty() ? null : new Uint8Array(picture.toJPEG(78))
+  } catch {
+    return null
+  }
+})
 ipcMain.on('recordings:show', (ev, id) => {
   if (!isHome(ev.sender.getURL()) || typeof id !== 'string') return
   const where = recordings.place(id)

@@ -582,6 +582,16 @@ export class ChatPanel {
       this.dropCover,
     ])
     this.watchDrops()
+    const openMention = (target: EventTarget | null): boolean => {
+      const tag = target instanceof Element ? target.closest<HTMLElement>('.mention[data-who]') : null
+      if (!tag?.dataset.who || !this.log.contains(tag)) return false
+      this.onProfile?.(tag.dataset.who, tag)
+      return true
+    }
+    this.log.addEventListener('click', (ev) => void (openMention(ev.target) && ev.stopPropagation()))
+    this.log.addEventListener('keydown', (ev) => {
+      if ((ev.key === 'Enter' || ev.key === ' ') && openMention(ev.target)) ev.preventDefault()
+    })
   }
 
   setFiles(files: SpaceFiles | null): void {
@@ -2281,6 +2291,12 @@ function formatLine(line: string, names: Map<string, string>, me: string, colour
       if (hit.at > at) plain(chunk.slice(at, hit.at))
       const mine = hit.key === me || hit.key === EVERYONE
       const tag = h('span', { class: `mention${mine ? ' me' : ''}`, text: `@${hit.label}` })
+      // A person's mention opens their profile, as their name does. @everyone is nobody's.
+      if (hit.key !== EVERYONE) {
+        tag.dataset.who = hit.key
+        tag.tabIndex = 0
+        tag.setAttribute('role', 'button')
+      }
       const colour = hit.key === EVERYONE ? '' : colourOf(hit.key)
       if (colour) tag.style.setProperty('--who', colour)
       out.push(tag)

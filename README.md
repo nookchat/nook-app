@@ -75,6 +75,7 @@ with voice does it.
   pasted in. Each is encrypted on your device with a key of its own before it
   goes up. Pictures show in the message and open full screen; videos show
   their first frame and play in place; anything else is a card with Save.
+- **A mention** in a message is a click away from the person's profile.
 - **Voice messages**: the microphone in the message box, where the send button is
   while the box is empty, records a message of five minutes at most. The bin throws it
   away and send sends it. It is a file like any other, so it is sealed on your device,
@@ -551,6 +552,11 @@ trackpad pinch, or `+` and `-`, zooms. A drag moves a zoomed picture.
   dark outline and no tile behind it, so it reads on a light taskbar and a dark
   one. It holds each size from 16 to 256, drawn from `desktop/tray.svg`, with
   the cheeks from 32 up. macOS and Linux keep the tile in `desktop/build/icon.png`.
+- **Your recordings, with big files**: a picture of a plain video comes from the
+  system's own thumbnail (`recordings:thumb`), a few at a time, and never from a
+  black frame. A video of gigabytes streams from disk and is not read whole. The
+  list of the last look shows at once, and its cards wait for the new look to
+  find their pictures, so none turns black or is left out.
 - **Desktop updates:** the desktop app looks for a newer version in the
   [GitHub releases](https://github.com/nookchat/nook-app/releases) at start
   and every 4 hours (`desktop/updates.cjs`), and downloads it. The page offers

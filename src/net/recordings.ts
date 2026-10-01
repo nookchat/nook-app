@@ -61,6 +61,7 @@ interface RecordingsShell {
   list: () => Promise<Recording[]>
   index: (id: string) => Promise<RecordingIndex | null>
   show: (id: string) => void
+  thumb?: (id: string) => Promise<Uint8Array | null>
 }
 
 function shell(): RecordingsShell | null {
@@ -121,6 +122,12 @@ export function keptRecordings(): Recording[] | null {
 
 export async function recordingIndex(id: string): Promise<RecordingIndex | null> {
   return (await shell()?.index(id).catch(() => null)) ?? null
+}
+
+/** The system's own picture of a plain video, as a JPEG. Null when this system has none. */
+export async function recordingThumb(id: string): Promise<Blob | null> {
+  const bytes = await shell()?.thumb?.(id).catch(() => null)
+  return bytes && bytes.byteLength > 0 ? new Blob([bytes as BlobPart], { type: 'image/jpeg' }) : null
 }
 
 /** Opens the folder that holds it, in Finder or Explorer. */

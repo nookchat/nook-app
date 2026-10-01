@@ -9,6 +9,7 @@ import {
   recordingFolders,
   recordingIndex,
   recordingName,
+  recordingThumb,
   removeRecordingFolder,
   restoreRecordingFolders,
   showRecording,
@@ -107,10 +108,15 @@ export function openRecordings(options: RecordingsOptions): void {
     // Every recording, newest first, in one list.
     const shown = working()
     for (const rec of shown) {
-      const el = card(rec, () => openClip(rec), () => {
-        el.remove()
-        leaveOut(rec)
-      })
+      const el = card(
+        rec,
+        () => openClip(rec),
+        () => {
+          el.remove()
+          leaveOut(rec)
+        },
+        stale ? () => void (missing = true) : null,
+      )
       grid.append(el)
     }
     if (shown.length === 0) grid.append(h('div', { class: 'tiny faint', text: 'None of these recordings would open.' }))
@@ -132,6 +138,13 @@ export function openRecordings(options: RecordingsOptions): void {
 
   /** What a card shows, so a look that finds the same recordings draws nothing again. */
   let shown = ''
+  /**
+   * True while the cards are from the list of the last look. The app does not know those recordings
+   * again until it has looked: asked for one, it says no, and a card must not take that for a broken video.
+   */
+  let stale = false
+  /** A card of a stale list that could not show its picture: the new look draws it again. */
+  let missing = false
   const show = (list: Recording[]): void => {
     const key = JSON.stringify(list.map((r) => [r.id, r.title, r.game, r.source, r.duration, r.live, r.thumb]))
     if (key === shown) return
@@ -144,8 +157,10 @@ export function openRecordings(options: RecordingsOptions): void {
   const load = async (): Promise<void> => {
     if (!shown) {
       const kept = keptRecordings()
-      if (kept?.length) show(kept)
-      else waiting(grid)
+      if (kept?.length) {
+        stale = true
+        show(kept)
+      } else waiting(grid)
     }
     lookAgain.classList.add('busy')
     lookAgain.disabled = true
@@ -153,6 +168,10 @@ export function openRecordings(options: RecordingsOptions): void {
     lookAgain.classList.remove('busy')
     lookAgain.disabled = false
     void forgetThumbs(found.map((r) => r.id))
+    // The same list, now that the app knows it: drawn again only for a card that had no picture.
+    if (stale && missing) shown = ''
+    stale = false
+    missing = false
     if (found.length === 0) {
       shown = ''
       all = []
@@ -288,12 +307,16 @@ export async function paintFolders(into: HTMLElement, changed?: () => void): Pro
   draw(await recordingFolders(), false)
 }
 
-function card(rec: Recording, open: () => void, fail: () => void): HTMLElement {
+function card(rec: Recording, open: () => void, fail: () => void, stale: (() => void) | null): HTMLElement {
   const face = h('div', { class: 'recording-face' })
   if (rec.thumb) {
     const img = h('img', { class: 'recording-picture' })
     // A picture that will not load says nothing about the video: a plain one reads its own frame.
-    img.onerror = () => (isSteam(rec) ? img.remove() : img.replaceWith(frameOf(rec, fail)))
+    img.onerror = () => {
+      if (stale) stale()
+      if (isSteam(rec)) img.remove()
+      else img.replaceWith(frameOf(rec, fail, stale))
+    }
     img.src = rec.thumb
     img.alt = ''
     face.append(img)
@@ -304,7 +327,7 @@ function card(rec: Recording, open: () => void, fail: () => void): HTMLElement {
     img.onerror = () => img.remove()
     face.append(img)
   } else if (!isSteam(rec)) {
-    face.append(frameOf(rec, fail))
+    face.append(frameOf(rec, fail, stale))
   }
   face.append(icon('play', 26))
   if (rec.duration) face.append(h('span', { class: 'recording-length', text: timeLabel(rec.duration) }))
@@ -359,10 +382,11 @@ async function forgetThumbs(ids: string[]): Promise<void> {
 }
 
 /**
- * A frame from a plain video: the one kept from last time, or one read from the video once its
- * card is in view, a little way in, since the first frame is often black. It is kept for next time.
+ * A picture of a plain video: the one kept from last time, or the system's own, or one read from the
+ * video once its card is in view. It is kept for next time, unless it is black. A stale card shows
+ * only a kept one: the app cannot give a video it has not looked at again.
  */
-function frameOf(rec: Recording, fail: () => void): HTMLElement {
+function frameOf(rec: Recording, fail: () => void, stale: (() => void) | null): HTMLElement {
   const img = h('img', { class: 'recording-picture' })
   img.alt = ''
   img.decoding = 'async'
@@ -376,19 +400,46 @@ function frameOf(rec: Recording, fail: () => void): HTMLElement {
       showBlob(kept)
       return
     }
+    if (stale) {
+      stale()
+      return
+    }
     const seen = new IntersectionObserver((entries) => {
       if (!entries.some((e) => e.isIntersecting)) return
       seen.disconnect()
-      void readFrame(rec.url).then(({ frame, opens }) => {
+      void pictureQueue(async () => {
+        const system = await recordingThumb(rec.id)
+        if (system) return { frame: system, opens: true, keep: true }
+        return readFrame(rec.url)
+      }).then(({ frame, opens, keep }) => {
         if (!opens) fail()
         if (!frame) return
         showBlob(frame)
-        void keepThumb(rec.id, frame)
+        if (keep) void keepThumb(rec.id, frame)
       })
     })
     seen.observe(img)
   })
   return img
+}
+
+/**
+ * Pictures are made a few at a time. A video of gigabytes read for its picture, for every card at
+ * once, held up the list, and the editor with it.
+ */
+const MOST_READING = 2
+let reading = 0
+const waitingPictures: (() => void)[] = []
+
+async function pictureQueue<T>(work: () => Promise<T>): Promise<T> {
+  if (reading >= MOST_READING) await new Promise<void>((go) => waitingPictures.push(go))
+  reading += 1
+  try {
+    return await work()
+  } finally {
+    reading -= 1
+    waitingPictures.shift()?.()
+  }
 }
 
 /** Whether a video opens at all, as the clip editor would open it. */
@@ -418,11 +469,12 @@ function opens(url: string): Promise<boolean> {
  * A frame from a video, a little way in. `opens` is false only when the video itself will not
  * open: a frame that cannot be read back says nothing about the video, and hides nothing.
  */
-async function readFrame(url: string): Promise<{ frame: Blob | null; opens: boolean }> {
+async function readFrame(url: string): Promise<{ frame: Blob | null; opens: boolean; keep?: boolean }> {
   const video = h('video')
   video.muted = true
   video.playsInline = true
-  video.preload = 'auto'
+  // Only what the frame needs is read: with 'auto' a video of gigabytes starts to download whole.
+  video.preload = 'metadata'
   // The desktop app lets the page read it, so the canvas may be read back.
   video.crossOrigin = 'anonymous'
   try {
@@ -433,24 +485,58 @@ async function readFrame(url: string): Promise<{ frame: Blob | null; opens: bool
     })
     // Refused as it was asked for: whether it opens the way the editor opens it decides.
     if (!loaded) return { frame: null, opens: await opens(url) }
-    await new Promise<void>((ok) => {
-      video.onseeked = () => ok()
-      video.currentTime = Number.isFinite(video.duration) ? Math.min(2, video.duration / 4) : 0
-    })
-    const w = video.videoWidth
-    const tall = video.videoHeight
-    if (!w || !tall) return { frame: null, opens: true }
-    const scale = Math.min(1, THUMB_PX / w)
-    const canvas = h('canvas')
-    canvas.width = Math.round(w * scale)
-    canvas.height = Math.round(tall * scale)
-    canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height)
-    return { frame: await new Promise<Blob | null>((ok) => canvas.toBlob(ok, 'image/jpeg', 0.75)), opens: true }
+    const length = Number.isFinite(video.duration) ? video.duration : 0
+    // A little way in, then the middle: a frame that is black is not kept, and the next place is tried.
+    const places = length ? [Math.min(2, length / 4), length / 2, length / 8] : [0]
+    let last: { frame: Blob | null; opens: boolean; keep?: boolean } = { frame: null, opens: true }
+    for (const at of places) {
+      await new Promise<void>((ok) => {
+        const give = window.setTimeout(ok, 8000)
+        video.onseeked = () => {
+          window.clearTimeout(give)
+          ok()
+        }
+        video.currentTime = at
+      })
+      // Until a frame is ready the canvas would take black: the next paint is waited for.
+      await new Promise<void>((ok) => requestAnimationFrame(() => ok()))
+      const w = video.videoWidth
+      const tall = video.videoHeight
+      if (!w || !tall) return { frame: null, opens: true }
+      const scale = Math.min(1, THUMB_PX / w)
+      const canvas = h('canvas')
+      canvas.width = Math.round(w * scale)
+      canvas.height = Math.round(tall * scale)
+      const ctx = canvas.getContext('2d', { willReadFrequently: true })
+      if (!ctx) return { frame: null, opens: true }
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+      const dark = isBlack(ctx, canvas.width, canvas.height)
+      const frame = await new Promise<Blob | null>((ok) => canvas.toBlob(ok, 'image/jpeg', 0.75))
+      last = { frame, opens: true, keep: !dark }
+      if (!dark) break
+    }
+    return last
   } catch {
     return { frame: null, opens: true }
   } finally {
     video.removeAttribute('src')
     video.load()
+  }
+}
+
+/** Whether a drawn frame is black, or near it: it says nothing about the video, so it is not kept. */
+function isBlack(ctx: CanvasRenderingContext2D, across: number, down: number): boolean {
+  try {
+    const { data } = ctx.getImageData(0, 0, across, down)
+    let sum = 0
+    let n = 0
+    for (let i = 0; i < data.length; i += 4 * 17) {
+      sum += data[i] + data[i + 1] + data[i + 2]
+      n += 3
+    }
+    return n > 0 && sum / n < 6
+  } catch {
+    return false
   }
 }
 
@@ -492,7 +578,8 @@ class ClipEditor {
     private readonly done: (file: File) => void,
   ) {
     this.video.playsInline = true
-    this.video.preload = 'auto'
+    // Only the start is read until it plays: a recording of gigabytes is not pulled in whole.
+    this.video.preload = 'metadata'
     this.track.append(this.chosen, this.head, this.startHandle, this.endHandle)
     this.root = h('div', { class: 'clip-editor stack' }, [
       h('div', { class: 'clip-stage' }, [this.video]),
