@@ -14,13 +14,13 @@ const TAG_BYTES = 16
 /** Plain bytes in each sealed piece. The service worker in public/stream-sw.js reads the same layout. */
 export const CHUNK_BYTES = 256 * 1024
 const LOOK_TIMEOUT_MS = 8000
-/** A video bigger than this is made smaller before it goes up, if that saves enough. */
-const SHRINK_VIDEO_FROM = 8 * 1024 * 1024
-/** A picture bigger than this, or longer than SHRINK_PICTURE_PX, is made smaller before it goes up. */
-const SHRINK_PICTURE_FROM = 1024 * 1024
+/** Every photo is made again before it goes up, no longer than this on its longest side. */
 const SHRINK_PICTURE_PX = 2560
-/** A smaller copy is kept only when it saves at least this much of the file. */
-const WORTH_KEEPING = 0.8
+const PICTURE_QUALITY = 0.85
+/** Still pictures. A GIF moves, and an SVG is drawn, so they go as they are. */
+const STILL_PICTURE = /^image\/(jpeg|png|webp|avif|heic|heif|bmp|tiff)$/
+/** What every browser shows: a copy of anything else is kept even when it is bigger. */
+const SHOWN_PICTURE = /^image\/(jpeg|png|webp|avif)$/
 
 async function sealBytes(key: CryptoKey, plain: ArrayBuffer): Promise<Blob> {
   const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES))
@@ -145,11 +145,11 @@ function drawn(source: CanvasImageSource, w: number, h: number, most: number): H
 }
 
 /**
- * A big photo made smaller: no longer than SHRINK_PICTURE_PX, as WebP, or JPEG where this browser
- * cannot make WebP. The same file when it is small already, moves, or would not get much smaller.
+ * A photo made again: no longer than SHRINK_PICTURE_PX, as WebP, or JPEG where this browser cannot
+ * make WebP and the photo has no see-through parts. The same file when that comes out bigger.
  */
 async function shrinkPicture(file: File): Promise<File> {
-  if (!/^image\/(jpeg|png|webp)$/.test(file.type)) return file
+  if (!STILL_PICTURE.test(file.type)) return file
   let bitmap: ImageBitmap
   try {
     bitmap = await createImageBitmap(file)
@@ -158,20 +158,27 @@ async function shrinkPicture(file: File): Promise<File> {
   }
   try {
     const { width: w, height: h } = bitmap
-    if (file.size <= SHRINK_PICTURE_FROM && Math.max(w, h) <= SHRINK_PICTURE_PX) return file
     const canvas = drawn(bitmap, w, h, SHRINK_PICTURE_PX)
-    const encode = (type: string, quality: number): Promise<Blob | null> =>
-      new Promise((ok) => canvas.toBlob(ok, type, quality))
-    let blob = await encode('image/webp', 0.85)
-    // Safari gives back a PNG for WebP. A JPEG has no see-through parts, so only a JPEG becomes one.
-    if (blob?.type !== 'image/webp') blob = file.type === 'image/jpeg' ? await encode('image/jpeg', 0.85) : null
-    if (!blob || blob.size > file.size * WORTH_KEEPING) return file
+    const encode = (type: string): Promise<Blob | null> => new Promise((ok) => canvas.toBlob(ok, type, PICTURE_QUALITY))
+    let blob = await encode('image/webp')
+    // Safari gives back a PNG for WebP. A JPEG has no see-through parts, so only a solid photo becomes one.
+    if (blob?.type !== 'image/webp') blob = file.type === 'image/jpeg' || solid(canvas) ? await encode('image/jpeg') : null
+    if (!blob || (blob.size >= file.size && SHOWN_PICTURE.test(file.type))) return file
     const ext = blob.type === 'image/webp' ? '.webp' : '.jpg'
     const name = `${file.name.replace(/\.[^.]+$/, '') || 'picture'}${ext}`
     return new File([blob], name, { type: blob.type, lastModified: file.lastModified })
   } finally {
     bitmap.close()
   }
+}
+
+/** True when no pixel of the canvas is see-through. */
+function solid(canvas: HTMLCanvasElement): boolean {
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return false
+  const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height)
+  for (let i = 3; i < data.length; i += 4) if (data[i] < 255) return false
+  return true
 }
 
 async function lookAtImage(file: File): Promise<Look> {
@@ -278,7 +285,7 @@ export async function reencode(file: File, onPart: (part: number) => void): Prom
     ctx.createMediaElementSource(video).connect(sound)
     await ctx.resume().catch(() => undefined)
     const stream = new MediaStream([...canvas.captureStream(30).getVideoTracks(), ...sound.stream.getAudioTracks()])
-    const recorder = new MediaRecorder(stream, { mimeType: type, videoBitsPerSecond: 5_000_000, audioBitsPerSecond: 128_000 })
+    const recorder = new MediaRecorder(stream, { mimeType: type, videoBitsPerSecond: 2_500_000, audioBitsPerSecond: 128_000 })
     const parts: Blob[] = []
     recorder.ondataavailable = (ev) => ev.data.size && parts.push(ev.data)
     const done = new Promise<void>((ok) => (recorder.onstop = () => ok()))
@@ -372,26 +379,21 @@ export class SpaceFiles {
   }
 
   async send(file: File, onProgress: Progress, signal: AbortSignal, onStage?: Stage): Promise<Attachment> {
-    if (file.type.startsWith('video/') && (await isHevc(file))) {
-      const say = (part: number): void => onStage?.(`Converting · ${Math.floor(part * 100)}%`, WHY_CONVERT, part)
+    if (file.type.startsWith('video/')) {
+      // Every video is made again. HEVC must be, for the browsers that cannot show it.
+      const hevc = await isHevc(file)
+      const say = (part: number): void =>
+        onStage?.(`${hevc ? 'Converting' : 'Compressing'} · ${Math.floor(part * 100)}%`, hevc ? WHY_CONVERT : WHY_SHRINK, part)
       say(0)
       // The browser's own encoder first, which is quick; playing it through and recording it if that cannot.
       const quick = await convertQuickly(file, say, signal).catch((err: unknown) => {
         if (signal.aborted) throw err
         return null
       })
-      const converted = quick ?? (await reencode(file, say))
+      const made = quick ?? (await reencode(file, say))
       if (signal.aborted) throw new DOMException('Stopped', 'AbortError')
-      if (converted) file = converted
-    } else if (file.type.startsWith('video/') && file.size > SHRINK_VIDEO_FROM) {
-      const say = (part: number): void => onStage?.(`Compressing · ${Math.floor(part * 100)}%`, WHY_SHRINK, part)
-      say(0)
-      // Only the quick way: a video every browser plays already is not worth playing through.
-      const smaller = await convertQuickly(file, say, signal).catch((err: unknown) => {
-        if (signal.aborted) throw err
-        return null
-      })
-      if (smaller && smaller.size <= file.size * WORTH_KEEPING) file = smaller
+      // A small video can come out bigger: then the one it was goes, unless nobody could play that.
+      if (made && (hevc || made.size < file.size)) file = made
     } else if (file.type.startsWith('image/')) {
       file = await shrinkPicture(file)
     }

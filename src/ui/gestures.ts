@@ -250,7 +250,7 @@ export function onLongPress(el: HTMLElement, open: (ev: { target: Element; clien
   el.addEventListener('touchend', (ev) => {
     cancel()
     // The finger coming up is not a tap on what it held: not a link opened, not a picture.
-    if (Date.now() - fired < 1500) ev.preventDefault()
+    if (Date.now() - fired < 1500 && ev.cancelable) ev.preventDefault()
   })
   el.addEventListener('touchcancel', cancel)
   // Android sends its own right click for the same press: the menu is already open.
@@ -268,30 +268,42 @@ export function onLongPress(el: HTMLElement, open: (ev: { target: Element; clien
  * tap, with the finger lifted and put down again, works as usual.
  */
 function holdTapsUntilLift(): void {
+  const root = document.documentElement
+  // Nothing under the finger reacts while it stays down: no press, no hover, no selection.
+  root.classList.add('press-held')
   let lifted = false
+  let timer = 0
   const swallow = (ev: Event): void => {
     ev.preventDefault()
     ev.stopPropagation()
   }
   const lift = (ev: TouchEvent): void => {
     if (ev.touches.length > 0) return
+    // No click, and no mouse events, from the finger coming up, however long it was held.
+    if (ev.cancelable) ev.preventDefault()
+    if (lifted) return
     lifted = true
+    window.getSelection()?.removeAllRanges()
     // The click a browser makes from the lift comes after the touchend: it is held too.
-    window.setTimeout(done, 400)
+    window.clearTimeout(timer)
+    timer = window.setTimeout(done, 400)
   }
   const fresh = (): void => {
     if (lifted) done()
   }
+  const HELD = ['click', 'mousedown', 'mouseup', 'dblclick', 'contextmenu', 'selectstart'] as const
   const done = (): void => {
-    window.removeEventListener('click', swallow, true)
-    window.removeEventListener('selectstart', swallow, true)
+    window.clearTimeout(timer)
+    root.classList.remove('press-held')
+    for (const name of HELD) window.removeEventListener(name, swallow, true)
     window.removeEventListener('touchend', lift, true)
     window.removeEventListener('touchcancel', lift, true)
     window.removeEventListener('touchstart', fresh, true)
   }
-  window.addEventListener('click', swallow, true)
-  window.addEventListener('selectstart', swallow, true)
-  window.addEventListener('touchend', lift, true)
+  for (const name of HELD) window.addEventListener(name, swallow, true)
+  // A lift the page never hears of does not leave it dead.
+  timer = window.setTimeout(done, 10_000)
+  window.addEventListener('touchend', lift, { capture: true, passive: false })
   window.addEventListener('touchcancel', lift, true)
   window.addEventListener('touchstart', fresh, true)
 }

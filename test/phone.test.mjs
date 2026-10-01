@@ -150,7 +150,7 @@ try {
   await swipe(mae, [300, 420], [40, 420], 200)
   await wait(500)
   const name = await mae.evaluate(() => document.querySelector('.viewer-name')?.textContent)
-  check('swipe sideways goes to the next picture', name === 'two.png', name)
+  check('swipe sideways goes to the next picture', name === 'two.webp', name)
   const c = await touch(mae)
   const doubleTap = async () => {
     for (let i = 0; i < 2; i++) {

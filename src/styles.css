@@ -6462,11 +6462,19 @@ input[type="text"].gif-search {
   }
 
   .chat-line,
-  .press-menu {
+  .press-menu,
+  .menu,
+  .sheet {
     -webkit-user-select: none;
     user-select: none;
     -webkit-touch-callout: none;
   }
+
+  /* The finger that opened a menu is still down: the menu that came up under it waits for a new tap. */
+  html.press-held body {
+    pointer-events: none;
+  }
+
 }
 
 .scan-video {

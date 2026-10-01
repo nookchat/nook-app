@@ -292,6 +292,8 @@ export class ChatPanel {
   private pinned = true
   /** When a person last moved the log themselves: only that lets it go from the newest message. */
   private handScrolledAt = 0
+  /** Until then the keyboard is coming or going, and the log keeps to the newest message if it was there. */
+  private keyboardUntil = 0
   private lastTop = 0
   private suggestions: HTMLDivElement | null = null
   private suggestAt = -1
@@ -349,7 +351,12 @@ export class ChatPanel {
           this.suggest()
           this.onTyping?.()
         },
-        blur: () => this.closeSuggestions(),
+        pointerdown: () => this.followKeyboard(),
+        focus: () => this.followKeyboard(),
+        blur: () => {
+          this.closeSuggestions()
+          this.followKeyboard()
+        },
       },
     })
     quietKeyboard(this.textInput)
@@ -484,7 +491,11 @@ export class ChatPanel {
       const top = this.log.scrollTop
       const up = top < this.lastTop - 1
       this.lastTop = top
-      if (!this.pinned || up || Date.now() - this.handScrolledAt < 1000) this.pinned = this.isAtBottom()
+      // The keyboard moving the page is not a person moving the log.
+      const keyboard = Date.now() < this.keyboardUntil && Date.now() - this.handScrolledAt > 1000
+      if (keyboard) {
+        if (this.pinned && !this.isAtBottom()) this.toNewest()
+      } else if (!this.pinned || up || Date.now() - this.handScrolledAt < 1000) this.pinned = this.isAtBottom()
       else if (!this.isAtBottom()) this.toNewest()
       this.showJump()
       if (this.log.scrollTop < 400 && this.hiddenAbove > 0) this.drawOlder()
@@ -499,6 +510,12 @@ export class ChatPanel {
       this.showJump()
     })
     grows.observe(this.log)
+    // The keyboard makes the page shorter: the newest message comes up with the message box.
+    window.visualViewport?.addEventListener('resize', () => {
+      if (Date.now() > this.keyboardUntil || !this.pinned || !this.root?.isConnected) return
+      this.toNewest()
+      requestAnimationFrame(() => this.pinned && this.toNewest())
+    })
     new MutationObserver((changes) => {
       for (const change of changes) {
         for (const node of change.addedNodes) if (node instanceof Element) grows.observe(node)
@@ -2008,6 +2025,15 @@ export class ChatPanel {
   }
 
   /** The log at its newest message, and where that is noted, so a move up from it is seen. */
+  /** The keyboard is about to come or go: a log at its newest message stays there through it. */
+  private followKeyboard(): void {
+    // Only a touch screen has a keyboard that comes up over the page.
+    if (!window.matchMedia('(pointer: coarse)').matches) return
+    if (!this.pinned && !this.isAtBottom()) return
+    this.pinned = true
+    this.keyboardUntil = Date.now() + 1500
+  }
+
   private toNewest(): void {
     this.log.scrollTop = this.log.scrollHeight
     this.lastTop = this.log.scrollTop

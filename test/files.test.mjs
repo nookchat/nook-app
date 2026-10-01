@@ -162,7 +162,7 @@ try {
       }),
     10_000,
   )
-  check('a click opens it full screen', viewed === 'screen.png', viewed ?? 'no viewer')
+  check('a click opens it full screen, made smaller as WebP', viewed === 'screen.webp', viewed ?? 'no viewer')
 
   // The desktop app's title bar is over everything: the viewer's buttons must be under it, not behind it.
   const underBar = await bob.evaluate(() => {
