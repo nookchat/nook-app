@@ -5,6 +5,7 @@ import { openEvents } from './verify-pool'
 import { makeHook } from '../space/webhook'
 import {
   cleanAvatar,
+  cleanCover,
   cleanSpacePicture,
   cleanChannel,
   cleanOrder,
@@ -87,6 +88,10 @@ export class RoomChat {
 
   avatarOf(author: string): string {
     return this.log.avatars().get(author) ?? ''
+  }
+
+  coverOf(author: string): string {
+    return this.log.covers().get(author) ?? ''
   }
 
   notes(): NoteInfo[] {
@@ -623,13 +628,15 @@ export class RoomChat {
     return this.write('pin', { target, on })
   }
 
-  announceName(name: string, avatar?: string): Promise<LogEvent | null> {
+  announceName(name: string, avatar?: string, cover?: string): Promise<LogEvent | null> {
     this.name = name
     const picture = avatar === undefined ? this.log.avatars().get(this.me) ?? '' : cleanAvatar(avatar)
+    const banner = cover === undefined ? this.log.covers().get(this.me) ?? '' : cleanCover(cover)
     const sameName = this.log.names().get(this.me) === name
     const samePicture = (this.log.avatars().get(this.me) ?? '') === picture
-    if (sameName && samePicture) return Promise.resolve(null)
-    return this.write('profile', { name, avatar: picture })
+    const sameCover = (this.log.covers().get(this.me) ?? '') === banner
+    if (sameName && samePicture && sameCover) return Promise.resolve(null)
+    return this.write('profile', { name, avatar: picture, cover: banner })
   }
 
   /** `places` is where each came in the order the server sent them; see RoomLog.add. */

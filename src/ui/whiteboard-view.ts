@@ -37,10 +37,7 @@ export class WhiteboardView {
     this.hooks = hooks
     this.host = h('div', { class: 'whiteboard-host' })
     this.status = h('span', { class: 'tiny faint note-status' })
-    this.root = h('div', { class: 'whiteboard-view hidden', tabIndex: -1 }, [
-      h('div', { class: 'note-bar row' }, [this.status]),
-      this.host,
-    ])
+    this.root = h('div', { class: 'whiteboard-view hidden', tabIndex: -1 }, [this.host])
   }
 
   get openId(): string | null {
@@ -52,7 +49,8 @@ export class WhiteboardView {
     const other = this.board?.id !== board.id
     this.board = board
     this.paintStatus()
-    this.tools.replaceChildren(...this.hooks.tools(board))
+    // The save status sits in the head with the buttons, not in a strip of its own.
+    this.tools.replaceChildren(this.status, ...this.hooks.tools(board))
     if (!other) {
       this.canvas?.take(this.hooks.records(board.id))
       return

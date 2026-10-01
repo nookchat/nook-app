@@ -4,6 +4,7 @@ import { ROOMS_CHANGED } from './notes'
 const SYNCED = [
   'nook.name.v1',
   'nook.avatar.v1',
+  'nook.cover.v1',
   'nook.quick.v1',
   'nook.emoji.v1',
   'nook.gifstars.v1',
@@ -21,7 +22,7 @@ const SYNCED = [
 ]
 const MERGED_LISTS = new Set(['nook.servers.v1', 'nook.own.v1'])
 const STAMPS = 'nook.prefs.stamps.v1'
-const MEMORY_ONLY = new Set(['nook.avatar.v1'])
+const MEMORY_ONLY = new Set(['nook.avatar.v1', 'nook.cover.v1'])
 const memory = new Map<string, string | null>()
 const memoryStamps = new Map<string, number>()
 

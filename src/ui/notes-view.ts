@@ -48,8 +48,6 @@ export class NoteEditor {
     this.status = h('span', { class: 'tiny faint note-status' })
 
     this.root = h('div', { class: 'note-view hidden' }, [
-      // The name is in the channel head above: once is enough.
-      h('div', { class: 'note-bar row' }, [this.status]),
       h('div', { class: 'note-panes' }, [this.source, this.reader]),
     ])
   }
@@ -87,7 +85,8 @@ export class NoteEditor {
 
   private paintTools(): void {
     if (!this.note) return
-    this.tools.replaceChildren(...this.hooks.tools(this.note))
+    // The save status sits in the head with the buttons, not in a strip of its own.
+    this.tools.replaceChildren(this.status, ...this.hooks.tools(this.note))
   }
 
   hide(): void {

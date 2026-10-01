@@ -2402,6 +2402,31 @@ button.start {
   align-self: flex-start;
 }
 
+/* Drawn in the shape of the band on the profile card, 480 by 108. */
+.profile-cover {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  width: min(100%, 480px);
+  aspect-ratio: 480 / 108;
+  min-height: 0;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2) center / cover no-repeat;
+  color: var(--fg-dim);
+}
+
+.profile-cover.empty {
+  border: 1px dashed var(--border-strong);
+}
+
+.profile-cover-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .space-card-head {
   display: flex;
   align-items: center;
@@ -5268,6 +5293,11 @@ button.to-bottom:hover:not(:disabled) {
   background: var(--band);
 }
 
+.profile-band.covered {
+  background-size: cover;
+  background-position: center;
+}
+
 .profile-card-face {
   position: relative;
   flex: 0 0 auto;
@@ -6845,6 +6875,7 @@ input[type="text"].gif-search {
 /* Said in full: the title gives way before it does. */
 .note-status {
   flex: 0 0 auto;
+  margin-right: 8px;
   white-space: nowrap;
 }
 
@@ -6944,11 +6975,6 @@ input[type="text"].gif-search {
   }
 
   .note-status {
-    display: none;
-  }
-
-  /* The board needs every line it can get. */
-  .whiteboard-view > .note-bar {
     display: none;
   }
 }

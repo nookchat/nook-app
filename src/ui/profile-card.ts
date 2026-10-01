@@ -11,6 +11,8 @@ export interface ProfileData {
   name: string
   /** Their picture, or '' for their initials. */
   picture: string
+  /** The strip across the top, or '' for a band in their colour. */
+  cover: string
   you: boolean
   /** Null when they are not here. */
   presence: { dot: string; words: string } | null
@@ -38,13 +40,17 @@ function bandColour(data: ProfileData): string {
 }
 
 /**
- * A person's profile, as Discord opens it on a click on their name: a band in their colour, their
+ * A person's profile, as Discord opens it on a click on their name: a band in their colour, or their cover image, their
  * picture large, their name, what they said about themselves, and what they do now, with the
  * song they listen to and the game they play in full.
  */
 export function profileCard(data: ProfileData): HTMLElement {
   const band = h('div', { class: 'profile-band' })
   band.style.setProperty('--band', bandColour(data))
+  if (data.cover) {
+    band.classList.add('covered')
+    band.style.backgroundImage = `url("${data.cover}")`
+  }
 
   const face = h('div', { class: 'profile-card-face' }, [
     avatarOf(data.key, data.name, data.picture, 84),

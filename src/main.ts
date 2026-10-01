@@ -164,10 +164,10 @@ async function showSettings(): Promise<void> {
   const { settingsView } = await import('./ui/settings-view')
   chrome.body.append(
     settingsView({
-      rename: (name, avatar) => {
+      rename: (name, avatar, cover) => {
         for (const space of spaces.all()) {
           space.mesh?.setName(name)
-          void space.chat?.announceName(name, avatar)
+          void space.chat?.announceName(name, avatar, cover)
         }
       },
       back: () => void showHome(),

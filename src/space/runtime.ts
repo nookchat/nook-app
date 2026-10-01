@@ -20,7 +20,7 @@ import type { RoomNote } from '../store/notes'
 import { PREFS_CHANGED } from '../store/prefs'
 import { RoomChat } from '../store/room-chat'
 import { bookFor, stable } from '../store/server-spaces'
-import { adoptAvatar, avatarKnown, avatarSavedAt, loadAvatar } from '../ui/avatar'
+import { adoptAvatar, adoptCover, avatarKnown, avatarSavedAt, coverKnown, coverSavedAt, loadAvatar, loadCover } from '../ui/avatar'
 import { chirpDeafen, chirpHangup, chirpJoin, chirpLeave, chirpMute } from '../ui/sounds'
 
 const LAST_SEEN_REFRESH_MS = 60 * 60 * 1000
@@ -283,17 +283,17 @@ export class SpaceRuntime {
       if (open.name) await chat.setSpaceName(open.name)
     }
     // Announcing no picture before the record arrives would erase the known one.
-    await chat.announceName(chat.displayName, this.pictureToAnnounce())
+    await chat.announceName(chat.displayName, this.pictureToAnnounce(), this.coverToAnnounce())
     window.addEventListener(PREFS_CHANGED, this.onPrefs)
     this.emit('changed')
   }
 
   private readonly onPrefs = (ev: Event): void => {
     const which = (ev as CustomEvent<string[]>).detail ?? []
-    if (!which.includes('nook.avatar.v1') && !which.includes('nook.name.v1')) return
+    if (!which.includes('nook.avatar.v1') && !which.includes('nook.cover.v1') && !which.includes('nook.name.v1')) return
     const name = loadIdentity().name
     this.mesh?.setName(name)
-    void this.chat.announceName(name, this.pictureToAnnounce())
+    void this.chat.announceName(name, this.pictureToAnnounce(), this.coverToAnnounce())
     this.emit('changed')
   }
 
@@ -302,6 +302,15 @@ export class SpaceRuntime {
     const saidAt = this.chat.log.lastProfileAt(this.chat.me)
     if (saidAt <= avatarSavedAt()) return loadAvatar()
     adoptAvatar(this.chat.avatarOf(this.chat.me), saidAt)
+    return undefined
+  }
+
+  /** The same for the cover: this device's own when it is newer, else the one the log holds. */
+  private coverToAnnounce(): string | undefined {
+    if (!coverKnown()) return undefined
+    const saidAt = this.chat.log.lastProfileAt(this.chat.me)
+    if (saidAt <= coverSavedAt()) return loadCover()
+    adoptCover(this.chat.coverOf(this.chat.me), saidAt)
     return undefined
   }
 

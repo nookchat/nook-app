@@ -2524,7 +2524,7 @@ export class SpaceView {
     this.settingsOpen = 'user'
     this.root.append(
       settingsView({
-        rename: (name, avatar) => this.rename(name, avatar),
+        rename: (name, avatar, cover) => this.rename(name, avatar, cover),
         start,
         back: () => this.closeSettings(),
       }),
@@ -2841,10 +2841,10 @@ export class SpaceView {
     return holder
   }
 
-  private rename(name: string, avatar?: string): void {
+  private rename(name: string, avatar?: string, cover?: string): void {
     this.mesh?.setName(name)
     this.chatPanel.setName(name)
-    void this.publish((c) => c.announceName(name, avatar))
+    void this.publish((c) => c.announceName(name, avatar, cover))
   }
 
   /**
@@ -3636,6 +3636,7 @@ export class SpaceView {
       key,
       name: you ? chat.displayName : row?.name || chat.nameOf(key),
       picture: chat.log.avatars().get(key) ?? '',
+      cover: chat.log.covers().get(key) ?? '',
       you,
       presence: row?.here ? presenceLook(row.status, row.away) : null,
       statusText: row?.statusText ?? '',

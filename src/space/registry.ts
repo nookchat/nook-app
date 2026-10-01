@@ -4,7 +4,7 @@ import type { LogEvent } from '../store/log'
 import { roomsChanged, ROOMS_CHANGED, type RoomNote } from '../store/notes'
 import { PREFS_CHANGED } from '../store/prefs'
 import { bookFor, knownServers } from '../store/server-spaces'
-import { avatarKnown, loadAvatar } from '../ui/avatar'
+import { avatarKnown, coverKnown, loadAvatar, loadCover } from '../ui/avatar'
 import { SpaceRuntime, type OpenSpace } from './runtime'
 
 const ROOMS_CHANGED_DEBOUNCE_MS = 150
@@ -92,6 +92,15 @@ class Registry {
     for (const space of this.runningByRoom.values()) {
       const picture = space.chat?.avatarOf(space.chat.me)
       if (picture) return picture
+    }
+    return ''
+  }
+
+  myCover(): string {
+    if (coverKnown()) return loadCover()
+    for (const space of this.runningByRoom.values()) {
+      const cover = space.chat?.coverOf(space.chat.me)
+      if (cover) return cover
     }
     return ''
   }

@@ -347,6 +347,15 @@ export function cleanSpacePicture(raw: unknown): string {
   return /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(text) ? text : ''
 }
 
+// A profile's cover is drawn across the top of its card: 480 x 108 px of WebP.
+export const MAX_COVER = 24_000
+
+export function cleanCover(raw: unknown): string {
+  const text = typeof raw === 'string' ? raw : ''
+  if (!text || text.length > MAX_COVER) return ''
+  return /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(text) ? text : ''
+}
+
 export function cleanAvatar(raw: unknown): string {
   const text = typeof raw === 'string' ? raw : ''
   if (!text || text.length > MAX_AVATAR) return ''
@@ -1489,6 +1498,23 @@ export class RoomLog {
       const picture = cleanAvatar(e.body.avatar)
       if (picture) out.set(e.author, picture)
       else if (e.body.avatar === '') out.delete(e.author)
+    }
+    return out
+  }
+
+  covers(): Map<string, string> {
+    return this.cached('covers', () => this.foldCovers())
+  }
+
+  /** Like the pictures: a profile that says nothing about a cover leaves the last one alone. */
+  private foldCovers(): Map<string, string> {
+    const out = new Map<string, string>()
+    const auth = this.authority()
+    for (const e of this.all()) {
+      if (e.kind !== 'profile' || auth.removedBy(e.author, e.lamport, this.arrivedAt(e.id))) continue
+      const cover = cleanCover(e.body.cover)
+      if (cover) out.set(e.author, cover)
+      else if (e.body.cover === '') out.delete(e.author)
     }
     return out
   }

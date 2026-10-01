@@ -9,7 +9,7 @@ import { loadIdentity, saveDisplayName } from '../store/identity'
 import { spaces } from '../space/registry'
 import { addServer, knownServers, newSpaceServer, ownServers } from '../store/server-spaces'
 import { aboutSettings } from './about'
-import { saveAvatar, squareThumb } from './avatar'
+import { coverThumb, saveAvatar, saveCover, squareThumb } from './avatar'
 import { avatarOf } from './chat-panel'
 import { clear, copyText, h } from './dom'
 import { openEmojiPicker, quickReactions, setQuickReactions } from './emoji'
@@ -29,7 +29,7 @@ import { toast } from './toast'
 import { voiceSettings } from './voice-settings'
 
 interface SettingsActions {
-  rename(name: string, avatar?: string): void
+  rename(name: string, avatar?: string, cover?: string): void
   back(): void
   /** The tab to open on. */
   start?: string
@@ -102,6 +102,42 @@ export function settingsView(actions: SettingsActions): HTMLElement {
     }
   })
   drawAvatar()
+
+  // The cover: a strip across the top of the profile card, the shape it is drawn in.
+  const cover = h('button', { class: 'profile-cover', ariaLabel: 'Change your cover image', title: 'Change your cover image' })
+  const removeCover = h('button', { class: 'ghost tiny-btn hidden', text: 'Remove' })
+  const pickCover = h('input', { type: 'file', class: 'hidden', ariaLabel: 'Choose a cover image' })
+  pickCover.accept = 'image/*'
+  cover.addEventListener('click', () => pickCover.click())
+  removeCover.addEventListener('click', () => {
+    saveCover('')
+    actions.rename(cleanName(name.value) || identity.name, undefined, '')
+    drawCover()
+  })
+  const drawCover = (): void => {
+    const image = spaces.myCover()
+    cover.style.backgroundImage = image ? `url("${image}")` : ''
+    cover.classList.toggle('empty', !image)
+    cover.replaceChildren(
+      image ? h('span', { class: 'welcome-face-edit' }, [icon('edit', 12)]) : h('span', { class: 'profile-cover-add' }, [icon('image', 16), 'Add a cover image']),
+    )
+    removeCover.classList.toggle('hidden', !image)
+  }
+  const stopWatchingCover = spaces.watchMyAvatar(() => (cover.isConnected ? drawCover() : stopWatchingCover()))
+  pickCover.addEventListener('change', async () => {
+    const chosen = pickCover.files?.[0]
+    if (!chosen) return
+    pickCover.value = ''
+    try {
+      const wide = await coverThumb(chosen)
+      saveCover(wide)
+      actions.rename(cleanName(name.value) || identity.name, undefined, wide)
+      drawCover()
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'That picture could not be used.', 'bad', 7000)
+    }
+  })
+  drawCover()
 
   const serverList = h('div', { class: 'stack tight' })
   const drawServers = (): void => {
@@ -352,13 +388,17 @@ export function settingsView(actions: SettingsActions): HTMLElement {
       build: () =>
         h('div', { class: 'stack settings-stack' }, [
           card(
-            'Name and picture',
+            'Name, picture and cover',
             note('What people see next to what you say, in every space.'),
             h('div', { class: 'profile-row' }, [
               picture,
               h('div', { class: 'stack tight grow' }, [h('div', { class: 'row' }, [name, save]), removePicture]),
             ]),
             pickPicture,
+            note('The strip across the top of your profile, when somebody opens it.'),
+            cover,
+            h('div', { class: 'row' }, [removeCover]),
+            pickCover,
           ),
         ]),
     },
