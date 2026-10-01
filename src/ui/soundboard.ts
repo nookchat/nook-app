@@ -1,6 +1,7 @@
 import { h } from './dom'
 import { icon } from './icons'
 import { placeNear } from './emoji'
+import { asSheet, phone } from './gestures'
 import { lengthOf, loudnessOf, peakOf } from './loudness'
 import { sharedAudio, soundsOn } from './sounds'
 
@@ -391,8 +392,10 @@ export function openSoundboard(options: BoardOptions): void {
   if (soundsOn()) foot.remove()
   else foot.textContent = 'Sounds are off. Turn them on in Settings to play these.'
   document.body.append(pop)
-  placeNear(pop, options.anchor)
+  const sheet = phone()
+  if (sheet) asSheet(pop, close)
+  else placeNear(pop, options.anchor)
   window.addEventListener('keydown', onKey, true)
   window.addEventListener('pointerdown', onDown, true)
-  window.addEventListener('resize', close)
+  if (!sheet) window.addEventListener('resize', close)
 }

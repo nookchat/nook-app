@@ -3153,12 +3153,22 @@ input[type="text"].space-search {
   }
 
   .space-grid.rail-left-open .rail-scrim,
-  .space-grid.rail-right-open .rail-scrim {
+  .space-grid.rail-right-open .rail-scrim,
+  .space-grid.rail-dragging .rail-scrim {
     display: block;
     position: absolute;
     inset: 0;
     z-index: 30;
     background: var(--scrim-rail);
+  }
+
+  /* A finger has the bar: it goes where the finger puts it, and the dim with it. */
+  .space-grid.rail-dragging .rail {
+    transition: none;
+  }
+
+  .space-grid.rail-dragging:not(.rail-left-open):not(.rail-right-open) .rail-scrim {
+    opacity: 0;
   }
 
   .space-head {
@@ -3274,11 +3284,14 @@ input[type="text"].space-search {
 
 /* Messages as Discord lays them out: every one on the left, a face and a name over the first of a
    group, and the rest under it. A new sender, or five quiet minutes, starts a new group. */
+/* In 8px from each side, so the light behind a row on hover has rounded corners; the words stay
+   where they were. */
 .chat-row {
   position: relative;
   display: flex;
-  padding: 2px 16px 2px 72px;
-  margin-top: 0;
+  padding: 2px 8px 2px 64px;
+  margin: 0 8px;
+  border-radius: var(--radius-xs);
 }
 
 .chat-row.first {
@@ -3462,7 +3475,7 @@ input[type="text"].space-search {
 .chat-actions {
   position: absolute;
   top: -16px;
-  right: 16px;
+  right: 8px;
   z-index: 2;
   display: flex;
   align-items: center;
@@ -3482,8 +3495,7 @@ input[type="text"].space-search {
 }
 
 .chat-row:hover .chat-actions,
-.chat-row:focus-within .chat-actions,
-.chat-row.acting .chat-actions {
+.chat-row:focus-within .chat-actions {
   opacity: 1;
   pointer-events: auto;
 }
@@ -4526,8 +4538,32 @@ input[type="range"].vp-volume {
   z-index: 95;
   display: flex;
   flex-direction: column;
-  background: var(--scrim-viewer);
   animation: appear 140ms var(--ease);
+}
+
+/* The backdrop, on a layer of its own so a finger pulling the picture down fades it. */
+.viewer::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--scrim-viewer);
+  opacity: var(--viewer-fade, 1);
+  transition: opacity 200ms var(--ease-out);
+}
+
+.viewer.dragging::before {
+  transition: none;
+}
+
+.viewer-bar,
+.viewer-step {
+  transition: opacity 160ms linear;
+}
+
+.viewer.dragging .viewer-bar,
+.viewer.dragging .viewer-step {
+  opacity: 0;
 }
 
 .viewer-bar {
@@ -4621,6 +4657,12 @@ input[type="range"].vp-volume {
   .viewer-img {
     max-width: calc(100vw - 16px);
     max-height: calc(100dvh - 150px);
+    will-change: transform;
+  }
+
+  /* The fingers zoom and move the picture themselves (src/ui/attachments.ts), not the page. */
+  .viewer-stage {
+    touch-action: none;
   }
 
   .viewer-step {
@@ -6393,26 +6435,17 @@ input[type="text"].gif-search {
   color: var(--fg-dim);
 }
 
-@media (max-width: 780px) {
+/* A finger has no hover: a long press opens the message's menu as a sheet (src/ui/gestures.ts),
+   and the press does not select the words or open the browser's own callout. */
+@media (hover: none) {
   .chat-actions {
-    position: static;
-    margin: 6px 0 0;
-    height: 0;
-    overflow: hidden;
-    gap: 5px;
+    display: none;
   }
 
-  .chat-row.acting .chat-actions {
-    height: auto;
-    opacity: 1;
-    pointer-events: auto;
-  }
-
-  .chat-actions button {
-    min-height: 30px;
-    height: 30px;
-    padding: 0 12px;
-    font-size: var(--size-small);
+  .chat-line {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
 }
 
@@ -7885,5 +7918,222 @@ input.invalid:focus {
   to {
     opacity: 0;
     transform: translateX(16px) scale(0.98);
+  }
+}
+
+/* A popup on a phone is a sheet from the bottom (asSheet in src/ui/gestures.ts): a menu, the
+   emoji, the GIFs, the soundboard. Placed as a popup first, so the sheet's place wins over that. */
+@media (max-width: 780px) {
+  .sheet.sheet {
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: 90;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    max-height: min(80dvh, calc(var(--app-height, 100dvh) - 40px));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0 10px calc(10px + env(safe-area-inset-bottom));
+    border: 0;
+    border-top: 1px solid var(--line);
+    border-radius: 18px 18px 0 0;
+    transform: none;
+    /* The dim page behind: a shadow as big as the screen, so no other element has to come and go. */
+    box-shadow: 0 0 0 100vmax var(--scrim), var(--shadow);
+    animation: sheet-in 240ms var(--ease-out) backwards;
+  }
+
+  /* The keyboard covers the home bar. */
+  html.keyboard-open .sheet.sheet {
+    padding-bottom: 10px;
+  }
+
+  .sheet-grab {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    flex: 0 0 auto;
+    display: flex;
+    justify-content: center;
+    margin: 0 -10px 4px;
+    padding: 8px 0 6px;
+    background: inherit;
+  }
+
+  .sheet-grab::after {
+    content: '';
+    width: 36px;
+    height: 5px;
+    border-radius: 3px;
+    background: var(--fg-faint);
+    opacity: 0.45;
+  }
+
+  .sheet .menu-item {
+    min-height: 48px;
+    padding: 8px 12px;
+    font-size: 16px;
+  }
+
+  .sheet .menu-reacts {
+    justify-content: space-between;
+    padding: 4px 2px 8px;
+  }
+
+  .sheet .menu-reacts .chat-react {
+    min-width: 46px;
+    min-height: 46px;
+    font-size: 24px;
+  }
+
+  .emoji-pop.sheet .emoji-grid {
+    height: min(46dvh, 360px);
+  }
+
+  .gif-pop.sheet .gif-grid {
+    max-height: min(52dvh, 420px);
+  }
+
+  .emoji-pop.quick.sheet .emoji-quick {
+    justify-content: space-between;
+    padding-bottom: 4px;
+  }
+}
+
+@keyframes sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet.sheet {
+    animation: none;
+  }
+}
+
+/* The bar along the bottom of a phone (src/ui/tab-bar.ts), as Discord has. It shows where there is
+   a choice to make: home's list, settings, and a space with its channels out. It goes while you
+   read or write a conversation, and while the keyboard is up. */
+.tab-bar {
+  display: none;
+}
+
+@media (max-width: 780px) {
+  :root {
+    --tab-bar: 58px;
+  }
+
+  .app-shell {
+    flex-direction: column;
+  }
+
+  .tab-bar {
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: 50;
+    display: flex;
+    align-items: stretch;
+    height: calc(var(--tab-bar) + env(safe-area-inset-bottom));
+    padding: 0 6px env(safe-area-inset-bottom);
+    background: var(--pane);
+    border-top: 1px solid var(--border);
+    transform: translateY(100%);
+    visibility: hidden;
+    transition: transform 200ms var(--ease), visibility 0s linear 200ms;
+  }
+
+  .app-shell:has(.home-grid-shell:not(.dm-open)) > .tab-bar,
+  .app-shell:has(.space-grid.rail-left-open) > .tab-bar,
+  .app-shell:has(.settings-frame) > .tab-bar {
+    transform: none;
+    visibility: visible;
+    transition: transform 200ms var(--ease);
+  }
+
+  html.keyboard-open .tab-bar {
+    display: none;
+  }
+
+  /* Room under the page for the bar. The shell keeps clear of the home bar already. */
+  html:not(.keyboard-open) .app-shell:has(.home-grid-shell:not(.dm-open)) > .app-body,
+  html:not(.keyboard-open) .app-shell:has(.settings-frame) > .app-body {
+    padding-bottom: var(--tab-bar);
+  }
+
+  html:not(.keyboard-open) .space-grid.rail-left-open .rail-left {
+    padding-bottom: var(--tab-bar);
+  }
+
+  .tab {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    min-height: 0;
+    padding: 6px 4px 4px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    color: var(--fg-faint);
+    font-weight: 500;
+  }
+
+  .tab:hover:not(:disabled) {
+    background: transparent;
+  }
+
+  .tab.current {
+    color: var(--fg);
+  }
+
+  .tab-face {
+    position: relative;
+    display: grid;
+    place-items: center;
+    height: 26px;
+  }
+
+  .tab:not(.current) .tab-face > .space-face,
+  .tab:not(.current) .tab-face > .tab-me {
+    opacity: 0.7;
+  }
+
+  .tab-me {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    object-fit: cover;
+  }
+
+  .tab-label {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+    line-height: 1.2;
+  }
+
+  .tab-count {
+    position: absolute;
+    top: -4px;
+    left: calc(100% - 8px);
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 9px;
+    border: 2px solid var(--pane);
+    background: var(--bad);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 14px;
+    text-align: center;
   }
 }

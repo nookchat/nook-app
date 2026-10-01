@@ -39,6 +39,7 @@ import { clear } from './ui/dom'
 import { HomeView, type DirectRef } from './ui/home-view'
 import { notify, notifyText, notifyWhat, offerNotify } from './ui/notify'
 import { createWindow, type WindowChrome } from './ui/shell'
+import { tabBar, type Tab } from './ui/tab-bar'
 import { chirpMention, isNews, warmSounds } from './ui/sounds'
 import { spaceList } from './ui/space-list'
 import { SpaceView } from './ui/space-view'
@@ -101,8 +102,17 @@ interface Screen {
 }
 
 let active: Screen | null = null
+/** The space last on screen, for the space's tab on a phone. */
+let lastSpace: SpaceRuntime | null = null
 
-function freshWindow(title: string): WindowChrome {
+/** The space the space's tab goes to: the last one on screen, or the one a reload would open. */
+function tabSpace(): SpaceRuntime | null {
+  if (lastSpace && spaces.all().includes(lastSpace)) return lastSpace
+  const last = lastScreen()
+  return (last?.kind === 'space' ? spaces.get(last.room) : undefined) ?? spaces.all()[0] ?? null
+}
+
+function freshWindow(title: string, tab: Tab): WindowChrome {
   active?.destroy()
   active = null
   clear(mount)
@@ -112,13 +122,25 @@ function freshWindow(title: string): WindowChrome {
     open: (room) =>
       void enter(room.secret, room.locked === true, room.password ?? '', false, '', room.server ?? ''),
   })
+  chrome.root.append(
+    tabBar(tab, {
+      home: () => void showHome(),
+      space: tabSpace(),
+      // As Discord's tab does: the space with its channels out, to pick one.
+      openSpace: (space) => {
+        openSpace(space)
+        if (active instanceof SpaceView) active.showChannels()
+      },
+      you: () => void showSettings(),
+    }),
+  )
   mount.append(chrome.root)
   return chrome
 }
 
 async function showHome(dm: DirectRef | null = null, making = false): Promise<void> {
   clearLink()
-  const chrome = freshWindow('Nook: chat, voice and screen sharing')
+  const chrome = freshWindow('Nook: chat, voice and screen sharing', 'home')
   const home = new HomeView(chrome.body, chrome, {
     page: () =>
       spaceList({
@@ -137,7 +159,7 @@ async function showHome(dm: DirectRef | null = null, making = false): Promise<vo
 }
 
 async function showSettings(): Promise<void> {
-  const chrome = freshWindow('Nook | Settings')
+  const chrome = freshWindow('Nook | Settings', 'you')
   const { settingsView } = await import('./ui/settings-view')
   chrome.body.append(
     settingsView({
@@ -158,7 +180,8 @@ window.addEventListener('storage', (ev) => {
 })
 
 function openSpace(space: SpaceRuntime): void {
-  const chrome = freshWindow('Nook')
+  lastSpace = space
+  const chrome = freshWindow('Nook', 'space')
   setLinkSecret(space.secret, space.locked, space.server)
   const view = new SpaceView(
     chrome.body,

@@ -417,6 +417,8 @@ src/
     voice-settings.ts microphone and speaker, a microphone test, a relay test
     space-view.ts     a space: channels, voice, sharing, search, people
     desktop-offer.ts  the desktop app and its download, under the people in a browser
+    gestures.ts       a finger on a phone: drawers, sheets, a long press, the back button
+    tab-bar.ts        the bar along the bottom of a phone: Home, the space, and You
     space-list.ts     the home page: your spaces, making and joining one
     chat-panel.ts     the conversation, drawn as nodes and never as HTML
     attachments.ts    files in a message, the picture viewer, and the upload tray
@@ -474,7 +476,21 @@ trackpad pinch, or `+` and `-`, zooms. A drag moves a zoomed picture.
 
 - **Phone:** open the site and add it to the home screen. On an iPhone, use
   Share, then Add to Home Screen. On Android, use Install app. Voice and chat
-  work. A phone cannot share its screen from a browser.
+  work. A phone cannot share its screen from a browser. On a phone, Nook
+  works the way Discord's app does:
+  - A finger pulls the channels out from the left and the people from the
+    right, and pushes them back.
+  - A bar along the bottom has Home, the space you were last in, and You. It
+    shows on home, in settings, and with the channels out, and goes while you
+    read or write a conversation.
+  - A long press on a message, a channel, a note or a person opens its menu,
+    where a computer uses a right click.
+  - A menu, the emoji, the GIFs and the soundboard come up from the bottom as
+    a sheet. Pull it down, or tap the page above it, to put it away.
+  - A picture opens full screen. Pull it down to close it, push it to the
+    side for the next one, and pinch or double tap to zoom in.
+  - The back button closes the picture or the side bar before it leaves the
+    page.
 - **Desktop:** `desktop/` is an Electron shell around the site. It loads
   `https://cathode.video`, so invite links stay the same, and it adds a picker
   for a screen or a window. On Windows it can share the system sound too. It

@@ -1,4 +1,5 @@
 import { h, clear } from './dom'
+import { asSheet, phone } from './gestures'
 import { fitNear } from './place'
 
 interface EmojiGroup {
@@ -559,10 +560,14 @@ export function openEmojiPicker(options: PickerOptions): void {
   open = { close, anchor: options.anchor }
   paint('')
   document.body.append(pop)
-  placeNear(pop, options.anchor)
+  // On a phone a sheet, and no keyboard over it until the search is tapped.
+  const sheet = phone()
+  if (sheet) asSheet(pop, close)
+  else placeNear(pop, options.anchor)
 
   window.addEventListener('keydown', onKey, true)
   window.addEventListener('pointerdown', onDown, true)
+  if (sheet) return
   window.addEventListener('resize', close)
   search.focus()
 }

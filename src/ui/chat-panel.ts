@@ -21,6 +21,7 @@ import { familyOf, highlight } from './highlight'
 import { icon } from './icons'
 import { quietKeyboard } from './keyboard'
 import { closeMenu, onContextMenu, type MenuEntry } from './menu'
+import { asSheet, phone } from './gestures'
 import { fitNear } from './place'
 import { toast } from './toast'
 import { emojiField } from './twemoji'
@@ -1238,16 +1239,6 @@ export class ChatPanel {
       if (about.length) return about
       return [...mediaMenu(ev.target as Element), ...this.messageMenu(m, mine, who, line)]
     })
-    line.addEventListener('click', (ev) => {
-      if (window.matchMedia('(hover: hover)').matches) return
-      const target = ev.target as HTMLElement
-      if (target.closest('button, a, .spoiler')) return
-      const open = row.classList.contains('acting')
-      for (const other of this.log.querySelectorAll('.chat-row.acting')) {
-        other.classList.remove('acting')
-      }
-      row.classList.toggle('acting', !open)
-    })
 
     if (m.replyTo && m.replyTo !== this.threadRoot) {
       let quoted: HTMLElement | null = null
@@ -1895,7 +1886,8 @@ export class ChatPanel {
     const pop = h('div', { class: 'emoji-pop quick' }, [row])
     closeEmojiPicker()
     document.body.append(pop)
-    placeNear(pop, anchor)
+    if (phone()) asSheet(pop, () => pop.remove())
+    else placeNear(pop, anchor)
 
     const away = (ev: Event): void => {
       if (pop.contains(ev.target as Node) || anchor.contains(ev.target as Node)) return

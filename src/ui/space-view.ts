@@ -74,6 +74,7 @@ import { hookUrl } from '../space/webhook'
 import { actionFor, type Action } from './shortcuts'
 import { NoteEditor } from './notes-view'
 import { placeNear } from './emoji'
+import { asSheet, closeOnBack, onDrag, phone, PHONE, scrollsThatWay } from './gestures'
 import { loadAvatar, squareThumb } from './avatar'
 import { setTitleFace, type WindowChrome } from './shell'
 import { toast } from './toast'
@@ -358,6 +359,8 @@ export class SpaceView {
   private membersHidden = false
   private peopleSlide: Animation | null = null
   private railOpen: 'left' | 'right' | null = null
+  /** While a side bar is out on a phone, the back button puts it away: this undoes that. */
+  private railBack: ((stepBack?: boolean) => void) | null = null
 
   private thread: string | null = null
   private read: Record<string, number> = {}
@@ -605,6 +608,8 @@ export class SpaceView {
   destroy(): void {
     if (this.stopped) return
     this.stopped = true
+    this.railBack?.(false)
+    this.railBack = null
     document.removeEventListener('visibilitychange', this.onVisible)
     window.removeEventListener(PLAYING_CHANGED, this.onPlaying)
     window.removeEventListener(LISTENING_CHANGED, this.onPlaying)
@@ -2019,7 +2024,7 @@ export class SpaceView {
     })
     this.peopleButton.append(icon('people', 21))
     this.paintPeopleButton()
-    const narrow = window.matchMedia('(max-width: 780px)')
+    const narrow = window.matchMedia(PHONE)
     const repaint = (): void => this.paintPeopleButton()
     narrow.addEventListener('change', repaint)
     this.unlisten.push(() => narrow.removeEventListener('change', repaint))
@@ -2049,6 +2054,69 @@ export class SpaceView {
 
     this.root.append(h('main', {}, [this.shell]))
     this.holdRailsWhilePressed()
+    this.swipeRails()
+  }
+
+  /**
+   * On a phone a finger pulls the channels out from the left and the people from the right, as
+   * Discord does, and pushes either back the way it came. The bar follows the finger, and a flick
+   * or more than half the way decides it.
+   */
+  private swipeRails(): void {
+    const shell = this.shell
+    const scrim = shell.querySelector<HTMLElement>(':scope > .rail-scrim')
+    let side: 'left' | 'right' = 'left'
+    let pane: HTMLElement | null = null
+    let opening = false
+    let width = 1
+    /** How far out the bar is: 0 shut, 1 open. */
+    const outBy = (dx: number): number => {
+      const along = side === 'left' ? dx : -dx
+      return Math.min(1, Math.max(0, opening ? along / width : 1 + along / width))
+    }
+    const letGo = (): void => {
+      shell.classList.remove('rail-dragging')
+      if (pane) pane.style.transform = ''
+      if (scrim) scrim.style.opacity = ''
+      pane = null
+    }
+    this.unlisten.push(
+      onDrag(shell, {
+        take: (dx, dy, target) => {
+          if (!phone() || Math.abs(dx) < Math.abs(dy) * 1.5) return false
+          // What a sideways finger already means: a slider, a video, a box of text, a sheet.
+          if (target.closest('input, textarea, [contenteditable="true"], .stage, .camera-strip, .video-player, .menu, .sheet')) return false
+          if (scrollsThatWay(target, shell, dx, 0)) return false
+          if (this.railOpen) {
+            if ((this.railOpen === 'left') !== dx < 0) return false
+            side = this.railOpen
+            opening = false
+          } else {
+            side = dx > 0 ? 'left' : 'right'
+            opening = true
+          }
+          pane = shell.querySelector<HTMLElement>(`:scope > .rail-${side}`)
+          if (!pane) return false
+          width = pane.offsetWidth || 1
+          shell.classList.add('rail-dragging')
+          return true
+        },
+        move: ({ dx }) => {
+          if (!pane) return
+          const out = outBy(dx)
+          pane.style.transform = `translateX(${(1 - out) * width * (side === 'left' ? -1 : 1)}px)`
+          if (scrim) scrim.style.opacity = String(out)
+        },
+        end: ({ dx, vx }, cancelled) => {
+          if (!pane) return
+          const speed = side === 'left' ? vx : -vx
+          const open = cancelled ? !opening : speed > 0.3 ? true : speed < -0.3 ? false : outBy(dx) > 0.5
+          // The class goes in the same frame as the finger's place, so the bar slides on from there.
+          letGo()
+          this.showRail(open ? side : null)
+        },
+      }),
+    )
   }
 
   private holdRailsWhilePressed(): void {
@@ -2288,7 +2356,7 @@ export class SpaceView {
   }
 
   private togglePeople(): void {
-    if (window.matchMedia('(max-width: 780px)').matches) {
+    if (window.matchMedia(PHONE).matches) {
       this.showRail(this.railOpen === 'right' ? null : 'right')
       return
     }
@@ -2344,7 +2412,7 @@ export class SpaceView {
 
   /** Whether the people are on screen, for a screen reader: the button itself looks the same. */
   private paintPeopleButton(): void {
-    const narrow = window.matchMedia('(max-width: 780px)').matches
+    const narrow = window.matchMedia(PHONE).matches
     const open = narrow ? this.railOpen === 'right' : !this.membersHidden
     this.peopleButton.setAttribute('aria-pressed', String(open))
   }
@@ -2559,7 +2627,20 @@ export class SpaceView {
     if (this.settingsOpen === 'space') void this.openSpaceSettings('overview')
   }
 
+  /** Puts the channels out, on a phone where they are a drawer. */
+  showChannels(): void {
+    if (window.matchMedia(PHONE).matches) this.showRail('left')
+  }
+
   private showRail(which: 'left' | 'right' | null): void {
+    if (which && !this.railBack) this.railBack = closeOnBack(() => {
+      this.railBack = null
+      this.showRail(null)
+    })
+    if (!which && this.railBack) {
+      this.railBack()
+      this.railBack = null
+    }
     this.railOpen = which
     this.shell.classList.toggle('rail-left-open', which === 'left')
     this.shell.classList.toggle('rail-right-open', which === 'right')
@@ -3875,6 +3956,9 @@ export class SpaceView {
       // Never up under the desktop app's title bar.
       pop.style.maxHeight = `${Math.round(at.top - 8 - viewArea().top)}px`
     }
+    // On a phone a sheet from the bottom, with no keyboard over the GIFs until the search is tapped.
+    const sheet = phone()
+    if (sheet) asSheet(pop, () => done())
     window.addEventListener('keydown', onKey, true)
     window.addEventListener('pointerdown', onAway, true)
 
@@ -3921,9 +4005,11 @@ export class SpaceView {
 
     document.body.append(pop)
     this.gifClose = done
-    place()
-    window.addEventListener('resize', place)
-    box.focus()
+    if (!sheet) {
+      place()
+      window.addEventListener('resize', place)
+      box.focus()
+    }
     await run()
   }
 

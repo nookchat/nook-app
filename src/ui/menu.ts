@@ -1,5 +1,6 @@
 import { h } from './dom'
 import { placeNear } from './emoji'
+import { asSheet, onLongPress, phone } from './gestures'
 import { fitAtPoint, fitBeside } from './place'
 
 export interface MenuItem {
@@ -114,11 +115,15 @@ export function openMenu(anchor: HTMLElement, items: MenuEntry[], options: MenuO
   open = close
   openFor = anchor
   document.body.append(menu)
+  // On a phone the menu is a sheet from the bottom, and the keyboard coming or going resizes the window.
+  const sheet = phone()
+  if (sheet) asSheet(menu, close)
+  window.addEventListener('keydown', onKey, true)
+  window.addEventListener('pointerdown', onDown, true)
+  if (sheet) return
   if (options.at) fitAtPoint(menu, options.at.x, options.at.y)
   else if (options.beside) fitBeside(menu, anchor, options.beside)
   else placeNear(menu, anchor)
-  window.addEventListener('keydown', onKey, true)
-  window.addEventListener('pointerdown', onDown, true)
   window.addEventListener('resize', close)
 }
 
@@ -126,11 +131,25 @@ export function closeMenu(): void {
   open?.()
 }
 
+/** Where a menu was asked for: a right click, or a long press of a finger. */
+export interface MenuPoint {
+  target: EventTarget | null
+  clientX: number
+  clientY: number
+}
+
 /**
- * Puts our own menu on a right click. Shift and right click, a selection, links and
- * text boxes still get the browser menu, so copying and opening links still works.
+ * Puts our own menu on a right click, and on a long press on a touch screen. Shift and right
+ * click, a selection, links and text boxes still get the browser menu, so copying and opening
+ * links still works.
  */
-export function onContextMenu(target: HTMLElement, items: (ev: MouseEvent) => MenuEntry[]): void {
+export function onContextMenu(target: HTMLElement, items: (ev: MenuPoint) => MenuEntry[]): void {
+  onLongPress(target, (ev) => {
+    const entries = items(ev)
+    if (entries.length === 0) return false
+    openMenu(target, entries, { className: 'context', at: { x: ev.clientX, y: ev.clientY } })
+    return true
+  })
   target.addEventListener('contextmenu', (ev) => {
     if (ev.shiftKey || ev.defaultPrevented) return
     const hit = ev.target as Element

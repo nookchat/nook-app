@@ -1,6 +1,7 @@
 import { saveFile, sizeLabel, unwatchStream, UploadRefused, type Progress, type SpaceFiles } from '../net/files'
 import { MAX_FILES, type Attachment } from '../store/log'
 import { h } from './dom'
+import { closeOnBack } from './gestures'
 import { icon, type IconName } from './icons'
 import { toast } from './toast'
 import { videoPlayer } from './video-player'
@@ -303,9 +304,11 @@ function openViewer(list: Attachment[], start: number, source: SpaceFiles): void
     list.length > 1 ? next : null,
   ])
 
+  let touch: TouchViewer | null = null
   const show = (): void => {
     const file = list[at]
     root.classList.remove('zoomed')
+    touch?.reset()
     name.textContent = file.name
     detail.textContent = `${sizeLabel(file.size)}${file.w && file.h ? ` · ${file.w} × ${file.h}` : ''}${list.length > 1 ? ` · ${at + 1} of ${list.length}` : ''}`
     img.src = file.thumb ?? ''
@@ -323,7 +326,9 @@ function openViewer(list: Attachment[], start: number, source: SpaceFiles): void
   const shut = (): void => {
     root.remove()
     window.removeEventListener('keydown', onKey, true)
+    leaveHistory()
   }
+  const leaveHistory = closeOnBack(shut)
   const onKey = (ev: KeyboardEvent): void => {
     if (ev.key === 'Escape') shut()
     else if (ev.key === 'ArrowLeft' && list.length > 1) step(-1)
@@ -341,8 +346,11 @@ function openViewer(list: Attachment[], start: number, source: SpaceFiles): void
   })
   img.addEventListener('click', (ev) => {
     ev.stopPropagation()
+    // A finger zooms with two of them, or a double tap: the tap that follows a touch is not a click.
+    if (touch?.touchedLately()) return
     root.classList.toggle('zoomed')
   })
+  touch = touchViewer(root, stage, img, { step: list.length > 1 ? step : null, shut })
   stage.addEventListener('click', (ev) => {
     if (ev.target === stage) shut()
   })
@@ -350,6 +358,237 @@ function openViewer(list: Attachment[], start: number, source: SpaceFiles): void
   document.body.append(root)
   show()
   close.focus()
+}
+
+interface TouchViewer {
+  reset(): void
+  touchedLately(): boolean
+}
+
+/** How far a picture may be zoomed with the fingers. */
+const MOST_ZOOM = 5
+const DOUBLE_TAP_ZOOM = 2.5
+
+/**
+ * The picture under a finger, as a phone's photos do: pull it down to close it, push it to the
+ * side for the next one, pinch or double tap to zoom in, and drag it about while zoomed in.
+ */
+function touchViewer(
+  root: HTMLElement,
+  stage: HTMLElement,
+  img: HTMLImageElement,
+  to: { step: ((by: number) => void) | null; shut: () => void },
+): TouchViewer {
+  let scale = 1
+  let x = 0
+  let y = 0
+  let mode: 'none' | 'tap' | 'pan' | 'down' | 'side' | 'pinch' = 'none'
+  let from = { x: 0, y: 0, scale: 1, tx: 0, ty: 0, gap: 1, t: 0 }
+  /** The point of the picture under the fingers when a pinch started, in its own pixels from its middle. */
+  let held = { x: 0, y: 0 }
+  let lastTouch = 0
+  let lastTap = { t: 0, x: 0, y: 0 }
+  let speed = { x: 0, y: 0, t: 0, px: 0, py: 0 }
+
+  const paint = (glide = false): void => {
+    img.style.transition = glide ? 'transform 220ms var(--ease-out)' : 'none'
+    img.style.transform = `translate(${x}px, ${y}px) scale(${scale})`
+  }
+  const fade = (by: number | null): void => {
+    if (by === null) root.style.removeProperty('--viewer-fade')
+    else root.style.setProperty('--viewer-fade', String(by))
+  }
+  const reset = (): void => {
+    scale = 1
+    x = 0
+    y = 0
+    mode = 'none'
+    img.style.transition = ''
+    img.style.transform = ''
+    root.classList.remove('dragging')
+    fade(null)
+  }
+  /** The middle of the picture as it is laid out, before any zoom or drag. */
+  const middle = (): { x: number; y: number } => {
+    const box = stage.getBoundingClientRect()
+    return { x: box.left + img.offsetLeft + img.offsetWidth / 2, y: box.top + img.offsetTop + img.offsetHeight / 2 }
+  }
+  /** Zoomed in, the picture's edges stay at or past the stage's. */
+  const keepInside = (): void => {
+    const roomX = Math.max(0, (img.offsetWidth * scale - stage.clientWidth) / 2)
+    const roomY = Math.max(0, (img.offsetHeight * scale - stage.clientHeight) / 2)
+    const c = middle()
+    const box = stage.getBoundingClientRect()
+    // Measured from the stage's middle, which the picture may not sit right on.
+    const offX = box.left + box.width / 2 - c.x
+    const offY = box.top + box.height / 2 - c.y
+    x = Math.min(offX + roomX, Math.max(offX - roomX, x))
+    y = Math.min(offY + roomY, Math.max(offY - roomY, y))
+    if (scale <= 1) {
+      x = 0
+      y = 0
+    }
+  }
+  const zoomAt = (to: number, px: number, py: number): void => {
+    const c = middle()
+    const qx = (px - c.x - x) / scale
+    const qy = (py - c.y - y) / scale
+    scale = to
+    x = px - c.x - scale * qx
+    y = py - c.y - scale * qy
+  }
+  const pair = (ev: TouchEvent): { x: number; y: number; gap: number } => {
+    const [a, b] = [ev.touches[0], ev.touches[1]]
+    return { x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2, gap: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) || 1 }
+  }
+  const startOne = (t: Touch, at: number): void => {
+    from = { ...from, x: t.clientX, y: t.clientY, tx: x, ty: y, t: at }
+    speed = { x: 0, y: 0, t: at, px: t.clientX, py: t.clientY }
+    mode = scale > 1 ? 'pan' : 'tap'
+  }
+
+  stage.addEventListener(
+    'touchstart',
+    (ev) => {
+      lastTouch = Date.now()
+      if (ev.touches.length >= 2) {
+        const p = pair(ev)
+        const c = middle()
+        held = { x: (p.x - c.x - x) / scale, y: (p.y - c.y - y) / scale }
+        from = { ...from, scale, gap: p.gap }
+        mode = 'pinch'
+        root.classList.remove('dragging')
+        fade(null)
+        return
+      }
+      startOne(ev.touches[0], ev.timeStamp)
+    },
+    { passive: true },
+  )
+  stage.addEventListener(
+    'touchmove',
+    (ev) => {
+      if (ev.cancelable) ev.preventDefault()
+      if (mode === 'pinch' && ev.touches.length >= 2) {
+        const p = pair(ev)
+        // A little past the ends while the fingers are on it; it springs back once they let go.
+        scale = Math.min(MOST_ZOOM * 1.2, Math.max(0.6, (from.scale * p.gap) / from.gap))
+        const c = middle()
+        x = p.x - c.x - scale * held.x
+        y = p.y - c.y - scale * held.y
+        paint()
+        return
+      }
+      const t = ev.touches[0]
+      if (!t) return
+      const dx = t.clientX - from.x
+      const dy = t.clientY - from.y
+      const dt = Math.max(1, ev.timeStamp - speed.t)
+      speed = { x: (t.clientX - speed.px) / dt, y: (t.clientY - speed.py) / dt, t: ev.timeStamp, px: t.clientX, py: t.clientY }
+      if (mode === 'tap') {
+        if (Math.hypot(dx, dy) < 10) return
+        if (Math.abs(dx) > Math.abs(dy) && to.step) mode = 'side'
+        else if (dy > 0) mode = 'down'
+        else {
+          mode = 'none'
+          return
+        }
+        root.classList.add('dragging')
+      }
+      if (mode === 'pan') {
+        x = from.tx + dx
+        y = from.ty + dy
+        paint()
+      } else if (mode === 'down') {
+        x = dx * 0.5
+        y = Math.max(0, dy)
+        scale = Math.max(0.75, 1 - y / 1600)
+        paint()
+        fade(Math.max(0, 1 - y / 360))
+      } else if (mode === 'side') {
+        x = dx
+        paint()
+      }
+    },
+    { passive: false },
+  )
+  const end = (ev: TouchEvent): void => {
+    lastTouch = Date.now()
+    const t = ev.changedTouches[0]
+    if (mode === 'pinch') {
+      if (ev.touches.length >= 2) return
+      scale = Math.min(MOST_ZOOM, Math.max(1, scale))
+      keepInside()
+      paint(true)
+      // One finger still on it carries on as a drag.
+      if (ev.touches.length === 1 && scale > 1) startOne(ev.touches[0], ev.timeStamp)
+      else mode = 'none'
+      return
+    }
+    if (ev.touches.length > 0) return
+    const quick = ev.timeStamp - speed.t < 90
+    const dx = t ? t.clientX - from.x : 0
+    const dy = t ? t.clientY - from.y : 0
+    const tapped = mode === 'tap' || (mode === 'pan' && Math.hypot(dx, dy) < 10)
+    if (tapped && ev.type === 'touchend' && t) {
+      const second = Date.now() - lastTap.t < 300 && Math.hypot(t.clientX - lastTap.x, t.clientY - lastTap.y) < 30
+      lastTap = second ? { t: 0, x: 0, y: 0 } : { t: Date.now(), x: t.clientX, y: t.clientY }
+      if (second && img.contains(ev.target as Node)) {
+        if (scale > 1) {
+          scale = 1
+          x = 0
+          y = 0
+        } else {
+          zoomAt(DOUBLE_TAP_ZOOM, t.clientX, t.clientY)
+          keepInside()
+        }
+        paint(true)
+      }
+    } else if (mode === 'pan') {
+      keepInside()
+      paint(true)
+    } else if (mode === 'down') {
+      root.classList.remove('dragging')
+      if (ev.type === 'touchend' && (dy > 120 || (quick && speed.y > 0.5))) {
+        y = window.innerHeight
+        paint(true)
+        fade(0)
+        window.setTimeout(to.shut, 200)
+      } else {
+        x = 0
+        y = 0
+        scale = 1
+        paint(true)
+        fade(null)
+      }
+    } else if (mode === 'side' && to.step) {
+      root.classList.remove('dragging')
+      const width = stage.clientWidth
+      const flicked = quick && Math.abs(speed.x) > 0.4
+      if (ev.type === 'touchend' && (Math.abs(dx) > width * 0.25 || flicked)) {
+        const by = dx < 0 ? 1 : -1
+        x = -by * width
+        paint(true)
+        window.setTimeout(() => {
+          to.step?.(by)
+          // The next one comes in from the other side.
+          x = by * width
+          paint()
+          void img.offsetWidth
+          x = 0
+          paint(true)
+        }, 180)
+      } else {
+        x = 0
+        paint(true)
+      }
+    }
+    mode = 'none'
+  }
+  stage.addEventListener('touchend', end)
+  stage.addEventListener('touchcancel', end)
+
+  return { reset, touchedLately: () => Date.now() - lastTouch < 800 }
 }
 
 interface Pending {
