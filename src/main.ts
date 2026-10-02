@@ -38,6 +38,7 @@ import { loggingOut } from './ui/log-out'
 import { clear } from './ui/dom'
 import { HomeView, type DirectRef } from './ui/home-view'
 import { noticePicture, notify, notifyText, notifyWhat, offerNotify } from './ui/notify'
+import { keepVoiceOnPhone } from './ui/phone-voice'
 import { createWindow, type WindowChrome } from './ui/shell'
 import { tabBar, type Tab } from './ui/tab-bar'
 import { chirpMention, isNews, warmSounds } from './ui/sounds'
@@ -88,6 +89,7 @@ window.addEventListener(SOUND_HELD, () => {
   })
 })
 watchForDesktopUpdates()
+keepVoiceOnPhone()
 warmEmoji()
 
 interface Screen {

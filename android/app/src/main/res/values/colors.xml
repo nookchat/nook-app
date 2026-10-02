@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The surface-0 token of src/brand/tokens.css: behind the page until it paints. -->
+    <color name="nook_surface">#FDF6F3</color>
+    <!-- The tile of the app icon. -->
+    <color name="nook_ink">#151518</color>
+</resources>

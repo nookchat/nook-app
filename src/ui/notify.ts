@@ -2,6 +2,7 @@ import { doNotDisturb } from '../store/status'
 import { lookingAtNook, noteMissed } from './looking'
 import type { SpaceFiles } from '../net/files'
 import type { Attachment } from '../store/log'
+import { phoneShell } from './phone-shell'
 import { toast } from './toast'
 
 const KEY = 'nook.notify.v1'
@@ -59,14 +60,26 @@ export type NotifyWhat = 'mentions' | 'all'
 type NotifyState = 'off' | 'on' | 'blocked' | 'unsupported'
 
 function supported(): boolean {
-  return typeof Notification !== 'undefined'
+  return !!phoneShell || typeof Notification !== 'undefined'
 }
+
+/** The browser's leave to notify, or the Android app's. */
+function permission(): NotificationPermission {
+  if (phoneShell) {
+    const now = phoneShell.notifyPermission()
+    return now === 'prompt' ? 'default' : now
+  }
+  return Notification.permission
+}
+
+// The Android app says what it may do a moment after the page starts.
+void phoneShell?.ready.then(changed)
 
 export function notifyState(): NotifyState {
   if (!supported()) return 'unsupported'
-  if (Notification.permission === 'denied') return 'blocked'
+  if (permission() === 'denied') return 'blocked'
   try {
-    if (Notification.permission !== 'granted') return 'off'
+    if (permission() !== 'granted') return 'off'
     // On unless turned off: the desktop app has the permission from the start.
     return localStorage.getItem(KEY) === 'off' ? 'off' : 'on'
   } catch {
@@ -76,14 +89,15 @@ export function notifyState(): NotifyState {
 
 export async function askNotify(): Promise<NotifyState> {
   if (!supported()) return 'unsupported'
-  if (Notification.permission === 'default') {
+  if (phoneShell && permission() !== 'granted') await phoneShell.askNotify()
+  else if (permission() === 'default') {
     try {
       await Notification.requestPermission()
     } catch {
       /* old browsers take a callback instead */
     }
   }
-  if (Notification.permission !== 'granted') return 'blocked'
+  if (permission() !== 'granted') return 'blocked'
   try {
     localStorage.setItem(KEY, 'on')
   } catch {
@@ -142,7 +156,8 @@ interface DesktopNotify {
   onNotifyClick?: (fn: (id: string) => void) => () => void
 }
 
-const shell = (): DesktopNotify | undefined => (window as unknown as { nookDesktop?: DesktopNotify }).nookDesktop
+const shell = (): DesktopNotify | undefined =>
+  (window as unknown as { nookDesktop?: DesktopNotify }).nookDesktop ?? phoneShell ?? undefined
 
 /** What a notification the desktop app shows does when clicked, by its id. */
 const clicks = new Map<string, () => void>()
@@ -151,7 +166,8 @@ let counted = 0
 
 /**
  * Shows a notification through the desktop app, which keeps showing them with its window put away
- * in the tray. False when this desktop app is too old to, and the page shows it itself.
+ * in the tray, or through the Android app, whose page has no notifications of its own. False when
+ * this desktop app is too old to, and the page shows it itself.
  */
 function showInShell(
   title: string,
@@ -254,7 +270,7 @@ export async function testNotify(): Promise<TestResult> {
  * message that arrives while they are off offers them, once per device, in a toast.
  */
 export function offerNotify(): void {
-  if (!supported() || Notification.permission !== 'default' || read(OFFERED_KEY)) return
+  if (!supported() || permission() !== 'default' || read(OFFERED_KEY)) return
   write(OFFERED_KEY, String(Date.now()))
   window.setTimeout(() => {
     toast('Get a notification when somebody mentions you or messages you, while Nook is in the background.', 'info', 20_000, {

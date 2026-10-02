@@ -17,9 +17,14 @@
     "file-speed": "node test/file-speed.mjs",
     "tour": "node test/tour.mjs",
     "desktop": "npm --prefix desktop run dev",
-    "desktop:dist": "npm --prefix desktop run dist"
+    "desktop:dist": "npm --prefix desktop run dist",
+    "android": "cap sync android && cap open android",
+    "android:dev": "NOOK_URL=http://localhost:5173 cap sync android && adb reverse tcp:5173 tcp:5173 && adb reverse tcp:8787 tcp:8787 && cap run android",
+    "android:release": "cap sync android && cd android && ./gradlew bundleRelease",
+    "android:apk": "cap sync android && cd android && ./gradlew assembleSideload"
   },
   "dependencies": {
+    "@capacitor/core": "^8.5.2",
     "@fontsource/bricolage-grotesque": "^5.3.0",
     "@fontsource/dm-sans": "^5.3.0",
     "@fontsource/jetbrains-mono": "^5.3.0",
@@ -33,6 +38,8 @@
     "twemoji-art": "https://codeload.github.com/jdecked/twemoji/tar.gz/refs/tags/v17.0.3"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/cli": "^8.5.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "playwright-core": "^1.62.1",

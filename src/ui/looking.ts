@@ -1,7 +1,10 @@
+import { phoneShell } from './phone-shell'
+
 /**
  * Whether you look at Nook now: what decides a notification, and whether what comes into the
  * open channel is read. In a browser, the tab is shown and the window is in front. In the desktop
  * app the shell says, since a window put away in the tray can still read as visible to the page.
+ * The Android app says too: it is in front, not put away and not under the lock screen.
  */
 
 interface DesktopLooking {
@@ -12,7 +15,8 @@ interface DesktopLooking {
 /** Said on window when you start or stop looking at Nook. */
 export const LOOKING_CHANGED = 'nook:looking'
 
-const desktop = (): DesktopLooking | undefined => (window as unknown as { nookDesktop?: DesktopLooking }).nookDesktop
+const desktop = (): DesktopLooking | undefined =>
+  (window as unknown as { nookDesktop?: DesktopLooking }).nookDesktop ?? phoneShell ?? undefined
 
 let desktopLooking: boolean | null = null
 /** What would have notified you since you last looked: the desktop app's count, as Discord's. */

@@ -5,6 +5,8 @@ import { convertQuickly } from './convert'
 import { faststart } from './faststart'
 import { health } from './server-api'
 import { voiceSeconds } from '../media/voice-note'
+import { phoneShell } from '../ui/phone-shell'
+import { toast } from '../ui/toast'
 
 const DEFAULT_MAX_BYTES = 100 * 1024 * 1024
 const CACHE_BYTES = 400 * 1024 * 1024
@@ -638,6 +640,11 @@ export function startStreaming(): void {
 export class UploadRefused extends Error {}
 
 export function saveFile(blob: Blob, name: string): void {
+  // A WebView saves no download, so the Android app puts the file in Downloads itself.
+  if (phoneShell) {
+    phoneShell.save(blob, name).catch(() => toast('The file could not be saved.', 'warn'))
+    return
+  }
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url

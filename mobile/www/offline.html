@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Nook</title>
+<style>
+  :root { color-scheme: light dark; --bg: #FDF6F3; --text: #191412; --muted: #5F5551; --accent: #FF8A5B; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #100C0B; --text: #F8EDE9; --muted: #B6ADA9; } }
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: grid; place-items: center; background: var(--bg); color: var(--text);
+    font: 16px/1.5 system-ui, sans-serif; text-align: center; padding: 24px; box-sizing: border-box;
+  }
+  h1 { font-size: 22px; margin: 0 0 8px; }
+  p { color: var(--muted); margin: 0 0 24px; }
+  button {
+    font: inherit; font-weight: 600; border: 0; border-radius: 10px; padding: 12px 22px;
+    background: var(--accent); color: #191412;
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Nook cannot reach its site</h1>
+  <p>Check the network, then try again.</p>
+  <button id="again">Try again</button>
+</main>
+<script>
+  // The shell put this page in place of the home site. /retry asks it to load the home site again.
+  const again = () => location.replace('/retry')
+  document.getElementById('again').addEventListener('click', again)
+  window.addEventListener('online', again)
+</script>
+</body>
+</html>

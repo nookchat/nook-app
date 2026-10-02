@@ -441,12 +441,15 @@ src/
   ui/
     home-view.ts      Home: direct messages from every space
     welcome.ts        the first visit: your name, and a picture
+    tour.ts           the tour after I’m new: what Nook is, and how to start
     call.ts           a call ringing, the strip over a conversation, the voice dock
     voice-settings.ts microphone and speaker, a microphone test, a relay test
     space-view.ts     a space: channels, voice, sharing, search, people
     desktop-offer.ts  the desktop app and its download, under the people in a browser
     gestures.ts       a finger on a phone: drawers, sheets, a long press, the back button
     tab-bar.ts        the bar along the bottom of a phone: Home, the space, and You
+    phone-shell.ts    the Android app around the page: notifications, looking, saving
+    phone-voice.ts    the call's notification in the Android app, with Mute and Leave
     space-list.ts     the home page: your spaces, making and joining one
     chat-panel.ts     the conversation, drawn as nodes and never as HTML
     attachments.ts    files in a message, the picture viewer, and the upload tray
@@ -460,6 +463,8 @@ src/
     video-surface.ts  fit, fill, and one to one with zoom and pan
     qr.ts             a QR encoder, byte mode, level M, versions 1 to 10
 server/               the server and its Docker image; see server/README.md
+android/              the Android app, a Capacitor shell; see android/README.md
+mobile/www/           the page the Android app shows when it cannot reach the site
 docs/
   self-hosting.md     run your own server, or a cluster with friends
 test/
@@ -519,6 +524,29 @@ trackpad pinch, or `+` and `-`, zooms. A drag moves a zoomed picture.
     side for the next one, and pinch or double tap to zoom in.
   - The back button closes the picture or the side bar before it leaves the
     page.
+- **Android:** `android/` is a Capacitor shell around the site, as the
+  desktop app is. It loads `https://www.nookchat.app`, so invite links stay
+  the same and each update of the site reaches it at once, and it adds what a
+  WebView does not have (`src/ui/phone-shell.ts`, and `NookPhonePlugin.java`
+  on the other side):
+  - Notifications, shown by Android, with the sender's face and the picture
+    from the message. A tap opens the app on what it was about.
+  - A call keeps going with the app put away or the screen off. Android lets
+    the microphone go on only behind a notification, so the call has one, with
+    Mute and Leave (`VoiceService.java`, `src/ui/phone-voice.ts`). The first
+    join asks for leave to notify, since Android hides that notification
+    without it.
+  - Save puts a file in Downloads.
+  - The status bar and the navigation bar take the colour of the page.
+  - Back goes back through the page, and with nothing left it puts the app
+    behind the others, so a call keeps going.
+  - A `nook://` link, or an invite link to the site once Android trusts the
+    site (`assetlinks.json`), opens in the app.
+
+  The app has no push service yet, so notifications come only while it runs:
+  open, in a call, or in the first minute or so after it is put away, before
+  Android freezes it. `android/README.md` says how to build it and send it to
+  Google Play.
 - **Desktop:** `desktop/` is an Electron shell around the site. It loads
   `https://cathode.video`, so invite links stay the same, and it adds a picker
   for a screen or a window. On Windows it can share the system sound too. It
