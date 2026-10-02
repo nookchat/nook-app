@@ -231,6 +231,38 @@ a direct message or a mention in any of them reaches you wherever you are.
 
 Nothing about a space is written to IndexedDB or local storage.
 
+**The move to nookchat.app.** The home site was `cathode.video`, and is
+`nookchat.app` now. A browser keeps each site's storage apart, so what Nook
+kept on the old site (your key, your name, your servers, your settings) is not
+on the new one by itself. It comes over once, with nothing to click
+(`public/boot-move.js`, `public/move.html`):
+
+- A browser that opens the new site with no account goes to the old site's
+  `move.html` and back, before the page starts. The new page makes a key pair
+  for the trip and sends only its public key. The old site seals everything
+  Nook kept there for that key, and the new page opens it, keeps it, and
+  starts again as you, where you were. A browser with nothing on the old site
+  comes back with nothing, and is welcomed. Either way it goes once, ever.
+- The new page takes only an answer to its own trip, made in the last five
+  minutes, so a link with a made up answer does nothing.
+- An old link or bookmark in a browser tab goes on to the same place on the
+  new site, with its code, and brings the account the same way.
+- The desktop app stays on the old site, where its account is. So does an app
+  on a home screen, whose storage is its own; Link a device moves it. The
+  Android app starts on the new site with nothing to bring.
+- The old site must keep serving the page, not send it on to the new one, or
+  `move.html` cannot read what it kept.
+
+`node test/home-move.test.mjs` opens the page under both names, through a
+proxy with a certificate made for the run, as Chrome takes `.app` only over
+HTTPS. `MOVE_ENGINE=webkit` runs it in WebKit, Safari's engine. WebKit lets no
+HTTPS page call a server on `http://localhost`, so there it checks what each
+site's storage holds, and leaves out opening the space.
+
+A trip that does not start in 10 seconds lets the page start as it is, and a
+trip that never came back is made again on the next visit, three times at
+most.
+
 **A backup.** Settings, Your account, Save a backup, saves your account
 as one small file, with a password if you want one, and Settings says when
 this device last saved one. If a browser's data is ever cleared, open Nook,

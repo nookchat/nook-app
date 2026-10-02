@@ -349,6 +349,8 @@ async function settle(): Promise<void> {
 }
 
 async function start(): Promise<void> {
+  // public/boot-move.js may be bringing the account over from the old home site: then it starts the page again.
+  await (window as Window & { nookMoving?: Promise<void> }).nookMoving
   if (window.location.hash.startsWith(DEVICE_LINK_PREFIX)) {
     const { linkFromAddress } = await import('./ui/link-device')
     bootDone()

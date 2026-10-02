@@ -178,6 +178,8 @@ export default defineConfig({
   server: {
     host: true,
     port: 5173,
+    // test/home-move.test.mjs opens the page under the new and the old home's names.
+    allowedHosts: ['www.nookchat.app', 'www.cathode.video'],
   },
   build: {
     target: 'es2022',
