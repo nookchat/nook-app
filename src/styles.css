@@ -2862,8 +2862,9 @@ button.sound-source-file {
   background: color-mix(in srgb, var(--danger) 24%, var(--surface-2));
 }
 
+/* Cancel at the left edge, the primary action at the right: never bunched together. */
 .ask-buttons {
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: 8px;
 }
 
