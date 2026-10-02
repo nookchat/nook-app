@@ -49,3 +49,38 @@ class Pitch extends AudioWorkletProcessor {
 }
 
 registerProcessor('pitch', Pitch)
+
+// Makes a voice sound like an old game: each sample is held for a few, and rounded to a few levels.
+class Crush extends AudioWorkletProcessor {
+  static get parameterDescriptors() {
+    return [
+      { name: 'bits', defaultValue: 5, minValue: 1, maxValue: 16, automationRate: 'k-rate' },
+      { name: 'rate', defaultValue: 6000, minValue: 500, maxValue: 48000, automationRate: 'k-rate' },
+    ]
+  }
+
+  constructor() {
+    super()
+    this.held = 0
+    this.step = 1
+  }
+
+  process(inputs, outputs, parameters) {
+    const out = outputs[0][0]
+    if (!out) return true
+    const input = inputs[0][0]
+    const levels = 2 ** (parameters.bits[0] - 1)
+    const every = sampleRate / parameters.rate[0]
+    for (let i = 0; i < out.length; i++) {
+      this.step += 1
+      if (this.step >= every) {
+        this.step -= every
+        this.held = Math.round((input ? input[i] : 0) * levels) / levels
+      }
+      out[i] = this.held
+    }
+    return true
+  }
+}
+
+registerProcessor('crush', Crush)

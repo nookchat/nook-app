@@ -9168,6 +9168,10 @@ input.invalid:focus {
   opacity: 0.85;
 }
 
+.voice-preview {
+  gap: 10px;
+}
+
 /* On the home screen, when another device of yours is in a call: its soundboard, with no space open. */
 .remote-board {
   display: flex;

@@ -19,6 +19,8 @@ import { knownServers } from '../store/server-spaces'
 import { h } from './dom'
 import { icon } from './icons'
 
+const PREVIEW_HINT = 'Wear headphones, or the speaker plays back into the mic.'
+
 interface Test {
   stop(): void
   hear(on: boolean): void
@@ -223,8 +225,21 @@ export function voiceSettings(processing: HTMLElement | null = null): HTMLElemen
   const which = h('span', { class: 'tiny faint truncate' })
   const testButton = h('button', {}, [icon('mic', 15), 'Test mic'])
   const hearButton = h('button', { class: 'ghost hidden' }, [icon('volume', 15), 'Hear yourself'])
+  // The voice changer's own way in to the same test: one press opens the mic and plays it back.
+  const previewButton = h('button', {}, [icon('volume', 15), 'Preview my voice'])
+  const previewNote = h('span', { class: 'tiny faint', text: PREVIEW_HINT })
   let test: Test | null = null
   let hearing = false
+  const paintHearing = (): void => {
+    hearButton.classList.toggle('on', hearing)
+    previewButton.classList.toggle('on', hearing)
+    previewButton.replaceChildren(...(hearing ? [icon('stop', 13), 'Stop preview'] : [icon('volume', 15), 'Preview my voice']))
+  }
+  const setHearing = (on: boolean): void => {
+    hearing = on
+    test?.hear(on)
+    paintHearing()
+  }
   const watch = new MutationObserver(() => {
     if (!root.isConnected) stop()
   })
@@ -234,15 +249,16 @@ export function voiceSettings(processing: HTMLElement | null = null): HTMLElemen
     test?.stop()
     test = null
     hearing = false
+    paintHearing()
     bar.style.width = '0%'
     meter.classList.remove('open')
     testButton.replaceChildren(icon('mic', 15), 'Test mic')
     hearButton.classList.add('hidden')
-    hearButton.classList.remove('on')
     which.textContent = ''
   }
   const start = async (): Promise<void> => {
     testButton.disabled = true
+    previewButton.disabled = true
     try {
       test = await startTest((level, open, label) => {
         bar.style.width = `${Math.round(level * 100)}%`
@@ -257,23 +273,27 @@ export function voiceSettings(processing: HTMLElement | null = null): HTMLElemen
       which.textContent = err instanceof Error ? err.message : 'The microphone would not open.'
     } finally {
       testButton.disabled = false
+      previewButton.disabled = false
     }
   }
   const restart = async (): Promise<void> => {
     const wasHearing = hearing
     stop()
     await start()
-    if (wasHearing) {
-      hearing = true
-      test?.hear(true)
-      hearButton.classList.add('on')
-    }
+    if (wasHearing) setHearing(true)
   }
   testButton.addEventListener('click', () => (test ? stop() : void start()))
-  hearButton.addEventListener('click', () => {
-    hearing = !hearing
-    test?.hear(hearing)
-    hearButton.classList.toggle('on', hearing)
+  hearButton.addEventListener('click', () => setHearing(!hearing))
+  previewButton.addEventListener('click', async () => {
+    if (hearing) {
+      stop()
+      return
+    }
+    previewNote.textContent = PREVIEW_HINT
+    if (!test) await start()
+    if (test) setHearing(true)
+    // Why the mic would not open, here as well as under the test, which is further up.
+    else previewNote.textContent = which.textContent
   })
 
   const results = h('div', { class: 'stack tight' })
@@ -337,8 +357,12 @@ export function voiceSettings(processing: HTMLElement | null = null): HTMLElemen
     ),
     section(
       'Voice changer',
-      h('div', { class: 'tiny faint', text: 'Changes what the others hear. Start the mic test and choose Hear yourself to try one.' }),
+      h('div', { class: 'tiny faint', text: 'Changes what the others hear. Preview your voice, then choose one to hear it at once.' }),
       voices,
+      h('div', { class: 'row wrap voice-preview' }, [
+        previewButton,
+        previewNote,
+      ]),
     ),
     section(
       'Input sensitivity',

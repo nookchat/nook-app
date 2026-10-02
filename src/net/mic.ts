@@ -16,6 +16,16 @@ export const VOICES = [
   { id: 'robot', label: 'Robot', about: 'A buzz in the voice' },
   { id: 'radio', label: 'Radio', about: 'Thin, like a walkie-talkie' },
   { id: 'echo', label: 'Echo', about: 'Your voice comes back after you' },
+  { id: 'alien', label: 'Alien', about: 'A wobbling ring, from far away' },
+  { id: 'underwater', label: 'Underwater', about: 'Muffled, with bubbles' },
+  { id: 'drunk', label: 'Drunk', about: 'Slides up and down, slowly' },
+  { id: 'goat', label: 'Goat', about: 'Bleats every word' },
+  { id: 'fan', label: 'Fan', about: 'Talking into a desk fan' },
+  { id: 'clones', label: 'Clones', about: 'Three of you, all at once' },
+  { id: 'demon', label: 'Demon', about: 'An octave down, and angry' },
+  { id: 'ghost', label: 'Ghost', about: 'Wavers in an empty hall' },
+  { id: 'retro', label: '8-bit', about: 'Like an old video game' },
+  { id: 'kazoo', label: 'Kazoo', about: 'A buzz with every word' },
 ] as const
 
 export type VoiceId = (typeof VOICES)[number]['id']
