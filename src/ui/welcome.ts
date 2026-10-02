@@ -7,6 +7,7 @@ import { lockup } from './ghost'
 import { icon, type IconName } from './icons'
 import { backupTaker, linkTaker } from './link-device'
 import { toast } from './toast'
+import { tour } from './tour'
 
 export function welcome(mount: HTMLElement, invited: boolean): Promise<void> {
   const me = loadIdentity().pubkey
@@ -113,26 +114,37 @@ export function welcome(mount: HTMLElement, invited: boolean): Promise<void> {
     backup.el,
   ])
 
-  const steps = [choose, naming, account, device, file]
+  // Somebody new takes the tour first; it ends at their name, and the name's Back goes back to it.
+  const intro = tour(invited, {
+    done: () => show(naming),
+    back: () => show(choose),
+  })
+
+  const steps = [choose, intro.el, naming, account, device, file]
   const before = new Map<HTMLElement, HTMLElement>([
-    [naming, choose],
+    [naming, intro.el],
     [account, choose],
     [device, account],
     [file, account],
   ])
+  let shownBefore: HTMLElement = choose
   const show = (step: HTMLElement): void => {
     for (const each of steps) each.classList.toggle('hidden', each !== step)
+    if (step === intro.el) intro.show(shownBefore === naming ? 'last' : 'first')
+    shownBefore = step
     link.stop()
     const shown = (el: HTMLElement): boolean => el.offsetParent !== null
     const field = [...step.querySelectorAll<HTMLElement>('input:not([type="file"])')].find(shown)
-    ;(field ?? [...step.querySelectorAll<HTMLElement>('button')].find(shown))?.focus()
+    // On the tour that is Next, not Skip.
+    const lead = step.querySelector<HTMLElement>('.tour-next')
+    ;(field ?? lead ?? [...step.querySelectorAll<HTMLElement>('button')].find(shown))?.focus()
   }
   for (const [step, previous] of before) {
     const button = back()
     button.addEventListener('click', () => show(previous))
     step.append(button)
   }
-  fresh.addEventListener('click', () => show(naming))
+  fresh.addEventListener('click', () => show(intro.el))
   known.addEventListener('click', () => show(account))
   fromDevice.addEventListener('click', () => show(device))
   fromFile.addEventListener('click', () => show(file))

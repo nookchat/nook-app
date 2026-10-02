@@ -44,6 +44,7 @@ try {
   const ana = await fresh()
   await ana.goto(APP_URL)
   await ana.click('.welcome-step:not(.hidden) button.primary')
+  await ana.click('.tour-skip')
   await ana.fill('input[aria-label="Your name"]', 'Ana')
   await ana.keyboard.press('Enter')
   await ana.fill('input[aria-label="Space name"]', 'linked')

@@ -83,6 +83,7 @@ try {
 
   await host.waitForSelector('button:has-text("I have an account")', { timeout: 10_000 })
   await host.click('.welcome-step:not(.hidden) button.primary')
+  await host.click('.tour-skip')
   await host.waitForSelector('input[aria-label="Your name"]', { timeout: 10_000 })
   const emptyStops = await host.evaluate(() => document.querySelector('.welcome-step:not(.hidden) .welcome-go')?.disabled === true)
   check('somebody new is asked for a name first, and cannot go on without one', emptyStops)
@@ -205,6 +206,7 @@ try {
   await viewer.waitForSelector('button:has-text("I have an account")', { timeout: 10_000 })
   const invitedTitle = await viewer.$eval('.welcome-title', (el) => el.textContent)
   await viewer.click('.welcome-step:not(.hidden) button.primary')
+  await viewer.click('.tour-skip')
   await viewer.waitForSelector('input[aria-label="Your name"]', { timeout: 10_000 })
   const invitedWords = await viewer.evaluate(() => ({
     go: document.querySelector('.welcome-step:not(.hidden) .welcome-go')?.textContent ?? '',

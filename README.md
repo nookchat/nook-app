@@ -34,6 +34,12 @@ with voice does it.
 - **The first visit** asks for the name people will see, and a picture if you
   want one, before anything else, on the home page or on an invite. You can
   change both in Settings.
+- **The tour**: I’m new first shows four slides, each with a picture drawn
+  from the brand: what Nook is, what a space has, how what you write is
+  sealed, and the three steps to a first conversation (`src/ui/tour.ts`).
+  Next, Back, the dots, the arrow keys and a swipe go through it, and Skip
+  goes straight to the name. On an invite, the last slide says you join.
+  I have an account skips it.
 - **Home** has your direct messages from every space, the way Discord does it.
   A direct message is still kept in the log of the space where you met, sealed
   so only the two of you can read it.
