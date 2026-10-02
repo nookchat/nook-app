@@ -1162,7 +1162,7 @@ export class SpaceView {
   private async saveGroup(id: string | null): Promise<void> {
     const had = id ? this.allGroups().find((g) => g.id === id) : null
     if (id && !had) return
-    const answer = await askSound(had ? `Change ${had.label}` : 'New group', had?.label ?? '', had?.emoji ?? '📁', had ? 'Save' : 'Make')
+    const answer = await askSound(had ? `Change ${had.label}` : 'New group', had?.label ?? '', had?.emoji ?? '📁', had ? 'Save' : 'Create group')
     const name = answer?.name.trim() ?? ''
     if (!answer || !name) return
     if (had && name === had.label && answer.emoji === had.emoji) return
