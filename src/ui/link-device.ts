@@ -1,10 +1,26 @@
 import { confirmDanger } from './ask'
 import { h, copyText } from './dom'
+import { ghost } from './ghost'
 import { icon } from './icons'
 import { qrSvg } from './qr'
 import { toast } from './toast'
 import { serverTag } from '../backend'
-import { adoptBundle, backupFile, linkInAddress, offerLink, openOffer, readBackup, readOffer, restoreBackup, takeOffer, type Bundle } from '../net/link'
+import {
+  adoptBundle,
+  backupFile,
+  linkInAddress,
+  offerLink,
+  openOffer,
+  readBackup,
+  readOffer,
+  restoreBackup,
+  sayLinked,
+  takeOffer,
+  watchLink,
+  type Bundle,
+  type LinkState,
+} from '../net/link'
+import { shareBase } from '../room'
 import { saveFile } from '../net/files'
 import { loadIdentity, nameChosen } from '../store/identity'
 import { newSpaceServer } from '../store/server-spaces'
@@ -58,7 +74,8 @@ function restart(name: string): void {
   window.setTimeout(() => window.location.replace(`${window.location.origin}${window.location.pathname}`), 900)
 }
 
-const here = (): string => window.location.host
+/** The site to open on the other device: the home site, or this copy of Nook. */
+const here = (): string => new URL(shareBase()).host
 
 function readout(label: string, value: string, extra: string): HTMLElement {
   return h('div', { class: 'link-readout' }, [
@@ -67,14 +84,69 @@ function readout(label: string, value: string, extra: string): HTMLElement {
   ])
 }
 
+/** What the code's dialog shows once the other device has it: waiting for it, linked, or kept as it was. */
+function linkNews(state: LinkState, again: () => void, close: () => void): HTMLElement | null {
+  if (state === 'opened') {
+    return h('div', { class: 'link-news', role: 'status' }, [
+      h('span', { class: 'link-news-ghost' }, [ghost({ mood: 'typing', size: 64 })]),
+      h('h2', { class: 'link-news-title', text: 'Your other device has the code' }),
+      h('p', { class: 'small faint', text: 'Waiting for it to say yes…' }),
+    ])
+  }
+  if (state === 'linked') {
+    const done = h('button', { class: 'primary big welcome-go', text: 'Done', on: { click: () => close() } })
+    window.setTimeout(() => done.focus(), 0)
+    return h('div', { class: 'link-news', role: 'status' }, [
+      h('span', { class: 'link-news-ghost' }, [
+        ghost({ mood: 'idle', entrance: 'peek', size: 64 }),
+        h('span', { class: 'link-news-badge' }, [icon('check', 16)]),
+      ]),
+      h('h2', { class: 'link-news-title', text: 'Linked' }),
+      h('p', { class: 'small faint', text: 'Your other device is you now, with your spaces and your messages.' }),
+      done,
+    ])
+  }
+  if (state === 'declined') {
+    const make = h('button', { class: 'primary big welcome-go', text: 'Make a new code' })
+    make.addEventListener('click', () => {
+      close()
+      again()
+    })
+    return h('div', { class: 'link-news', role: 'status' }, [
+      h('span', { class: 'link-news-ghost' }, [ghost({ mood: 'still', size: 64 })]),
+      h('h2', { class: 'link-news-title', text: 'Not linked' }),
+      h('p', { class: 'small faint', text: 'The other device kept its own account. The code is used up.' }),
+      make,
+    ])
+  }
+  return null
+}
+
 export function showLinkCode(): void {
   const body = h('div', { class: 'link-offer' }, [h('div', { class: 'tiny faint', text: 'Making a link…' })])
   const left = h('div', { class: 'tiny faint' })
   let timer = 0
-  const close = dialog('Link a device', [body, left], () => window.clearInterval(timer))
+  let open = true
+  const close = dialog('Link a device', [body, left], () => {
+    open = false
+    window.clearInterval(timer)
+  })
 
   void offerLink().then(
     (offer) => {
+      // The other device says how it went, and this one shows it. Closed before then, a toast says.
+      watchLink(offer, (state) => {
+        if (!open) {
+          if (state === 'linked') toast('Linked. Your other device is you now.', 'good')
+          return
+        }
+        const news = linkNews(state, showLinkCode, close)
+        if (!news) return
+        // The code is used: no time is left to count.
+        window.clearInterval(timer)
+        body.replaceChildren(news)
+        left.textContent = ''
+      })
       const frame = h('div', { class: 'qr-frame' })
       try {
         frame.append(qrSvg(offer.link, { pixels: 200 }))
@@ -442,7 +514,10 @@ export async function linkFromAddress(mount: HTMLElement): Promise<boolean> {
     clean()
     // Anybody can send a link like this. Taking it makes this device whoever made it, with a key
     // they hold: they would read what is written from here on. So it is said plainly, every time.
-    if (!(await askToBecome(card, words, bundle))) return false
+    const yes = await askToBecome(card, words, bundle)
+    // The device that showed the code says Linked, or that this one kept its own account.
+    await sayLinked(offer, yes)
+    if (!yes) return false
     const name = adoptBundle(bundle)
     words.textContent = name ? `Linked. Welcome back, ${name}.` : 'Linked.'
     restart(name)

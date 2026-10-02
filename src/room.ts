@@ -118,9 +118,19 @@ export async function deriveRoom(secret: string, password = ''): Promise<Room> {
   return { secret: canonical, id: toHex(idBytes).slice(0, 32), key, write: toHex(writeBytes) }
 }
 
+/** The home site. Every link people share points here, whichever of its addresses the page came from. */
+const HOME = 'https://nookchat.app'
+/** The home site, with or without www, and the address it had before. */
+const HOME_HOST = /^(www\.)?(nookchat\.app|cathode\.video)$/i
+
+/** Where a link people share starts: the home site, or this page when it is a copy of Nook served elsewhere. */
+export function shareBase(): string {
+  const { origin, host, pathname } = window.location
+  return `${HOME_HOST.test(host) ? HOME : origin}${pathname}`
+}
+
 export function roomLink(secret: string, locked = false, server = '', pass = ''): string {
-  const { origin, pathname } = window.location
-  return `${origin}${pathname}#${linkTail(secret, locked, server, pass)}`
+  return `${shareBase()}#${linkTail(secret, locked, server, pass)}`
 }
 
 function unescapeServerTag(tag: string): string {

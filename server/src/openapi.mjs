@@ -136,6 +136,20 @@ export const openapi = {
         responses: { 200: { description: 'The sealed link' }, 404: { description: 'Used, or run out' } },
       },
     },
+    '/api/v1/links/{id}/done': {
+      post: {
+        summary: 'The device that took a link says whether it became the account: { "linked": true } or false',
+        parameters: [link],
+        responses: { 200: { description: 'Said' }, 404: { description: 'Not opened, or run out' } },
+      },
+    },
+    '/api/v1/links/{id}/state': {
+      get: {
+        summary: 'What became of a link: waiting, opened, linked, declined or gone. With from, waits up to 25 seconds for a change',
+        parameters: [link, { name: 'from', in: 'query', required: false, schema: { type: 'string' } }],
+        responses: { 200: { description: 'The state' } },
+      },
+    },
     '/api/v1/people/{id}': {
       get: { summary: "A person's sealed record of their spaces", parameters: [person], responses: { 200: { description: 'OK' }, ...errors } },
       put: {

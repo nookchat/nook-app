@@ -3,7 +3,7 @@ import { HAS_TURN, MAX_FILE_BYTES, PREVIEWS, TURN_ONLY, VERSION, originAllowed }
 import { FILE_ID, filesFor, keep, send } from './files.mjs'
 import { gifService, gifs, hasGifs } from './gifs.mjs'
 import { ApiError, addressOf, allow, corsHeaders, fail, readJson, reply } from './http.mjs'
-import { LINK_ID, MAX_LINK, putLink, takeLink } from './links.mjs'
+import { endLink, LINK_ID, linkState, MAX_LINK, putLink, takeLink } from './links.mjs'
 import { liveFor } from './live.mjs'
 import { openapi } from './openapi.mjs'
 import { preview, previewImage } from './preview.mjs'
@@ -172,6 +172,15 @@ export async function handle(req, res) {
         limited(req)
         if (method === 'PUT') return reply(res, 200, putLink(b, (await readJson(req, MAX_LINK + 1024))?.blob, addressOf(req)))
         if (method === 'GET') return reply(res, 200, takeLink(b))
+      }
+      if (a === 'links' && b && (c === 'state' || c === 'done') && !parts[5]) {
+        if (!LINK_ID.test(b)) throw new ApiError(400, 'bad_link', 'That is not a link id.')
+        limited(req)
+        if (c === 'state' && method === 'GET') {
+          const from = url.searchParams.get('from') ?? ''
+          return reply(res, 200, await linkState(b, /^[a-z]{1,10}$/.test(from) ? from : '', res))
+        }
+        if (c === 'done' && method === 'POST') return reply(res, 200, endLink(b, (await readJson(req, 1024))?.linked === true))
       }
       if (a === 'people' && b && !c) {
         const id = personOf(b)

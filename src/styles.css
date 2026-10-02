@@ -1006,6 +1006,72 @@ main {
   letter-spacing: 0;
 }
 
+/* What the code's dialog shows once the other device has the code. */
+.link-news {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 20px 4px 4px;
+  text-align: center;
+}
+
+.link-news-ghost {
+  position: relative;
+  display: flex;
+  margin-bottom: 6px;
+}
+
+.link-news-badge {
+  position: absolute;
+  right: -6px;
+  bottom: 2px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--online);
+  color: var(--on-good);
+  box-shadow: 0 0 0 3px var(--pane);
+  animation: link-news-badge var(--dur-base) var(--ease-out) 300ms both;
+}
+
+.link-news-badge .icon path {
+  stroke-width: 2.5;
+}
+
+.link-news-title,
+.link-news p {
+  margin: 0;
+}
+
+.link-news-title {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--fg);
+}
+
+.link-news .welcome-go {
+  align-self: stretch;
+  margin-top: 10px;
+}
+
+@keyframes link-news-badge {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .link-news-badge {
+    animation: none;
+  }
+}
+
 .link-warn {
   display: flex;
   align-items: flex-start;

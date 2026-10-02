@@ -1,6 +1,6 @@
 import { serverTag, serverUrl } from '../backend'
 import { fromBase64, toBase64 } from '../bytes'
-import { formatSecret, newSecret, parseSecret } from '../room'
+import { formatSecret, newSecret, parseSecret, shareBase } from '../room'
 import { loadIdentity, saveDisplayName, secretForLinking, takeIdentity } from '../store/identity'
 import { adoptServers, knownServers, newSpaceServer, ownServers } from '../store/server-spaces'
 import { saveAvatar } from '../ui/avatar'
@@ -23,7 +23,16 @@ export interface Bundle {
   clusters: Record<string, string[]>
 }
 
-async function derive(code: string): Promise<{ id: string; key: CryptoKey }> {
+/** What each code was stretched into: both devices need it again to say how the link went. */
+const derived = new Map<string, Promise<{ id: string; key: CryptoKey }>>()
+
+function derive(code: string): Promise<{ id: string; key: CryptoKey }> {
+  let made = derived.get(code)
+  if (!made) derived.set(code, (made = stretch(code)))
+  return made
+}
+
+async function stretch(code: string): Promise<{ id: string; key: CryptoKey }> {
   const base = await crypto.subtle.importKey('raw', enc.encode(code) as BufferSource, 'PBKDF2', false, ['deriveBits'])
   const bits = new Uint8Array(
     await crypto.subtle.deriveBits(
@@ -38,10 +47,13 @@ async function derive(code: string): Promise<{ id: string; key: CryptoKey }> {
 }
 
 export interface Offer {
+  /** As it is typed: three groups of four. */
   code: string
   server: string
   link: string
   until: number
+  /** Where the link waits on the server. */
+  id: string
 }
 
 function bundleOfThisDevice(): Bundle {
@@ -91,12 +103,68 @@ export async function offerLink(): Promise<Offer> {
   })
   if (!res.ok) throw new Error('Your server would not keep the link. Try again in a moment.')
   const { until } = (await res.json()) as { until?: number }
-  const { origin, pathname } = window.location
   return {
     code: formatSecret(code),
     server,
-    link: `${origin}${pathname}#link=${code}@${serverTag(server)}`,
+    link: `${shareBase()}#link=${code}@${serverTag(server)}`,
     until: until ?? Date.now() + LINK_TTL_MS,
+    id,
+  }
+}
+
+/** What became of a link: still waiting, opened on the other device, then linked or declined there, or gone. */
+export type LinkState = 'waiting' | 'opened' | 'linked' | 'declined' | 'gone'
+
+const LINK_STATES = new Set<LinkState>(['waiting', 'opened', 'linked', 'declined', 'gone'])
+/** After a failed question, the next waits this long. */
+const STATE_RETRY_MS = 3000
+
+/**
+ * Tells `onState` each time the link changes, until it is linked, declined or gone. The server
+ * holds each question until the state changes, so this asks about once in 25 seconds. A server
+ * from before this says nothing, and nothing is told. Returns a function that stops it.
+ */
+export function watchLink(offer: Offer, onState: (state: LinkState) => void): () => void {
+  const stop = new AbortController()
+  let state: LinkState = 'waiting'
+  const ask = async (): Promise<void> => {
+    while (!stop.signal.aborted && Date.now() < offer.until + 5000) {
+      let res: Response
+      try {
+        res = await fetch(`${offer.server}/api/v1/links/${offer.id}/state?from=${state}`, { mode: 'cors', signal: stop.signal })
+      } catch {
+        if (stop.signal.aborted) return
+        await new Promise((done) => window.setTimeout(done, STATE_RETRY_MS))
+        continue
+      }
+      if (!res.ok) return
+      const told = ((await res.json().catch(() => null)) as { state?: LinkState } | null)?.state
+      if (!told || !LINK_STATES.has(told)) return
+      if (told !== state) {
+        state = told
+        onState(state)
+      }
+      if (state === 'linked' || state === 'declined' || state === 'gone') return
+    }
+  }
+  void ask()
+  return () => stop.abort()
+}
+
+/** The device that took a link tells the one that made it whether it became the account. */
+export async function sayLinked(offer: { code: string; server: string }, linked: boolean): Promise<void> {
+  try {
+    const { id } = await derive(offer.code)
+    await fetch(`${offer.server}/api/v1/links/${id}/done`, {
+      method: 'POST',
+      mode: 'cors',
+      // It goes even when this device starts again straight after.
+      keepalive: true,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ linked }),
+    })
+  } catch {
+    /* a server from before this, or none: the other device does not hear */
   }
 }
 
@@ -116,7 +184,9 @@ export function linkInAddress(): { code: string; server: string } | null {
 }
 
 export async function takeOffer(offer: { code: string; server: string }): Promise<string> {
-  return adopt(await openOffer(offer))
+  const name = adopt(await openOffer(offer))
+  await sayLinked(offer, true)
+  return name
 }
 
 /** What a link carries, fetched and opened, so it can be shown before this device takes it. */

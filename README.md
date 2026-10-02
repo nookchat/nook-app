@@ -245,7 +245,10 @@ account", then "Use my other device", and type the code and the server. The
 new device becomes you: your key, your name, and which servers hold your
 spaces (your picture comes from them), so it has the same spaces, messages
 and direct messages. What travels is sealed with a key made from the code,
-waits on your server for ten minutes, and can be taken once.
+waits on your server for ten minutes, and can be taken once. The device that
+shows the code hears how it went: "Your other device has the code" while the
+other one asks, then Linked, or Not linked when it kept its own account. A
+server from before this says nothing, and the code stays on screen.
 
 Everything is sealed with AES-GCM under a key made from the space code (and its
 password, if it has one) before it leaves the browser, or under a newer key
@@ -305,8 +308,13 @@ A space is a code, written the way Windows wrote a product key. The link names
 the space's servers after an `@`:
 
 ```
-https://cathode.video/#K7M2-9QPT-VB2W@nook.example.org,nook.friend.net
+https://nookchat.app/#K7M2-9QPT-VB2W@nook.example.org,nook.friend.net
 ```
+
+Every link people share, an invite or a device link, starts with
+`https://nookchat.app` when the page came from the home site, with or without
+`www`, or from `cathode.video`, its old address (`shareBase` in `src/room.ts`).
+A copy of Nook served elsewhere, such as `localhost`, uses its own address.
 
 The code uses Crockford's base32 alphabet, which leaves out I, L, O and U, so
 no letter can be misread as a digit. It is read back however it was typed, in

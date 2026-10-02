@@ -115,6 +115,8 @@ Version 1, under `/api/v1`. A running server describes it at
 | `GET /api/v1/spaces/:room/files/:id` | That file, as sealed bytes |
 | `PUT /api/v1/links/:id` | Leaves a sealed device link, `{ "blob" }`. Kept in memory for ten minutes |
 | `GET /api/v1/links/:id` | Takes it. It is gone after one read |
+| `POST /api/v1/links/:id/done` | The device that took it says whether it became the account, `{ "linked": true }` or `false` |
+| `GET /api/v1/links/:id/state?from=S` | What became of it: `waiting`, `opened`, `linked`, `declined` or `gone`. With `from`, waits up to 25 seconds for a change, so the device that made it says Linked at once |
 | `GET /api/v1/people/:id` | One person's sealed record |
 | `PUT /api/v1/people/:id` | Replaces it. Needs `x-nook-write`. The first write claims it |
 | `GET /api/v1/preview?url=U` | The title, description and picture behind a public link |

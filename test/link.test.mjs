@@ -17,8 +17,24 @@ async function makeLink(page) {
     server: (await page.locator('.link-server').textContent()).trim(),
   }
   await page.keyboard.press('Escape')
-  await page.click('button[aria-label="Close settings"]')
+  await page.click('button[aria-label="Close settings"]:visible')
   return offer
+}
+
+/** Opens Link a device and leaves its dialog open, to see what it says when the other device takes the code. */
+async function showCode(page) {
+  await openSettingsTab(page, 'devices')
+  await page.click('button:text-is("Link a device")')
+  const code = page.locator('.link-code')
+  await code.waitFor({ timeout: 15_000 })
+  return { code: (await code.textContent()).trim(), link: await code.getAttribute('data-link') }
+}
+
+const news = (page) => page.evaluate(() => document.querySelector('.modal .link-news-title')?.textContent ?? '')
+
+async function closeCode(page) {
+  await page.keyboard.press('Escape')
+  await page.click('button[aria-label="Close settings"]:visible')
 }
 
 async function whoIs(page) {
@@ -122,6 +138,43 @@ try {
   await wait(2500)
   const asFour = await whoIs(four)
   check('a link pasted where the code goes needs nothing more', asFour.name === 'Ana' && asFour.id === her.id, JSON.stringify(asFour))
+
+  // The device that shows the code hears how it went: linked, or kept as it was.
+  const pasted = await showCode(ana)
+  const five = await fresh()
+  await five.goto(APP_URL)
+  await five.click('button:has-text("I have an account")')
+  await five.click('button:has-text("Use my other device")')
+  await five.fill('input[aria-label="The link or code"]', pasted.link)
+  const linked = await ana.waitForFunction(() => document.querySelector('.modal .link-news-title')?.textContent === 'Linked', null, { timeout: 15_000 }).then(() => true, () => false)
+  const done = await ana.evaluate(() => document.activeElement?.textContent === 'Done')
+  check('the device showing the code says Linked when the other device takes it, with Done in focus', linked && done, await news(ana))
+  await ana.click('.modal button:text-is("Done")')
+  check('and Done closes it', (await ana.$('.modal')) === null)
+  await ana.click('button[aria-label="Close settings"]:visible')
+
+  const asking = await showCode(ana)
+  const six = await fresh()
+  await six.goto(asking.link)
+  await six.waitForSelector('button:has-text("Become Ana")', { timeout: 20_000 })
+  const waiting = await ana.waitForFunction(() => !!document.querySelector('.modal .link-news .nook-ghost--typing'), null, { timeout: 15_000 }).then(() => true, () => false)
+  check('while the other device asks, the code says it has it, with the typing ghost', waiting && (await news(ana)) === 'Your other device has the code', await news(ana))
+  await six.click('button:text-is("Keep this device as it is")')
+  const no = await ana.waitForFunction(() => document.querySelector('.modal .link-news-title')?.textContent === 'Not linked', null, { timeout: 15_000 }).then(() => true, () => false)
+  check('and when it keeps its own account, the code says Not linked', no, await news(ana))
+  await ana.click('.modal button:text-is("Make a new code")')
+  const again = await ana.locator('.modal .link-code').waitFor({ timeout: 15_000 }).then(() => true, () => false)
+  check('Make a new code shows a new code', again)
+  const fresher = { link: await ana.locator('.modal .link-code').getAttribute('data-link') }
+  await six.goto(fresher.link)
+  await six.click('button:has-text("Become Ana")', { timeout: 20_000 })
+  const yes = await ana.waitForFunction(() => document.querySelector('.modal .link-news-title')?.textContent === 'Linked', null, { timeout: 15_000 }).then(() => true, () => false)
+  check('and a yes on the other device says Linked', yes, await news(ana))
+  await closeCode(ana)
+
+  const unknown = await (await fetch('http://localhost:8787/api/v1/links/' + '1'.repeat(32) + '/state')).json()
+  const early = await fetch('http://localhost:8787/api/v1/links/' + '1'.repeat(32) + '/done', { method: 'POST', body: '{"linked":true}' })
+  check('a link the server does not have is gone, and cannot be said done', unknown.state === 'gone' && early.status === 404, JSON.stringify({ unknown, early: early.status }))
 
   const nothing = await fetch('http://localhost:8787/api/v1/links/' + '0'.repeat(32))
   check('a link nobody left is not there', nothing.status === 404, String(nothing.status))
