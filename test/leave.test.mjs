@@ -77,7 +77,7 @@ try {
   await admin.waitForTimeout(800)
   const shown = await admin.textContent('.space-card-name')
   check('the settings card shows the name it was just given', shown === 'staff room', shown)
-  await admin.click('button[aria-label="Close settings"]')
+  await admin.click('button[aria-label="Close settings"]:visible')
   await admin.waitForFunction(
     () => document.querySelector('.space-name')?.textContent === 'staff room',
     null,

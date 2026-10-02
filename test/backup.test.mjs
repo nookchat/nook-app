@@ -17,7 +17,7 @@ async function backUp(page, password = '') {
   const [download] = await Promise.all([page.waitForEvent('download'), page.click('button:has-text("Save backup file")')])
   const path = await download.path()
   const noted = await page.waitForFunction(() => document.body.textContent.includes('You saved one on'), null, { timeout: 5000 }).then(() => true, () => false)
-  await page.click('button[aria-label="Close settings"]')
+  await page.click('button[aria-label="Close settings"]:visible')
   return { path, name: download.suggestedFilename(), text: readFileSync(path, 'utf8'), noted }
 }
 
@@ -65,7 +65,7 @@ try {
   await ana.evaluate(() => document.querySelector('button[aria-label="Settings"]').click())
   await ana.setInputFiles('input[aria-label="Choose a picture"]', shot)
   await ana.waitForSelector('.profile-face img', { timeout: 10_000 })
-  await ana.click('button[aria-label="Close settings"]')
+  await ana.click('button[aria-label="Close settings"]:visible')
   await wait(3000)
   const inBrowser = await ana.evaluate(() => localStorage.getItem('nook.avatar.v1'))
   check('your picture is not kept in the browser', inBrowser === null, String(inBrowser).slice(0, 30))
@@ -92,13 +92,13 @@ try {
   const everybodySees = await two.evaluate(() => document.querySelector('.chat-who .avatar-img')?.src ?? '')
   await two.evaluate(() => document.querySelector('button[aria-label="Settings"]').click())
   check('and Settings shows the picture everybody sees', !!everybodySees && (await settingsPicture(two)) === everybodySees)
-  await two.click('button[aria-label="Close settings"]')
+  await two.click('button[aria-label="Close settings"]:visible')
 
   await ana.reload()
   await ana.waitForSelector('button[aria-label="Settings"]')
   await ana.evaluate(() => document.querySelector('button[aria-label="Settings"]').click())
   check('and so does Settings opened straight after a reload', (await settingsPicture(ana)) === everybodySees)
-  await ana.click('button[aria-label="Close settings"]')
+  await ana.click('button[aria-label="Close settings"]:visible')
 
   const dropped = await fresh()
   await dropped.goto(APP_URL)
@@ -127,7 +127,7 @@ try {
 
   await ana.evaluate(() => document.querySelector('button[aria-label="Settings"]').click())
   await ana.click('button.tiny-btn:text-is("Remove")')
-  await ana.click('button[aria-label="Close settings"]')
+  await ana.click('button[aria-label="Close settings"]:visible')
   // Home, not the space it was last in, so the space is opened from the list.
   await two.evaluate(() => localStorage.removeItem('nook.screen.v1'))
   await two.goto(APP_URL)

@@ -125,7 +125,7 @@ try {
   await bobLevel.selectOption({ label: 'Helpers' })
   await alice.waitForTimeout(500)
   check('the list shows his new level', (await bobLevel.evaluate((el) => el.selectedOptions[0]?.textContent)) === 'Helpers')
-  await alice.click('button[aria-label="Close settings"]')
+  await alice.click('button[aria-label="Close settings"]:visible')
 
   await alice.waitForSelector('.rail-person[aria-label="Actions for Bob"]', { timeout: 20_000 })
   await alice.click('.rail-person[aria-label="Actions for Bob"]')
@@ -183,7 +183,7 @@ try {
   await openSettings(bob)
   await bob.waitForSelector('.settings')
   check('but he cannot change the levels', (await bob.$('.levels')) === null)
-  await bob.click('button[aria-label="Close settings"]')
+  await bob.click('button[aria-label="Close settings"]:visible')
 } catch (err) {
   stoppedEarly(err)
 } finally {

@@ -36,7 +36,7 @@ async function whoIs(page) {
     name: document.querySelector('input[aria-label="Your name"]')?.value ?? '',
     id: [...document.querySelectorAll('.share-code')].map((e) => e.textContent).find((t) => t?.startsWith('#')) ?? '',
   }))
-  await page.click('button[aria-label="Close settings"]')
+  await page.click('button[aria-label="Close settings"]:visible')
   return { ...me, spaces }
 }
 

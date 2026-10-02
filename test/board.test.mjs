@@ -593,7 +593,7 @@ try {
     .then(() => true)
     .catch(() => false)
   check('and renamed there', renamedThere)
-  await alice.click('button[aria-label="Close settings"]')
+  await alice.click('button[aria-label="Close settings"]:visible')
 
   // No key and no archive here, so the grid is empty.
   await alice.click('button[aria-label="Find a GIF"]')
