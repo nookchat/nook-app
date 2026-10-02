@@ -153,7 +153,7 @@ function pickRows(choices: Choice[], picked: Set<string>): HTMLElement[] {
 export function askChannel(voice: boolean, choices: Choice[]): Promise<{ name: string; levels: string[] } | null> {
   return new Promise((resolve) => {
     const was = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    const question = voice ? 'Name the voice channel' : 'Name the channel'
+    const question = voice ? 'Create voice channel' : 'Name the channel'
     const picked = new Set<string>()
     const input = h('input', { type: 'text', class: 'ask-input', ariaLabel: question, placeholder: voice ? 'lounge' : 'general' })
     input.autocomplete = 'off'
@@ -189,7 +189,7 @@ export function askChannel(voice: boolean, choices: Choice[]): Promise<{ name: s
           : null,
         h('div', { class: 'row ask-buttons' }, [
           h('button', { class: 'ghost', text: 'Cancel', on: { click: () => finish(null) } }),
-          h('button', { class: 'primary', text: 'Make', on: { click: done } }),
+          h('button', { class: 'primary', text: voice ? 'Create channel' : 'Make', on: { click: done } }),
         ]),
       ]),
     ])
