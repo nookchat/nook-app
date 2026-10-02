@@ -60,6 +60,7 @@ export function remoteBoard(): { el: HTMLElement; stop(): void } {
       sounds: chat.boardSounds().map((b) => ({ id: CUSTOM + b.id, label: b.label, emoji: b.emoji, group: b.group })),
       groups: chat.boardGroups().map((g) => ({ id: g.id, label: g.label, emoji: g.emoji })),
       onManage: () => toast('Add sounds in Space settings.', 'info'),
+      onAdd: () => toast('Add sounds in Space settings.', 'info'),
     })
   }
 
