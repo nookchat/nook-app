@@ -1249,7 +1249,7 @@ export class SpaceView {
         label: 'Rename',
         note: `Shown instead of ${channel.name}`,
         run: async () => {
-          const raw = (await ask('What should this channel be called?', { value: channel.label, ok: 'Rename' })) ?? ''
+          const raw = (await ask('Channel name', { value: channel.label, ok: 'Save changes' })) ?? ''
           const label = raw.trim().slice(0, 32)
           if (!label) return
           void this.publish((c) => c.labelChannel(channel.name, label))
@@ -1294,7 +1294,7 @@ export class SpaceView {
         label: 'Rename',
         note: `Shown instead of ${channel.name}`,
         run: async () => {
-          const raw = (await ask('What should this voice channel be called?', { value: channel.label, ok: 'Rename' })) ?? ''
+          const raw = (await ask('Channel name', { value: channel.label, ok: 'Save changes' })) ?? ''
           const label = raw.trim().slice(0, 32)
           if (!label) return
           void this.publish((c) => c.labelChannel(channel.name, label, true))
