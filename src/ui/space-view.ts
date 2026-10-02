@@ -1029,6 +1029,7 @@ export class SpaceView {
       sounds: this.allSounds(),
       groups: this.allGroups(),
       onManage: () => void this.openSpaceSettings('soundboard'),
+      onAdd: () => void this.addSound(),
     })
   }
 
@@ -1049,6 +1050,7 @@ export class SpaceView {
       sounds: this.allSounds(),
       groups: this.allGroups(),
       onManage: () => void this.openSpaceSettings('soundboard'),
+      onAdd: () => void this.addSound(),
     })
   }
 

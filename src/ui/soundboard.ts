@@ -231,6 +231,8 @@ interface BoardOptions {
   groups: SoundGroup[]
   /** Opens the soundboard in Space settings, where sounds and groups are added and changed. */
   onManage(): void
+  /** Opens the Add sound modal directly. */
+  onAdd(): void
 }
 
 let open: { close(): void; anchor: HTMLElement } | null = null
@@ -270,6 +272,21 @@ export function openSoundboard(options: BoardOptions): void {
     h('div', { class: 'row spread' }, [
       h('span', { class: 'eyebrow', text: 'Soundboard' }),
       h('div', { class: 'row sound-head-tools' }, [
+        h(
+          'button',
+          {
+            class: 'ghost icon-only',
+            title: 'Add a sound',
+            ariaLabel: 'Add a sound',
+            on: {
+              click: () => {
+                close()
+                options.onAdd()
+              },
+            },
+          },
+          [icon('plus', 18)],
+        ),
         h(
           'button',
           {
@@ -322,14 +339,14 @@ export function openSoundboard(options: BoardOptions): void {
   const loose = options.sounds.filter((sound) => !groupOf(sound))
   if (options.sounds.length === 0) {
     sections.append(
-      h('div', { class: 'sound-empty tiny faint', text: 'No sounds here yet. Add them in Space settings.' }),
+      h('div', { class: 'sound-empty tiny faint', text: 'No sounds here yet.' }),
       h('button', {
         class: 'small sound-empty-add',
         text: 'Add a sound',
         on: {
           click: () => {
             close()
-            options.onManage()
+            options.onAdd()
           },
         },
       }),
