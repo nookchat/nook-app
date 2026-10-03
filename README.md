@@ -73,6 +73,12 @@ with voice does it.
   Replies in a thread take words, and so does whoever has Channels. Every
   device keeps words alone out of sight, so a client that skips the box's
   check gets nowhere. What was said before the mark stays.
+- **No talking**: in a voice channel's menu, No talking makes it a channel to
+  listen in. Everybody's mic goes off by itself and stays off, and the mic
+  button says why. The owner and whoever has Channels still talk. Every
+  device plays the others at no volume, so a client that turns its own mic
+  on is still not heard. The channel has a crossed out mic beside its name,
+  and Let everybody talk takes it off.
 - **Moving people**: somebody whose level has Move people (Admin and
   Moderator to start with) drags a person, from a voice channel or from the
   list of people, onto a voice channel, or picks one under Move to in their

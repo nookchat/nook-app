@@ -830,6 +830,14 @@ export class RoomLog {
     return this.everyChannel(voice).filter((c) => mayEnter(auth, this.me, c))
   }
 
+  /** Whether this person is heard in this voice channel. */
+  mayTalk(key: string, name: string): boolean {
+    const info = this.everyChannel(true).find((c) => c.name === name)
+    if (!info?.noTalking) return true
+    const auth = this.authority()
+    return key === auth.founder || auth.can(key, 'channels')
+  }
+
   /** Whether this person may see and use this channel. */
   mayEnter(key: string, name: string, voice = false): boolean {
     const info = this.everyChannel(voice).find((c) => c.name === name)
@@ -864,6 +872,7 @@ export class RoomLog {
     const levels = new Map<string, string[]>()
     const nsfw = new Set<string>()
     const mediaOnly = new Set<string>()
+    const noTalking = new Set<string>()
     const gone = new Set<string>()
     const auth = this.authority()
     /** The newest order somebody who keeps the channels put them in. */
@@ -890,6 +899,8 @@ export class RoomLog {
         else if (e.body.nsfw === false) nsfw.delete(name)
         if (e.body.mediaOnly === true) mediaOnly.add(name)
         else if (e.body.mediaOnly === false) mediaOnly.delete(name)
+        if (e.body.noTalking === true) noTalking.add(name)
+        else if (e.body.noTalking === false) noTalking.delete(name)
         if (e.body.gone === true) gone.add(name)
         else gone.delete(name)
       } else if (!voice && e.kind === 'said' && auth.can(e.author, 'channels')) {
@@ -914,6 +925,7 @@ export class RoomLog {
         levels: levels.get(name) ?? [],
         nsfw: nsfw.has(name),
         mediaOnly: mediaOnly.has(name),
+        noTalking: noTalking.has(name),
       }))
   }
 
@@ -1815,6 +1827,8 @@ export interface ChannelInfo {
   nsfw: boolean
   /** A message in it needs a picture, a video or a file. Thread replies, and whoever may keep channels, need none. */
   mediaOnly: boolean
+  /** A voice channel to listen in: only the owner and whoever may keep channels are heard. */
+  noTalking: boolean
 }
 
 /** Stored on the server under `id` (SHA-256 of the sealed bytes), sealed with `key`, which the server never sees. */

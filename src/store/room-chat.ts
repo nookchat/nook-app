@@ -415,6 +415,15 @@ export class RoomChat {
     return this.write('channel', { name: cleanChannel(name), mediaOnly })
   }
 
+  /** Keeps everybody but the owner and whoever may keep channels quiet in a voice channel, or stops that. */
+  setNoTalking(name: string, noTalking: boolean): Promise<LogEvent> {
+    return this.write('channel', { name: cleanChannel(name), voice: true, noTalking })
+  }
+
+  mayTalk(pubkey: string, channel: string): boolean {
+    return this.log.mayTalk(pubkey, channel)
+  }
+
   /** Keeps a channel to these levels. None opens it to everybody. */
   setChannelLevels(name: string, levels: string[], voice = false): Promise<LogEvent> {
     const body: Record<string, unknown> = { name: cleanChannel(name), levels }

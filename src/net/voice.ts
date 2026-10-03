@@ -56,6 +56,8 @@ export class Voice {
   admit: ((peerId: string, channel: string) => boolean) | null = null
   /** From 0 to LOUDEST. */
   volumeOf: ((peerId: string) => number) | null = null
+  /** Null lets everybody talk. Whoever it says no to is not heard here, and this device keeps its own mic off. */
+  mayTalk: ((peerId: string, channel: string) => boolean) | null = null
 
   private readonly failed = new Set<string>()
   private readonly bus: SignalBus
@@ -79,7 +81,28 @@ export class Voice {
   private switching = false
 
   private readonly onVolumes = (): void => {
-    for (const [peer, call] of this.calls) call.setVolume(this.volumeOf?.(peer) ?? 1)
+    for (const [peer, call] of this.calls) call.setVolume(this.loudness(peer))
+  }
+
+  private silenced(peerId: string): boolean {
+    return this.channel !== null && this.mayTalk?.(peerId, this.channel) === false
+  }
+
+  private loudness(peerId: string): number {
+    return this.silenced(peerId) ? 0 : this.volumeOf?.(peerId) ?? 1
+  }
+
+  /** False in a channel where you may not talk: the mic stays off. */
+  get canTalk(): boolean {
+    return !this.silenced(this.selfId)
+  }
+
+  /** After a change to who may talk: whoever may not is quiet, this device's own mic too. */
+  recheckTalk(): void {
+    if (!this.channel) return
+    if (this.silenced(this.selfId) && !this.muted) this.setMuted(true)
+    this.onVolumes()
+    this.onChange?.()
   }
 
   private readonly onDevices = (): void => {
@@ -112,6 +135,7 @@ export class Voice {
 
   isTalking(peerId: string): boolean {
     if (peerId === this.selfId && this.muted) return false
+    if (this.silenced(peerId)) return false
     return this.talking.is(peerId)
   }
 
@@ -149,7 +173,8 @@ export class Voice {
     this.mic = this.shaper.stream
     this.channel = channel
     this.since = Date.now()
-    this.muted = false
+    this.muted = this.silenced(this.selfId)
+    for (const track of [...this.rawMic.getAudioTracks(), ...this.mic.getAudioTracks()]) track.enabled = !this.muted
     this.deafened = false
     this.failed.clear()
     this.talking.add(this.selfId, this.mic)
@@ -223,9 +248,10 @@ export class Voice {
       this.deafened = false
       for (const call of this.calls.values()) call.setDeaf(false)
     }
-    this.muted = muted
-    for (const track of this.rawMic?.getAudioTracks() ?? []) track.enabled = !muted
-    for (const track of this.mic?.getAudioTracks() ?? []) track.enabled = !muted
+    // In a channel where you may not talk, the mic stays off.
+    this.muted = muted || this.silenced(this.selfId)
+    for (const track of this.rawMic?.getAudioTracks() ?? []) track.enabled = !this.muted
+    for (const track of this.mic?.getAudioTracks() ?? []) track.enabled = !this.muted
     this.onChange?.()
   }
 
@@ -403,7 +429,7 @@ export class Voice {
         this.onFailed?.(peerId)
       },
     })
-    call.setVolume(this.volumeOf?.(peerId) ?? 1)
+    call.setVolume(this.loudness(peerId))
     call.setDeaf(this.deafened)
     this.calls.set(peerId, call)
     return call
