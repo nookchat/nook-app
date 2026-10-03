@@ -25,6 +25,7 @@ import { icon } from './icons'
 import { spinner } from './spinner'
 import { quietKeyboard } from './keyboard'
 import { closeMenu, onContextMenu, type MenuEntry } from './menu'
+import { playWhileSeen } from './clips'
 import { asSheet, phone } from './gestures'
 import { fitInView, fitNear, fitOver } from './place'
 import { spoilerReveal } from './spoiler-reveal'
@@ -2821,18 +2822,18 @@ function picture(src: string): HTMLElement {
 function clip(src: string): HTMLElement {
   const video = h('video', { class: 'chat-image chat-clip', ariaLabel: 'Shared clip' })
   video.src = src
-  video.autoplay = true
   video.loop = true
   video.muted = true
   video.playsInline = true
   video.controls = false
-  video.preload = 'auto'
+  // Enough for its size. The rest loads when it comes near the screen and plays.
+  video.preload = 'metadata'
   // A video element has no referrerPolicy property, so it is set as an attribute.
   video.setAttribute('referrerpolicy', 'no-referrer')
-  // Safari needs the attributes as well as the properties before it will autoplay.
+  // Safari needs the attributes as well as the properties before it will play muted.
   video.setAttribute('muted', '')
   video.setAttribute('playsinline', '')
-  void video.play().catch(() => undefined)
+  playWhileSeen(video)
   return video
 }
 

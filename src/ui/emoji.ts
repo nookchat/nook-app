@@ -428,21 +428,10 @@ function park(): void {
   parking.append(...sections())
 }
 
-/** Draws every emoji once, off screen, so the emoji font is loaded before the first open. */
-function warmFont(): void {
-  const cell = parking?.querySelector('.emoji-cell')
-  const ctx = document.createElement('canvas').getContext('2d')
-  if (!cell || !ctx) return
-  const style = getComputedStyle(cell)
-  ctx.font = `${style.fontSize} ${style.fontFamily}`
-  for (const { list } of ALL) for (const e of list) ctx.fillText(e.ch, 0, 32)
-}
-
 /** Builds the picker's insides while nothing else is happening, so the first open is quick. */
 export function warmEmoji(): void {
   const warm = (): void => {
     if (!open) park()
-    warmFont()
   }
   const idle = (window as Window & { requestIdleCallback?: (cb: () => void) => void }).requestIdleCallback
   if (idle) idle(warm)

@@ -174,6 +174,19 @@ try {
     .then((h) => h.jsonValue(), () => '')
   check('one left as typed goes as its emoji, and code stays code', sent === 'party 🎉 but not :tada:', sent)
 
+  // An SVG picture is a whole document in the browser: only an emoji shown big is drawn from one.
+  await say(page, '🎉')
+  const art = await page
+    .waitForFunction(() => {
+      const rows = [...document.querySelectorAll('.chat-text')]
+      const small = rows.find((e) => e.textContent.startsWith('party'))?.querySelector('.twemoji img')
+      const big = rows.filter((e) => e.classList.contains('jumbo')).pop()?.querySelector('.twemoji img')
+      return small && big && { small: small.src.split('/').pop(), big: big.src.split('/').pop() }
+    }, null, { timeout: 10_000 })
+    .then((h) => h.jsonValue(), () => null)
+  check('an emoji in words is a small PNG picture', /^[0-9a-f-]+\.png$/.test(art?.small ?? ''), JSON.stringify(art))
+  check('and one on its own, shown big, is the SVG', /^[0-9a-f-]+\.svg$/.test(art?.big ?? ''), JSON.stringify(art))
+
   const toggles = async (button, pop) => {
     await page.click(button)
     const opened = !!(await page.waitForSelector(pop, { timeout: 5000 }).catch(() => null))

@@ -80,6 +80,7 @@ import { NoteEditor } from './notes-view'
 import { WHITEBOARDS, WhiteboardView } from './whiteboard-view'
 import { LOOKING_CHANGED, nookInView } from './looking'
 import { placeNear } from './emoji'
+import { playWhileSeen } from './clips'
 import { asSheet, closeOnBack, onDrag, phone, PHONE, scrollsThatWay } from './gestures'
 import { loadAvatar, squareThumb } from './avatar'
 import { setTitleFace, type WindowChrome } from './shell'
@@ -232,13 +233,12 @@ function gifCell(g: Gif): HTMLVideoElement | HTMLImageElement {
     const clip = h('video', { class: 'gif-choice gif-skeleton' })
     clip.addEventListener('loadeddata', () => clip.classList.remove('gif-skeleton'), { once: true })
     clip.src = g.preview
-    clip.autoplay = true
     clip.loop = true
     clip.muted = true
     clip.playsInline = true
     clip.setAttribute('muted', '')
     clip.setAttribute('playsinline', '')
-    void clip.play().catch(() => undefined)
+    playWhileSeen(clip)
     return clip
   }
   const img = h('img', { class: 'gif-choice gif-skeleton' })

@@ -12,6 +12,11 @@ const BASE = `${import.meta.env.BASE_URL}emoji/`
 const MAYBE = /[\u00a9\u00ae\u203c\u2049\u20e3\u2122-\u2b55\u3030\u303d\u3297\u3299\ud83c-\ud83e]/
 /** Drawn as a picture. A symbol such as © or ↔ stays text unless it asks for the emoji look. */
 const EMOJI = /^(?:[#*0-9]\uFE0F?\u20E3|\p{Regional_Indicator}{2}|\p{Emoji_Presentation}|\p{Extended_Pictographic}\uFE0F)/u
+/**
+ * Where an emoji shows bigger than its 72px picture holds sharply: there it is drawn from the SVG.
+ * Each SVG picture is a whole document in the browser, about 200 KB of memory, so only here.
+ */
+const BIG = '.jumbo'
 /** Typed text and code keep the device's own emoji. */
 const SKIP = 'input, textarea, script, style, code, pre, .twemoji, .emoji-mirror'
 const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
@@ -27,9 +32,10 @@ function artFor(ch: string): string | null {
 }
 
 /** `kind` is the class: .twemoji is a fixed box, .twemoji-glyph keeps the width of the device's own emoji. */
-function emojiSpan(ch: string, name: string, kind = 'twemoji'): HTMLElement {
+function emojiSpan(ch: string, name: string, kind = 'twemoji', big = false): HTMLElement {
+  const file = `${name}.${big ? 'svg' : 'png'}`
   const span = document.createElement('span')
-  span.className = drawn.has(name) ? `${kind} drawn` : kind
+  span.className = drawn.has(file) ? `${kind} drawn` : kind
   span.textContent = ch
   const art = document.createElement('img')
   art.alt = ''
@@ -38,11 +44,11 @@ function emojiSpan(ch: string, name: string, kind = 'twemoji'): HTMLElement {
   art.decoding = 'async'
   art.setAttribute('aria-hidden', 'true')
   art.addEventListener('load', () => {
-    drawn.add(name)
+    drawn.add(file)
     span.classList.add('drawn')
   })
   art.addEventListener('error', () => art.remove())
-  art.src = `${BASE}${name}.svg`
+  art.src = `${BASE}${file}`
   span.append(art)
   return span
 }
@@ -52,7 +58,7 @@ function skipped(el: Element | null): boolean {
 }
 
 /** The text as nodes, each emoji a picture, or null when it has none. */
-function emojiNodes(text: string, kind?: string): Node[] | null {
+function emojiNodes(text: string, kind?: string, big = false): Node[] | null {
   let out: Node[] | null = null
   let plain = ''
   for (const { segment } of GRAPHEMES.segment(text)) {
@@ -64,14 +70,14 @@ function emojiNodes(text: string, kind?: string): Node[] | null {
     out ??= []
     if (plain) out.push(document.createTextNode(plain))
     plain = ''
-    out.push(emojiSpan(segment, name, kind))
+    out.push(emojiSpan(segment, name, kind, big))
   }
   if (out && plain) out.push(document.createTextNode(plain))
   return out
 }
 
 function paintText(node: Text): void {
-  const out = emojiNodes(node.data)
+  const out = emojiNodes(node.data, undefined, !!node.parentElement?.closest(BIG))
   if (out) node.replaceWith(...out)
 }
 

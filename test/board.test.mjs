@@ -36,7 +36,7 @@ try {
   )
 
   const found = await alice.evaluate(async () => {
-    const { imageLinks } = await import('/src/ui/chat-panel.ts')
+    const { imageLinks } = await import('/src/pictures.ts')
     const one = (text) => imageLinks(text).length === 1
     return {
       plain: one('https://example.com/cat.png'),
@@ -217,6 +217,21 @@ try {
   check('drawn like a picture, with no bubble around it', played?.marked === true)
   check('it loops, it is muted, and it has no controls', played?.loop === true && played?.muted === true && played?.controls === false)
   check('and it plays on its own', played?.started === true)
+  const away = await alice.evaluate(async () => {
+    const video = [...document.querySelectorAll('video.chat-clip')].pop()
+    const wait = () => new Promise((r) => setTimeout(r, 500))
+    video.scrollIntoView({ block: 'center' })
+    await wait()
+    const seen = !video.paused
+    video.style.display = 'none'
+    await wait()
+    const away = video.paused
+    video.style.display = ''
+    video.scrollIntoView({ block: 'center' })
+    await wait()
+    return { seen, away, back: !video.paused }
+  })
+  check('it plays only while it is on the screen, so one out of sight holds no decoder', away.seen && away.away && away.back, JSON.stringify(away))
 
   const SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" fill="#076fef"/></svg>'
   await alice.fill(BOX, SVG)

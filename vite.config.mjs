@@ -11,7 +11,10 @@ const SOURCE = new URL('./src/', import.meta.url).pathname
 /** Fetched when a page shows them, not kept by the worker: there are thousands. */
 const EMOJI_DIR = 'emoji'
 // Twemoji 17 from its GitHub release (npm has no newer SVG package than 15).
-const EMOJI_ART = join(dirname(createRequire(import.meta.url).resolve('twemoji-art/package.json')), 'assets', 'svg')
+const EMOJI_ASSETS = join(dirname(createRequire(import.meta.url).resolve('twemoji-art/package.json')), 'assets')
+const EMOJI_ART = join(EMOJI_ASSETS, 'svg')
+// 72px pictures, for every emoji not shown big: an SVG picture costs the page far more memory.
+const EMOJI_PNG = join(EMOJI_ASSETS, '72x72')
 const EMOJI_NAMES = 'virtual:twemoji'
 /** tldraw's fonts, icons and words, for the whiteboards. Fetched when a board shows them, not kept by the worker. */
 const BOARD_ASSETS_DIR = 'tldraw'
@@ -109,10 +112,11 @@ function emojiArt() {
     },
     configureServer(server) {
       server.middlewares.use(`/${EMOJI_DIR}/`, (req, res, next) => {
-        const name = decodeURIComponent((req.url ?? '').split('?')[0].replace(/^\//, '').replace(/\.svg$/, ''))
+        const file = decodeURIComponent((req.url ?? '').split('?')[0].replace(/^\//, ''))
+        const [, name, kind] = file.match(/^(.+)\.(svg|png)$/) ?? []
         if (!known.has(name)) return next()
-        res.setHeader('Content-Type', 'image/svg+xml')
-        res.end(readFileSync(join(EMOJI_ART, `${name}.svg`)))
+        res.setHeader('Content-Type', kind === 'png' ? 'image/png' : 'image/svg+xml')
+        res.end(readFileSync(kind === 'png' ? join(EMOJI_PNG, file) : join(EMOJI_ART, file)))
       })
     },
     generateBundle() {
@@ -121,6 +125,11 @@ function emojiArt() {
           type: 'asset',
           fileName: `${EMOJI_DIR}/${name}.svg`,
           source: readFileSync(join(EMOJI_ART, `${name}.svg`)),
+        })
+        this.emitFile({
+          type: 'asset',
+          fileName: `${EMOJI_DIR}/${name}.png`,
+          source: readFileSync(join(EMOJI_PNG, `${name}.png`)),
         })
       }
     },
