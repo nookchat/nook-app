@@ -1,4 +1,5 @@
 import { h } from './dom'
+import { icon } from './icons'
 import { placeNear } from './emoji'
 import { asSheet, onLongPress, phone } from './gestures'
 import { fitAtPoint, fitBeside } from './place'
@@ -10,7 +11,9 @@ export interface MenuItem {
   lead?: HTMLElement
   trail?: HTMLElement | null
   current?: boolean
-  run(): void
+  /** A flyout of these, beside this item: hover opens it, like a submenu in a desktop app. */
+  submenu?: MenuEntry[]
+  run?(): void
 }
 
 export type MenuEntry = MenuItem | { heading: string } | { custom: HTMLElement } | 'line'
@@ -30,15 +33,43 @@ function sameButton(a: HTMLElement | null, b: HTMLElement): boolean {
   return !!a && (a === b || (!!a.dataset.menu && a.dataset.menu === b.dataset.menu))
 }
 
-export function openMenu(anchor: HTMLElement, items: MenuEntry[], options: MenuOptions = {}): void {
-  if (open && !options.at && sameButton(openFor, anchor)) {
-    open()
-    return
-  }
-  open?.()
-  if (items.length === 0) return
+/** How long a mouse may be off the trigger and the flyout, on its way from one to the other. */
+const SUB_GRACE_MS = 220
 
-  const menu = h('div', { class: `menu${options.className ? ` ${options.className}` : ''}`, role: 'menu' })
+/**
+ * One item's button, for the root menu or a flyout alike. `pick` fires once a leaf item is
+ * chosen; an item with its own `submenu` opens a flyout instead, so `pick` never sees it.
+ */
+function buildItem(item: MenuItem, pick: (item: MenuItem) => void, openSub: (button: HTMLElement, items: MenuEntry[]) => void): HTMLElement {
+  const words = h('span', { class: 'menu-words' }, [
+    h('span', { class: 'menu-label truncate', text: item.label }),
+    item.note ? h('span', { class: 'tiny faint', text: item.note }) : null,
+  ])
+  const trail = item.submenu ? h('span', { class: 'menu-chevron' }, [icon('chevron-right', 14)]) : (item.trail ?? null)
+  const button = h(
+    'button',
+    {
+      class: `menu-item${item.danger ? ' danger' : ''}${item.lead ? ' has-lead' : ''}${item.current ? ' current' : ''}`,
+      role: 'menuitem',
+      on: {
+        click: () => {
+          if (item.submenu) openSub(button, item.submenu)
+          else pick(item)
+        },
+      },
+    },
+    item.lead ? [item.lead, words, trail] : [words, trail],
+  )
+  if (item.current) button.setAttribute('aria-current', 'true')
+  if (item.submenu) {
+    button.setAttribute('aria-haspopup', 'true')
+    button.addEventListener('mouseenter', () => openSub(button, item.submenu!))
+  }
+  return button
+}
+
+/** Fills `menu` from `items`, wiring each leaf to `pick` and each submenu item to `openSub`. */
+function fillMenu(menu: HTMLElement, items: MenuEntry[], pick: (item: MenuItem) => void, openSub: (button: HTMLElement, items: MenuEntry[]) => void): void {
   for (const item of items) {
     if (item === 'line') {
       menu.append(h('div', { class: 'menu-line', role: 'separator' }))
@@ -52,32 +83,71 @@ export function openMenu(anchor: HTMLElement, items: MenuEntry[], options: MenuO
       menu.append(item.custom)
       continue
     }
-    const words = h('span', { class: 'menu-words' }, [
-      h('span', { class: 'menu-label truncate', text: item.label }),
-      item.note ? h('span', { class: 'tiny faint', text: item.note }) : null,
-    ])
-    const button = h(
-      'button',
-      {
-        class: `menu-item${item.danger ? ' danger' : ''}${item.lead ? ' has-lead' : ''}${item.current ? ' current' : ''}`,
-        role: 'menuitem',
-        on: {
-          click: () => {
-            close()
-            item.run()
-          },
-        },
-      },
-      item.lead ? [item.lead, words, item.trail ?? null] : [words, item.trail ?? null],
-    )
-    if (item.current) button.setAttribute('aria-current', 'true')
-    menu.append(button)
+    menu.append(buildItem(item, pick, openSub))
   }
+}
+
+export function openMenu(anchor: HTMLElement, items: MenuEntry[], options: MenuOptions = {}): void {
+  if (open && !options.at && sameButton(openFor, anchor)) {
+    open()
+    return
+  }
+  open?.()
+  if (items.length === 0) return
+
+  const menu = h('div', { class: `menu${options.className ? ` ${options.className}` : ''}`, role: 'menu' })
+
+  // At most one flyout open at a time, for whichever item last asked for one.
+  let sub: { close(): void; for: HTMLElement; pane: HTMLElement } | null = null
+  const closeSub = (): void => {
+    sub?.close()
+    sub = null
+  }
+  const openSub = (button: HTMLElement, subItems: MenuEntry[]): void => {
+    if (sub?.for === button) return
+    closeSub()
+    const pane = h('div', { class: 'menu submenu', role: 'menu' })
+    fillMenu(pane, subItems, (leaf) => {
+      close()
+      leaf.run?.()
+    }, openSub)
+    document.body.append(pane)
+    fitBeside(pane, button, 'right')
+    let grace = 0
+    const hold = (): void => window.clearTimeout(grace)
+    const release = (): void => {
+      hold()
+      grace = window.setTimeout(closeSub, SUB_GRACE_MS)
+    }
+    button.addEventListener('mouseleave', release)
+    pane.addEventListener('mouseenter', hold)
+    pane.addEventListener('mouseleave', release)
+    sub = {
+      for: button,
+      pane,
+      close: () => {
+        hold()
+        button.removeEventListener('mouseleave', release)
+        pane.remove()
+      },
+    }
+  }
+
+  fillMenu(
+    menu,
+    items,
+    (item) => {
+      close()
+      item.run?.()
+    },
+    openSub,
+  )
 
   function close(): void {
     if (open !== close) return
     open = null
     openFor = null
+    closeSub()
     menu.remove()
     window.removeEventListener('keydown', onKey, true)
     window.removeEventListener('pointerdown', onDown, true)
@@ -92,14 +162,16 @@ export function openMenu(anchor: HTMLElement, items: MenuEntry[], options: MenuO
     }
     const step = ev.key === 'ArrowDown' ? 1 : ev.key === 'ArrowUp' ? -1 : 0
     if (!step) return
-    const buttons = [...menu.querySelectorAll<HTMLElement>('.menu-item')]
+    // Cycle within whichever menu — the root, or an open flyout — currently has the focus.
+    const within = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>('.menu') ?? menu
+    const buttons = [...within.querySelectorAll<HTMLElement>('.menu-item')]
     const at = buttons.indexOf(document.activeElement as HTMLElement)
     buttons[(at + step + buttons.length) % buttons.length]?.focus()
     ev.preventDefault()
   }
   const onDown = (ev: Event): void => {
     const target = ev.target as Node
-    if (menu.contains(target)) return
+    if (menu.contains(target) || sub?.pane.contains(target)) return
     // A right click menu closes on any click outside it, the thing it opened on too.
     if (options.at) {
       if (ev instanceof MouseEvent && ev.button === 2 && anchor.contains(target)) return

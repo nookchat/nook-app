@@ -3348,7 +3348,7 @@ export class SpaceView {
     // You drag yourself, and not the channel you are in.
     if (mine) {
       this.dragPerson(member, key)
-      onContextMenu(member, () => this.voiceChangerMenu())
+      onContextMenu(member, () => this.myVoiceMenu())
       member.title = 'Drag to another voice channel to go there. Right click to change your voice.'
     } else {
       onContextMenu(member, () => [{ custom: this.volumeBlock(key, name) }])
@@ -3393,7 +3393,7 @@ export class SpaceView {
       if (changed) {
         member.append(
           h('span', { class: 'voice-game voice-changed', title: `Voice changed: ${changed.label}`, ariaLabel: `Voice changed: ${changed.label}` }, [
-            icon('wand', 14),
+            icon('voice-fx', 14),
           ]),
         )
       }
@@ -3771,6 +3771,19 @@ export class SpaceView {
         : undefined,
     })
     openMenu(anchor, [{ custom: card }], { className: 'profile-pop', beside: side })
+  }
+
+  /** Right click on my own row: just the voice changer today, nested so more can join it later. */
+  private myVoiceMenu(): MenuEntry[] {
+    const chosen = VOICES.find((v) => v.id === micSettings().voice)
+    return [
+      {
+        label: 'Voice changer',
+        note: chosen && chosen.id !== 'off' ? chosen.label : 'Off',
+        lead: h('span', { class: 'menu-icon' }, [icon('voice-fx', 16)]),
+        submenu: this.voiceChangerMenu(),
+      },
+    ]
   }
 
   /** What my voice sounds like to everyone else. Local to this device, like the volume for others. */

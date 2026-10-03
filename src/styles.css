@@ -5831,6 +5831,13 @@ button.to-bottom:hover:not(:disabled) {
   color: inherit;
 }
 
+.menu-chevron {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  color: var(--fg-faint);
+}
+
 .menu-heading {
   padding: 10px 10px 4px;
   color: var(--heading);
