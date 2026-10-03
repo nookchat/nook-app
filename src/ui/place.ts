@@ -76,3 +76,12 @@ export function fitAtPoint(pop: HTMLElement, x: number, y: number): void {
   pop.dataset.side = up ? 'above' : 'below'
   fitInView(pop, left, up ? y - box.height : y)
 }
+
+/** Centred over the anchor, as a tooltip sits over its button; below it only when there is no room above. */
+export function fitAbove(pop: HTMLElement, anchor: HTMLElement, gap = MARGIN): void {
+  const at = anchor.getBoundingClientRect()
+  const box = pop.getBoundingClientRect()
+  const over = at.top - gap - box.height >= viewArea().top
+  pop.dataset.side = over ? 'above' : 'below'
+  fitInView(pop, at.left + at.width / 2 - box.width / 2, over ? at.top - gap - box.height : at.bottom + gap)
+}

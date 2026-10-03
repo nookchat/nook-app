@@ -132,7 +132,7 @@ try {
     JSON.stringify(selection),
   )
 
-  await pressAction(page, 'Reply in a thread', 0)
+  await pressAction(page, 'Reply in thread', 0)
   await page.waitForTimeout(400)
   await say(page, 'how about Bliss')
   await say(page, 'or Luna')

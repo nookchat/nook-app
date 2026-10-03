@@ -25,7 +25,7 @@ import { icon } from './icons'
 import { quietKeyboard } from './keyboard'
 import { closeMenu, onContextMenu, type MenuEntry } from './menu'
 import { asSheet, phone } from './gestures'
-import { fitNear } from './place'
+import { fitAbove, fitNear } from './place'
 import { toast } from './toast'
 import { emojiField, REDRAW_FIELD } from './twemoji'
 
@@ -184,6 +184,32 @@ function pinnedFiles(m: Message): string {
     kinds.set(kind, (kinds.get(kind) ?? 0) + 1)
   }
   return [...kinds].map(([kind, n]) => (n === 1 ? `a ${kind}` : `${n} ${kind}s`)).join(', ')
+}
+
+/** Names a message action over its button while the pointer rests on it or the keyboard reaches it. */
+function withTip(button: HTMLElement, label: string): HTMLElement {
+  let tip: HTMLElement | null = null
+  let watch = 0
+  const hide = (): void => {
+    window.clearInterval(watch)
+    tip?.remove()
+    tip = null
+  }
+  const show = (): void => {
+    if (tip) return
+    document.querySelector('.action-tip')?.remove()
+    tip = h('div', { class: 'action-tip', role: 'tooltip', text: label })
+    document.body.append(tip)
+    fitAbove(tip, button)
+    // A row drawn again under the pointer never says the pointer left: its tip goes with it.
+    watch = window.setInterval(() => button.isConnected || hide(), 300)
+  }
+  button.addEventListener('pointerenter', (ev) => ev.pointerType === 'mouse' && show())
+  button.addEventListener('pointerleave', hide)
+  button.addEventListener('focus', () => button.matches(':focus-visible') && show())
+  button.addEventListener('blur', hide)
+  button.addEventListener('click', hide)
+  return button
 }
 
 function pinMark(): HTMLElement {
@@ -1869,82 +1895,82 @@ export class ChatPanel {
     const bar = h('div', { class: 'chat-actions' })
     if (this.canPin) {
       bar.append(
-        h(
-          'button',
-          {
-            class: m.pinned ? 'on' : '',
-            title: m.pinned ? 'Stop holding this one up' : 'Pin this one',
-            ariaLabel: m.pinned ? 'Unpin' : 'Pin',
-            on: { click: () => this.actions?.pin(m.id, !m.pinned) },
-          },
-          [icon('pin', 19)],
+        withTip(
+          h(
+            'button',
+            {
+              class: m.pinned ? 'on' : '',
+              ariaLabel: m.pinned ? 'Unpin' : 'Pin',
+              on: { click: () => this.actions?.pin(m.id, !m.pinned) },
+            },
+            [icon('pin', 19)],
+          ),
+          m.pinned ? 'Unpin' : 'Pin',
         ),
       )
     }
     const react = h(
       'button',
       {
-        title: 'React',
-        ariaLabel: 'React to this message',
+        ariaLabel: 'Add reaction',
         on: { click: () => this.reactWith(m, react) },
       },
       [icon('smile', 19)],
     )
     bar.append(
-      react,
-      h(
-        'button',
-        {
-          title: 'Reply here, where everybody is reading',
-          ariaLabel: 'Reply',
-          on: { click: () => this.startReply(m) },
-        },
-        [icon('reply', 19)],
+      withTip(react, 'Add reaction'),
+      withTip(
+        h('button', { ariaLabel: 'Reply', on: { click: () => this.startReply(m) } }, [icon('reply', 19)]),
+        'Reply',
       ),
     )
     if (!this.threadRoot) {
       bar.append(
-        h(
-          'button',
-          {
-            title: 'Reply in a thread',
-            ariaLabel: 'Reply in a thread',
-            on: { click: () => this.onThread?.(m.id) },
-          },
-          [icon('thread', 19)],
+        withTip(
+          h('button', { ariaLabel: 'Reply in thread', on: { click: () => this.onThread?.(m.id) } }, [
+            icon('thread', 19),
+          ]),
+          'Reply in thread',
         ),
       )
     }
     if (mine) {
       bar.append(
-        h('button', { title: 'Edit', ariaLabel: 'Edit', on: { click: () => this.startEdit(m) } }, [icon('edit', 18)]),
-        h(
-          'button',
-          {
-            class: 'danger',
-            title: 'Delete for everybody who has not already read it',
-            ariaLabel: 'Delete',
-            on: { click: () => this.actions?.retract(m.id) },
-          },
-          [icon('trash', 19)],
+        withTip(
+          h('button', { ariaLabel: 'Edit', on: { click: () => this.startEdit(m) } }, [icon('edit', 18)]),
+          'Edit',
+        ),
+        withTip(
+          h(
+            'button',
+            {
+              class: 'danger',
+              ariaLabel: 'Delete',
+              on: { click: () => this.actions?.retract(m.id) },
+            },
+            [icon('trash', 19)],
+          ),
+          'Delete',
         ),
       )
     } else if (this.canDelete) {
       bar.append(
-        h(
-          'button',
-          {
-            class: 'danger',
-            title: `Delete this message from ${who}`,
-            ariaLabel: 'Delete this message',
-            on: {
-              click: async () => {
-                if (!(await confirmDanger('Delete this message?', `It is from ${who}.`, 'Delete'))) return
-                this.actions?.retract(m.id)
+        withTip(
+          h(
+            'button',
+            {
+              class: 'danger',
+              ariaLabel: 'Delete this message',
+              on: {
+                click: async () => {
+                  if (!(await confirmDanger('Delete this message?', `It is from ${who}.`, 'Delete'))) return
+                  this.actions?.retract(m.id)
+                },
               },
             },
-          },
-          [icon('trash', 19)],
+            [icon('trash', 19)],
+          ),
+          'Delete',
         ),
       )
     }
