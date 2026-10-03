@@ -7,6 +7,7 @@ import { UplinkMeter } from '../net/uplink'
 import { LISTENING_CHANGED, cleanListening, listeningNow, type Listening } from '../net/listening'
 import { PLAYING_CHANGED, cleanGameName, cleanSteamId, playingNow, type Playing } from '../net/playing'
 import { LOUDEST, mutedFor, setMutedFor, setVolumeFor, volumeFor, VOLUMES_CHANGED } from '../net/volume'
+import { changeMic, cleanVoice, micSettings, MIC_CHANGED, VOICES, type VoiceId } from '../net/mic'
 import { gifs as serverGifs, preview, serverHasGifs } from '../net/server-api'
 import { formatSecret, newPass, roomLink, setLinkSecret, type Room } from '../room'
 import { HostPeer } from '../rtc/host-peer'
@@ -405,6 +406,8 @@ export class SpaceView {
   private readonly listeningBy = new Map<string, Listening>()
   /** Keys I've muted for myself, as of the last redraw — so a slider drag doesn't redraw unless it actually changed. */
   private mutedKeysSeen = new Set<string>()
+  /** My own voice changer, as of the last redraw — so other mic settings don't force one. */
+  private voiceSeen: VoiceId = micSettings().voice
   private readonly boardButton = h(
     'button',
     {
@@ -521,6 +524,7 @@ export class SpaceView {
     window.addEventListener(MUTED_CHANGED, this.onPlaying)
     window.addEventListener(STATUS_CHANGED, this.onPlaying)
     window.addEventListener(VOLUMES_CHANGED, this.onVolumes)
+    window.addEventListener(MIC_CHANGED, this.onMic)
     window.addEventListener('keydown', this.onShortcut)
     this.draw()
     this.status()
@@ -555,6 +559,13 @@ export class SpaceView {
       }
     }
     return keys
+  }
+
+  private readonly onMic = (): void => {
+    const voice = micSettings().voice
+    if (voice === this.voiceSeen) return
+    this.voiceSeen = voice
+    this.renderVoice()
   }
 
   private readonly onShortcut = (ev: KeyboardEvent): void => {
@@ -631,6 +642,7 @@ export class SpaceView {
     window.removeEventListener(MUTED_CHANGED, this.onPlaying)
     window.removeEventListener(STATUS_CHANGED, this.onPlaying)
     window.removeEventListener(VOLUMES_CHANGED, this.onVolumes)
+    window.removeEventListener(MIC_CHANGED, this.onMic)
     window.removeEventListener('keydown', this.onShortcut)
     for (const t of this.timers) window.clearInterval(t)
     this.timers = []
@@ -3336,7 +3348,8 @@ export class SpaceView {
     // You drag yourself, and not the channel you are in.
     if (mine) {
       this.dragPerson(member, key)
-      member.title = 'Drag to another voice channel to go there'
+      onContextMenu(member, () => this.myVoiceMenu())
+      member.title = 'Drag to another voice channel to go there. Right click to change your voice.'
     } else {
       onContextMenu(member, () => [{ custom: this.volumeBlock(key, name) }])
       member.title = 'Right click for their volume'
@@ -3373,6 +3386,17 @@ export class SpaceView {
       member.append(
         h('span', { class: 'voice-quiet', title: 'Muted by you', ariaLabel: 'Muted by you' }, [icon('mute', 14)]),
       )
+    }
+    // Local-only: changes how my voice sounds to everyone else, but nobody else can see which.
+    if (mine) {
+      const changed = VOICES.find((v) => v.id === micSettings().voice && v.id !== 'off')
+      if (changed) {
+        member.append(
+          h('span', { class: 'voice-game voice-changed', title: `Voice changed: ${changed.label}`, ariaLabel: `Voice changed: ${changed.label}` }, [
+            icon('voice-fx', 14),
+          ]),
+        )
+      }
     }
     if (mine ? this.voice?.cameraOn : ids.some((i) => this.filming.has(i))) {
       member.append(h('span', { class: 'voice-game voice-camera', title: 'Camera on' }, [icon('video', 14)]))
@@ -3747,6 +3771,30 @@ export class SpaceView {
         : undefined,
     })
     openMenu(anchor, [{ custom: card }], { className: 'profile-pop', beside: side })
+  }
+
+  /** Right click on my own row: just the voice changer today, nested so more can join it later. */
+  private myVoiceMenu(): MenuEntry[] {
+    const chosen = VOICES.find((v) => v.id === micSettings().voice)
+    return [
+      {
+        label: 'Voice changer',
+        note: chosen && chosen.id !== 'off' ? chosen.label : 'Off',
+        lead: h('span', { class: 'menu-icon' }, [icon('voice-fx', 16)]),
+        submenu: this.voiceChangerMenu(),
+      },
+    ]
+  }
+
+  /** What my voice sounds like to everyone else. Local to this device, like the volume for others. */
+  private voiceChangerMenu(): MenuEntry[] {
+    const chosen = micSettings().voice
+    return VOICES.map((v) => ({
+      label: v.id === 'off' ? 'None' : v.label,
+      note: v.about,
+      current: v.id === chosen,
+      run: () => changeMic({ voice: cleanVoice(v.id) }),
+    }))
   }
 
   private volumeBlock(key: string, name: string): HTMLElement {

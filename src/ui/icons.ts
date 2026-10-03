@@ -23,6 +23,7 @@ export type IconName =
   | 'signal'
   | 'mic'
   | 'mic-off'
+  | 'voice-fx'
   | 'stop'
   | 'share'
   | 'shield'
@@ -117,6 +118,11 @@ const ICONS: Record<IconName, string | Drawing> = {
   smile: { line: `${circle(12, 12, 9)}M8.5 14.5a4.5 4.5 0 0 0 7 0`, solid: `${circle(9, 10, 0.9)}${circle(15, 10, 0.9)}` },
   mic: MIC,
   'mic-off': `${MIC}M4 4l16 16`,
+  // A speech bubble with a small waveform inside it: the voice changer.
+  'voice-fx': {
+    line: 'M9.5 3h5a6.5 6.5 0 0 1 6.5 6.5v1a6.5 6.5 0 0 1-6.5 6.5h-2.5l-4 4L9.5 17a6.5 6.5 0 0 1-6.5-6.5v-1a6.5 6.5 0 0 1 6.5-6.5z',
+    solid: `${rect(6.2, 8, 1.6, 4, 0.8)}${rect(8.7, 7, 1.6, 6, 0.8)}${rect(11.2, 6, 1.6, 8, 0.8)}${rect(13.7, 7, 1.6, 6, 0.8)}${rect(16.2, 8, 1.6, 4, 0.8)}`,
+  },
   camera: `M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z${circle(12, 13, 3.5)}`,
   image: `${rect(3, 4, 18, 16, 2)}${circle(9, 10, 1.8)}M21 16l-5-5-9 9`,
   video: `${rect(3, 6, 13, 12, 2)}M16 10l5-3v10l-5-3z`,
