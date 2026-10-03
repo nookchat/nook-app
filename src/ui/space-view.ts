@@ -389,6 +389,8 @@ export class SpaceView {
   private readonly filming = new Set<string>()
   private cameras!: HTMLDivElement
   private cameraButton!: HTMLButtonElement
+  /** Null until the devices are listed; unknown counts as having one. */
+  private hasCamera: boolean | null = null
   private readonly cameraTiles = new Map<string, { tile: HTMLElement; video: HTMLVideoElement; tag: HTMLElement; track: MediaStreamTrack | null }>()
   /** The newest look at the voice connection, taken every few seconds while in voice. */
   private link: {
@@ -415,8 +417,8 @@ export class SpaceView {
     'button',
     {
       class: 'voice-tool voice-board',
-      title: 'Soundboard: only the people in your voice channel hear it',
       ariaLabel: 'Soundboard',
+      data: { tip: 'Soundboard' },
     },
     [icon('music', 19)],
   )
@@ -496,6 +498,9 @@ export class SpaceView {
         : undefined,
     })
 
+    this.findCameras()
+    navigator.mediaDevices?.addEventListener?.('devicechange', this.findCameras)
+    this.unlisten.push(() => navigator.mediaDevices?.removeEventListener?.('devicechange', this.findCameras))
     this.unlisten.push(
       space.on('changed', () => this.draw()),
       space.on('voice', () => this.draw()),
@@ -3324,6 +3329,7 @@ export class SpaceView {
   private async toggleCamera(): Promise<void> {
     const voice = this.voice
     if (!voice?.state.channel) return
+    if (!voice.cameraOn && this.hasCamera === false) return
     try {
       await voice.setCamera(!voice.cameraOn)
     } catch (err) {
@@ -3334,13 +3340,30 @@ export class SpaceView {
 
   private renderCameraButton(): void {
     const on = this.voice?.cameraOn === true
-    const label = on ? 'Turn off camera' : 'Turn on camera'
-    if (this.cameraButton.getAttribute('aria-label') === label) return
+    // No camera to turn on: the button stays, held, and its tip says why.
+    const missing = !on && this.hasCamera === false
+    const tip = on ? 'Stop sharing camera' : missing ? 'No camera found' : 'Share camera'
+    if (this.cameraButton.dataset.tip === tip) return
     clear(this.cameraButton)
-    this.cameraButton.setAttribute('aria-label', label)
-    this.cameraButton.title = on ? 'Turn off your camera' : 'Turn on your camera for this voice channel'
+    this.cameraButton.setAttribute('aria-label', on ? 'Turn off camera' : 'Turn on camera')
+    this.cameraButton.dataset.tip = tip
+    if (missing) this.cameraButton.setAttribute('aria-disabled', 'true')
+    else this.cameraButton.removeAttribute('aria-disabled')
     this.cameraButton.classList.toggle('on', on)
     this.cameraButton.append(icon(on ? 'video' : 'video-off', 19))
+  }
+
+  /** Whether this device has a camera at all, asked again when one is plugged in or out. */
+  private readonly findCameras = (): void => {
+    navigator.mediaDevices?.enumerateDevices?.().then(
+      (all) => {
+        const has = all.some((d) => d.kind === 'videoinput')
+        if (has === this.hasCamera) return
+        this.hasCamera = has
+        this.renderCameraButton()
+      },
+      () => undefined,
+    )
   }
 
   private sessionsByPerson(members: string[], peers: Map<string, MeshPeer>): Map<string, string[]> {
@@ -3606,8 +3629,8 @@ export class SpaceView {
           'button',
           {
             class: `voice-tool${state.muted ? ' danger on' : ''}${quiet ? ' held' : ''}`,
-            title: quiet ? NO_TALKING : state.muted ? 'Unmute' : 'Mute',
             ariaLabel: quiet ? NO_TALKING : state.muted ? 'Unmute' : 'Mute',
+            data: { tip: quiet ? NO_TALKING : state.muted ? 'Unmute' : 'Mute' },
             on: { click: () => this.toggleMute() },
           },
           [icon(state.muted ? 'mic-off' : 'mic', 19)],
@@ -3616,8 +3639,8 @@ export class SpaceView {
           'button',
           {
             class: `voice-tool${state.deafened ? ' danger on' : ''}`,
-            title: state.deafened ? 'Undeafen' : 'Deafen: hear nobody, and mute yourself',
             ariaLabel: state.deafened ? 'Undeafen' : 'Deafen',
+            data: { tip: state.deafened ? 'Undeafen' : 'Deafen' },
             on: { click: () => this.voice?.setDeafened(!state.deafened) },
           },
           [icon(state.deafened ? 'headphones-off' : 'headphones', 19)],
@@ -3643,8 +3666,8 @@ export class SpaceView {
             'button',
             {
               class: 'voice-tool voice-leave',
-              title: 'Leave voice',
               ariaLabel: 'Leave',
+              data: { tip: 'Leave voice' },
               on: { click: () => this.leaveVoice() },
             },
             [icon('phone-off', 24)],
@@ -4445,7 +4468,7 @@ export class SpaceView {
       this.shareButtonSharing = sharing
       clear(this.shareButton)
       this.shareButton.setAttribute('aria-label', sharing ? 'Stop sharing' : 'Share screen')
-      this.shareButton.title = sharing ? 'Stop sharing your screen' : 'Share your screen with this voice channel'
+      this.shareButton.dataset.tip = sharing ? 'Stop sharing screen' : 'Share screen'
       this.shareButton.append(icon(sharing ? 'stop' : 'monitor', sharing ? 16 : 19))
       this.shareButton.classList.toggle('danger', sharing)
       this.shareButton.classList.toggle('on', sharing)

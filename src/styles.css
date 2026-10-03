@@ -2926,6 +2926,15 @@ button.voice-tool.share-button.on:hover:not(:disabled) {
   background: color-mix(in srgb, var(--danger) 24%, var(--surface-1));
 }
 
+/* Held, not disabled: it still answers the pointer, so its tip can say why. */
+button.voice-tool[aria-disabled='true'],
+button.voice-tool[aria-disabled='true']:hover {
+  background: var(--surface-1);
+  color: var(--fg-dim);
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .search-wrap {
   display: flex;
   align-items: center;
@@ -4325,7 +4334,7 @@ input[type="text"].space-search {
   background: var(--line);
 }
 
-/* The name of a message action, over its button. */
+/* What a button does, over it (src/ui/tip.ts). */
 .action-tip {
   position: fixed;
   z-index: 80;
@@ -4337,7 +4346,9 @@ input[type="text"].space-search {
   color: var(--fg);
   font-size: var(--size-small);
   font-weight: 600;
-  white-space: nowrap;
+  width: max-content;
+  max-width: min(280px, calc(100vw - 12px));
+  overflow-wrap: anywhere;
   pointer-events: none;
 }
 

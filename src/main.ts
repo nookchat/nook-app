@@ -16,6 +16,7 @@ import { watchPush } from './net/push'
 import { roomHasLog } from './net/server-api'
 import { watchListening } from './net/listening'
 import { fitKeyboard } from './ui/keyboard'
+import { installTips } from './ui/tip'
 import { watchPlaying } from './net/playing'
 import { SOUND_HELD } from './net/unlock'
 import { watchForDesktopUpdates, watchForUpdates } from './net/updates'
@@ -369,6 +370,7 @@ drawEmojiAsArt()
 watchPlaying()
 watchListening()
 fitKeyboard()
+installTips()
 
 /** The loading screen goes once the space on screen has its messages, or a little later at most. */
 async function settle(): Promise<void> {

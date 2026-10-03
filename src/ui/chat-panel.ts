@@ -26,7 +26,7 @@ import { spinner } from './spinner'
 import { quietKeyboard } from './keyboard'
 import { closeMenu, onContextMenu, type MenuEntry } from './menu'
 import { asSheet, phone } from './gestures'
-import { fitAbove, fitInView, fitNear, fitOver } from './place'
+import { fitInView, fitNear, fitOver } from './place'
 import { spoilerReveal } from './spoiler-reveal'
 import { toast } from './toast'
 import { emojiField, type FieldMark, REDRAW_FIELD } from './twemoji'
@@ -175,29 +175,9 @@ function actionDivider(): HTMLElement {
   return h('span', { class: 'chat-actions-divider' })
 }
 
-/** Names a message action over its button while the pointer rests on it or the keyboard reaches it. */
+/** Names a message action in the tip over its button (src/ui/tip.ts). */
 function withTip(button: HTMLElement, label: string): HTMLElement {
-  let tip: HTMLElement | null = null
-  let watch = 0
-  const hide = (): void => {
-    window.clearInterval(watch)
-    tip?.remove()
-    tip = null
-  }
-  const show = (): void => {
-    if (tip) return
-    document.querySelector('.action-tip')?.remove()
-    tip = h('div', { class: 'action-tip', role: 'tooltip', text: label })
-    document.body.append(tip)
-    fitAbove(tip, button)
-    // A row drawn again under the pointer never says the pointer left: its tip goes with it.
-    watch = window.setInterval(() => button.isConnected || hide(), 300)
-  }
-  button.addEventListener('pointerenter', (ev) => ev.pointerType === 'mouse' && show())
-  button.addEventListener('pointerleave', hide)
-  button.addEventListener('focus', () => button.matches(':focus-visible') && show())
-  button.addEventListener('blur', hide)
-  button.addEventListener('click', hide)
+  button.dataset.tip = label
   return button
 }
 
