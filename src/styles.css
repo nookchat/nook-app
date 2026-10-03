@@ -4371,6 +4371,15 @@ input[type="text"].space-search {
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--who) 16%, transparent);
 }
 
+/* A spoiler being written: a plain yellow highlight, so the author can see exactly what
+   will be hidden, with none of the mention tag's own colour or boldness. */
+.emoji-mirror .field-mark-spoiler {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--warning) 38%, var(--surface-1));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--warning) 38%, var(--surface-1));
+  border-radius: 2px;
+}
+
 /* A picture the width of the device's own emoji, so a copy of typed text lines up with it. */
 .twemoji-glyph {
   position: relative;
@@ -5552,18 +5561,88 @@ input[type="range"].vp-volume {
   margin: 1px 0;
 }
 
-.spoiler {
-  background: var(--surface-2);
-  color: transparent;
-  border-radius: 3px;
+/* A sent spoiler: the words sit in the DOM as normal text (so copy and find still work), with
+   an animated "encrypted" canvas over the top until it's scratched, clicked or tapped open. */
+.spoiler-box {
+  position: relative;
+  display: inline-block;
   padding: 0 3px;
+  border-radius: 3px;
   cursor: pointer;
 }
 
-.spoiler.shown {
-  color: inherit;
-  background: color-mix(in srgb, var(--fg-faint) 22%, transparent);
+/* A plain fallback box in case the canvas veil hasn't sized itself yet; the canvas draws
+   straight over this once it has, and scratching it punches real holes through to the text. */
+.spoiler-box:not(.revealed) {
+  min-width: 2.5em;
+  background: var(--surface-2);
+}
+
+.spoiler-box:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.spoiler-box.revealed {
   cursor: auto;
+}
+
+.spoiler-veil {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 3px;
+  touch-action: none;
+}
+
+.spoiler-veil.dissolving {
+  animation: spoiler-dissolve 420ms ease-out forwards;
+}
+
+@keyframes spoiler-dissolve {
+  0% {
+    opacity: 1;
+    filter: blur(0);
+  }
+  100% {
+    opacity: 0;
+    filter: blur(3px);
+    transform: scale(1.04);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spoiler-veil.dissolving {
+    animation: none;
+  }
+}
+
+/* The small "Create spoiler" / "Remove spoiler" bubble above a selection or caret. */
+.spoiler-bar {
+  position: fixed;
+  z-index: 75;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow);
+}
+
+.spoiler-bar-action {
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent-text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.spoiler-bar-action:hover,
+.spoiler-bar-action:focus-visible {
+  background: var(--accent-soft);
 }
 
 .chat-text.emote {
