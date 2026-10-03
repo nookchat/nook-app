@@ -122,6 +122,11 @@ with voice does it.
   pasted in. Each is encrypted on your device with a key of its own before it
   goes up. Pictures show in the message and open full screen; videos show
   their first frame and play in place; anything else is a card with Save.
+- **Markdown files** (.md, up to 2 MB) show the top of the file in the
+  message, drawn as notes draw markdown, and a click opens the whole file in
+  a reader with Save. The renderer makes elements, never HTML, so a file
+  cannot run a script, style the page or load a picture from elsewhere.
+  `node test/markdown-file.test.mjs` sends one with a script in it.
 - **A mention** in a message is a click away from the person's profile.
 - **Voice messages**: the microphone in the message box, where the send button is
   while the box is empty, records a message of five minutes at most. The bin throws it
