@@ -23,6 +23,7 @@ export type IconName =
   | 'signal'
   | 'mic'
   | 'mic-off'
+  | 'wand'
   | 'stop'
   | 'share'
   | 'shield'
@@ -117,6 +118,8 @@ const ICONS: Record<IconName, string | Drawing> = {
   smile: { line: `${circle(12, 12, 9)}M8.5 14.5a4.5 4.5 0 0 0 7 0`, solid: `${circle(9, 10, 0.9)}${circle(15, 10, 0.9)}` },
   mic: MIC,
   'mic-off': `${MIC}M4 4l16 16`,
+  // A wand with a sparkle at its tip, and a smaller one trailing it: the voice changer.
+  wand: 'M5 19 13 11M17 3.2l1.3 2.7L21 7.2l-2.7 1.3L17 11.2l-1.3-2.7L13 7.2l2.7-1.3zM20 13v1.8M19.1 13.9h1.8',
   camera: `M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z${circle(12, 13, 3.5)}`,
   image: `${rect(3, 4, 18, 16, 2)}${circle(9, 10, 1.8)}M21 16l-5-5-9 9`,
   video: `${rect(3, 6, 13, 12, 2)}M16 10l5-3v10l-5-3z`,
