@@ -5,7 +5,7 @@ import { createServer } from 'node:https'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { webkit } from 'playwright-core'
-import { APP_URL, check, finish, launch, stoppedEarly, wait } from './harness.mjs'
+import { APP_URL, check, finish, launch, makeSpace, stoppedEarly, wait } from './harness.mjs'
 
 // The home site moved from cathode.video to nookchat.app (public/boot-move.js, public/move.js).
 // Chrome opens the page under both names here, as two sites, each with its own storage, so an
@@ -41,7 +41,7 @@ const browser = WEBKIT
       args: ['--host-resolver-rules=MAP www.nookchat.app 127.0.0.1, MAP www.cathode.video 127.0.0.1', '--ignore-certificate-errors'],
     })
 /** Home, or the space the account was last in. */
-const OPEN = '.space-name, input[aria-label="Space name"]'
+const OPEN = '.space-name, button.new-space'
 /** Vite's answer to a request for one of the two names, as the proxy gives it. Asked again once if it hangs. */
 const fromVite = (url, method, headers, again = true) =>
   new Promise((done, fail) => {
@@ -131,8 +131,7 @@ try {
   await maker.click('.tour-skip')
   await maker.fill('input[aria-label="Your name"]', 'Mo')
   await maker.keyboard.press('Enter')
-  await maker.fill('input[aria-label="Space name"]', 'old home')
-  await maker.click('button:has-text("New space")')
+  await makeSpace(maker, 'old home')
   await maker.waitForSelector('.space-name', { timeout: 15_000 })
   const invite = new URL(maker.url()).hash
   await wait(1500)

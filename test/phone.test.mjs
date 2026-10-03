@@ -1,5 +1,5 @@
 import { mkdirSync } from 'node:fs'
-import { APP_URL, FAKE_MEDIA, check, finish, launch, stoppedEarly, wait } from './harness.mjs'
+import { APP_URL, check, FAKE_MEDIA, finish, HOME, launch, makeSpace, stoppedEarly, wait } from './harness.mjs'
 
 // A phone: the side bars are drawers a finger pulls out, a popup is a sheet a finger pulls down,
 // a long press opens a message's menu, and a picture zooms, steps and closes under the fingers.
@@ -66,9 +66,8 @@ const mid = (b) => [b.x + b.width / 2, b.y + b.height / 2]
 
 try {
   const ada = await person('Ada', false)
-  await ada.waitForSelector('input[aria-label="Space name"]')
-  await ada.fill('input[aria-label="Space name"]', 'Night Shift')
-  await ada.click('button:has-text("New space")')
+  await ada.waitForSelector(HOME)
+  await makeSpace(ada, 'Night Shift')
   await ada.waitForSelector(BOX)
   const link = ada.url()
   for (const text of ['Morning all. The build is green.', 'Release at noon. Notes in https://example.com/notes']) {

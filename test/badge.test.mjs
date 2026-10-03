@@ -1,4 +1,4 @@
-import { APP_URL, answer, check, finish, launch, poll, stoppedEarly, wait } from './harness.mjs'
+import { answer, APP_URL, check, finish, HOME, launch, makeSpace, poll, stoppedEarly, wait } from './harness.mjs'
 
 // Unread mentions and direct messages go on the tab's icon, and to the desktop app for its Dock or taskbar icon.
 const browser = await launch()
@@ -13,7 +13,7 @@ async function person(name) {
   await page.goto(APP_URL)
   await page.evaluate((n) => localStorage.setItem('nook.name.v1', n), name)
   await page.reload()
-  await page.waitForSelector('input[aria-label="Space name"]')
+  await page.waitForSelector(HOME)
   return page
 }
 
@@ -28,8 +28,7 @@ async function say(page, text) {
 
 try {
   const alice = await person('Alice')
-  await alice.fill('input[aria-label="Space name"]', 'badges')
-  await alice.click('button:has-text("New space")')
+  await makeSpace(alice, 'badges')
   await alice.waitForSelector(BOX)
   await alice.click('.rail-left button[title="Make a text channel"]')
   await answer(alice, 'elsewhere')

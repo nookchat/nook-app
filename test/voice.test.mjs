@@ -1,4 +1,4 @@
-import { APP_URL, FAKE_MEDIA, check, finish, launch, poll, stoppedEarly } from './harness.mjs'
+import { APP_URL, check, FAKE_MEDIA, finish, launch, makeSpace, poll, stoppedEarly } from './harness.mjs'
 
 async function waitFor(fn, ms, label) {
   const found = await poll(fn, ms, 400)
@@ -12,8 +12,7 @@ try {
   const one = await (await browser.newContext()).newPage()
   await one.goto(APP_URL, { waitUntil: 'domcontentloaded' })
   await one.getByRole('button', { name: 'New space' }).waitFor({ timeout: 10_000 })
-  await one.fill('input[aria-label="Space name"]', 'test space')
-  await one.getByRole('button', { name: 'New space' }).click()
+  await makeSpace(one, 'test space')
   await one.waitForSelector('[aria-label="Write a message"]', { timeout: 15_000 })
   await one.waitForTimeout(800)
   // The address bar is the invite.

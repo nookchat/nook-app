@@ -1,4 +1,4 @@
-import { APP_URL, check, finish, launch, stoppedEarly, openSpaceSettings } from './harness.mjs'
+import { APP_URL, check, finish, HOME, launch, makeSpace, openSpaceSettings, stoppedEarly } from './harness.mjs'
 
 const BOX = '[aria-label="Write a message"]'
 // A level's colour as text: on a light page it takes some of the text colour (roleInk in src/ui/dom.ts).
@@ -20,7 +20,7 @@ async function person(name) {
   await page.goto(APP_URL)
   await page.evaluate((n) => localStorage.setItem('nook.name.v1', n), name)
   await page.reload()
-  await page.waitForSelector('input[aria-label="Space name"]')
+  await page.waitForSelector(HOME)
   return page
 }
 
@@ -49,8 +49,7 @@ const openSettings = (page) => page.evaluate(() => document.querySelector('butto
 try {
   const alice = await person('Alice')
   TEAL = await inkOf(alice, '#2ec4b6')
-  await alice.fill('input[aria-label="Space name"]', 'levels')
-  await alice.click('button:has-text("New space")')
+  await makeSpace(alice, 'levels')
   await alice.waitForSelector('.space-name')
   await alice.waitForTimeout(1000)
   const bob = await person('Bob')

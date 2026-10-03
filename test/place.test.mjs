@@ -1,4 +1,4 @@
-import { APP_URL, check, finish, launch, poll, stoppedEarly, wait } from './harness.mjs'
+import { APP_URL, check, finish, HOME, launch, makeSpace, poll, stoppedEarly, wait } from './harness.mjs'
 
 // A menu never goes off screen or under the desktop app's title bar. A pin opens its message
 // from anywhere, a note too. And in the channel head, search comes before the actions.
@@ -24,7 +24,7 @@ async function person(name, { bar = false, height = 820 } = {}) {
   await page.goto(APP_URL)
   await page.evaluate((n) => localStorage.setItem('nook.name.v1', n), name)
   await page.reload()
-  await page.waitForSelector('input[aria-label="Space name"]')
+  await page.waitForSelector(HOME)
   return page
 }
 
@@ -51,8 +51,7 @@ const menuBox = (page, top) =>
 
 try {
   const alice = await person('Alice', { bar: true })
-  await alice.fill('input[aria-label="Space name"]', 'placing')
-  await alice.click('button:has-text("New space")')
+  await makeSpace(alice, 'placing')
   await alice.waitForSelector(BOX)
   const bob = await person('Bob')
   await bob.goto(alice.url())

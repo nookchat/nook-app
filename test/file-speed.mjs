@@ -2,7 +2,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createServer, request } from 'node:http'
 import { setTimeout as wait } from 'node:timers/promises'
-import { AUTOPLAY, launch } from './harness.mjs'
+import { AUTOPLAY, launch, HOME, makeSpace } from './harness.mjs'
 import { startServer } from './pg.mjs'
 
 // How long a video takes to go up, to come down whole, to stream, to show its first frame
@@ -130,9 +130,8 @@ const filesOf = `
 
 async function measure(label, server) {
   const sender = await person('Sender', server)
-  await sender.waitForSelector('input[aria-label="Space name"]')
-  await sender.fill('input[aria-label="Space name"]', 'speed')
-  await sender.click('button:has-text("New space")')
+  await sender.waitForSelector(HOME)
+  await makeSpace(sender, 'speed')
   await sender.waitForSelector('button[aria-label="Attach files"]:not(.hidden)', { timeout: 20_000 })
   const reader = await person('Reader', server)
   await reader.goto(sender.url())

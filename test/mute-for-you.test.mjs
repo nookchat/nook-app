@@ -1,4 +1,4 @@
-import { APP_URL, FAKE_MEDIA, check, finish, launch, stoppedEarly } from './harness.mjs'
+import { APP_URL, check, FAKE_MEDIA, finish, HOME, launch, makeSpace, stoppedEarly } from './harness.mjs'
 
 // Muting somebody for yourself is local to your device: it never shows in the voice list for
 // anybody else, and the icon for it must come and go with your own Mute switch alone.
@@ -26,9 +26,8 @@ const anyMutedByYou = () => document.querySelector('[title="Muted by you"]') != 
 try {
   const alice = await person('Alice')
   await alice.goto(APP_URL)
-  await alice.waitForSelector('input[aria-label="Space name"]')
-  await alice.fill('input[aria-label="Space name"]', 'mute-for-you')
-  await alice.click('button:has-text("New space")')
+  await alice.waitForSelector(HOME)
+  await makeSpace(alice, 'mute-for-you')
   await alice.waitForSelector('.space-name')
   const bob = await person('Bob')
   await bob.goto(alice.url())

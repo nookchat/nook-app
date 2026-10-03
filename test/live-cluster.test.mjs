@@ -1,4 +1,4 @@
-import { APP_URL, AUTOPLAY, FAKE_MEDIA, check, finish, launch, poll, stoppedEarly, wait } from './harness.mjs'
+import { APP_URL, AUTOPLAY, check, FAKE_MEDIA, finish, HOME, launch, makeSpace, poll, stoppedEarly, wait } from './harness.mjs'
 import { startServer } from './pg.mjs'
 
 const A = 'http://localhost:8805'
@@ -55,9 +55,8 @@ const loudness = (page) =>
 
 try {
   const ada = await person('Ada', A)
-  await ada.waitForSelector('input[aria-label="Space name"]')
-  await ada.fill('input[aria-label="Space name"]', 'split')
-  await ada.click('button:has-text("New space")')
+  await ada.waitForSelector(HOME)
+  await makeSpace(ada, 'split')
   await ada.waitForSelector(BOX)
   const code = new URL(ada.url()).hash.slice(1).split('@')[0]
   const ben = await person('Ben', B)

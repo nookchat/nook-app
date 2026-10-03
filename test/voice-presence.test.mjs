@@ -1,5 +1,5 @@
 import { createServer, connect } from 'node:net'
-import { APP_URL, FAKE_MEDIA, check, finish, launch, stoppedEarly, wait } from './harness.mjs'
+import { APP_URL, check, FAKE_MEDIA, finish, HOME, launch, makeSpace, stoppedEarly, wait } from './harness.mjs'
 import { startServer } from './pg.mjs'
 
 // A reload, as an update does, is a leave: nobody is put back in the lounge. Leaving must take
@@ -65,9 +65,8 @@ const notInLounge = (who) =>
 try {
   const alice = await person('Alice')
   await alice.goto(APP_URL)
-  await alice.waitForSelector('input[aria-label="Space name"]')
-  await alice.fill('input[aria-label="Space name"]', 'presence')
-  await alice.click('button:has-text("New space")')
+  await alice.waitForSelector(HOME)
+  await makeSpace(alice, 'presence')
   await alice.waitForSelector('.space-name')
   await alice.waitForTimeout(1200)
   const bob = await person('Bob')

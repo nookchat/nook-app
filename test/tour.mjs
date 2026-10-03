@@ -1,5 +1,5 @@
 import { mkdirSync } from 'node:fs'
-import { APP_URL, FAKE_MEDIA, answer, launch, wait } from './harness.mjs'
+import { APP_URL, FAKE_MEDIA, HOME, answer, launch, wait } from './harness.mjs'
 
 const OUT = new URL('../test-output/tour/', import.meta.url).pathname
 mkdirSync(OUT, { recursive: true })
@@ -26,7 +26,7 @@ async function person(name, width = 1440, height = 900) {
   await page.goto(APP_URL)
   await page.evaluate((n) => localStorage.setItem('nook.name.v1', n), name)
   await page.reload()
-  await page.waitForSelector('input[aria-label="Space name"]')
+  await page.waitForSelector(HOME)
   return page
 }
 
@@ -41,13 +41,18 @@ try {
   const ada = await person('Ada')
   const t0 = Date.now()
   await ada.reload()
-  await ada.waitForSelector('input[aria-label="Space name"]')
+  await ada.waitForSelector(HOME)
   console.log(`list painted in ${Date.now() - t0} ms`)
   await shot(ada, 'list-desktop')
 
-  await ada.fill('input[aria-label="Space name"]', 'Night Shift')
+  await ada.click(HOME)
+  await ada.waitForSelector('.space-flow .template-grid')
+  await shot(ada, 'new-space-templates')
+  await ada.click('.space-flow .welcome-option:has-text("Friends")')
+  await ada.fill('.space-flow input[aria-label="Space name"]', 'Night Shift')
+  await shot(ada, 'new-space-name')
   const t1 = Date.now()
-  await ada.click('button:has-text("New space")')
+  await ada.click('.space-flow button:has-text("Make the space")')
   await ada.waitForSelector(BOX)
   console.log(`space opened in ${Date.now() - t1} ms`)
   const link = ada.url()

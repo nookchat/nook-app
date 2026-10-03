@@ -1,4 +1,4 @@
-import { APP_URL, answer, check, finish, launch, stoppedEarly } from './harness.mjs'
+import { answer, APP_URL, check, finish, launch, makeSpace, stoppedEarly } from './harness.mjs'
 
 // A side bar is drawn anew on every change: somebody typing, arriving, or talking. One drawn
 // between the press and the release used to take the click with it, and it took a second one.
@@ -6,8 +6,7 @@ const browser = await launch()
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
   await page.goto(APP_URL)
-  await page.fill('input[aria-label="Space name"]', 'Clicks')
-  await page.click('button:has-text("New space")')
+  await makeSpace(page, 'Clicks')
   await page.waitForSelector('[aria-label="Write a message"]')
   await page.click('.rail-left button[title="Make a text channel"]')
   await answer(page, 'random')

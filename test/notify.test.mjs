@@ -1,4 +1,4 @@
-import { APP_URL, answer, check, finish, launch, poll, stoppedEarly, wait } from './harness.mjs'
+import { answer, APP_URL, check, finish, HOME, launch, makeSpace, poll, stoppedEarly, wait } from './harness.mjs'
 
 // Notifications say who, where and what, as Discord's do: for a mention and a direct
 // message, not every message unless asked, and never from a channel kept from you.
@@ -24,7 +24,7 @@ async function person(name, away = false) {
   await page.goto(APP_URL)
   await page.evaluate((n) => localStorage.setItem('nook.name.v1', n), name)
   await page.reload()
-  await page.waitForSelector('input[aria-label="Space name"]')
+  await page.waitForSelector(HOME)
   return page
 }
 
@@ -40,8 +40,7 @@ async function say(page, text) {
 
 try {
   const alice = await person('Alice')
-  await alice.fill('input[aria-label="Space name"]', 'Night Shift')
-  await alice.click('button:has-text("New space")')
+  await makeSpace(alice, 'Night Shift')
   await alice.waitForSelector(BOX)
   await alice.click('.rail-left button[title="Make a text channel"]')
   await alice.fill('.ask-modal .ask-input', 'staff')

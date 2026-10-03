@@ -1,4 +1,4 @@
-import { APP_URL, check, finish, launch, stoppedEarly, wait } from './harness.mjs'
+import { APP_URL, check, finish, HOME, launch, makeSpace, stoppedEarly, wait } from './harness.mjs'
 import { sql, startServer } from './pg.mjs'
 
 const PORT = 8791
@@ -22,14 +22,13 @@ async function person(name) {
     { n: name, server: SERVER },
   )
   await page.reload()
-  await page.waitForSelector('input[aria-label="Space name"]')
+  await page.waitForSelector(HOME)
   return page
 }
 
 try {
   const alice = await person('Alice')
-  await alice.fill('input[aria-label="Space name"]', 'sealed')
-  await alice.click('button:has-text("New space")')
+  await makeSpace(alice, 'sealed')
   await alice.waitForSelector(BOX)
   await alice.click(BOX)
   await alice.keyboard.type(SAID)

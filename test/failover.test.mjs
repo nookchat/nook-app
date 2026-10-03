@@ -1,4 +1,4 @@
-import { APP_URL, check, finish, launch, poll, stoppedEarly, wait } from './harness.mjs'
+import { APP_URL, check, finish, HOME, launch, makeSpace, poll, stoppedEarly, wait } from './harness.mjs'
 import { sql, startServer } from './pg.mjs'
 
 const SECRET = 'a-cluster-secret-for-tests'
@@ -23,7 +23,7 @@ async function person(name) {
     { n: name, server: A },
   )
   await page.reload()
-  await page.waitForSelector('input[aria-label="Space name"]')
+  await page.waitForSelector(HOME)
   return page
 }
 
@@ -51,8 +51,7 @@ const status = (page) =>
 
 try {
   const alice = await person('Alice')
-  await alice.fill('input[aria-label="Space name"]', 'two homes')
-  await alice.click('button:has-text("New space")')
+  await makeSpace(alice, 'two homes')
   await alice.waitForSelector(BOX)
   await wait(1500)
   const link = alice.url()

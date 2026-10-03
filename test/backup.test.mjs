@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync } from 'node:fs'
-import { APP_URL, check, finish, launch, stoppedEarly, wait, openSettingsTab } from './harness.mjs'
+import { APP_URL, check, finish, HOME, launch, makeSpace, openSettingsTab, stoppedEarly, wait } from './harness.mjs'
 
 const BOX = '[aria-label="Write a message"]'
 const SAID = 'said before the browser forgot'
@@ -53,8 +53,7 @@ try {
   await ana.click('.tour-skip')
   await ana.fill('input[aria-label="Your name"]', 'Ana')
   await ana.keyboard.press('Enter')
-  await ana.fill('input[aria-label="Space name"]', 'kept')
-  await ana.click('button:has-text("New space")')
+  await makeSpace(ana, 'kept')
   await ana.waitForSelector(BOX)
   await ana.click(BOX)
   await ana.keyboard.type(SAID)
@@ -160,7 +159,7 @@ try {
   await wait(4000)
   await two.evaluate(() => localStorage.removeItem('nook.screen.v1'))
   await two.goto(APP_URL)
-  await two.waitForSelector('input[aria-label="Space name"]')
+  await two.waitForSelector(HOME)
   const carried = await two
     .waitForFunction(
       (key) => {

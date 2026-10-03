@@ -1,4 +1,4 @@
-import { APP_URL, FAKE_MEDIA, answer, check, finish, launch, poll, stoppedEarly } from './harness.mjs'
+import { answer, APP_URL, check, FAKE_MEDIA, finish, launch, makeSpace, poll, stoppedEarly } from './harness.mjs'
 
 // A fake display, so a share needs no permission and no real screen.
 const DISPLAY_STUB = `
@@ -31,10 +31,7 @@ try {
   }
 
   const alice = await open('Alice')
-  await alice.evaluate(
-    () => (document.querySelector('input[aria-label="Space name"]').value = 'Live'),
-  )
-  await alice.getByRole('button', { name: 'New space' }).click()
+  await makeSpace(alice, 'Live')
   await alice.waitForTimeout(2500)
   const link = alice.url()
 

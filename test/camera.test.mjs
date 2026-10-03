@@ -1,4 +1,4 @@
-import { APP_URL, FAKE_MEDIA, check, finish, launch, poll, stoppedEarly } from './harness.mjs'
+import { APP_URL, check, FAKE_MEDIA, finish, HOME, launch, makeSpace, poll, stoppedEarly } from './harness.mjs'
 
 // A camera in a voice channel: one click, and everybody in the channel sees it, somebody who
 // comes in later too. The line for it is there from the start, so nothing is set up again.
@@ -11,7 +11,7 @@ async function person(name) {
   await page.goto(APP_URL)
   await page.evaluate((n) => localStorage.setItem('nook.name.v1', n), name)
   await page.reload()
-  await page.waitForSelector('input[aria-label="Space name"]')
+  await page.waitForSelector(HOME)
   return page
 }
 
@@ -29,8 +29,7 @@ const connected = (page) =>
 
 try {
   const alice = await person('Alice')
-  await alice.fill('input[aria-label="Space name"]', 'cameras')
-  await alice.click('button:has-text("New space")')
+  await makeSpace(alice, 'cameras')
   await alice.waitForSelector(BOX)
   const bob = await person('Bob')
   await bob.goto(alice.url())

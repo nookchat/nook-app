@@ -1,5 +1,5 @@
 import { mkdirSync } from 'node:fs'
-import { APP_URL, check, finish, launch, stoppedEarly, wait } from './harness.mjs'
+import { APP_URL, check, finish, launch, makeSpace, stoppedEarly, wait } from './harness.mjs'
 
 // The tour somebody new takes after I'm new: four slides, Next, Back, the dots, the arrow keys and
 // a swipe go through it, Skip and the last slide go to the name, and an invite says so.
@@ -86,8 +86,7 @@ try {
   await host.click('.tour-skip')
   await host.fill('input[aria-label="Your name"]', 'Hana')
   await host.keyboard.press('Enter')
-  await host.fill('input[aria-label="Space name"]', 'toured')
-  await host.click('button:has-text("New space")')
+  await makeSpace(host, 'toured')
   await host.waitForSelector('.space-name', { timeout: 15_000 })
   const link = await host.evaluate(() => window.location.href)
   const guest = await (await browser.newContext({ viewport: { width: 1280, height: 860 } })).newPage()

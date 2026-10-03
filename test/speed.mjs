@@ -1,4 +1,4 @@
-import { APP_URL, launch } from './harness.mjs'
+import { APP_URL, launch, HOME } from './harness.mjs'
 
 const COUNT = Number(process.argv[2] ?? 3000)
 
@@ -7,7 +7,7 @@ const page = await (await browser.newContext({ viewport: { width: 1440, height: 
 await page.goto(APP_URL)
 await page.evaluate(() => localStorage.setItem('nook.name.v1', 'Speedy'))
 await page.reload()
-await page.waitForSelector('input[aria-label="Space name"]')
+await page.waitForSelector(HOME)
 
 const median = (xs) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)]
 

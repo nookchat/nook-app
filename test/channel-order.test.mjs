@@ -1,4 +1,4 @@
-import { APP_URL, FAKE_MEDIA, check, finish, launch, stoppedEarly } from './harness.mjs'
+import { APP_URL, check, FAKE_MEDIA, finish, HOME, launch, makeSpace, stoppedEarly } from './harness.mjs'
 
 // Somebody who keeps the channels drags them into an order, and everybody sees that order.
 // Nobody else can: not in the page, and not by writing an order to the log.
@@ -23,9 +23,8 @@ const voiceIs = (wanted) =>
 try {
   const alice = await person('Alice')
   await alice.goto(APP_URL)
-  await alice.waitForSelector('input[aria-label="Space name"]')
-  await alice.fill('input[aria-label="Space name"]', 'order')
-  await alice.click('button:has-text("New space")')
+  await alice.waitForSelector(HOME)
+  await makeSpace(alice, 'order')
   await alice.waitForSelector('.space-name')
   await alice.waitForTimeout(1200)
   await alice.evaluate(async () => {

@@ -31,9 +31,18 @@ with voice does it.
   actions under them: Invite people, Space settings, Leave space. A dot on it
   says there is news in another space, and a red count says somebody
   mentioned you or sent you a direct message.
-- **Copy a Discord server**, under New space, makes a space from a Discord
-  server template link (in Discord: Server Settings, Server Template). A
-  link pasted in Join, or in the name box, does the same. The space takes the
+- **New space** takes steps, as making an account does: a starting point,
+  then the space's name, a picture if you want one, and a password if you
+  want one. A starting point is from scratch (general and lounge) or a
+  template: Friends, Gaming group, Study group, Club or community, Work or
+  project team, Creator community or Family. Each template makes its text and
+  voice channels in order, with a topic each, a Media only channel for
+  photos or clips, a No talking stage where it fits, and a starter note for
+  some (`src/space/templates.ts`). The owner changes all of it later.
+  `node test/templates.test.mjs` makes a Study group and a space from scratch.
+- **Copy a Discord server**, the last starting point in New space, makes a
+  space from a Discord server template link (in Discord: Server Settings,
+  Server Template). A link pasted in Join does the same. The space takes the
   server's name, its roles as levels, with their colours and what they may
   do, and its channels in Discord's order, with their names, topics, NSFW,
   and who may see each. A stage channel, or a voice channel where @everyone
@@ -490,6 +499,7 @@ src/
     registry.ts       every space you are in, started at once
     runtime.ts        one space: its log, its connection, who is here
     keys.ts           a new space key after a removal, and a copy for each person
+    templates.ts      the starting points for a new space: channels, topics, notes
   net/
     connection.ts     one WebSocket per server, carrying every space on it
     cluster.ts        the servers of a cluster, and moving to the next
@@ -529,6 +539,7 @@ src/
     phone-shell.ts    the Android app around the page: notifications, looking, saving
     phone-voice.ts    the call's notification in the Android app, with Mute and Leave
     space-list.ts     the home page: your spaces, making and joining one
+    new-space.ts      the steps of New space: a starting point, then a name
     chat-panel.ts     the conversation, drawn as nodes and never as HTML
     attachments.ts    files in a message, the picture viewer, and the upload tray
     recordings.ts     your recordings, and the clip editor with its two ends

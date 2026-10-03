@@ -1,4 +1,4 @@
-import { APP_URL, FAKE_MEDIA, answer, check, finish, launch, stoppedEarly } from './harness.mjs'
+import { answer, APP_URL, check, FAKE_MEDIA, finish, HOME, launch, makeSpace, stoppedEarly } from './harness.mjs'
 
 const openSearch = (page) =>
   page.evaluate(() => {
@@ -14,7 +14,7 @@ async function person(name) {
   await page.goto(APP_URL)
   await page.evaluate((n) => localStorage.setItem('nook.name.v1', n), name)
   await page.reload()
-  await page.waitForSelector('input[aria-label="Space name"]')
+  await page.waitForSelector(HOME)
   return page
 }
 
@@ -39,8 +39,7 @@ async function pressAction(page, label, index = 0) {
 
 try {
   const alice = await person('Alice')
-  await alice.fill('input[aria-label="Space name"]', 'the office')
-  await alice.click('button:has-text("New space")')
+  await makeSpace(alice, 'the office')
   await alice.waitForSelector('.space-name')
   await alice.waitForTimeout(1000)
   const link = alice.url()

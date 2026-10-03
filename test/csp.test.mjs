@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { extname, join } from 'node:path'
-import { FAKE_MEDIA, answer, check, finish, launch, poll, stoppedEarly } from './harness.mjs'
+import { answer, check, FAKE_MEDIA, finish, HOME, launch, makeSpace, poll, stoppedEarly } from './harness.mjs'
 import { startServer } from './pg.mjs'
 
 // The built page, served with the headers vercel.json gives it, CSP and all: nothing the app
@@ -65,9 +65,8 @@ try {
   const policy = await alice.evaluate(async () => (await fetch('/')).headers.get('content-security-policy'))
   check('the page goes out with a policy', /script-src 'self'/.test(policy ?? ''), policy ?? 'none')
 
-  await alice.waitForSelector('input[aria-label="Space name"]')
-  await alice.fill('input[aria-label="Space name"]', 'policy')
-  await alice.click('button:has-text("New space")')
+  await alice.waitForSelector(HOME)
+  await makeSpace(alice, 'policy')
   await alice.waitForSelector(BOX)
   // More than a worker's worth, so whoever joins checks them on the worker pool.
   for (let i = 1; i <= 60; i++) {
@@ -120,7 +119,7 @@ try {
   const howItWorks = await alice.evaluate(() => ({
     title: document.title,
     themed: document.querySelector('meta[name="theme-color"]')?.content,
-    app: !!document.querySelector('#app, .space-name, input[aria-label="Space name"]'),
+    app: !!document.querySelector('#app, .space-name, button.new-space'),
   }))
   check(
     'How Nook works opens as its own page, through the worker, with its theme',

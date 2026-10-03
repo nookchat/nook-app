@@ -1,4 +1,4 @@
-import { APP_URL, check, finish, launch, poll, stoppedEarly } from './harness.mjs'
+import { APP_URL, check, finish, HOME, launch, makeSpace, poll, stoppedEarly } from './harness.mjs'
 
 // The desktop app says when you look at its window. Put away in the tray, the page can still read
 // as visible, as it does on Windows: what decides a notification is what the app says. While you
@@ -43,7 +43,7 @@ async function person(name, desktop) {
   await page.goto(APP_URL)
   await page.evaluate((n) => localStorage.setItem('nook.name.v1', n), name)
   await page.reload()
-  await page.waitForSelector('input[aria-label="Space name"]')
+  await page.waitForSelector(HOME)
   return page
 }
 
@@ -56,8 +56,7 @@ const readMark = (page) => page.evaluate(async () => {
 
 try {
   const alice = await person('Alice', false)
-  await alice.fill('input[aria-label="Space name"]', 'away')
-  await alice.click('button:has-text("New space")')
+  await makeSpace(alice, 'away')
   await alice.waitForSelector(BOX)
   const bob = await person('Bob', true)
   await bob.goto(alice.url())

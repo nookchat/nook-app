@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { check, finish, launch, stoppedEarly, openSettingsTab } from './harness.mjs'
+import { check, finish, HOME, launch, makeSpace, openSettingsTab, stoppedEarly } from './harness.mjs'
 import { startServer } from './pg.mjs'
 
 const PORT = 8796
@@ -53,11 +53,10 @@ try {
 
   await alice.fill('input[aria-label="Your server"]', SERVER)
   await alice.click('button:text-is("Add")')
-  await alice.waitForSelector('input[aria-label="Space name"]', { timeout: 10_000 })
+  await alice.waitForSelector(HOME, { timeout: 10_000 })
   check('adding a real server offers New space', await buttonNamed(alice, 'New space'))
 
-  await alice.fill('input[aria-label="Space name"]', 'Paris')
-  await alice.click('button:has-text("New space")')
+  await makeSpace(alice, 'Paris')
   await alice.waitForFunction(() => document.querySelector('.space-name')?.textContent === 'Paris', null, {
     timeout: 15_000,
   })

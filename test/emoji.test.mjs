@@ -1,4 +1,4 @@
-import { APP_URL, FAKE_MEDIA, check, finish, launch, stoppedEarly } from './harness.mjs'
+import { APP_URL, check, FAKE_MEDIA, finish, HOME, launch, makeSpace, stoppedEarly } from './harness.mjs'
 
 // Headless Chrome will not bring a peer connection up without them, and two browsers here must reach each other.
 const browser = await launch({ args: FAKE_MEDIA })
@@ -12,10 +12,9 @@ async function pressAction(page, selector) {
   await page.click(selector)
 }
 
-async function makeSpace(page, name) {
-  await page.waitForSelector('input[aria-label="Space name"]')
-  await page.fill('input[aria-label="Space name"]', name)
-  await page.click('button:has-text("New space")')
+async function newSpace(page, name) {
+  await page.waitForSelector(HOME)
+  await makeSpace(page, name)
   await page.waitForSelector('.space-name')
   await page.waitForTimeout(1200)
 }
@@ -60,7 +59,7 @@ try {
   const context = await browser.newContext()
   const page = await context.newPage()
   await page.goto(APP_URL)
-  await makeSpace(page, 'emoji')
+  await newSpace(page, 'emoji')
 
   await page.fill(BOX, 'hello world')
   // Caret between the two words, so an insert at the end would be visible.

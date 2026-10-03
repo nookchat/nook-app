@@ -1,4 +1,4 @@
-import { APP_URL, FAKE_MEDIA, answer, check, finish, launch, poll, stoppedEarly } from './harness.mjs'
+import { answer, APP_URL, check, FAKE_MEDIA, finish, HOME, launch, makeSpace, poll, stoppedEarly } from './harness.mjs'
 
 // Your status: online, idle, do not disturb or invisible, and a few words of your own. The others
 // see it in the list of people. Do not disturb stops notifications and message sounds.
@@ -10,7 +10,7 @@ async function person(name) {
   await page.goto(APP_URL)
   await page.evaluate((n) => localStorage.setItem('nook.name.v1', n), name)
   await page.reload()
-  await page.waitForSelector('input[aria-label="Space name"]')
+  await page.waitForSelector(HOME)
   return page
 }
 
@@ -24,8 +24,7 @@ const dotOf = (page) => aliceRow(page).locator('.person-face > .dot').getAttribu
 
 try {
   const alice = await person('Alice')
-  await alice.fill('input[aria-label="Space name"]', 'status')
-  await alice.click('button:has-text("New space")')
+  await makeSpace(alice, 'status')
   await alice.waitForSelector(BOX)
   const bob = await person('Bob')
   await bob.goto(alice.url())

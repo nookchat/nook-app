@@ -22,10 +22,11 @@ import {
 import { ghost, typingWords } from './ghost'
 import { familyOf, highlight } from './highlight'
 import { icon } from './icons'
+import { spinner } from './spinner'
 import { quietKeyboard } from './keyboard'
 import { closeMenu, onContextMenu, type MenuEntry } from './menu'
 import { asSheet, phone } from './gestures'
-import { fitAbove, fitInView, fitNear } from './place'
+import { fitAbove, fitInView, fitNear, fitOver } from './place'
 import { spoilerReveal } from './spoiler-reveal'
 import { toast } from './toast'
 import { emojiField, type FieldMark, REDRAW_FIELD } from './twemoji'
@@ -249,6 +250,13 @@ const WINDOW_MAX = 600
 /** A card of who reacted names this many, then how many more. */
 const REACTED_NAMES_MAX = 12
 
+/** The top of a channel. While its history is still coming, it says so in place of the start. */
+interface Intro {
+  title: string
+  text: string
+  loading?: boolean
+}
+
 export class ChatPanel {
   readonly root: HTMLElement
   actions: ChatActions | null = null
@@ -329,7 +337,7 @@ export class ChatPanel {
   private windowKey: string | null = null
   private lastFeed: { messages: Message[]; joins: Join[] } | null = null
   private hiddenAbove = 0
-  private intro: { title: string; text: string } | null = null
+  private intro: Intro | null = null
   private readonly rows = new Map<string, { el: HTMLElement; sig: string }>()
   private quickFor: HTMLElement | null = null
   private found: { id: string; at: number } | null = null
@@ -1130,7 +1138,8 @@ export class ChatPanel {
       this.suggestions = list
       document.body.append(list)
     }
-    placeNear(list, this.textInput)
+    // Over the box, as Discord does: below it, a phone's keyboard would cover the names.
+    fitOver(list, this.textInput)
   }
 
   private nameHits(fragment: string): { key: string; name: string }[] {
@@ -1362,7 +1371,7 @@ export class ChatPanel {
     this.suggestKind = null
   }
 
-  setIntro(intro: { title: string; text: string } | null): void {
+  setIntro(intro: Intro | null): void {
     this.intro = intro
   }
 
@@ -1417,12 +1426,14 @@ export class ChatPanel {
     if (intro && this.hiddenAbove === 0 && !this.threadRoot) {
       items.push({
         key: 'intro',
-        sig: `${intro.title}|${intro.text}`,
+        sig: `${intro.title}|${intro.text}|${intro.loading === true}`,
         make: () =>
-          h('div', { class: 'chat-intro' }, [
-            h('div', { class: 'chat-intro-title', text: intro.title }),
-            h('div', { class: 'chat-intro-text', text: intro.text }),
-          ]),
+          intro.loading
+            ? h('div', { class: 'chat-intro' }, [spinner('Loading messages', 'big')])
+            : h('div', { class: 'chat-intro' }, [
+                h('div', { class: 'chat-intro-title', text: intro.title }),
+                h('div', { class: 'chat-intro-text', text: intro.text }),
+              ]),
       })
     }
     let lastDay = ''

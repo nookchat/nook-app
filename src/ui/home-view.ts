@@ -10,6 +10,7 @@ import { remoteBoard } from './remote-board'
 import { openStatusMenu, myStatusDot } from './status-menu'
 import { STATUS_CHANGED } from '../store/status'
 import { icon } from './icons'
+import { spinner } from './spinner'
 import type { WindowChrome } from './shell'
 import { homeFace, switcherButton } from './space-switcher'
 
@@ -30,6 +31,9 @@ interface Row {
   last: number
   unread: number
 }
+
+/** How long the list of direct messages may say Loading before it says there are none. */
+const LOADING_MOST_MS = 15_000
 
 function rows(): Row[] {
   const out: Row[] = []
@@ -52,6 +56,8 @@ export class HomeView {
   private readonly me: HTMLElement
   private panel: ChatPanel | null = null
   private stopped = false
+  /** A space whose server never answers does not keep the list loading for ever. */
+  private waitedLong = false
   private drawQueued = false
   private unlisten: (() => void) | null = null
   private callBits: { stop(): void } | null = null
@@ -117,6 +123,10 @@ export class HomeView {
     }
     await this.show(this.open)
     this.draw()
+    window.setTimeout(() => {
+      this.waitedLong = true
+      this.draw()
+    }, LOADING_MOST_MS)
   }
 
   destroy(): void {
@@ -167,7 +177,9 @@ export class HomeView {
         ],
       )
     })
-    if (items.length === 0) items.push(h('div', { class: 'rail-empty', text: 'No messages yet.' }))
+    // Direct messages are in each space's history: none yet may only mean it is still coming.
+    const coming = !this.waitedLong && (!spaces.listed || spaces.all().some((s) => !s.historyIn))
+    if (items.length === 0) items.push(coming ? spinner('Loading') : h('div', { class: 'rail-empty', text: 'No messages yet.' }))
     this.list.replaceChildren(...items)
   }
 

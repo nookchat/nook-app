@@ -1,4 +1,4 @@
-import { APP_URL, check, finish, launch, poll, stoppedEarly, wait } from './harness.mjs'
+import { APP_URL, check, finish, HOME, launch, makeSpace, poll, stoppedEarly, wait } from './harness.mjs'
 import { startServer } from './pg.mjs'
 
 // Events a member signs with a place in the log of their own choosing, sent the way the app
@@ -22,7 +22,7 @@ async function person(name) {
     { n: name, server: SERVER },
   )
   await page.reload()
-  await page.waitForSelector('input[aria-label="Space name"]')
+  await page.waitForSelector(HOME)
   return page
 }
 
@@ -51,8 +51,7 @@ const forge = (page, kind, body, lamport) =>
 
 try {
   const alice = await person('Alice')
-  await alice.fill('input[aria-label="Space name"]', 'forged')
-  await alice.click('button:has-text("New space")')
+  await makeSpace(alice, 'forged')
   await alice.waitForSelector(BOX)
   const link = alice.url()
   const aliceKey = await spaceOf(alice, (space) => space.chat.me)
