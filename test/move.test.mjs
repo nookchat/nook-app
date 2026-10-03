@@ -1,4 +1,4 @@
-import { APP_URL, FAKE_MEDIA, check, finish, launch, stoppedEarly } from './harness.mjs'
+import { APP_URL, check, FAKE_MEDIA, finish, HOME, launch, makeSpace, stoppedEarly } from './harness.mjs'
 
 // Somebody who may move people drags a person onto a voice channel, and that person's device
 // goes there. A member cannot: nothing of theirs drags, and a move they sign is ignored.
@@ -24,9 +24,8 @@ const inChannel = ([channel, who]) =>
 try {
   const alice = await person('Alice')
   await alice.goto(APP_URL)
-  await alice.waitForSelector('input[aria-label="Space name"]')
-  await alice.fill('input[aria-label="Space name"]', 'moves')
-  await alice.click('button:has-text("New space")')
+  await alice.waitForSelector(HOME)
+  await makeSpace(alice, 'moves')
   await alice.waitForSelector('.space-name')
   await alice.waitForTimeout(1200)
   await alice.evaluate(async () => {

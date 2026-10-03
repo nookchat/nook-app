@@ -1,4 +1,4 @@
-import { APP_URL, answer, check, finish, launch, poll, stoppedEarly, wait } from './harness.mjs'
+import { answer, APP_URL, check, finish, HOME, launch, makeSpace, poll, stoppedEarly, wait } from './harness.mjs'
 
 // A space with a password: a wrong one lets nobody in and opens no empty space in its place,
 // the right one does, and a reload asks for it no more.
@@ -11,7 +11,7 @@ async function person(name) {
   await page.goto(APP_URL)
   await page.evaluate((n) => localStorage.setItem('nook.name.v1', n), name)
   await page.reload()
-  await page.waitForSelector('input[aria-label="Space name"]')
+  await page.waitForSelector(HOME)
   return page
 }
 
@@ -20,9 +20,7 @@ const spaceName = (page) => page.evaluate(() => document.querySelector('.space-n
 
 try {
   const alice = await person('Alice')
-  await alice.fill('input[aria-label="Space name"]', 'Locked Room')
-  await alice.fill('input[aria-label="Space password"]', 'opensesame')
-  await alice.click('button:has-text("New space")')
+  await makeSpace(alice, 'Locked Room', { password: 'opensesame' })
   await alice.waitForSelector(BOX)
   const invite = alice.url()
 
@@ -53,7 +51,7 @@ try {
   await answer(carol, 'nope')
   await poll(async () => (await question(carol)).includes('wrong'), 10_000)
   await carol.keyboard.press('Escape')
-  await carol.waitForSelector('input[aria-label="Space name"]', { timeout: 10_000 })
+  await carol.waitForSelector(HOME, { timeout: 10_000 })
   await wait(1500)
   const listed = await carol.evaluate(() => document.body.textContent?.includes('Unnamed space') ?? false)
   check('giving up goes home, with no empty space made', !listed)

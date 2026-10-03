@@ -1,4 +1,4 @@
-import { APP_URL, check, finish, launch, poll, stoppedEarly, wait } from './harness.mjs'
+import { APP_URL, check, finish, HOME, launch, makeSpace, poll, stoppedEarly, wait } from './harness.mjs'
 
 // A text channel marked NSFW: its pictures are blurred for everybody until each is clicked,
 // Blur again hides one again, and the mark comes off.
@@ -12,7 +12,7 @@ async function person(name) {
   await page.goto(APP_URL)
   await page.evaluate((n) => localStorage.setItem('nook.name.v1', n), name)
   await page.reload()
-  await page.waitForSelector('input[aria-label="Space name"]')
+  await page.waitForSelector(HOME)
   return page
 }
 
@@ -29,8 +29,7 @@ const blurred = (page) =>
 
 try {
   const alice = await person('Alice')
-  await alice.fill('input[aria-label="Space name"]', 'Careful Now')
-  await alice.click('button:has-text("New space")')
+  await makeSpace(alice, 'Careful Now')
   await alice.waitForSelector(BOX)
 
   const bob = await person('Bob')

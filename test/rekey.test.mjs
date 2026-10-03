@@ -1,4 +1,4 @@
-import { APP_URL, FAKE_MEDIA, check, finish, launch, poll, stoppedEarly, wait } from './harness.mjs'
+import { APP_URL, check, FAKE_MEDIA, finish, HOME, launch, makeSpace, poll, stoppedEarly, wait } from './harness.mjs'
 
 // Somebody removed keeps the code, but not the key: what is written after they go is sealed
 // with a new one that only the people still in the space have. Somebody who joins after that
@@ -11,7 +11,7 @@ async function person(name) {
   await page.goto(APP_URL)
   await page.evaluate((n) => localStorage.setItem('nook.name.v1', n), name)
   await page.reload()
-  await page.waitForSelector('input[aria-label="Space name"]')
+  await page.waitForSelector(HOME)
   return page
 }
 
@@ -31,8 +31,7 @@ const members = (page) => spaceOf(page, (space) => space.chat.log.keyMembers().l
 
 try {
   const alice = await person('Alice')
-  await alice.fill('input[aria-label="Space name"]', 'rekey')
-  await alice.click('button:has-text("New space")')
+  await makeSpace(alice, 'rekey')
   await alice.waitForSelector(BOX)
   const link = alice.url()
 

@@ -1,4 +1,4 @@
-import { APP_URL, check, finish, launch, poll, stoppedEarly, wait } from './harness.mjs'
+import { APP_URL, check, finish, HOME, launch, makeSpace, poll, stoppedEarly, wait } from './harness.mjs'
 
 // A text channel marked Media only: a message needs a picture, a video or a file, what was said
 // before stays, whoever keeps the channels still writes words, and the mark comes off.
@@ -12,7 +12,7 @@ async function person(name) {
   await page.goto(APP_URL)
   await page.evaluate((n) => localStorage.setItem('nook.name.v1', n), name)
   await page.reload()
-  await page.waitForSelector('input[aria-label="Space name"]')
+  await page.waitForSelector(HOME)
   return page
 }
 
@@ -25,8 +25,7 @@ const lines = (page, text) => page.locator(`.chat-log .chat-line:has-text("${tex
 
 try {
   const alice = await person('Alice')
-  await alice.fill('input[aria-label="Space name"]', 'Memes Only')
-  await alice.click('button:has-text("New space")')
+  await makeSpace(alice, 'Memes Only')
   await alice.waitForSelector(BOX)
 
   const bob = await person('Bob')

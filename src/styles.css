@@ -399,6 +399,94 @@ main {
   color: var(--accent-text);
 }
 
+/* Making a space: the same steps as making an account, over the app, with the templates two by two. */
+.space-flow {
+  position: fixed;
+  inset: 0;
+  top: var(--nook-titlebar, 0px);
+  z-index: 55;
+  overflow-y: auto;
+  animation: scrim-in var(--dur-fast) linear both;
+}
+
+.space-flow > .welcome-card {
+  position: relative;
+  width: min(440px, 100%);
+  animation: modal-in var(--dur-base) var(--ease-out) both;
+}
+
+.space-flow > .welcome-card.wide {
+  width: min(640px, 100%);
+}
+
+.space-flow-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  color: var(--fg-dim);
+}
+
+.template-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.template-grid .welcome-option {
+  align-items: flex-start;
+  min-height: 84px;
+}
+
+.template-or {
+  align-self: center;
+  margin: -4px 0 -6px;
+}
+
+.space-flow-face .space-face {
+  font-size: 26px;
+  border-radius: var(--radius-lg);
+}
+
+.space-flow-face {
+  border-radius: var(--radius-lg);
+}
+
+.space-flow-lock {
+  align-self: flex-start;
+  gap: 6px;
+  margin-top: -6px;
+}
+
+.space-flow-plan {
+  padding: 12px;
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+}
+
+.plan {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.plan-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--fg-dim);
+  font-size: var(--size-small);
+}
+
+@media (max-width: 560px) {
+  .template-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* The tour, after I'm new: a wider card, a picture over each slide, and a foot with Back, the dots and Next. */
 .welcome-card:has(.tour:not(.hidden)) {
   width: min(520px, 100%);
@@ -2018,20 +2106,72 @@ details.adv[open] > summary {
   z-index: 5;
 }
 
-.space-grid.loading > * {
+.space-grid.loading > :not(.space-opening) {
   visibility: hidden;
 }
 
-.space-grid.loading::after {
-  content: "Opening...";
+.space-opening {
   position: absolute;
   inset: 0;
   display: grid;
   place-items: center;
+}
+
+.space-grid:not(.loading) > .space-opening {
+  display: none;
+}
+
+/* A turning ring, with what it waits for under it. It comes in late, so a quick load never flickers. */
+.loading-spot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px 8px;
   color: var(--fg-faint);
   font-size: var(--size-small);
   opacity: 0;
-  animation: appear 160ms 400ms forwards;
+  animation: appear 160ms 250ms forwards;
+}
+
+.loading-spot.small {
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 4px 8px;
+}
+
+.spinner {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border: 2.5px solid var(--border);
+  border-top-color: var(--fg-dim);
+  border-radius: 50%;
+  animation: spin 800ms linear infinite;
+}
+
+.loading-spot.small .spinner {
+  width: 14px;
+  height: 14px;
+  border-width: 2px;
+}
+
+.home-spaces .loading-spot {
+  min-height: 240px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 2400ms;
+  }
 }
 
 @keyframes appear {
@@ -5078,6 +5218,118 @@ input[type="range"].vp-volume {
   color: var(--fg);
   font-weight: 600;
   font-size: 14px;
+}
+
+/* A markdown file: its head as a file card, and the top of it under that, as a page. */
+.att-doc {
+  width: min(520px, 100%);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  overflow: hidden;
+}
+
+.att-doc > .att-doc-head {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--line-soft);
+  border-radius: 0;
+  background: none;
+}
+
+.att-doc-page {
+  position: relative;
+  display: block;
+  width: 100%;
+  max-height: 260px;
+  overflow: hidden;
+  padding: 14px 18px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.att-doc-page:hover {
+  background: color-mix(in srgb, var(--fg) 3%, transparent);
+}
+
+.att-doc-page:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.att-doc-page.cut::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0;
+  height: 64px;
+  background: linear-gradient(transparent, var(--surface));
+  pointer-events: none;
+}
+
+.att-doc-body {
+  font-size: 13.5px;
+}
+
+.att-doc-body h1 {
+  font-size: 1.5em;
+}
+
+.att-doc-body code {
+  background: var(--field-bg);
+}
+
+.doc-reader {
+  position: fixed;
+  inset: 0;
+  /* Under the desktop app's title bar, which is over everything, never behind it. */
+  top: var(--nook-titlebar, 0px);
+  z-index: 95;
+  display: flex;
+  flex-direction: column;
+  background: var(--scrim-viewer);
+  animation: appear 140ms var(--ease);
+}
+
+.doc-reader-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px 12px 20px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.doc-reader-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 32px 20px 64px;
+}
+
+.doc-reader-page {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 36px 44px;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  font-size: 15.5px;
+}
+
+@media (max-width: 640px) {
+  .doc-reader-stage {
+    padding: 0;
+  }
+
+  .doc-reader-page {
+    padding: 20px 18px 48px;
+    border: 0;
+    border-radius: 0;
+  }
 }
 
 .att-voice {

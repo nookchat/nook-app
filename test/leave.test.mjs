@@ -1,20 +1,18 @@
-import { APP_URL, FAKE_MEDIA, answer, check, finish, launch, stoppedEarly, openSpaceSettings } from './harness.mjs'
+import { answer, APP_URL, check, FAKE_MEDIA, finish, HOME, launch, makeSpace, openSpaceSettings, stoppedEarly } from './harness.mjs'
 
 const browser = await launch({ args: FAKE_MEDIA })
 
 async function person() {
   const page = await (await browser.newContext()).newPage()
   await page.goto(APP_URL)
-  await page.waitForSelector('input[aria-label="Space name"]')
+  await page.waitForSelector(HOME)
   return page
 }
 
 const rows = (page) => page.$$eval('.space-row .rail-item', (els) => els.map((e) => e.textContent))
 
-async function makeSpace(page, name, password = '') {
-  await page.fill('input[aria-label="Space name"]', name)
-  if (password) await page.fill('input[aria-label="Space password"]', password)
-  await page.click('button:has-text("New space")')
+async function newSpace(page, name, password = '') {
+  await makeSpace(page, name, { password })
   await page.waitForFunction(
     (wanted) => document.querySelector('.space-name')?.textContent === wanted,
     name,
@@ -28,12 +26,12 @@ async function spaceMenu(page) {
 }
 
 async function atList(page, ms = 30_000) {
-  await page.waitForSelector('input[aria-label="Space name"]', { timeout: ms })
+  await page.waitForSelector(HOME, { timeout: ms })
 }
 
 try {
   const locker = await person()
-  await makeSpace(locker, 'vault', 'hunter2')
+  await newSpace(locker, 'vault', 'hunter2')
   const lockedLink = locker.url()
   check('a locked space keeps its lock in the link', /\.P(@|$)/.test(lockedLink), lockedLink)
 
@@ -59,7 +57,7 @@ try {
   await guest.context().close()
 
   const admin = await person()
-  await makeSpace(admin, 'staffs')
+  await newSpace(admin, 'staffs')
   const link = admin.url()
 
   const member = await person()

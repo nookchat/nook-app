@@ -1,4 +1,4 @@
-import { APP_URL, check, finish, launch, openSettingsTab, poll, stoppedEarly } from './harness.mjs'
+import { APP_URL, check, finish, HOME, launch, openSettingsTab, poll, stoppedEarly } from './harness.mjs'
 
 // Settings, Notifications has a button that sends a notification now, to see that this device
 // shows them. It says why when it cannot.
@@ -32,7 +32,7 @@ async function person(allowed) {
   await page.goto(APP_URL)
   await page.evaluate(() => localStorage.setItem('nook.name.v1', 'Tess'))
   await page.reload()
-  await page.waitForSelector('input[aria-label="Space name"]')
+  await page.waitForSelector(HOME)
   await openSettingsTab(page, 'notifications')
   await page.waitForSelector('button.notify-test')
   return page

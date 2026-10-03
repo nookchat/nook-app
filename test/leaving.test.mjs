@@ -1,4 +1,4 @@
-import { APP_URL, FAKE_MEDIA, check, finish, launch, poll, stoppedEarly } from './harness.mjs'
+import { APP_URL, check, FAKE_MEDIA, finish, HOME, launch, makeSpace, poll, stoppedEarly } from './harness.mjs'
 
 // Leaving the page is leaving the space. A reload, as an update does, or a closed tab takes
 // you out of voice, for the others at once, and nothing puts you back in by itself.
@@ -21,9 +21,8 @@ const aliceOut = () => ![...document.querySelectorAll('.voice-member')].some((e)
 try {
   const alice = await person('Alice')
   await alice.goto(APP_URL)
-  await alice.waitForSelector('input[aria-label="Space name"]')
-  await alice.fill('input[aria-label="Space name"]', 'leaving')
-  await alice.click('button:has-text("New space")')
+  await alice.waitForSelector(HOME)
+  await makeSpace(alice, 'leaving')
   await alice.waitForSelector('.space-name')
   await alice.waitForTimeout(1200)
   const bob = await person('Bob')

@@ -1,4 +1,4 @@
-import { APP_URL, answer, check, finish, launch, poll, stoppedEarly, wait } from './harness.mjs'
+import { APP_URL, check, finish, HOME, launch, poll, stoppedEarly, wait } from './harness.mjs'
 
 // A space copied from a Discord server template: its roles become levels, its channels come in
 // Discord's order with who may see each, and somebody who joins sees only what their level may.
@@ -62,7 +62,7 @@ async function person(name) {
   await page.goto(APP_URL)
   await page.evaluate((n) => localStorage.setItem('nook.name.v1', n), name)
   await page.reload()
-  await page.waitForSelector('input[aria-label="Space name"]')
+  await page.waitForSelector(HOME)
   return page
 }
 
@@ -83,14 +83,21 @@ try {
   const alice = await person('Alice')
 
   // A link that no longer works says so, and makes nothing.
-  await alice.click('button:has-text("Copy a Discord server")')
-  await answer(alice, 'https://discord.new/expired1')
-  const refused = await poll(() => alice.$$eval('.toast', (els) => els.some((t) => t.textContent.includes('does not work'))), 5000)
+  const LINK = '.space-flow input[aria-label="Discord template link"]'
+  const COPY = '.space-flow button.welcome-go:has-text("Copy")'
+  await alice.click(HOME)
+  await alice.click('.space-flow .welcome-option:has-text("Copy a Discord server")')
+  await alice.fill(LINK, 'https://discord.new/expired1')
+  await alice.click(COPY)
+  const refused = await poll(() => alice.$$eval('.space-flow .field-problem', (els) => els.some((t) => t.textContent.includes('does not work'))), 5000)
   check('a template link that does not work says so', refused)
   check('and no space is made', (await alice.locator(BOX).count()) === 0)
 
-  await alice.click('button:has-text("Copy a Discord server")')
-  await answer(alice, 'https://discord.new/nooktest')
+  await alice.fill(LINK, 'https://discord.new/nooktest')
+  await alice.click(COPY)
+  const named = await poll(() => alice.$eval('.space-flow input[aria-label="Space name"]', (box) => box.value), 5000)
+  check('the name step has the Discord server name', named === 'Pixel Pals', named)
+  await alice.click('.space-flow button:has-text("Make the space")')
   await alice.waitForSelector(BOX)
   const made = await poll(async () => {
     const s = await state(alice)

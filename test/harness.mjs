@@ -95,9 +95,23 @@ export function nameEveryone(browser) {
   return browser
 }
 
+/** Home is up, with a server to make a space on. */
+export const HOME = 'button.new-space'
+
+/** Makes a space with the steps New space opens: a starting point, then its name and password. */
+export async function makeSpace(page, name, { password = '', template = 'Start from scratch' } = {}) {
+  await page.click(HOME)
+  await page.click(`.space-flow .welcome-option:has-text("${template}")`)
+  await page.fill('.space-flow input[aria-label="Space name"]', name)
+  if (password) {
+    await page.click('.space-flow button:has-text("Add a password")')
+    await page.fill('.space-flow input[aria-label="Space password"]', password)
+  }
+  await page.click('.space-flow button:has-text("Make the space")')
+}
+
 export async function hostAndShare(host) {
-  await host.fill('input[aria-label="Space name"]', 'shared')
-  await host.getByRole('button', { name: 'New space' }).click()
+  await makeSpace(host, 'shared')
   await host.click('.voice-channel .rail-item:has-text("lounge")', { timeout: 15_000 })
   await host.waitForSelector('.voice-bar:not(.hidden)', { timeout: 15_000 })
   await host.click('button[aria-label="Share screen"]')

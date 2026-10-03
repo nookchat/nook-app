@@ -69,6 +69,7 @@ import { profileCard } from './profile-card'
 import { marquee } from './marquee'
 import { ghost } from './ghost'
 import { icon, type IconName } from './icons'
+import { spinner } from './spinner'
 import { myStatusDot, openStatusMenu } from './status-menu'
 import { closeMenu, onContextMenu, openMenu, type MenuItem, type MenuEntry } from './menu'
 import { viewArea } from './place'
@@ -1775,11 +1776,13 @@ export class SpaceView {
       return
     }
     const label = info?.label ?? this.channel
+    const messages = chat.messages(this.channel)
     this.chatPanel.setIntro({
       title: `Welcome to #${label}`,
       text: info?.topic || (info?.mediaOnly ? `#${label} is for pictures, videos and files.` : `This is the start of #${label}.`),
+      // A slow server: the start of the channel only shows once the history says it is the start.
+      loading: messages.length === 0 && !this.space.historyIn,
     })
-    const messages = chat.messages(this.channel)
     this.chatPanel.render(messages)
     this.chatPanel.setTitle('Chat')
     this.showPinsButton(messages.filter((m) => m.pinned).length)
@@ -2175,6 +2178,7 @@ export class SpaceView {
     this.unlisten.push(() => narrow.removeEventListener('change', repaint))
 
     this.shell = h('div', { class: 'space-grid loading' }, [
+      h('div', { class: 'space-opening' }, [spinner('Opening the space', 'big')]),
       scrim,
       left,
       h('div', { class: 'space-main' }, [

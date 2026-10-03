@@ -1,4 +1,4 @@
-import { APP_URL, FAKE_MEDIA, check, finish, launch, stoppedEarly } from './harness.mjs'
+import { APP_URL, FAKE_MEDIA, HOME, check, finish, launch, stoppedEarly } from './harness.mjs'
 
 // Inline spoilers: writing one highlights it yellow and keeps it editable as plain `||..||`
 // text; sending it conceals it behind an animated veil that scratches, clicks or taps open.
@@ -7,7 +7,7 @@ const browser = await launch({ args: FAKE_MEDIA })
 try {
   const page = await (await browser.newContext({ viewport: { width: 1000, height: 800 } })).newPage()
   await page.goto(APP_URL)
-  await page.waitForSelector('input[aria-label="Space name"]')
+  await page.waitForSelector(HOME)
 
   await page.evaluate(async () => {
     const { ChatPanel } = await import('/src/ui/chat-panel.ts')

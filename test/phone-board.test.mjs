@@ -1,4 +1,4 @@
-import { APP_URL, AUTOPLAY, FAKE_MEDIA, check, finish, launch, openSpaceSettings, stoppedEarly } from './harness.mjs'
+import { APP_URL, AUTOPLAY, check, FAKE_MEDIA, finish, HOME, launch, makeSpace, openSpaceSettings, stoppedEarly } from './harness.mjs'
 
 // One person in a call on a computer, with the same account open on a phone that is not in it.
 // The phone plays a sound, and somebody else in the call hears it from the computer.
@@ -23,9 +23,8 @@ const sounding = () =>
 
 try {
   const alice = await person('Alice')
-  await alice.waitForSelector('input[aria-label="Space name"]')
-  await alice.fill('input[aria-label="Space name"]', 'the phone')
-  await alice.click('button:has-text("New space")')
+  await alice.waitForSelector(HOME)
+  await makeSpace(alice, 'the phone')
   await alice.waitForSelector('.space-name')
   await alice.waitForTimeout(900)
   const link = alice.url()

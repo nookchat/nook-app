@@ -1,4 +1,4 @@
-import { APP_URL, FAKE_MEDIA, check, finish, launch, poll, stoppedEarly } from './harness.mjs'
+import { APP_URL, check, FAKE_MEDIA, finish, HOME, launch, makeSpace, poll, stoppedEarly } from './harness.mjs'
 
 // A voice channel marked No talking: a member's mic stays off and nobody hears them, the owner
 // still talks, and the mark comes off.
@@ -33,9 +33,8 @@ const levels = (page) =>
 try {
   const alice = await person('Alice')
   await alice.goto(APP_URL)
-  await alice.waitForSelector('input[aria-label="Space name"]')
-  await alice.fill('input[aria-label="Space name"]', 'Listen Here')
-  await alice.click('button:has-text("New space")')
+  await alice.waitForSelector(HOME)
+  await makeSpace(alice, 'Listen Here')
   await alice.waitForSelector('.space-name')
   const bob = await person('Bob')
   await bob.goto(alice.url())

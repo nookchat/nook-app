@@ -22,9 +22,8 @@ import { SOUND_HELD } from './net/unlock'
 import { watchForDesktopUpdates, watchForUpdates } from './net/updates'
 import { warmEmoji } from './ui/emoji'
 import { clearLink, deriveRoom, readLink, setLinkSecret } from './room'
-import type { DiscordSetup } from './space/discord'
 import { spaces } from './space/registry'
-import { filesFor, type SpaceRuntime } from './space/runtime'
+import { filesFor, type SpaceMaking, type SpaceRuntime } from './space/runtime'
 import { nameChosen, shortKey } from './store/identity'
 import { cleanChannel, cleanFiles, DEFAULT_CHANNEL, type Attachment, type LogEvent } from './store/log'
 import { channelMuted } from './store/mute'
@@ -148,20 +147,24 @@ async function showHome(dm: DirectRef | null = null, making = false): Promise<vo
   clearLink()
   const chrome = freshWindow('Nook: chat, voice and screen sharing', 'home')
   const home = new HomeView(chrome.body, chrome, {
-    page: () =>
-      spaceList({
-        open: (secret, locked, password, name, server, discord) =>
-          void enter(secret, locked, password, name !== undefined, name, server, discord),
+    page: () => {
+      // Add a space opens the new space steps once, not each time home draws its page again.
+      const page = spaceList({
+        open: (secret, locked, password, name, server, made) =>
+          void enter(secret, locked, password, name !== undefined, name, server, made),
         refresh: () => {
           void spaces.catchUp()
-          void showHome(null, true)
+          void showHome()
         },
-      }),
+        making,
+      })
+      making = false
+      return page
+    },
     settings: () => void showSettings(),
   }, dm)
   active = home
   await home.start()
-  if (making) chrome.body.querySelector<HTMLInputElement>('input[aria-label="Space name"]')?.focus()
 }
 
 async function showSettings(): Promise<void> {
@@ -209,7 +212,7 @@ async function enter(
   fresh = false,
   name = '',
   server?: string,
-  discord?: DiscordSetup,
+  made?: SpaceMaking,
 ): Promise<void> {
   const known = fresh ? null : await findSpace(secret, server)
   const where = server || known?.server || newSpaceServer()
@@ -231,7 +234,7 @@ async function enter(
       return
     }
   }
-  const space = await spaces.open({ secret, locked: needsPassword, password: pass, server: where, fresh, name, discord })
+  const space = await spaces.open({ secret, locked: needsPassword, password: pass, server: where, fresh, name, ...made })
   openSpace(space)
 }
 

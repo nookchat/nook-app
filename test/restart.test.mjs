@@ -1,4 +1,4 @@
-import { APP_URL, FAKE_MEDIA, check, finish, launch, poll, stoppedEarly, wait } from './harness.mjs'
+import { APP_URL, check, FAKE_MEDIA, finish, HOME, launch, makeSpace, poll, stoppedEarly, wait } from './harness.mjs'
 import { startServer } from './pg.mjs'
 
 // The server restarts, as it does for an update, under people who are chatting and in voice.
@@ -28,7 +28,7 @@ async function person(name) {
     { n: name, s: SERVER },
   )
   await page.reload()
-  await page.waitForSelector('input[aria-label="Space name"]')
+  await page.waitForSelector(HOME)
   return page
 }
 
@@ -48,8 +48,7 @@ const peopleHere = (page) => page.$$eval('.rail-right .rail-person:not(.away)', 
 
 try {
   const alice = await person('Alice')
-  await alice.fill('input[aria-label="Space name"]', 'restart')
-  await alice.click('button:has-text("New space")')
+  await makeSpace(alice, 'restart')
   await alice.waitForSelector(BOX)
   const bob = await person('Bob')
   await bob.goto(alice.url())

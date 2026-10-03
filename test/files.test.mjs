@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { mkdirSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { APP_URL, AUTOPLAY, check, finish, launch, poll, stoppedEarly, wait } from './harness.mjs'
+import { APP_URL, AUTOPLAY, check, finish, HOME, launch, makeSpace, poll, stoppedEarly, wait } from './harness.mjs'
 import { sql, startServer } from './pg.mjs'
 
 const A = 'http://localhost:8797'
@@ -38,7 +38,7 @@ async function person(name) {
     { n: name, server: A },
   )
   await page.reload()
-  await page.waitForSelector('input[aria-label="Space name"]')
+  await page.waitForSelector(HOME)
   return page
 }
 
@@ -53,8 +53,7 @@ function onDisk(root) {
 
 try {
   const alice = await person('Alice')
-  await alice.fill('input[aria-label="Space name"]', 'files')
-  await alice.click('button:has-text("New space")')
+  await makeSpace(alice, 'files')
   await alice.waitForSelector('button[aria-label="Attach files"]:not(.hidden)', { timeout: 15_000 })
   check('the box offers a way to attach files', true)
   const link = alice.url()

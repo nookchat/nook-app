@@ -4,6 +4,7 @@ import { MAX_FILES, type Attachment } from '../store/log'
 import { h } from './dom'
 import { closeOnBack } from './gestures'
 import { icon, type IconName } from './icons'
+import { renderMarkdown } from './markdown'
 import { toast } from './toast'
 import { videoPlayer } from './video-player'
 
@@ -19,6 +20,14 @@ function kindOf(file: { type: string }): Kind {
   if (VIDEO.test(file.type)) return 'video'
   if (file.type.startsWith('audio/')) return 'audio'
   return 'file'
+}
+
+const MARKDOWN_NAME = /\.(md|markdown|mdown|mkd)$/i
+/** Bigger than this, a markdown file is a file to save: the preview downloads it whole. */
+const MOST_MARKDOWN = 2 * 1024 * 1024
+
+function isMarkdown(file: Attachment): boolean {
+  return (MARKDOWN_NAME.test(file.name) || file.type === 'text/markdown') && file.size <= MOST_MARKDOWN
 }
 
 function iconFor(kind: Kind): IconName {
@@ -300,6 +309,7 @@ function voiceCard(file: Attachment, source: SpaceFiles | null): HTMLElement {
 function fileCard(file: Attachment, source: SpaceFiles | null): HTMLElement {
   const kind = kindOf(file)
   if (kind === 'audio' && VOICE_NAME.test(file.name)) return voiceCard(file, source)
+  if (isMarkdown(file)) return markdownCard(file, source)
   const extension = /\.([a-z0-9]{1,6})$/i.exec(file.name)?.[1]?.toUpperCase() ?? ''
   const label = [sizeLabel(file.size), extension].filter(Boolean).join(' · ')
   const detail = h('span', { class: 'tiny faint', text: label })
@@ -346,6 +356,127 @@ function fileCard(file: Attachment, source: SpaceFiles | null): HTMLElement {
     })
   }
   return card
+}
+
+/**
+ * A markdown file, drawn as notes draw markdown: the top of it in the message, and the whole of
+ * it a click away. It is read once it is near the screen, and the renderer builds elements, never
+ * HTML, so a file cannot put script or styles in the page, or load a picture from elsewhere.
+ */
+function markdownCard(file: Attachment, source: SpaceFiles | null): HTMLElement {
+  const label = `${sizeLabel(file.size)} · MD`
+  const detail = h('span', { class: 'tiny faint', text: label })
+  const save = h('button', { class: 'ghost icon-only', title: 'Save', ariaLabel: `Save ${file.name}` }, [icon('download', 19)])
+  const open = h('button', { class: 'ghost icon-only', title: 'Open', ariaLabel: `Open ${file.name}` }, [icon('expand', 18)])
+  const body = h('div', { class: 'att-doc-body md' }, [h('p', { class: 'faint', text: 'Opening…' })])
+  // A div, not a button: a button may not hold the links and blocks of a document.
+  const page = h('div', { class: 'att-doc-page', role: 'button', tabIndex: 0, ariaLabel: `Read ${file.name}` }, [body])
+  const card = h('div', { class: 'att-doc' }, [
+    h('div', { class: 'att-file att-doc-head' }, [
+      h('span', { class: 'att-file-icon' }, [icon('file', 20)]),
+      h('span', { class: 'att-file-words' }, [h('span', { class: 'att-file-name truncate', text: file.name }), detail]),
+      open,
+      save,
+    ]),
+    page,
+  ])
+
+  let text: Promise<string | null> | null = null
+  const read = (): Promise<string | null> =>
+    (text ??= (async () => {
+      if (!source) return null
+      try {
+        const blob = await source.open(file, (done, total) => {
+          if (total) detail.textContent = `${Math.floor((done / total) * 100)}% of ${sizeLabel(file.size)}`
+        })
+        return await blob.text()
+      } catch {
+        text = null
+        return null
+      } finally {
+        detail.textContent = label
+      }
+    })())
+
+  const show = async (): Promise<void> => {
+    const words = await read()
+    if (words === null) {
+      body.replaceChildren(h('p', { class: 'faint', text: 'Could not open it. Save it to read it.' }))
+      return
+    }
+    body.replaceChildren(words.trim() ? renderMarkdown(words) : h('p', { class: 'faint', text: 'It is empty.' }))
+    // Only a preview that is cut short fades out at the foot.
+    page.classList.toggle('cut', body.scrollHeight > page.clientHeight + 4)
+  }
+  whenNear(card, () => void show())
+
+  const reader = async (): Promise<void> => {
+    const words = await read()
+    if (words === null) {
+      toast(`Could not open ${file.name}.`, 'warn')
+      return
+    }
+    openReader(file, words, () => save.click())
+  }
+  open.addEventListener('click', () => void reader())
+  page.addEventListener('click', (ev) => {
+    // A link in the preview opens the link, not the reader.
+    if ((ev.target as Element).closest('a')) return
+    void reader()
+  })
+  page.addEventListener('keydown', (ev) => {
+    if (ev.target !== page || (ev.key !== 'Enter' && ev.key !== ' ')) return
+    ev.preventDefault()
+    void reader()
+  })
+  save.addEventListener('click', async () => {
+    if (!source) return
+    try {
+      saveFile(await source.open(file), file.name)
+    } catch {
+      toast(`Could not open ${file.name}.`, 'warn')
+    }
+  })
+  return card
+}
+
+/** The whole of a markdown file, over everything, as a picture opens. */
+function openReader(file: Attachment, words: string, onSave: () => void): void {
+  const close = h('button', { class: 'ghost icon-only', ariaLabel: 'Close', title: 'Close (Esc)' }, [icon('close', 20)])
+  const save = h('button', { class: 'ghost', title: 'Save' }, [icon('download', 16), 'Save'])
+  const article = h('article', { class: 'doc-reader-page md' }, [renderMarkdown(words)])
+  const stage = h('div', { class: 'doc-reader-stage' }, [article])
+  const root = h('div', { class: 'doc-reader', role: 'dialog', ariaLabel: file.name }, [
+    h('div', { class: 'doc-reader-bar' }, [
+      h('div', { class: 'viewer-words' }, [
+        h('span', { class: 'viewer-name truncate', text: file.name }),
+        h('span', { class: 'tiny faint', text: `${sizeLabel(file.size)} · Markdown` }),
+      ]),
+      save,
+      close,
+    ]),
+    stage,
+  ])
+  const shut = (): void => {
+    root.remove()
+    window.removeEventListener('keydown', onKey, true)
+    leaveHistory()
+  }
+  const leaveHistory = closeOnBack(shut)
+  const onKey = (ev: KeyboardEvent): void => {
+    if (ev.key !== 'Escape') return
+    ev.preventDefault()
+    ev.stopPropagation()
+    shut()
+  }
+  close.addEventListener('click', shut)
+  save.addEventListener('click', onSave)
+  stage.addEventListener('click', (ev) => {
+    if (ev.target === stage) shut()
+  })
+  window.addEventListener('keydown', onKey, true)
+  document.body.append(root)
+  close.focus()
 }
 
 function openViewer(list: Attachment[], start: number, source: SpaceFiles): void {

@@ -1,4 +1,4 @@
-import { APP_URL, check, finish, launch, stoppedEarly, wait } from './harness.mjs'
+import { APP_URL, check, finish, HOME, launch, makeSpace, stoppedEarly, wait } from './harness.mjs'
 import { startServer } from './pg.mjs'
 
 const PORT = 8793
@@ -42,7 +42,7 @@ async function person(name) {
     { n: name, server: `http://${SERVER}` },
   )
   await page.reload()
-  await page.waitForSelector('input[aria-label="Space name"]')
+  await page.waitForSelector(HOME)
   return page
 }
 
@@ -68,8 +68,7 @@ try {
 
   const alice = await person('Alice')
 
-  await alice.fill('input[aria-label="Space name"]', 'on the box')
-  await alice.click('button:has-text("New space")')
+  await makeSpace(alice, 'on the box')
   await alice.waitForSelector('.space-name')
   const link = alice.url()
   check('the invite names the server', link.includes(`@${SERVER}`), link)

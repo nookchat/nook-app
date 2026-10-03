@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { APP_URL, check, finish, launch, stoppedEarly } from './harness.mjs'
+import { APP_URL, check, finish, launch, makeSpace, stoppedEarly } from './harness.mjs'
 
 // Settings, About: the version, a check for a newer one, and the releases on GitHub.
 const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
@@ -20,8 +20,7 @@ async function about(desktop) {
   }
   const page = await context.newPage()
   await page.goto(APP_URL)
-  await page.fill('input[aria-label="Space name"]', 'about')
-  await page.click('button:has-text("New space")')
+  await makeSpace(page, 'about')
   await page.waitForSelector('[aria-label="Write a message"]')
   await page.click('button[aria-label="Settings"]')
   await page.click('.settings-tab[data-tab="about"]')

@@ -1,4 +1,4 @@
-import { APP_URL, check, finish, launch, stoppedEarly } from './harness.mjs'
+import { APP_URL, check, finish, HOME, launch, stoppedEarly } from './harness.mjs'
 
 // A space you leave stays gone on every device. Another device that still has it open in the
 // background saves it again now and then; that save must not bring it back. Opening it again does.
@@ -7,7 +7,7 @@ const browser = await launch()
 try {
   const page = await browser.newPage()
   await page.goto(APP_URL)
-  await page.waitForSelector('input[aria-label="Space name"]')
+  await page.waitForSelector(HOME)
   const result = await page.evaluate(async () => {
     const { BUILT_IN_SERVER } = await import('/src/backend.ts')
     const { ServerBook } = await import('/src/store/server-spaces.ts')

@@ -1,4 +1,4 @@
-import { APP_URL, check, finish, launch, stoppedEarly } from './harness.mjs'
+import { APP_URL, check, finish, launch, makeSpace, stoppedEarly } from './harness.mjs'
 
 const STUB = `(() => {
   const c = document.createElement('canvas')
@@ -25,8 +25,7 @@ try {
 
   check('the address bar is clean before a space is opened', !page.url().includes('#'), page.url())
 
-  await page.fill('input[aria-label="Space name"]', 'test space')
-  await page.getByRole('button', { name: 'New space' }).click()
+  await makeSpace(page, 'test space')
   await page.waitForSelector('[aria-label="Write a message"]')
   await page.waitForTimeout(800)
   await page.click('.space-title-button')

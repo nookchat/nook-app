@@ -1,4 +1,4 @@
-import { APP_URL, check, finish, launch, poll, stoppedEarly, wait } from './harness.mjs'
+import { APP_URL, check, finish, HOME, launch, makeSpace, poll, stoppedEarly, wait } from './harness.mjs'
 import { startServer } from './pg.mjs'
 
 // A socket that looks open and carries nothing, as after a laptop sleeps or moves to another
@@ -24,7 +24,7 @@ async function person(name) {
     { n: name, s: SERVER },
   )
   await page.reload()
-  await page.waitForSelector('input[aria-label="Space name"]')
+  await page.waitForSelector(HOME)
   return page
 }
 
@@ -45,8 +45,7 @@ const typing = (page) => page.$eval('.chat-typing', (e) => !e.classList.contains
 
 try {
   const alice = await person('Alice')
-  await alice.fill('input[aria-label="Space name"]', 'stalled')
-  await alice.click('button:has-text("New space")')
+  await makeSpace(alice, 'stalled')
   await alice.waitForSelector(BOX)
   const bob = await person('Bob')
   await bob.goto(alice.url())

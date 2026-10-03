@@ -1,4 +1,4 @@
-import { APP_URL, FAKE_MEDIA, answer, check, finish, launch, stoppedEarly } from './harness.mjs'
+import { answer, APP_URL, check, FAKE_MEDIA, finish, HOME, launch, makeSpace, stoppedEarly } from './harness.mjs'
 
 const browser = await launch({ args: FAKE_MEDIA })
 
@@ -9,7 +9,7 @@ async function person(name) {
   await page.goto(APP_URL)
   await page.evaluate((n) => localStorage.setItem('nook.name.v1', n), name)
   await page.reload()
-  await page.waitForSelector('input[aria-label="Space name"]')
+  await page.waitForSelector(HOME)
   return page
 }
 
@@ -44,8 +44,7 @@ async function switchTo(page, label) {
 
 try {
   const alice = await person('Alice')
-  await alice.fill('input[aria-label="Space name"]', 'everything')
-  await alice.click('button:has-text("New space")')
+  await makeSpace(alice, 'everything')
   await alice.waitForSelector('.space-name')
   await alice.waitForTimeout(900)
   const link = alice.url()

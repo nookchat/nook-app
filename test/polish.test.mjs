@@ -1,4 +1,4 @@
-import { APP_URL, FAKE_MEDIA, check, finish, launch, stoppedEarly } from './harness.mjs'
+import { APP_URL, check, FAKE_MEDIA, finish, HOME, launch, makeSpace, stoppedEarly } from './harness.mjs'
 
 const openSearch = (page) =>
   page.evaluate(() => {
@@ -25,7 +25,7 @@ async function pressAction(page, label, index = 0) {
 try {
   const bare = await (await browser.newContext()).newPage()
   await bare.goto(APP_URL)
-  await bare.waitForSelector('input[aria-label="Space name"]')
+  await bare.waitForSelector(HOME)
   const speed = await bare.evaluate(async () => {
     const { ChatPanel } = await import('/src/ui/chat-panel.ts')
     const panel = new ChatPanel('Me', 'Chat')
@@ -104,9 +104,8 @@ try {
   await page.goto(APP_URL)
   await page.evaluate(() => localStorage.setItem('nook.name.v1', 'Alice'))
   await page.reload()
-  await page.waitForSelector('input[aria-label="Space name"]')
-  await page.fill('input[aria-label="Space name"]', 'polish')
-  await page.click('button:has-text("New space")')
+  await page.waitForSelector(HOME)
+  await makeSpace(page, 'polish')
   await page.waitForSelector('.space-name')
   await page.waitForTimeout(900)
 

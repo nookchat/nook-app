@@ -1,4 +1,4 @@
-import { APP_URL, FAKE_MEDIA, answer, check, finish, launch, poll, stoppedEarly } from './harness.mjs'
+import { answer, APP_URL, check, FAKE_MEDIA, finish, HOME, launch, makeSpace, poll, stoppedEarly } from './harness.mjs'
 
 // A note's own bar has its buttons: rename, who can see it, and delete, in Nook's own dialog. The list has no
 // buttons, only a right click. A note kept to some levels is out of sight for everybody else.
@@ -10,7 +10,7 @@ async function person(name) {
   await page.goto(APP_URL)
   await page.evaluate((n) => localStorage.setItem('nook.name.v1', n), name)
   await page.reload()
-  await page.waitForSelector('input[aria-label="Space name"]')
+  await page.waitForSelector(HOME)
   return page
 }
 
@@ -21,8 +21,7 @@ const noteTitles = (page) => page.evaluate(async () => {
 
 try {
   const alice = await person('Alice')
-  await alice.fill('input[aria-label="Space name"]', 'notes')
-  await alice.click('button:has-text("New space")')
+  await makeSpace(alice, 'notes')
   await alice.waitForSelector(BOX)
   const bob = await person('Bob')
   await bob.goto(alice.url())

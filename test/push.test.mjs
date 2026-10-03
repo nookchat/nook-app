@@ -1,6 +1,6 @@
 import { createECDH, createDecipheriv, createPublicKey, hkdfSync, randomBytes, verify } from 'node:crypto'
 import { createServer } from 'node:http'
-import { APP_URL, check, finish, launch, poll, stoppedEarly, wait } from './harness.mjs'
+import { APP_URL, check, finish, HOME, launch, makeSpace, poll, stoppedEarly, wait } from './harness.mjs'
 
 // A notification for somebody whose Nook is closed. Their device says in the space where it
 // takes them; whoever writes seals one for that browser; the server signs and passes it on to
@@ -66,7 +66,7 @@ async function person(name, context) {
   await page.goto(APP_URL)
   await page.evaluate((n) => localStorage.setItem('nook.name.v1', n), name)
   await page.reload()
-  await page.waitForSelector('input[aria-label="Space name"]')
+  await page.waitForSelector(HOME)
   return page
 }
 
@@ -91,8 +91,7 @@ try {
   check('and passes a push only to a push service', refused.status === 400)
 
   const alice = await person('Alice', await browser.newContext())
-  await alice.fill('input[aria-label="Space name"]', 'pushy')
-  await alice.click('button:has-text("New space")')
+  await makeSpace(alice, 'pushy')
   await alice.waitForSelector(BOX)
   const link = alice.url()
 

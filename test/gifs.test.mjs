@@ -1,4 +1,4 @@
-import { APP_URL, check, finish, launch, stoppedEarly } from './harness.mjs'
+import { APP_URL, check, finish, launch, makeSpace, stoppedEarly } from './harness.mjs'
 import { readGifs, urlFor } from '../server/src/gifs.mjs'
 
 const SERVER = 'http://localhost:8787'
@@ -51,8 +51,7 @@ const browser = await launch()
 try {
   const page = await browser.newPage()
   await page.goto(APP_URL)
-  await page.fill('input[aria-label="Space name"]', 'gifs')
-  await page.click('button:has-text("New space")')
+  await makeSpace(page, 'gifs')
   await page.waitForSelector('button[aria-label="Find a GIF"]')
   await page.click('button[aria-label="Find a GIF"]')
   await page.waitForSelector('.gif-pop')

@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { APP_URL, check, finish, launch, poll, stoppedEarly } from './harness.mjs'
+import { APP_URL, check, finish, HOME, launch, makeSpace, poll, stoppedEarly } from './harness.mjs'
 
 // Your recordings, and a clip of one. The desktop app is not here, so a stand-in plays its part:
 // window.nookDesktop.recordings lists the videos ffmpeg makes, and the page reads them from an
@@ -168,9 +168,8 @@ try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 860 } })
   await serveRecordings(page)
   await page.goto(APP_URL)
-  await page.waitForSelector('input[aria-label="Space name"]')
-  await page.fill('input[aria-label="Space name"]', 'clips')
-  await page.click('button:has-text("New space")')
+  await page.waitForSelector(HOME)
+  await makeSpace(page, 'clips')
   await page.waitForSelector('.space-name')
 
   // The clip maker on its own, first.

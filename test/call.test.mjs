@@ -1,5 +1,5 @@
 import { mkdirSync } from 'node:fs'
-import { APP_URL, AUTOPLAY, FAKE_MEDIA, check, finish, launch, poll, stoppedEarly, wait, openSettingsTab } from './harness.mjs'
+import { APP_URL, AUTOPLAY, check, FAKE_MEDIA, finish, HOME, launch, makeSpace, openSettingsTab, poll, stoppedEarly, wait } from './harness.mjs'
 
 const BOX = '[aria-label="Write a message"]'
 const SHOTS = new URL('../test-output/calls/', import.meta.url).pathname
@@ -16,7 +16,7 @@ async function person(name) {
   await page.goto(APP_URL)
   await page.evaluate((n) => localStorage.setItem('nook.name.v1', n), name)
   await page.reload()
-  await page.waitForSelector('input[aria-label="Space name"]')
+  await page.waitForSelector(HOME)
   return page
 }
 
@@ -54,8 +54,7 @@ const toHome = async (page) => {
 
 try {
   const ada = await person('Ada')
-  await ada.fill('input[aria-label="Space name"]', 'calls')
-  await ada.click('button:has-text("New space")')
+  await makeSpace(ada, 'calls')
   await ada.waitForSelector(BOX)
   const link = ada.url()
   const ben = await person('Ben')

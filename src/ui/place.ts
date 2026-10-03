@@ -77,6 +77,30 @@ export function fitAtPoint(pop: HTMLElement, x: number, y: number): void {
   fitInView(pop, left, up ? y - box.height : y)
 }
 
+/**
+ * Over the anchor, its left edge level with the anchor's, as Discord opens its list of names over
+ * the message box. Below only when there is no room above. A phone's keyboard covers what looks
+ * like room below the box, so the side with room is never chosen by size.
+ */
+export function fitOver(pop: HTMLElement, anchor: HTMLElement, gap = MARGIN): void {
+  const at = anchor.getBoundingClientRect()
+  const area = viewArea()
+  pop.style.maxHeight = ''
+  pop.style.overflowY = ''
+  const above = at.top - gap - area.top
+  const over = above >= Math.min(pop.getBoundingClientRect().height, 120)
+  if (over && pop.getBoundingClientRect().height > above) {
+    // Taller than the room above: it scrolls inside itself, and the box stays in sight.
+    pop.style.maxHeight = `${Math.floor(above)}px`
+    pop.style.overflowY = 'auto'
+  }
+  const height = pop.getBoundingClientRect().height
+  pop.dataset.side = over ? 'above' : 'below'
+  // Its own cap stays: fitInView takes away only one it put on.
+  delete pop.dataset.fitted
+  fitInView(pop, at.left, over ? at.top - gap - height : at.bottom + gap)
+}
+
 /** Centred over the anchor, as a tooltip sits over its button; below it only when there is no room above. */
 export function fitAbove(pop: HTMLElement, anchor: HTMLElement, gap = MARGIN): void {
   const at = anchor.getBoundingClientRect()

@@ -12,6 +12,7 @@ import { deriveRoom, newPeerId, takePass, type Room } from '../room'
 import { rtcConfig } from '../rtc/config'
 import { KeyKeeper, SpaceKeys } from './keys'
 import { applyDiscordSetup, type DiscordSetup } from './discord'
+import { applyTemplate, type SpaceTemplate } from './templates'
 import { channelMuted } from '../store/mute'
 import { SignalBus } from '../signal/bus'
 import type { Envelope } from '../signal/envelope'
@@ -61,7 +62,14 @@ export interface OpenSpace {
   name?: string
   /** What a Discord server template sets up in a space this person is making. */
   discord?: DiscordSetup
+  /** One of Nook's own starting points, for a space this person is making. */
+  template?: SpaceTemplate
+  /** The picture for a space this person is making. */
+  picture?: string
 }
+
+/** What a person making a space chose for it, beyond its name. */
+export type SpaceMaking = Pick<OpenSpace, 'discord' | 'template' | 'picture'>
 
 interface CallState {
   id: string
@@ -113,6 +121,8 @@ export class SpaceRuntime {
   ringing: Ringing | null = null
   note: RoomNote | null = null
   readonly ready: Promise<void>
+  /** The server has sent the history. Before that, an empty channel may only be one still coming. */
+  historyIn = false
   readonly presence = new Map<string, Envelope>()
   extras: () => Record<string, unknown> = () => ({})
 
@@ -281,6 +291,8 @@ export class SpaceRuntime {
     // Only once the history is in: a device part way through it could think a key is missing.
     void channel.loaded.then(() => {
       if (this.stopped) return
+      this.historyIn = true
+      this.emit('changed')
       this.keeper = new KeyKeeper(this.keys, chat.log, chat.me, (body) => chat.passKey(body))
       this.keysChanged()
     })
@@ -292,6 +304,8 @@ export class SpaceRuntime {
       await this.remember({ founder: chat.me })
       if (open.name) await chat.setSpaceName(open.name)
       if (open.discord) await applyDiscordSetup(chat, open.discord)
+      else if (open.template) await applyTemplate(chat, open.template)
+      if (open.picture) await chat.setSpacePicture(open.picture)
     }
     // Announcing no picture before the record arrives would erase the known one.
     await chat.announceName(chat.displayName, this.pictureToAnnounce(), this.coverToAnnounce())

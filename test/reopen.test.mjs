@@ -1,4 +1,4 @@
-import { APP_URL, answer, check, finish, launch, poll, stoppedEarly } from './harness.mjs'
+import { answer, APP_URL, check, finish, HOME, launch, makeSpace, poll, stoppedEarly } from './harness.mjs'
 
 // A reload, an update or a restart of the desktop app opens the screen you were on.
 const browser = await launch()
@@ -10,8 +10,7 @@ try {
   await page.goto(APP_URL)
   await page.evaluate(() => localStorage.setItem('nook.name.v1', 'Alice'))
   await page.reload()
-  await page.fill('input[aria-label="Space name"]', 'Back Again')
-  await page.click('button:has-text("New space")')
+  await makeSpace(page, 'Back Again')
   await page.waitForSelector(BOX)
   await page.click('.rail-left button[title="Make a text channel"]')
   await answer(page, 'design')
@@ -30,10 +29,10 @@ try {
 
   await page.click('.space-title-button')
   await page.click('.menu-item:has-text("Home")').catch(() => page.click('button[aria-label="Home"]'))
-  await page.waitForSelector('input[aria-label="Space name"]', { timeout: 10_000 })
+  await page.waitForSelector(HOME, { timeout: 10_000 })
   await page.goto(APP_URL)
   await page.waitForTimeout(3000)
-  check('and home, if that is where you were', await page.evaluate(() => !!document.querySelector('input[aria-label="Space name"]')))
+  check('and home, if that is where you were', await page.evaluate(() => !!document.querySelector('button.new-space')))
 } catch (err) {
   stoppedEarly(err)
 } finally {

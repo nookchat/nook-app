@@ -1,4 +1,4 @@
-import { APP_URL, check, finish, launch, stoppedEarly } from './harness.mjs'
+import { APP_URL, check, finish, HOME, launch, makeSpace, stoppedEarly } from './harness.mjs'
 
 // The desktop shell tells the page what game runs. Here a stand-in shell does, in one browser.
 const SHELL = () => {
@@ -23,10 +23,9 @@ const SHELL = () => {
 
 const browser = await launch()
 
-async function makeSpace(page, name) {
-  await page.waitForSelector('input[aria-label="Space name"]')
-  await page.fill('input[aria-label="Space name"]', name)
-  await page.click('button:has-text("New space")')
+async function newSpace(page, name) {
+  await page.waitForSelector(HOME)
+  await makeSpace(page, name)
   await page.waitForSelector('.space-name')
   await page.waitForTimeout(1200)
 }
@@ -52,7 +51,7 @@ try {
   await hostContext.addInitScript(SHELL)
   const host = await hostContext.newPage()
   await host.goto(APP_URL)
-  await makeSpace(host, 'games')
+  await newSpace(host, 'games')
   check('the page asks the shell to look for games', (await host.evaluate(() => window.__watching)) === true)
 
   const guest = await (await browser.newContext()).newPage()

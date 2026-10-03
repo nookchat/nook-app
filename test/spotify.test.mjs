@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module'
-import { APP_URL, check, finish, launch, stoppedEarly } from './harness.mjs'
+import { APP_URL, check, finish, HOME, launch, makeSpace, stoppedEarly } from './harness.mjs'
 
 // What you listen to on Spotify, as Discord shows it. The desktop shell reads the song from the
 // Spotify app; first what it reads, then a stand-in shell tells the page, in one browser, and
@@ -64,9 +64,8 @@ try {
   await hostContext.addInitScript(SHELL)
   const host = await hostContext.newPage()
   await host.goto(APP_URL)
-  await host.waitForSelector('input[aria-label="Space name"]')
-  await host.fill('input[aria-label="Space name"]', 'music')
-  await host.click('button:has-text("New space")')
+  await host.waitForSelector(HOME)
+  await makeSpace(host, 'music')
   await host.waitForSelector('.space-name')
   await host.waitForTimeout(1200)
   check('the page asks the shell to look at Spotify', (await host.evaluate(() => window.__watchingSpotify)) === true)

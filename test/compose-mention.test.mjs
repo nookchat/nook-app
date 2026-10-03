@@ -1,4 +1,4 @@
-import { APP_URL, check, finish, launch, poll, stoppedEarly } from './harness.mjs'
+import { APP_URL, check, finish, HOME, launch, makeSpace, poll, stoppedEarly } from './harness.mjs'
 
 // A mention in the message box looks as it will in the message: a tag, in the colour of the
 // person's level. The box's own text stays where it is: the tag is drawn in the copy behind it.
@@ -11,7 +11,7 @@ async function person(name) {
   await page.goto(APP_URL)
   await page.evaluate((n) => localStorage.setItem('nook.name.v1', n), name)
   await page.reload()
-  await page.waitForSelector('input[aria-label="Space name"]')
+  await page.waitForSelector(HOME)
   return page
 }
 
@@ -20,8 +20,7 @@ const marks = (page) =>
 
 try {
   const alice = await person('Alice')
-  await alice.fill('input[aria-label="Space name"]', 'tags')
-  await alice.click('button:has-text("New space")')
+  await makeSpace(alice, 'tags')
   await alice.waitForSelector(BOX)
   const bob = await person('Bob')
   await bob.goto(alice.url())

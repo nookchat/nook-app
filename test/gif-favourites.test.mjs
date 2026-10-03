@@ -1,4 +1,4 @@
-import { APP_URL, check, finish, launch, poll, stoppedEarly } from './harness.mjs'
+import { APP_URL, check, finish, launch, makeSpace, poll, stoppedEarly } from './harness.mjs'
 
 // The GIF picker has All and Favourites. A star on a GIF keeps it in Favourites, which needs no
 // server, and the favourites go with your settings. The server's GIF search is faked here: the
@@ -29,8 +29,7 @@ const tabs = (page) => page.locator('.gif-tab').evaluateAll((all) => all.map((t)
 
 try {
   const page = await person()
-  await page.fill('input[aria-label="Space name"]', 'gifs')
-  await page.click('button:has-text("New space")')
+  await makeSpace(page, 'gifs')
   await page.click('button[aria-label="Find a GIF"]')
   check('the picker opens on All', await poll(async () => (await tabs(page)) === 'All* Favourites', 5000), await tabs(page))
   check('All shows what the search found', await poll(async () => (await shown(page)) === 3, 8000), String(await shown(page)))

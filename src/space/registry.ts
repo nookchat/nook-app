@@ -15,6 +15,8 @@ class Registry {
   private readonly runningByRoom = new Map<string, SpaceRuntime>()
   private readonly openingByKey = new Map<string, Promise<SpaceRuntime>>()
   private loading: Promise<void> | null = null
+  /** Your list of spaces has come from the servers, so an empty one is empty, not still coming. */
+  listed = false
   private catching = false
   private changedTimer = 0
 
@@ -23,6 +25,8 @@ class Registry {
       const servers = knownServers()
       if (BUILT_IN_SERVER && !servers.includes(BUILT_IN_SERVER)) servers.unshift(BUILT_IN_SERVER)
       const notes = (await Promise.all(servers.map((s) => bookFor(s).list()))).flat()
+      this.listed = true
+      roomsChanged()
       await Promise.all(notes.filter((n) => !n.closed && n.server).map((n) => this.startFrom(n)))
       window.addEventListener(ROOMS_CHANGED, () => void this.catchUp())
     })()

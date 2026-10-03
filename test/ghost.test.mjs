@@ -1,4 +1,4 @@
-import { APP_URL, FAKE_MEDIA, check, finish, launch, poll, stoppedEarly, wait } from './harness.mjs'
+import { APP_URL, check, FAKE_MEDIA, finish, HOME, launch, makeSpace, poll, stoppedEarly, wait } from './harness.mjs'
 import { startServer } from './pg.mjs'
 
 // Somebody who leaves while the server is away never gets a "left" from it. The
@@ -23,7 +23,7 @@ async function person(name, { clock = false } = {}) {
     { n: name, at: SERVER },
   )
   await page.reload()
-  await page.waitForSelector('input[aria-label="Space name"]')
+  await page.waitForSelector(HOME)
   return page
 }
 
@@ -32,8 +32,7 @@ const inVoice = (page) =>
 
 try {
   const alice = await person('Alice', { clock: true })
-  await alice.fill('input[aria-label="Space name"]', 'ghosts')
-  await alice.click('button:has-text("New space")')
+  await makeSpace(alice, 'ghosts')
   await alice.waitForSelector(BOX)
   await wait(1000)
   const bob = await person('Bob')

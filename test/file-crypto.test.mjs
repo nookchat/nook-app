@@ -1,4 +1,4 @@
-import { APP_URL, check, finish, launch, stoppedEarly } from './harness.mjs'
+import { APP_URL, check, finish, HOME, launch, makeSpace, stoppedEarly } from './harness.mjs'
 import { startServer } from './pg.mjs'
 
 // Files sealed the ways Nook has ever sealed them still open, whole and a range at a time
@@ -93,9 +93,8 @@ const inPage = (page, body, arg) =>
 
 try {
   const alice = await person('Alice')
-  await alice.waitForSelector('input[aria-label="Space name"]')
-  await alice.fill('input[aria-label="Space name"]', 'crypto')
-  await alice.click('button:has-text("New space")')
+  await alice.waitForSelector(HOME)
+  await makeSpace(alice, 'crypto')
   await alice.waitForSelector('button[aria-label="Attach files"]:not(.hidden)', { timeout: 20_000 })
   await alice.waitForFunction(() => navigator.serviceWorker?.controller, null, { timeout: 10_000 }).catch(() => alice.reload())
   await alice.waitForFunction(() => navigator.serviceWorker?.controller, null, { timeout: 10_000 })

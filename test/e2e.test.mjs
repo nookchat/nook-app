@@ -1,5 +1,5 @@
 import { mkdirSync } from 'node:fs'
-import { APP_URL, FAKE_MEDIA, check, finish, launch, stoppedEarly, wait } from './harness.mjs'
+import { APP_URL, check, FAKE_MEDIA, finish, launch, makeSpace, stoppedEarly, wait } from './harness.mjs'
 
 const SHOTS = new URL('../test-output/', import.meta.url).pathname
 
@@ -100,8 +100,7 @@ try {
   }))
   check('the app opens on your spaces', opening.list && opening.make)
 
-  await host.fill('input[aria-label="Space name"]', 'test space')
-  await host.getByRole('button', { name: 'New space' }).click()
+  await makeSpace(host, 'test space')
   // The space, not home: both have a title button, and home's is there until the space opens.
   await host.waitForSelector('[aria-label="Write a message"]', { timeout: 15_000 })
   await host.click('.space-title-button')

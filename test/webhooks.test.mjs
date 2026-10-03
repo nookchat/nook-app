@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { check, finish, launch, openSpaceSettings, poll, stoppedEarly, wait } from './harness.mjs'
+import { check, finish, HOME, launch, makeSpace, openSpaceSettings, poll, stoppedEarly, wait } from './harness.mjs'
 import { startServer } from './pg.mjs'
 
 // Webhooks, as Discord has them: a link made in the space settings, that another app posts to.
@@ -35,7 +35,7 @@ async function person(name) {
   await page.goto(APP_URL)
   await page.evaluate((n) => localStorage.setItem('nook.name.v1', n), name)
   await page.reload()
-  await page.waitForSelector('input[aria-label="Space name"]')
+  await page.waitForSelector(HOME)
   return page
 }
 
@@ -45,8 +45,7 @@ const lines = (page, text) => page.locator(`.chat-line:has-text("${text}")`).cou
 
 try {
   const alice = await person('Alice')
-  await alice.fill('input[aria-label="Space name"]', 'Hooks')
-  await alice.click('button:has-text("New space")')
+  await makeSpace(alice, 'Hooks')
   await alice.waitForSelector(BOX)
   await wait(1000)
 

@@ -1,4 +1,4 @@
-import { APP_URL, check, finish, launch, stoppedEarly, wait, openSettingsTab } from './harness.mjs'
+import { APP_URL, check, finish, HOME, launch, makeSpace, openSettingsTab, stoppedEarly, wait } from './harness.mjs'
 
 const BOX = '[aria-label="Write a message"]'
 const SAID = 'said on the first device'
@@ -38,7 +38,7 @@ async function closeCode(page) {
 }
 
 async function whoIs(page) {
-  await page.waitForSelector('input[aria-label="Space name"]', { timeout: 20_000 })
+  await page.waitForSelector(HOME, { timeout: 20_000 })
   const spaces = await page
     .waitForFunction(() => {
       const rows = [...document.querySelectorAll('.space-row .space-row-name')].map((e) => e.textContent)
@@ -63,8 +63,7 @@ try {
   await ana.click('.tour-skip')
   await ana.fill('input[aria-label="Your name"]', 'Ana')
   await ana.keyboard.press('Enter')
-  await ana.fill('input[aria-label="Space name"]', 'linked')
-  await ana.click('button:has-text("New space")')
+  await makeSpace(ana, 'linked')
   await ana.waitForSelector(BOX)
   await ana.click(BOX)
   await ana.keyboard.type(SAID)

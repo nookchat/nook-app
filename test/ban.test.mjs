@@ -1,4 +1,4 @@
-import { APP_URL, FAKE_MEDIA, check, finish, launch, poll, stoppedEarly, wait } from './harness.mjs'
+import { APP_URL, check, FAKE_MEDIA, finish, HOME, launch, makeSpace, poll, stoppedEarly, wait } from './harness.mjs'
 
 // A ban is a removal that closes the old invites. Somebody banned who comes back as somebody new,
 // with the old link, is not given the key, is not seen, and what they write is not shown. A link
@@ -11,7 +11,7 @@ async function person(name) {
   await page.goto(APP_URL)
   await page.evaluate((n) => localStorage.setItem('nook.name.v1', n), name)
   await page.reload()
-  await page.waitForSelector('input[aria-label="Space name"]')
+  await page.waitForSelector(HOME)
   return page
 }
 
@@ -44,8 +44,7 @@ async function inviteLink(page) {
 
 try {
   const alice = await person('Alice')
-  await alice.fill('input[aria-label="Space name"]', 'bans')
-  await alice.click('button:has-text("New space")')
+  await makeSpace(alice, 'bans')
   await alice.waitForSelector(BOX)
   const oldLink = alice.url()
 

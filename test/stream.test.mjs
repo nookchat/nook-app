@@ -1,4 +1,4 @@
-import { APP_URL, FAKE_MEDIA, check, finish, launch, stoppedEarly } from './harness.mjs'
+import { APP_URL, check, FAKE_MEDIA, finish, HOME, launch, makeSpace, stoppedEarly } from './harness.mjs'
 
 // A share that starts plays a sound: for whoever shares, and for the others in their voice
 // channel. One already going when you arrive does not. And the zoom on a stream works from
@@ -34,9 +34,8 @@ const until = (page, fn, arg, ms = 20_000) => page.waitForFunction(fn, arg, { ti
 try {
   const alice = await person('Alice')
   await alice.goto(APP_URL)
-  await alice.waitForSelector('input[aria-label="Space name"]')
-  await alice.fill('input[aria-label="Space name"]', 'streams')
-  await alice.click('button:has-text("New space")')
+  await alice.waitForSelector(HOME)
+  await makeSpace(alice, 'streams')
   await alice.waitForSelector('.space-name')
   STREAM_S = await streamLength(alice)
   const link = alice.url()
