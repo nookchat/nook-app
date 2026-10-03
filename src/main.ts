@@ -13,13 +13,14 @@ import { mentionsMe } from './chat'
 import { closeConnections } from './net/connection'
 import { startStreaming } from './net/files'
 import { watchPush } from './net/push'
+import { roomHasLog } from './net/server-api'
 import { watchListening } from './net/listening'
 import { fitKeyboard } from './ui/keyboard'
 import { watchPlaying } from './net/playing'
 import { SOUND_HELD } from './net/unlock'
 import { watchForDesktopUpdates, watchForUpdates } from './net/updates'
 import { warmEmoji } from './ui/emoji'
-import { clearLink, readLink, setLinkSecret } from './room'
+import { clearLink, deriveRoom, readLink, setLinkSecret } from './room'
 import { spaces } from './space/registry'
 import { filesFor, type SpaceRuntime } from './space/runtime'
 import { nameChosen, shortKey } from './store/identity'
@@ -197,7 +198,8 @@ function openSpace(space: SpaceRuntime): void {
   void view.start()
 }
 
-// A wrong password opens a different, empty room, so the known list is asked first.
+// A wrong password opens a different, empty room, so the known list is asked first, and a
+// password typed in is checked with the server before the space opens.
 async function enter(
   secret: string,
   locked?: boolean,
@@ -216,8 +218,11 @@ async function enter(
   const needsPassword = locked ?? known?.locked === true
   let pass = password
   if (needsPassword && !pass) pass = known?.password ?? ''
+  // A slow server after an update must not look like a password never given: wait for the whole list.
+  if (needsPassword && !pass && !fresh) pass = (await findSpace(secret, server, true))?.password ?? ''
+  if (needsPassword && !pass) pass = spaces.all().find((s) => s.secret === secret && s.locked && s.password)?.password ?? ''
   if (needsPassword && !pass) {
-    pass = (await ask('This space has a password.', { password: true, ok: 'Join' })) ?? ''
+    pass = await askPassword(secret, where)
     if (!pass) {
       void showHome()
       return
@@ -225,6 +230,23 @@ async function enter(
   }
   const space = await spaces.open({ secret, locked: needsPassword, password: pass, server: where, fresh, name })
   openSpace(space)
+}
+
+/** Asks until the password opens a space that is there. Empty when they gave up, or nothing could check it. */
+async function askPassword(secret: string, server: string): Promise<string> {
+  let question = 'This space has a password.'
+  for (;;) {
+    const pass = (await ask(question, { password: true, ok: 'Join' })) ?? ''
+    if (!pass) return ''
+    const room = await deriveRoom(secret, pass)
+    const there = await roomHasLog(server, room.id)
+    if (there) return pass
+    if (there === null) {
+      toast('The server did not answer, so the password could not be checked. Try again soon.', 'warn', 7000)
+      return ''
+    }
+    question = 'That password is wrong. Try again.'
+  }
 }
 
 spaces.fresh.add((space, events) => void alertAbout(space, events))

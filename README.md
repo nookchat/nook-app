@@ -311,6 +311,12 @@ any static host, and **it comes with no server**. Each person adds their own:
   space, with a link to the guide for running one.
 - **An invite names its server**, so anybody can join a space they are sent
   without adding a server at all.
+- **A space with a password** asks for it once, on an invite. The password
+  is part of the space's key, so a wrong one names a room nobody wrote in:
+  the app asks the server if that room has anything in it, and says the
+  password is wrong in place of opening an empty space. A reload, or a slow
+  server after an update, takes the password from your list of spaces, and
+  waits for the whole list before it asks again.
 - **A server is seen only by the people you send an invite to.** Joining
   somebody's space does not make their server the place your own spaces go.
 
