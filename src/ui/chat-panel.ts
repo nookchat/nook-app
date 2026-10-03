@@ -2,7 +2,7 @@ import { MAX_DM_BYTES, MAX_TEXT, type Attachment, type Embed, type Message } fro
 import type { SpaceFiles } from '../net/files'
 import type { LinkPreview } from '../net/server-api'
 import { seesRecordings } from '../net/recordings'
-import { cleanName, EVERYONE, findMentions, mentionsMe } from '../chat'
+import { cleanName, EVERYONE, findMentions, findSpoilers, mentionsMe, type SpoilerRange } from '../chat'
 import { CLIP_RE, hasMedia, imageLinks, isDrawing } from '../pictures'
 import { shortKey } from '../store/identity'
 import { canRecordVoice, recordVoice, voiceSeconds, type VoiceRecording } from '../media/voice-note'
@@ -25,9 +25,10 @@ import { icon } from './icons'
 import { quietKeyboard } from './keyboard'
 import { closeMenu, onContextMenu, type MenuEntry } from './menu'
 import { asSheet, phone } from './gestures'
-import { fitAbove, fitNear } from './place'
+import { fitAbove, fitInView, fitNear } from './place'
+import { spoilerReveal } from './spoiler-reveal'
 import { toast } from './toast'
-import { emojiField, REDRAW_FIELD } from './twemoji'
+import { emojiField, type FieldMark, REDRAW_FIELD } from './twemoji'
 
 const FALLBACK_REACTIONS = ['👍', '😂', '🔥', '❤️', '👀']
 const QUICK_ROW_LENGTH = 5
@@ -64,24 +65,6 @@ function brightness(colour: string): number {
   }
   if (rgb.length !== 3) return 0
   return (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255
-}
-
-function spoiler(text: string): HTMLElement {
-  const box = h('span', {
-    class: 'spoiler',
-    text,
-    title: 'Hidden. Click to show.',
-    role: 'button',
-    tabIndex: 0,
-    on: {
-      click: () => box.classList.add('shown'),
-      keydown: (ev) => {
-        const key = (ev as KeyboardEvent).key
-        if (key === 'Enter' || key === ' ') box.classList.add('shown')
-      },
-    },
-  })
-  return box
 }
 
 /** A reaction chip swells, bursts into a few bits and is gone, then the change goes out. */
@@ -332,6 +315,8 @@ export class ChatPanel {
   private suggestions: HTMLDivElement | null = null
   private suggestAt = -1
   private suggestKind: SuggestKind | null = null
+  /** The "Create spoiler" / "Remove spoiler" bubble above the selection or caret, while writing. */
+  private spoilerBar: HTMLElement | null = null
   private readonly drafts = new Map<string, string>()
   private draftKey = ''
   private olderQueued = false
@@ -345,6 +330,12 @@ export class ChatPanel {
   private found: { id: string; at: number } | null = null
   /** The messages whose pictures somebody clicked to see, in a channel marked NSFW. */
   private readonly shown = new Set<string>()
+  /** Spoilers already scratched or clicked open, keyed by `${message id}:${its order in the text}`. */
+  private readonly spoilersOpen = new Set<string>()
+  private readonly spoilerHooks: SpoilerHooks = {
+    isOpen: (key) => this.spoilersOpen.has(key),
+    open: (key) => this.spoilersOpen.add(key),
+  }
   private mediaOnly = false
 
   constructor(initialName: string, title = 'Chat') {
@@ -386,12 +377,16 @@ export class ChatPanel {
         input: () => {
           this.grow()
           this.suggest()
+          this.checkSpoilerBar()
           this.onTyping?.()
         },
         pointerdown: () => this.followKeyboard(),
+        pointerup: () => this.checkSpoilerBar(),
+        keyup: () => this.checkSpoilerBar(),
         focus: () => this.followKeyboard(),
         blur: () => {
           this.closeSuggestions()
+          this.closeSpoilerBar()
           this.followKeyboard()
         },
       },
@@ -608,16 +603,8 @@ export class ChatPanel {
           this.attachButton,
           this.clipButton,
           this.fileInput,
-          // A mention in the box looks as it will in the message: a tag in the colour of their level.
-          emojiField(this.textInput, (text) =>
-            this.names.size && text.includes('@')
-              ? findMentions(text, this.names).map((hit) => ({
-                  at: hit.at,
-                  length: hit.length,
-                  colour: hit.key === EVERYONE ? '' : this.colourOf(hit.key),
-                }))
-              : [],
-          ),
+          // A mention looks as it will in the message; a spoiler gets a plain yellow highlight.
+          emojiField(this.textInput, (text) => this.fieldMarks(text)),
           this.roomLeft,
           this.gifButton,
           this.emojiButton,
@@ -786,6 +773,132 @@ export class ChatPanel {
     this.grow()
   }
 
+  /** Every mark the composer's mirror should draw: a mention tag, plus a spoiler's yellow mark. */
+  private fieldMarks(text: string): FieldMark[] {
+    const marks: FieldMark[] = []
+    if (this.names.size && text.includes('@')) {
+      for (const hit of findMentions(text, this.names)) {
+        marks.push({ at: hit.at, length: hit.length, colour: hit.key === EVERYONE ? '' : this.colourOf(hit.key) })
+      }
+    }
+    for (const range of findSpoilers(text)) {
+      marks.push({
+        at: range.at,
+        length: range.length,
+        colour: '',
+        kind: 'spoiler',
+        hidden: [
+          { at: range.at, length: 2 },
+          { at: range.at + range.length - 2, length: 2 },
+        ],
+      })
+    }
+    return marks.sort((a, b) => a.at - b.at)
+  }
+
+  /** Wraps the given stretch of the composer's text in `||`, marking it as a spoiler. */
+  private wrapSpoiler(start: number, end: number): void {
+    const input = this.textInput
+    const text = input.value
+    input.value = `${text.slice(0, start)}||${text.slice(start, end)}||${text.slice(end)}`
+    input.setSelectionRange(start + 2, end + 2)
+    input.focus()
+    this.grow()
+    this.closeSpoilerBar()
+  }
+
+  /** Strips a spoiler's `||` markers, leaving its text in place and otherwise untouched. */
+  private unwrapSpoiler(range: SpoilerRange): void {
+    const input = this.textInput
+    const text = input.value
+    input.value = text.slice(0, range.at) + range.text + text.slice(range.at + range.length)
+    const at = range.at + range.text.length
+    input.setSelectionRange(at, at)
+    input.focus()
+    this.grow()
+    this.closeSpoilerBar()
+  }
+
+  /** Where the caret at `index` sits on screen, in viewport coordinates. */
+  private caretPoint(index: number): { x: number; y: number } {
+    const input = this.textInput
+    const cs = getComputedStyle(input)
+    const mirror = document.createElement('div')
+    const copy = [
+      'box-sizing', 'width', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
+      'border-top-width', 'border-right-width', 'border-bottom-width', 'border-left-width',
+      'font-family', 'font-size', 'font-weight', 'font-style', 'letter-spacing', 'line-height', 'tab-size',
+    ]
+    for (const prop of copy) mirror.style.setProperty(prop, cs.getPropertyValue(prop))
+    mirror.style.position = 'fixed'
+    mirror.style.visibility = 'hidden'
+    mirror.style.whiteSpace = 'pre-wrap'
+    mirror.style.wordWrap = 'break-word'
+    mirror.style.top = '0'
+    mirror.style.left = '-9999px'
+    document.body.append(mirror)
+    const marker = document.createElement('span')
+    marker.textContent = '​'
+    mirror.append(document.createTextNode(input.value.slice(0, index)), marker, document.createTextNode(input.value.slice(index) || '.'))
+    const mirrorBox = mirror.getBoundingClientRect()
+    const markBox = marker.getBoundingClientRect()
+    const fieldBox = input.getBoundingClientRect()
+    const x = fieldBox.left + (markBox.left - mirrorBox.left) - input.scrollLeft
+    const y = fieldBox.top + (markBox.top - mirrorBox.top) - input.scrollTop
+    mirror.remove()
+    return { x, y }
+  }
+
+  private closeSpoilerBar(): void {
+    this.spoilerBar?.remove()
+    this.spoilerBar = null
+  }
+
+  private showSpoilerBar(label: string, run: () => void): void {
+    this.closeSpoilerBar()
+    const start = this.textInput.selectionStart ?? 0
+    const end = this.textInput.selectionEnd ?? start
+    const a = this.caretPoint(start)
+    const b = this.caretPoint(end)
+    const x = (a.x + b.x) / 2
+    const y = Math.min(a.y, b.y)
+    const bar = h('div', { class: 'spoiler-bar' }, [
+      h('button', { class: 'spoiler-bar-action', text: label, on: pickOnPress(run) }),
+    ])
+    document.body.append(bar)
+    const box = bar.getBoundingClientRect()
+    fitInView(bar, x - box.width / 2, y - box.height - 8)
+    this.spoilerBar = bar
+  }
+
+  /** Shows "Create spoiler" over a selection, or "Remove spoiler" with the caret inside one. */
+  private checkSpoilerBar(): void {
+    if (document.activeElement !== this.textInput) {
+      this.closeSpoilerBar()
+      return
+    }
+    const input = this.textInput
+    const start = input.selectionStart ?? 0
+    const end = input.selectionEnd ?? start
+    const text = input.value
+    const ranges = findSpoilers(text)
+    if (start !== end) {
+      // Wrapping a stretch that already overlaps a spoiler would corrupt its `||` markers.
+      if (ranges.some((r) => start < r.at + r.length && end > r.at)) {
+        this.closeSpoilerBar()
+        return
+      }
+      this.showSpoilerBar('Create spoiler', () => this.wrapSpoiler(start, end))
+      return
+    }
+    const inside = ranges.find((r) => start > r.at && start < r.at + r.length)
+    if (inside) {
+      this.showSpoilerBar('Remove spoiler', () => this.unwrapSpoiler(inside))
+      return
+    }
+    this.closeSpoilerBar()
+  }
+
   private onComposeKey(ev: KeyboardEvent): void {
     if (this.suggestions && this.onSuggestKey(ev)) return
     if (ev.key === 'Enter' && !ev.shiftKey) {
@@ -803,6 +916,10 @@ export class ChatPanel {
       return
     }
     if (ev.key === 'Escape') {
+      if (this.spoilerBar) {
+        this.closeSpoilerBar()
+        return
+      }
       this.cancelPending()
       if (this.threadRoot) this.onThread?.(null)
       else if (this.directWith) this.onDirect?.(null)
@@ -1553,7 +1670,7 @@ export class ChatPanel {
     }
 
     this.drawBody(m, line, who, true)
-    if (m.embeds) for (const embed of m.embeds) line.append(this.embedCard(embed))
+    if (m.embeds) for (const [ei, embed] of m.embeds.entries()) line.append(this.embedCard(embed, `${m.id}:embed:${ei}`))
 
     if (live) {
       line.append(
@@ -1630,7 +1747,7 @@ export class ChatPanel {
   }
 
   /** A Discord embed, drawn as a link card is: a bar in its colour, its words, and its pictures. */
-  private embedCard(embed: Embed): HTMLElement {
+  private embedCard(embed: Embed, keyBase: string): HTMLElement {
     const box = h('div', { class: 'link-card embed-card' })
     if (embed.colour) box.style.setProperty('--site', embed.colour)
     const picture = (url: string | undefined, cls: string): HTMLImageElement | null => {
@@ -1664,14 +1781,14 @@ export class ChatPanel {
     if (embed.title) body.append(out(embed.url, h('span', { class: 'link-card-title', text: embed.title })))
     if (embed.description) {
       const words = h('div', { class: 'link-card-desc embed-desc' })
-      words.append(...formatText(embed.description, this.names, this.me, this.colourOf))
+      words.append(...formatText(embed.description, this.names, this.me, this.colourOf, `${keyBase}:desc`, this.spoilerHooks))
       body.append(words)
     }
     if (embed.fields?.length) {
       const fields = h('div', { class: 'embed-fields' })
-      for (const f of embed.fields) {
+      for (const [fi, f] of embed.fields.entries()) {
         const value = h('div', { class: 'embed-field-value' })
-        value.append(...formatText(f.value, this.names, this.me, this.colourOf))
+        value.append(...formatText(f.value, this.names, this.me, this.colourOf, `${keyBase}:field:${fi}`, this.spoilerHooks))
         fields.append(h('div', { class: `embed-field${f.inline ? ' inline' : ''}` }, [h('div', { class: 'embed-field-name', text: f.name }), value]))
       }
       body.append(fields)
@@ -1700,7 +1817,7 @@ export class ChatPanel {
         line.append(
           svgEmbed(svg, () => {
             line.classList.remove('has-picture')
-            for (const node of formatText(m.text, this.names, this.me, this.colourOf)) text.append(node)
+            for (const node of formatText(m.text, this.names, this.me, this.colourOf, m.id, this.spoilerHooks)) text.append(node)
             line.prepend(text)
           }),
         )
@@ -1719,7 +1836,7 @@ export class ChatPanel {
       } else if (!bare && !svg && !onlyFiles) {
         if (pictures.length > 0) text.classList.add('boxed')
         else if (!m.emote && onlyEmoji(m.text)) text.classList.add('jumbo')
-        for (const node of formatText(m.text, this.names, this.me, this.colourOf)) text.append(node)
+        for (const node of formatText(m.text, this.names, this.me, this.colourOf, m.id, this.spoilerHooks)) text.append(node)
         line.append(text)
       }
       for (const src of pictures) line.append(embed(src))
@@ -2342,11 +2459,28 @@ const URL_RE = /\bhttps?:\/\/[^\s<>"']+/g
 const ESCAPABLE = '*_~`|\\'
 const INLINE_OPENERS = '`|~*_'
 
+/** Whether a sent message's spoiler, by its order within it, has already been opened. */
+interface SpoilerHooks {
+  isOpen(key: string): boolean
+  open(key: string): void
+}
+
+const NO_SPOILER_HOOKS: SpoilerHooks = { isOpen: () => false, open: () => undefined }
+
 /** Builds DOM nodes, never HTML, so nothing a person types can become markup. */
-function formatText(text: string, names: Map<string, string>, me: string, colourOf: ColourOf): Node[] {
+function formatText(
+  text: string,
+  names: Map<string, string>,
+  me: string,
+  colourOf: ColourOf,
+  spoilerKeyBase = '',
+  spoilers: SpoilerHooks = NO_SPOILER_HOOKS,
+): Node[] {
   const out: Node[] = []
   const lines = text.split('\n')
   let i = 0
+  // Counts every spoiler in the message in reading order, so each gets its own, stable key.
+  const spoilerAt = { n: 0 }
 
   const fence = (): void => {
     const language = lines[i].slice(3).trim().slice(0, 20)
@@ -2368,7 +2502,7 @@ function formatText(text: string, names: Map<string, string>, me: string, colour
     let n = 0
     while (i < lines.length && /^>\s?/.test(lines[i])) {
       if (n > 0) block.append(h('br'))
-      for (const node of formatLine(lines[i].replace(/^>\s?/, ''), names, me, colourOf)) block.append(node)
+      for (const node of formatLine(lines[i].replace(/^>\s?/, ''), names, me, colourOf, spoilerKeyBase, spoilers, spoilerAt)) block.append(node)
       n += 1
       i += 1
     }
@@ -2379,7 +2513,7 @@ function formatText(text: string, names: Map<string, string>, me: string, colour
     const pattern = ordered ? /^\s*\d+[.)]\s+/ : /^\s*[-*+]\s+/
     const block = h(ordered ? 'ol' : 'ul', { class: 'chat-list' })
     while (i < lines.length && pattern.test(lines[i])) {
-      block.append(h('li', {}, formatLine(lines[i].replace(pattern, ''), names, me, colourOf)))
+      block.append(h('li', {}, formatLine(lines[i].replace(pattern, ''), names, me, colourOf, spoilerKeyBase, spoilers, spoilerAt)))
       i += 1
     }
     out.push(block)
@@ -2409,14 +2543,22 @@ function formatText(text: string, names: Map<string, string>, me: string, colour
       continue
     }
     if (plain > 0) out.push(h('br'))
-    for (const node of formatLine(line, names, me, colourOf)) out.push(node)
+    for (const node of formatLine(line, names, me, colourOf, spoilerKeyBase, spoilers, spoilerAt)) out.push(node)
     plain += 1
     i += 1
   }
   return out
 }
 
-function formatLine(line: string, names: Map<string, string>, me: string, colourOf: ColourOf): Node[] {
+function formatLine(
+  line: string,
+  names: Map<string, string>,
+  me: string,
+  colourOf: ColourOf,
+  spoilerKeyBase: string,
+  spoilers: SpoilerHooks,
+  spoilerAt: { n: number },
+): Node[] {
   const out: Node[] = []
 
   const pushMentions = (chunk: string, plain: (s: string) => void): void => {
@@ -2464,8 +2606,10 @@ function formatLine(line: string, names: Map<string, string>, me: string, colour
           let match: RegExpExecArray | null = null
           let node: Node | null = null
           if ((match = /^`([^`]+)`/.exec(rest))) node = h('code', { text: match[1] })
-          else if ((match = /^\|\|([\s\S]+?)\|\|/.exec(rest))) node = spoiler(match[1])
-          else if ((match = /^~~([\s\S]+?)~~/.exec(rest))) node = h('s', { text: match[1] })
+          else if ((match = /^\|\|([\s\S]+?)\|\|/.exec(rest))) {
+            const key = `${spoilerKeyBase}:${spoilerAt.n++}`
+            node = spoilerReveal(match[1], spoilers.isOpen(key), () => spoilers.open(key))
+          } else if ((match = /^~~([\s\S]+?)~~/.exec(rest))) node = h('s', { text: match[1] })
           else if ((match = /^\*\*([\s\S]+?)\*\*/.exec(rest))) node = h('strong', { text: match[1] })
           else if ((match = /^\*([^*\s][\s\S]*?)\*/.exec(rest))) node = h('em', { text: match[1] })
           else if (!/\w/.test(chunk[i - 1] ?? '') && (match = /^_([^_\s][\s\S]*?)_(?!\w)/.exec(rest))) {

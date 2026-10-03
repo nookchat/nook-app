@@ -87,6 +87,10 @@ export interface FieldMark {
   length: number
   /** A CSS colour, or empty for the plain tag. */
   colour: string
+  /** Picks the tag's look: '' (or omitted) is the mention chip; other kinds get their own CSS class. */
+  kind?: string
+  /** Ranges within the mark, relative to the field's text, that draw as nothing — e.g. `||` markers. */
+  hidden?: Array<{ at: number; length: number }>
 }
 
 /** Said on a text box to draw its copy again, when what its marks find has changed. */
@@ -112,6 +116,19 @@ export function emojiField(field: HTMLTextAreaElement, marks: (text: string) => 
   }
   /** The text as it reads: emoji as pictures where there are any, else the words. */
   const words = (text: string): Node[] => (MAYBE.test(text) && emojiNodes(text, 'twemoji-glyph')) || [document.createTextNode(text)]
+  /** A mark's own text, with any `hidden` ranges inside it (e.g. `||` markers) left out. */
+  const markBody = (text: string, mark: FieldMark): Node[] => {
+    const end = mark.at + mark.length
+    if (!mark.hidden || mark.hidden.length === 0) return words(text.slice(mark.at, end))
+    const out: Node[] = []
+    let at = mark.at
+    for (const cut of mark.hidden) {
+      if (cut.at > at) out.push(...words(text.slice(at, cut.at)))
+      at = Math.max(at, cut.at + cut.length)
+    }
+    if (at < end) out.push(...words(text.slice(at, end)))
+    return out
+  }
   const drawn = (text: string): Node[] | null => {
     const found = marks(text)
     if (found.length === 0) return MAYBE.test(text) ? emojiNodes(text, 'twemoji-glyph') : null
@@ -121,9 +138,9 @@ export function emojiField(field: HTMLTextAreaElement, marks: (text: string) => 
       if (mark.at < at) continue
       if (mark.at > at) out.push(...words(text.slice(at, mark.at)))
       const tag = document.createElement('span')
-      tag.className = 'field-mark'
+      tag.className = mark.kind ? `field-mark field-mark-${mark.kind}` : 'field-mark'
       if (mark.colour) tag.style.setProperty('--who', mark.colour)
-      tag.append(...words(text.slice(mark.at, mark.at + mark.length)))
+      tag.append(...markBody(text, mark))
       out.push(tag)
       at = mark.at + mark.length
     }

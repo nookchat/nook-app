@@ -68,6 +68,33 @@ export function mentionsMe(text: string, names: Map<string, string>, me: string)
   return findMentions(text, names).some((m) => m.key === me || m.key === EVERYONE)
 }
 
+export interface SpoilerRange {
+  at: number
+  /** Includes both `||` pairs. */
+  length: number
+  /** The hidden text, with the `||` markers stripped off. */
+  text: string
+}
+
+/**
+ * Finds complete `||spoiler||` pairs in `text`. A spoiler is never a stored, structured
+ * range — it's always just this scan over the plain text, done fresh wherever one's needed
+ * (while composing, and again when a sent message is rendered).
+ */
+export function findSpoilers(text: string): SpoilerRange[] {
+  if (!text.includes('||')) return []
+  const out: SpoilerRange[] = []
+  let at = text.indexOf('||')
+  while (at !== -1) {
+    const close = text.indexOf('||', at + 2)
+    if (close === -1) break
+    const inner = text.slice(at + 2, close)
+    if (inner.length > 0) out.push({ at, length: close + 2 - at, text: inner })
+    at = text.indexOf('||', close + 2)
+  }
+  return out
+}
+
 const ADJECTIVES = [
   'Anonymous', 'Beige', 'Caffeinated', 'Chunky', 'Curious', 'Dial-up', 'Dusty',
   'Restless', 'Rogue', 'Sleepy', 'Static', 'Suspicious', 'Turbo', 'Unplugged',
