@@ -4,7 +4,7 @@ import { APP_URL, FAKE_MEDIA, check, finish, launch, stoppedEarly } from './harn
 const browser = await launch({ args: FAKE_MEDIA })
 
 const BOX = '[aria-label="Write a message"]'
-const REACT = '.chat-row button[aria-label="React to this message"]'
+const REACT = '.chat-row button[aria-label="Add reaction"]'
 
 // The action bar is faded until hovered, so a test asks for it the way a keyboard does.
 async function pressAction(page, selector) {

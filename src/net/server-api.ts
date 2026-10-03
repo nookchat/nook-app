@@ -55,6 +55,18 @@ export function preview(server: string, url: string): Promise<LinkPreview | null
   return asking
 }
 
+/**
+ * Whether the server holds anything for this room. A space with a password has its room from the
+ * code and the password together, so a wrong password names a room nobody ever wrote in.
+ * Null when no server answered.
+ */
+export async function roomHasLog(server: string, room: string): Promise<boolean | null> {
+  const res = await ask(server, `/api/v1/spaces/${encodeURIComponent(room)}/events?limit=1`)
+  if (!res?.ok) return null
+  const body = (await res.json().catch(() => null)) as { events?: unknown[] } | null
+  return Array.isArray(body?.events) ? body.events.length > 0 : null
+}
+
 const gifAnswers = new Map<string, Promise<boolean>>()
 
 export function serverHasGifs(server: string): Promise<boolean> {

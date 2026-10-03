@@ -9,6 +9,8 @@ interface AskOptions {
   password?: boolean
   /** The words on the button that says yes. */
   ok?: string
+  /** A line under the question, to say what goes in the box. */
+  about?: string
 }
 
 /**
@@ -44,7 +46,10 @@ export function ask(question: string, options: AskOptions = {}): Promise<string 
     const scrim = h('div', { class: 'scrim', on: { click: (ev) => ev.target === scrim && finish(null) } }, [
       h('div', { class: 'modal ask-modal', role: 'dialog', ariaLabel: question }, [
         h('div', { class: 'invite-head' }, [
-          h('div', { class: 'invite-words' }, [h('div', { class: 'invite-title', text: question })]),
+          h('div', { class: 'invite-words' }, [
+            h('div', { class: 'invite-title', text: question }),
+            options.about ? h('div', { class: 'tiny faint', text: options.about }) : null,
+          ]),
           h('button', { class: 'ghost icon-only', ariaLabel: 'Close', on: { click: () => finish(null) } }, [icon('close', 18)]),
         ]),
         input,

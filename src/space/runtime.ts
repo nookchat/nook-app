@@ -11,6 +11,7 @@ import { heardAt } from '../net/volume'
 import { deriveRoom, newPeerId, takePass, type Room } from '../room'
 import { rtcConfig } from '../rtc/config'
 import { KeyKeeper, SpaceKeys } from './keys'
+import { applyDiscordSetup, type DiscordSetup } from './discord'
 import { channelMuted } from '../store/mute'
 import { SignalBus } from '../signal/bus'
 import type { Envelope } from '../signal/envelope'
@@ -58,6 +59,8 @@ export interface OpenSpace {
   /** Started from the list of spaces in the background, not opened by this person. */
   fromList?: boolean
   name?: string
+  /** What a Discord server template sets up in a space this person is making. */
+  discord?: DiscordSetup
 }
 
 interface CallState {
@@ -224,6 +227,7 @@ export class SpaceRuntime {
     chat.onLocal = (event) => {
       void channel.put([event])
       pushAbout(this, event)
+      if (event.kind === 'channel' || event.kind === 'role' || event.kind === 'level') this.voice?.recheckTalk()
     }
     this.bus = bus
     this.mesh = mesh
@@ -243,6 +247,8 @@ export class SpaceRuntime {
     }
     voice.onFailed = (peer) => callNews({ kind: 'failed', space: this, peer })
     voice.volumeOf = (peer) => heardAt(this.keyOf(peer))
+    voice.mayTalk = (peer, channel) =>
+      isCallChannel(channel) || this.chat.mayTalk(peer === this.selfId ? this.chat.me : this.keyOf(peer), channel)
     voice.onChange = () => {
       const { channel: now, muted, deafened } = voice.state
       const said = `${now}:${muted}:${deafened}:${voice.cameraOn}`
@@ -285,6 +291,7 @@ export class SpaceRuntime {
       await chat.claimFounder()
       await this.remember({ founder: chat.me })
       if (open.name) await chat.setSpaceName(open.name)
+      if (open.discord) await applyDiscordSetup(chat, open.discord)
     }
     // Announcing no picture before the record arrives would erase the known one.
     await chat.announceName(chat.displayName, this.pictureToAnnounce(), this.coverToAnnounce())
@@ -405,6 +412,8 @@ export class SpaceRuntime {
   private async take(events: unknown[], places: number[]): Promise<void> {
     const fresh = await this.chat.absorb(events, places)
     if (fresh.length === 0) return
+    // A channel made quiet, or somebody's level changed, changes who is heard.
+    if (fresh.some((e) => e.kind === 'channel' || e.kind === 'role' || e.kind === 'level')) this.voice?.recheckTalk()
     if (fresh.some((e) => e.kind === 'dm')) void this.chat.readDirect()
     if (fresh.some((e) => e.kind === 'space')) void this.remember({})
     this.emit('fresh', fresh)

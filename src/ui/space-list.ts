@@ -1,12 +1,13 @@
 import { SELF_HOSTING_URL, checkServer, serverTag, serverUrl } from '../backend'
 import { newSecret, parseLink } from '../room'
+import { DiscordError, discordTemplateCode, fetchDiscordTemplate, setupFromTemplate, type DiscordSetup } from '../space/discord'
 import { ROOMS_CHANGED } from '../store/notes'
 import { addServer, newSpaceServer, ownServers } from '../store/server-spaces'
 import { spaces } from '../space/registry'
 import { bookFor } from '../store/server-spaces'
 import { listSpaces } from '../store/spaces'
 import { onContextMenu } from './menu'
-import { confirmDanger } from './ask'
+import { ask, confirmDanger } from './ask'
 import { h } from './dom'
 import { ghost, lockup } from './ghost'
 import { icon } from './icons'
@@ -14,8 +15,21 @@ import { hideShadows, initials } from './space-switcher'
 import { toast } from './toast'
 
 interface SpaceListActions {
-  open(secret: string, locked?: boolean, password?: string, newSpaceName?: string, server?: string): void
+  open(secret: string, locked?: boolean, password?: string, newSpaceName?: string, server?: string, discord?: DiscordSetup): void
   refresh(): void
+}
+
+const DISCORD_HOW = 'In Discord: Server Settings, Server Template, Generate Template, then copy the link. Channels, roles and who can see what come over. Messages and people do not.'
+
+/** The template's link, from what was pasted, or asked for. Empty when they gave up. */
+async function askDiscordLink(): Promise<string> {
+  let question = 'Copy a Discord server'
+  for (;;) {
+    const raw = await ask(question, { about: DISCORD_HOW, placeholder: 'https://discord.new/…', ok: 'Copy' })
+    if (!raw?.trim()) return ''
+    if (discordTemplateCode(raw)) return raw
+    question = 'That is not a Discord template link'
+  }
 }
 
 /** Takes a space off your list on every device, with no need to open it. The link still works. */
@@ -30,9 +44,44 @@ async function leave(room: string, server: string, name: string): Promise<void> 
 }
 
 export async function spaceList(actions: SpaceListActions): Promise<HTMLElement> {
+  const servers = ownServers()
+  const where = h('select', { ariaLabel: 'Server' })
+  for (const server of servers) where.append(h('option', { value: server, text: serverTag(server) }))
+  where.value = newSpaceServer()
+  const secret = h('input', { type: 'password', placeholder: 'Password (optional)', ariaLabel: 'Space password' })
+  secret.autocomplete = 'new-password'
+
+  /** Makes a space with a Discord server's channels and roles, from its template link. */
+  let copying = false
+  const copyDiscord = async (link: string): Promise<void> => {
+    const server = where.value || newSpaceServer()
+    if (!server) {
+      toast('Add a server first. The copy goes on it.', 'warn')
+      return
+    }
+    const raw = link || (await askDiscordLink())
+    const code = discordTemplateCode(raw)
+    if (!code || copying) return
+    copying = true
+    try {
+      const setup = setupFromTemplate(await fetchDiscordTemplate(code))
+      const password = secret.value
+      toast(`${setup.name}: ${setup.text.length + setup.voice.length} channels and ${setup.levels.length - 1} roles from Discord.`, 'good')
+      actions.open(newSecret(), password !== '', password, setup.name, server, setup)
+    } catch (err) {
+      toast(err instanceof DiscordError ? err.message : 'That Discord template could not be read.', 'bad', 7000)
+    } finally {
+      copying = false
+    }
+  }
+
   const join = h('input', { type: 'text', placeholder: 'Paste an invite link or code', ariaLabel: 'Room code' })
   const go = (): void => {
     const raw = join.value.trim()
+    if (discordTemplateCode(raw)) {
+      void copyDiscord(raw)
+      return
+    }
     const link = parseLink(raw.includes('#') ? raw.slice(raw.lastIndexOf('#') + 1) : raw)
     if (!link) {
       join.value = ''
@@ -47,19 +96,16 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
 
   const title = h('input', { type: 'text', placeholder: 'Name your space', ariaLabel: 'Space name' })
   title.maxLength = 60
-  const secret = h('input', { type: 'password', placeholder: 'Password (optional)', ariaLabel: 'Space password' })
-  secret.autocomplete = 'new-password'
   const problem = h('div', { class: 'tiny field-problem hidden', role: 'alert' })
-
-  const servers = ownServers()
-  const where = h('select', { ariaLabel: 'Server' })
-  for (const server of servers) where.append(h('option', { value: server, text: serverTag(server) }))
-  where.value = newSpaceServer()
 
   // A password is optional: with one, people need it as well as the link.
   const make = (): void => {
     const server = where.value || newSpaceServer()
     if (!server) return
+    if (discordTemplateCode(title.value)) {
+      void copyDiscord(title.value)
+      return
+    }
     const name = title.value.trim().slice(0, 60)
     if (!name) {
       problem.textContent = 'Give the space a name.'
@@ -164,6 +210,7 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
                 h('div', { class: 'tiny faint', text: 'With a password, people need it as well as the invite link.' }),
                 servers.length > 1 ? where : null,
                 h('button', { class: 'primary big', on: { click: make } }, [icon('plus', 16), 'New space']),
+                h('button', { class: 'ghost', text: 'Copy a Discord server', on: { click: () => void copyDiscord('') } }),
               ]),
           h('div', { class: 'card stack tight' }, [
             h('span', { class: 'eyebrow', text: 'Join' }),

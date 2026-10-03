@@ -393,6 +393,21 @@ export class RoomChat {
     return this.write('channel', body)
   }
 
+  /** A channel with all it is at once, in one event: see src/space/discord.ts. */
+  setUpChannel(channel: ChannelInfo & { voice: boolean }): Promise<LogEvent> {
+    const body: Record<string, unknown> = {
+      name: cleanChannel(channel.name),
+      label: channel.label.slice(0, 32).trim(),
+      topic: channel.topic.slice(0, 140).trim(),
+      levels: channel.levels,
+    }
+    if (channel.voice) body.voice = true
+    if (channel.nsfw) body.nsfw = true
+    if (channel.mediaOnly) body.mediaOnly = true
+    if (channel.noTalking) body.noTalking = true
+    return this.write('channel', body)
+  }
+
   labelChannel(name: string, label: string, voice = false): Promise<LogEvent> {
     const body: Record<string, unknown> = { name: cleanChannel(name), label: label.slice(0, 32).trim() }
     if (voice) body.voice = true
@@ -408,6 +423,20 @@ export class RoomChat {
   /** Blurs the pictures and videos in a text channel until somebody clicks one, or stops that. */
   setNsfw(name: string, nsfw: boolean): Promise<LogEvent> {
     return this.write('channel', { name: cleanChannel(name), nsfw })
+  }
+
+  /** Lets only messages with a picture, a video or a file into a text channel, or stops that. */
+  setMediaOnly(name: string, mediaOnly: boolean): Promise<LogEvent> {
+    return this.write('channel', { name: cleanChannel(name), mediaOnly })
+  }
+
+  /** Keeps everybody but the owner and whoever may keep channels quiet in a voice channel, or stops that. */
+  setNoTalking(name: string, noTalking: boolean): Promise<LogEvent> {
+    return this.write('channel', { name: cleanChannel(name), voice: true, noTalking })
+  }
+
+  mayTalk(pubkey: string, channel: string): boolean {
+    return this.log.mayTalk(pubkey, channel)
   }
 
   /** Keeps a channel to these levels. None opens it to everybody. */

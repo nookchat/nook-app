@@ -60,7 +60,8 @@ import { ask, askChannel, askSound, confirmDanger, pickSome } from './ask'
 import { saveScreen } from '../store/screen'
 import { channelMuted, channelMutedItself, MUTED_CHANGED, muteChannel, muteSpace, spaceMuted } from '../store/mute'
 import { cleanPresence, cleanStatusText, loadStatus, presenceLook, STATUS_CHANGED, type Presence } from '../store/status'
-import { avatarOf, ChatPanel, imageLinks } from './chat-panel'
+import { avatarOf, ChatPanel } from './chat-panel'
+import { imageLinks } from '../pictures'
 import { clear, copyText, fmtKbps, h, onPress, roleInk } from './dom'
 import { desktopOffer } from './desktop-offer'
 import { forHowLong } from './game-card'
@@ -85,6 +86,7 @@ import { toast } from './toast'
 import { VideoSurface } from './video-surface'
 
 const RECENT_MS = 14 * 24 * 60 * 60 * 1000
+const NO_TALKING = 'No talking in this channel: your mic stays off'
 const STATS_MS = 2000
 /** After the history is in, how long a remembered channel may still turn up. */
 const RESUME_GIVE_UP_MS = 5000
@@ -552,7 +554,7 @@ export class SpaceView {
   /** Everyone currently in a voice channel that I've muted for myself. */
   private mutedKeysNow(): Set<string> {
     const keys = new Set<string>()
-    for (const channel of this.chat?.channelInfo(true) ?? [{ name: DEFAULT_VOICE, label: DEFAULT_VOICE, topic: '', levels: [], nsfw: false }]) {
+    for (const channel of this.chat?.channelInfo(true) ?? [{ name: DEFAULT_VOICE, label: DEFAULT_VOICE, topic: '', levels: [], nsfw: false, mediaOnly: false, noTalking: false }]) {
       for (const id of this.voice?.membersOf(channel.name) ?? []) {
         const key = this.keyOf(id)
         if (mutedFor(key)) keys.add(key)
@@ -619,6 +621,7 @@ export class SpaceView {
   private toggleMute(): void {
     const state = this.voice?.state
     if (!state?.channel) return
+    if (state.muted && !this.voice?.canTalk) return void toast(NO_TALKING, 'info')
     this.voice?.setMuted(!state.muted)
     this.draw()
   }
@@ -1281,6 +1284,13 @@ export class SpaceView {
         note: channel.nsfw ? 'Pictures show straight away again' : 'Pictures and videos are blurred until clicked',
         run: () => void this.publish((c) => c.setNsfw(channel.name, !channel.nsfw)),
       },
+      {
+        label: channel.mediaOnly ? 'Allow words again' : 'Media only',
+        note: channel.mediaOnly
+          ? 'Messages need no picture again'
+          : 'Each message needs a picture, a video or a file. Threads take words',
+        run: () => void this.publish((c) => c.setMediaOnly(channel.name, !channel.mediaOnly)),
+      },
     ]
     if (channel.name !== DEFAULT_CHANNEL) {
       items.push(this.whoMayEnter(channel, false))
@@ -1307,6 +1317,13 @@ export class SpaceView {
   private voiceChannelActions(channel: ChannelInfo): MenuItem[] {
     const items: MenuItem[] = [
       ...this.moveItems(channel.name, true),
+      {
+        label: channel.noTalking ? 'Let everybody talk' : 'No talking',
+        note: channel.noTalking
+          ? 'Everybody can turn their mic on again'
+          : 'Mics stay off, but for the owner and whoever has Channels',
+        run: () => void this.publish((c) => c.setNoTalking(channel.name, !channel.noTalking)),
+      },
       {
         label: 'Rename',
         note: `Shown instead of ${channel.name}`,
@@ -1745,6 +1762,7 @@ export class SpaceView {
   private renderConversation(chat: RoomChat, info: ChannelInfo | undefined, thread: Message[] | null): void {
     // A thread is in its channel, so it blurs the same.
     this.chatPanel.setNsfw(!!info?.nsfw)
+    this.chatPanel.setMediaOnly(!!info?.mediaOnly && !chat.can('channels'))
     if (thread) {
       this.chatPanel.render(thread)
       this.chatPanel.setTitle(`Thread in #${this.channel}`)
@@ -1754,7 +1772,7 @@ export class SpaceView {
     const label = info?.label ?? this.channel
     this.chatPanel.setIntro({
       title: `Welcome to #${label}`,
-      text: info?.topic || `This is the start of #${label}.`,
+      text: info?.topic || (info?.mediaOnly ? `#${label} is for pictures, videos and files.` : `This is the start of #${label}.`),
     })
     const messages = chat.messages(this.channel)
     this.chatPanel.render(messages)
@@ -1940,13 +1958,14 @@ export class SpaceView {
     const label = info?.label ?? this.channel
     const topic = info?.topic ?? ''
     const nsfw = !!info?.nsfw
-    const sig = `${label}\n${topic}\n${nsfw}`
+    const media = !!info?.mediaOnly
+    const sig = `${label}\n${topic}\n${nsfw}\n${media}`
     if (this.channelTitleSig === sig) return
     this.channelTitleSig = sig
     clear(this.channelTitle)
     this.channelTitle.append(
       h('span', { class: 'channel-name' }, [
-        icon('hash', 18),
+        icon(media ? 'image' : 'hash', 18),
         h('span', { class: 'truncate', text: label }),
         nsfw ? h('span', { class: 'nsfw-mark', text: 'NSFW', title: 'Pictures are blurred until clicked' }) : null,
       ]),
@@ -3006,7 +3025,7 @@ export class SpaceView {
       queueMicrotask(() => this.openChannel(wanted))
     }
 
-    for (const channel of chat?.channelInfo() ?? [{ name: DEFAULT_CHANNEL, label: DEFAULT_CHANNEL, topic: '', levels: [], nsfw: false }]) {
+    for (const channel of chat?.channelInfo() ?? [{ name: DEFAULT_CHANNEL, label: DEFAULT_CHANNEL, topic: '', levels: [], nsfw: false, mediaOnly: false, noTalking: false }]) {
       const name = channel.name
       const muted = channelMuted(this.space.room.id, name)
       const news = muted ? undefined : waiting.get(name)
@@ -3018,7 +3037,7 @@ export class SpaceView {
           on: { click: () => this.openChannel(name) },
         },
         [
-          icon('hash', 16),
+          icon(channel.mediaOnly ? 'image' : 'hash', 16),
           h('span', { class: 'truncate grow', text: channel.label }),
           channel.nsfw ? h('span', { class: 'nsfw-mark', text: 'NSFW', title: 'Pictures are blurred until clicked' }) : null,
           muted ? h('span', { class: 'kept-mark', title: 'Muted' }, [icon('bell-off', 13)]) : null,
@@ -3205,7 +3224,7 @@ export class SpaceView {
     // Kept from you now, or deleted, while you were in it.
     if (chat && here && (!chat.mayEnter(chat.me, here, true) || chat.log.wasDropped(here, true))) queueMicrotask(() => this.leaveVoice())
     const canEdit = chat?.can('channels') === true
-    for (const channel of chat?.channelInfo(true) ?? [{ name: DEFAULT_VOICE, label: DEFAULT_VOICE, topic: '', levels: [], nsfw: false }]) {
+    for (const channel of chat?.channelInfo(true) ?? [{ name: DEFAULT_VOICE, label: DEFAULT_VOICE, topic: '', levels: [], nsfw: false, mediaOnly: false, noTalking: false }]) {
       const name = channel.name
       const people = this.sessionsByPerson(this.voice?.membersOf(name) ?? [], peers)
       const join = h(
@@ -3218,7 +3237,11 @@ export class SpaceView {
               : 'Join this voice channel. Everybody in it hears everybody else.',
           on: { click: () => this.clickVoice(name) },
         },
-        [icon('volume', 16), h('span', { class: 'truncate grow', text: channel.label })],
+        [
+          icon('volume', 16),
+          h('span', { class: 'truncate grow', text: channel.label }),
+          channel.noTalking ? h('span', { class: 'kept-mark', title: 'No talking: only listening' }, [icon('mic-off', 13)]) : null,
+        ],
       )
       const since = this.channelSince(name)
       const timer = since ? h('span', { class: 'voice-timer', title: 'How long somebody has been in here' }) : null
@@ -3573,14 +3596,15 @@ export class SpaceView {
         openMenu(signal, [{ custom: this.linkDetails() }])
       })
       this.renderCameraButton()
+      const quiet = !this.voice?.canTalk
       const tools = [
         h(
           'button',
           {
-            class: `voice-tool${state.muted ? ' danger on' : ''}`,
-            title: state.muted ? 'Unmute' : 'Mute',
-            ariaLabel: state.muted ? 'Unmute' : 'Mute',
-            on: { click: () => this.voice?.setMuted(!state.muted) },
+            class: `voice-tool${state.muted ? ' danger on' : ''}${quiet ? ' held' : ''}`,
+            title: quiet ? NO_TALKING : state.muted ? 'Unmute' : 'Mute',
+            ariaLabel: quiet ? NO_TALKING : state.muted ? 'Unmute' : 'Mute',
+            on: { click: () => this.toggleMute() },
           },
           [icon(state.muted ? 'mic-off' : 'mic', 19)],
         ),

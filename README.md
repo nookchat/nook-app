@@ -31,6 +31,20 @@ with voice does it.
   actions under them: Invite people, Space settings, Leave space. A dot on it
   says there is news in another space, and a red count says somebody
   mentioned you or sent you a direct message.
+- **Copy a Discord server**, under New space, makes a space from a Discord
+  server template link (in Discord: Server Settings, Server Template). A
+  link pasted in Join, or in the name box, does the same. The space takes the
+  server's name, its roles as levels, with their colours and what they may
+  do, and its channels in Discord's order, with their names, topics, NSFW,
+  and who may see each. A stage channel, or a voice channel where @everyone
+  may not speak, is No talking, and a media channel is Media only. Nook has
+  no categories, so their channels follow each other in the same order. Nook's
+  own general and lounge are open to all, so the welcome channel, or the
+  first open one, takes their place. Messages and people do not come over:
+  a template has neither. Discord sends a template to any page, so the page
+  asks it straight, and the owner's device writes it all into the log, as if
+  they had set it up by hand (`src/space/discord.ts`).
+  `node test/discord.test.mjs` copies a made up server.
 - **The first visit** asks for the name people will see, and a picture if you
   want one, before anything else, on the home page or on an invite. You can
   change both in Settings.
@@ -64,8 +78,21 @@ with voice does it.
 - **NSFW channels**: somebody whose level has Channels picks Mark as NSFW in a
   text channel's menu. The channel has an NSFW tag, and every picture, video,
   GIF and link card picture in it is blurred until you click it. The click
-  shows that message's pictures, for you only, and opens nothing else. A
-  notification from it never carries the picture.
+  shows that message's pictures, for you only, and opens nothing else. Blur
+  again, in the message's right click menu, hides them again. A notification
+  from it never carries the picture.
+- **Media only channels**: Media only, in the same menu, lets a message into
+  the channel only with a picture, a video, a GIF, a drawing or a file. The
+  channel has a picture in place of the #, and the box says what to share.
+  Replies in a thread take words, and so does whoever has Channels. Every
+  device keeps words alone out of sight, so a client that skips the box's
+  check gets nowhere. What was said before the mark stays.
+- **No talking**: in a voice channel's menu, No talking makes it a channel to
+  listen in. Everybody's mic goes off by itself and stays off, and the mic
+  button says why. The owner and whoever has Channels still talk. Every
+  device plays the others at no volume, so a client that turns its own mic
+  on is still not heard. The channel has a crossed out mic beside its name,
+  and Let everybody talk takes it off.
 - **Moving people**: somebody whose level has Move people (Admin and
   Moderator to start with) drags a person, from a voice channel or from the
   list of people, onto a voice channel, or picks one under Move to in their
@@ -304,6 +331,12 @@ any static host, and **it comes with no server**. Each person adds their own:
   space, with a link to the guide for running one.
 - **An invite names its server**, so anybody can join a space they are sent
   without adding a server at all.
+- **A space with a password** asks for it once, on an invite. The password
+  is part of the space's key, so a wrong one names a room nobody wrote in:
+  the app asks the server if that room has anything in it, and says the
+  password is wrong in place of opening an empty space. A reload, or a slow
+  server after an update, takes the password from your list of spaces, and
+  waits for the whole list before it asks again.
 - **A server is seen only by the people you send an invite to.** Joining
   somebody's space does not make their server the place your own spaces go.
 

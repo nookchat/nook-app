@@ -13,13 +13,15 @@ import { mentionsMe } from './chat'
 import { closeConnections } from './net/connection'
 import { startStreaming } from './net/files'
 import { watchPush } from './net/push'
+import { roomHasLog } from './net/server-api'
 import { watchListening } from './net/listening'
 import { fitKeyboard } from './ui/keyboard'
 import { watchPlaying } from './net/playing'
 import { SOUND_HELD } from './net/unlock'
 import { watchForDesktopUpdates, watchForUpdates } from './net/updates'
 import { warmEmoji } from './ui/emoji'
-import { clearLink, readLink, setLinkSecret } from './room'
+import { clearLink, deriveRoom, readLink, setLinkSecret } from './room'
+import type { DiscordSetup } from './space/discord'
 import { spaces } from './space/registry'
 import { filesFor, type SpaceRuntime } from './space/runtime'
 import { nameChosen, shortKey } from './store/identity'
@@ -147,8 +149,8 @@ async function showHome(dm: DirectRef | null = null, making = false): Promise<vo
   const home = new HomeView(chrome.body, chrome, {
     page: () =>
       spaceList({
-        open: (secret, locked, password, name, server) =>
-          void enter(secret, locked, password, name !== undefined, name, server),
+        open: (secret, locked, password, name, server, discord) =>
+          void enter(secret, locked, password, name !== undefined, name, server, discord),
         refresh: () => {
           void spaces.catchUp()
           void showHome(null, true)
@@ -197,7 +199,8 @@ function openSpace(space: SpaceRuntime): void {
   void view.start()
 }
 
-// A wrong password opens a different, empty room, so the known list is asked first.
+// A wrong password opens a different, empty room, so the known list is asked first, and a
+// password typed in is checked with the server before the space opens.
 async function enter(
   secret: string,
   locked?: boolean,
@@ -205,6 +208,7 @@ async function enter(
   fresh = false,
   name = '',
   server?: string,
+  discord?: DiscordSetup,
 ): Promise<void> {
   const known = fresh ? null : await findSpace(secret, server)
   const where = server || known?.server || newSpaceServer()
@@ -216,15 +220,35 @@ async function enter(
   const needsPassword = locked ?? known?.locked === true
   let pass = password
   if (needsPassword && !pass) pass = known?.password ?? ''
+  // A slow server after an update must not look like a password never given: wait for the whole list.
+  if (needsPassword && !pass && !fresh) pass = (await findSpace(secret, server, true))?.password ?? ''
+  if (needsPassword && !pass) pass = spaces.all().find((s) => s.secret === secret && s.locked && s.password)?.password ?? ''
   if (needsPassword && !pass) {
-    pass = (await ask('This space has a password.', { password: true, ok: 'Join' })) ?? ''
+    pass = await askPassword(secret, where)
     if (!pass) {
       void showHome()
       return
     }
   }
-  const space = await spaces.open({ secret, locked: needsPassword, password: pass, server: where, fresh, name })
+  const space = await spaces.open({ secret, locked: needsPassword, password: pass, server: where, fresh, name, discord })
   openSpace(space)
+}
+
+/** Asks until the password opens a space that is there. Empty when they gave up, or nothing could check it. */
+async function askPassword(secret: string, server: string): Promise<string> {
+  let question = 'This space has a password.'
+  for (;;) {
+    const pass = (await ask(question, { password: true, ok: 'Join' })) ?? ''
+    if (!pass) return ''
+    const room = await deriveRoom(secret, pass)
+    const there = await roomHasLog(server, room.id)
+    if (there) return pass
+    if (there === null) {
+      toast('The server did not answer, so the password could not be checked. Try again soon.', 'warn', 7000)
+      return ''
+    }
+    question = 'That password is wrong. Try again.'
+  }
 }
 
 spaces.fresh.add((space, events) => void alertAbout(space, events))
@@ -276,6 +300,9 @@ async function alertAbout(space: SpaceRuntime, events: LogEvent[]): Promise<void
     // A kept channel you may not see, or one they may not write in, says nothing, and so does a muted one.
     if (!chat.mayEnter(chat.me, channel) || !chat.mayEnter(e.author, channel)) continue
     if (channelMuted(space.room.id, channel)) continue
+    // Words alone in a Media only channel are out of sight, so they say nothing either.
+    const info = chat.channelInfo().find((c) => c.name === channel)
+    if (info?.mediaOnly && !chat.log.messages().some((m) => m.id === e.id)) continue
     const text = String(e.body.text ?? '')
     names ??= chat.log.names()
     const mention = mentionsMe(text, names, chat.me)
@@ -292,8 +319,7 @@ async function alertAbout(space: SpaceRuntime, events: LogEvent[]): Promise<void
     const sent = cleanFiles(e.body.files)
     const body = notifyText() ? text || wordsForFiles(sent) : mention ? 'Mentioned you' : 'Sent a message'
     // A channel marked NSFW never puts its pictures in a notification.
-    const nsfw = chat.channelInfo().some((c) => c.name === channel && c.nsfw)
-    const image = nsfw ? undefined : pictureOf(space, sent)
+    const image = info?.nsfw ? undefined : pictureOf(space, sent)
     notify(`${who} (#${channel}, ${spaceName})`, body, open, { tag: e.id, picture, image })
   }
 }

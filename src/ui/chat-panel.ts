@@ -3,6 +3,7 @@ import type { SpaceFiles } from '../net/files'
 import type { LinkPreview } from '../net/server-api'
 import { seesRecordings } from '../net/recordings'
 import { cleanName, EVERYONE, findMentions, findSpoilers, mentionsMe, type SpoilerRange } from '../chat'
+import { CLIP_RE, hasMedia, imageLinks, isDrawing } from '../pictures'
 import { shortKey } from '../store/identity'
 import { canRecordVoice, recordVoice, voiceSeconds, type VoiceRecording } from '../media/voice-note'
 import { confirmDanger } from './ask'
@@ -24,7 +25,7 @@ import { icon } from './icons'
 import { quietKeyboard } from './keyboard'
 import { closeMenu, onContextMenu, type MenuEntry } from './menu'
 import { asSheet, phone } from './gestures'
-import { fitInView, fitNear } from './place'
+import { fitAbove, fitInView, fitNear } from './place'
 import { spoilerReveal } from './spoiler-reveal'
 import { toast } from './toast'
 import { emojiField, type FieldMark, REDRAW_FIELD } from './twemoji'
@@ -168,6 +169,32 @@ function pinnedFiles(m: Message): string {
   return [...kinds].map(([kind, n]) => (n === 1 ? `a ${kind}` : `${n} ${kind}s`)).join(', ')
 }
 
+/** Names a message action over its button while the pointer rests on it or the keyboard reaches it. */
+function withTip(button: HTMLElement, label: string): HTMLElement {
+  let tip: HTMLElement | null = null
+  let watch = 0
+  const hide = (): void => {
+    window.clearInterval(watch)
+    tip?.remove()
+    tip = null
+  }
+  const show = (): void => {
+    if (tip) return
+    document.querySelector('.action-tip')?.remove()
+    tip = h('div', { class: 'action-tip', role: 'tooltip', text: label })
+    document.body.append(tip)
+    fitAbove(tip, button)
+    // A row drawn again under the pointer never says the pointer left: its tip goes with it.
+    watch = window.setInterval(() => button.isConnected || hide(), 300)
+  }
+  button.addEventListener('pointerenter', (ev) => ev.pointerType === 'mouse' && show())
+  button.addEventListener('pointerleave', hide)
+  button.addEventListener('focus', () => button.matches(':focus-visible') && show())
+  button.addEventListener('blur', hide)
+  button.addEventListener('click', hide)
+  return button
+}
+
 function pinMark(): HTMLElement {
   return h('span', { class: 'chat-pinned-mark', title: 'Pinned in this channel' }, [icon('pin', 13), 'Pinned'])
 }
@@ -309,6 +336,7 @@ export class ChatPanel {
     isOpen: (key) => this.spoilersOpen.has(key),
     open: (key) => this.spoilersOpen.add(key),
   }
+  private mediaOnly = false
 
   constructor(initialName: string, title = 'Chat') {
     this.name = initialName
@@ -668,6 +696,13 @@ export class ChatPanel {
     this.log.classList.toggle('nsfw', on)
   }
 
+  /** Sends nothing to the channel without a picture, a video or a file. Threads still take words. */
+  setMediaOnly(on: boolean): void {
+    if (this.mediaOnly === on) return
+    this.mediaOnly = on
+    if (this.enabled) this.textInput.placeholder = this.modePlaceholder()
+  }
+
   setReadMark(lamport: number): void {
     this.readMark = lamport
   }
@@ -695,7 +730,8 @@ export class ChatPanel {
 
   private modePlaceholder(): string {
     if (this.directWith) return `Message ${this.directName || 'them'}`
-    return this.threadRoot ? 'Reply in this thread' : 'Say something'
+    if (this.threadRoot) return 'Reply in this thread'
+    return this.mediaOnly ? 'Share a picture, a video or a file' : 'Say something'
   }
 
   setTyping(who: string[]): void {
@@ -1976,82 +2012,82 @@ export class ChatPanel {
     const bar = h('div', { class: 'chat-actions' })
     if (this.canPin) {
       bar.append(
-        h(
-          'button',
-          {
-            class: m.pinned ? 'on' : '',
-            title: m.pinned ? 'Stop holding this one up' : 'Pin this one',
-            ariaLabel: m.pinned ? 'Unpin' : 'Pin',
-            on: { click: () => this.actions?.pin(m.id, !m.pinned) },
-          },
-          [icon('pin', 19)],
+        withTip(
+          h(
+            'button',
+            {
+              class: m.pinned ? 'on' : '',
+              ariaLabel: m.pinned ? 'Unpin' : 'Pin',
+              on: { click: () => this.actions?.pin(m.id, !m.pinned) },
+            },
+            [icon('pin', 19)],
+          ),
+          m.pinned ? 'Unpin' : 'Pin',
         ),
       )
     }
     const react = h(
       'button',
       {
-        title: 'React',
-        ariaLabel: 'React to this message',
+        ariaLabel: 'Add reaction',
         on: { click: () => this.reactWith(m, react) },
       },
       [icon('smile', 19)],
     )
     bar.append(
-      react,
-      h(
-        'button',
-        {
-          title: 'Reply here, where everybody is reading',
-          ariaLabel: 'Reply',
-          on: { click: () => this.startReply(m) },
-        },
-        [icon('reply', 19)],
+      withTip(react, 'Add reaction'),
+      withTip(
+        h('button', { ariaLabel: 'Reply', on: { click: () => this.startReply(m) } }, [icon('reply', 19)]),
+        'Reply',
       ),
     )
     if (!this.threadRoot) {
       bar.append(
-        h(
-          'button',
-          {
-            title: 'Reply in a thread',
-            ariaLabel: 'Reply in a thread',
-            on: { click: () => this.onThread?.(m.id) },
-          },
-          [icon('thread', 19)],
+        withTip(
+          h('button', { ariaLabel: 'Reply in thread', on: { click: () => this.onThread?.(m.id) } }, [
+            icon('thread', 19),
+          ]),
+          'Reply in thread',
         ),
       )
     }
     if (mine) {
       bar.append(
-        h('button', { title: 'Edit', ariaLabel: 'Edit', on: { click: () => this.startEdit(m) } }, [icon('edit', 18)]),
-        h(
-          'button',
-          {
-            class: 'danger',
-            title: 'Delete for everybody who has not already read it',
-            ariaLabel: 'Delete',
-            on: { click: () => this.actions?.retract(m.id) },
-          },
-          [icon('trash', 19)],
+        withTip(
+          h('button', { ariaLabel: 'Edit', on: { click: () => this.startEdit(m) } }, [icon('edit', 18)]),
+          'Edit',
+        ),
+        withTip(
+          h(
+            'button',
+            {
+              class: 'danger',
+              ariaLabel: 'Delete',
+              on: { click: () => this.actions?.retract(m.id) },
+            },
+            [icon('trash', 19)],
+          ),
+          'Delete',
         ),
       )
     } else if (this.canDelete) {
       bar.append(
-        h(
-          'button',
-          {
-            class: 'danger',
-            title: `Delete this message from ${who}`,
-            ariaLabel: 'Delete this message',
-            on: {
-              click: async () => {
-                if (!(await confirmDanger('Delete this message?', `It is from ${who}.`, 'Delete'))) return
-                this.actions?.retract(m.id)
+        withTip(
+          h(
+            'button',
+            {
+              class: 'danger',
+              ariaLabel: 'Delete this message',
+              on: {
+                click: async () => {
+                  if (!(await confirmDanger('Delete this message?', `It is from ${who}.`, 'Delete'))) return
+                  this.actions?.retract(m.id)
+                },
               },
             },
-          },
-          [icon('trash', 19)],
+            [icon('trash', 19)],
+          ),
+          'Delete',
         ),
       )
     }
@@ -2102,6 +2138,16 @@ export class ChatPanel {
         label: m.pinned ? 'Unpin' : 'Pin',
         lead: lead('pin'),
         run: () => this.actions?.pin(m.id, !m.pinned),
+      })
+    }
+    if (this.shown.has(m.id) && this.log.classList.contains('nsfw')) {
+      items.push({
+        label: 'Blur again',
+        lead: lead('eye-off'),
+        run: () => {
+          this.shown.delete(m.id)
+          line.classList.remove('shown')
+        },
       })
     }
     if (mine && !m.poll) items.push({ label: 'Edit', lead: lead('edit'), run: () => this.startEdit(m) })
@@ -2385,6 +2431,11 @@ export class ChatPanel {
       }
       return
     }
+    const toChannel = !this.directWith && (this.editing ? !this.editing.inThread : !this.threadRoot)
+    if (this.mediaOnly && toChannel && !hasMedia(text, this.editing ? this.editing.files : files)) {
+      toast('Only pictures, videos and files go in this channel. Words go in a thread.', 'warn')
+      return
+    }
     this.textInput.value = ''
     this.grow()
     this.closeSuggestions()
@@ -2593,57 +2644,6 @@ function formatLine(
   return out
 }
 
-const IMAGE_RE = /\.(gif|png|jpe?g|webp|avif|apng|bmp|svg)(\?[^\s]*)?$/i
-const IMAGE_PATH_RE = /\.(gif|png|jpe?g|webp|avif|apng)(\/|$)/i
-const IMAGE_QUERY_RE = /(?:^|&)(?:format|fm|ext|type)=(gif|png|jpe?g|webp|avif)(?:&|$)/i
-const CLIP_RE = /\.(webm|mp4|m4v)(\?[^\s]*)?$/i
-
-const IMAGE_HOSTS = new Set([
-  'i.imgur.com',
-  'pbs.twimg.com',
-  'i.redd.it',
-  'preview.redd.it',
-  'cdn.discordapp.com',
-  'media.discordapp.net',
-  'media.tenor.com',
-  'c.tenor.com',
-  'media.giphy.com',
-  'i.giphy.com',
-  'i.ibb.co',
-  'files.catbox.moe',
-  'images.unsplash.com',
-  'user-images.githubusercontent.com',
-])
-
-const MAX_PICTURES = 4
-
-function looksLikePicture(url: URL): boolean {
-  const pathAndQuery = url.pathname + url.search
-  return (
-    CLIP_RE.test(pathAndQuery) ||
-    IMAGE_RE.test(pathAndQuery) ||
-    IMAGE_PATH_RE.test(url.pathname) ||
-    IMAGE_QUERY_RE.test(url.search.replace(/^\?/, '')) ||
-    IMAGE_HOSTS.has(url.hostname.toLowerCase())
-  )
-}
-
-export function imageLinks(text: string): string[] {
-  const out: string[] = []
-  for (const match of text.matchAll(URL_RE)) {
-    const raw = match[0]
-    let url: URL
-    try {
-      url = new URL(raw)
-    } catch {
-      continue
-    }
-    if (url.protocol !== 'https:' || !looksLikePicture(url)) continue
-    if (!out.includes(raw)) out.push(raw)
-    if (out.length === MAX_PICTURES) break
-  }
-  return out
-}
 
 /** A size after a #, as a GIF from the picker carries it: "#480x270". */
 const SIZE_TAG_RE = /#(\d{1,4})x(\d{1,4})$/
@@ -2760,10 +2760,7 @@ function openLightbox(media: HTMLElement): void {
 
 function svgSource(text: string): string | null {
   const t = text.trim()
-  if (t.length > MAX_TEXT) return null
-  if (!/^<svg[\s>]/i.test(t)) return null
-  if (!/<\/svg>$/i.test(t)) return null
-  return t
+  return t.length <= MAX_TEXT && isDrawing(t) ? t : null
 }
 
 /** Only ever drawn through an img: in image context an SVG runs no script and loads nothing. */

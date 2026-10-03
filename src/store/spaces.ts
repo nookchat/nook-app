@@ -9,17 +9,24 @@ function servers(): string[] {
   return BUILT_IN_SERVER && !all.includes(BUILT_IN_SERVER) ? [BUILT_IN_SERVER, ...all] : all
 }
 
-export async function listSpaces(): Promise<RoomNote[]> {
+/** `patient` waits for every server, however slow, in place of leaving a slow one out. */
+export async function listSpaces(patient = false): Promise<RoomNote[]> {
   const slow = (): Promise<RoomNote[]> => new Promise((done) => window.setTimeout(() => done([]), SLOW_SERVER_MS))
-  const lists = await Promise.all(servers().map((server) => Promise.race([bookFor(server).list(), slow()])))
+  const lists = await Promise.all(
+    servers().map((server) => (patient ? bookFor(server).list() : Promise.race([bookFor(server).list(), slow()]))),
+  )
   return lists.flat().sort((a, b) => b.lastSeen - a.lastSeen)
 }
 
-export async function findSpace(secret: string, server?: string): Promise<RoomNote | null> {
-  const mine = (await listSpaces()).filter(
+/**
+ * The note for a space, the one with its password first. A wrong password once opened an empty
+ * space that kept its own note, so of those with a password, one with a name goes first.
+ */
+export async function findSpace(secret: string, server?: string, patient = false): Promise<RoomNote | null> {
+  const mine = (await listSpaces(patient)).filter(
     (r) => r.secret === secret && (server === undefined || (r.server ?? '') === server),
   )
-  return mine.find((r) => r.locked && r.password) ?? mine[0] ?? null
+  return mine.find((r) => r.locked && r.password && r.title) ?? mine.find((r) => r.locked && r.password) ?? mine[0] ?? null
 }
 
 export async function forgetSpace(note: RoomNote): Promise<void> {

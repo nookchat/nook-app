@@ -3299,6 +3299,12 @@ select.board-row-group {
 }
 
 /* A text channel marked NSFW, in the list of channels and in the channel head. */
+/* The mic in a voice channel where you may not talk: it stays off. */
+.voice-tool.held {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .nsfw-mark {
   flex: 0 0 auto;
   padding: 0 5px;
@@ -4167,8 +4173,25 @@ input[type="text"].space-search {
   color: var(--fg);
 }
 
+.chat-actions button.danger,
 .chat-actions button.danger:hover:not(:disabled) {
   color: var(--bad);
+}
+
+/* The name of a message action, over its button. */
+.action-tip {
+  position: fixed;
+  z-index: 80;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--tip-bg);
+  border: 1px solid var(--tip-border);
+  box-shadow: var(--shadow-small);
+  color: var(--fg);
+  font-size: var(--size-small);
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 .chat-actions button.on {

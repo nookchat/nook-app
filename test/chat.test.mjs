@@ -209,7 +209,7 @@ try {
   await say(alice, 'what should we call the release')
   await alice.waitForTimeout(400)
   const last = (await alice.$$eval('.chat-row', (e) => e.length)) - 1
-  await pressAction(alice, 'Reply in a thread', last)
+  await pressAction(alice, 'Reply in thread', last)
   await alice.waitForTimeout(400)
   const title = await alice.$eval('.chat-head .eyebrow', (el) => el.textContent)
   check('a message opens a thread', title === 'Thread in #general', title)
@@ -282,7 +282,7 @@ try {
   await alice.evaluate(() =>
     localStorage.setItem('nook.quick.v1', JSON.stringify(['🎉', '🚀'])),
   )
-  await pressAction(alice, 'React to this message', 0)
+  await pressAction(alice, 'Add reaction', 0)
   await alice.waitForSelector('.emoji-pop.quick')
   const quick = await alice.$$eval('.emoji-pop.quick .chat-react', (els) =>
     els.map((e) => e.textContent),
