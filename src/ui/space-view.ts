@@ -548,7 +548,7 @@ export class SpaceView {
   /** Everyone currently in a voice channel that I've muted for myself. */
   private mutedKeysNow(): Set<string> {
     const keys = new Set<string>()
-    for (const channel of this.chat?.channelInfo(true) ?? [{ name: DEFAULT_VOICE, label: DEFAULT_VOICE, topic: '', levels: [] }]) {
+    for (const channel of this.chat?.channelInfo(true) ?? [{ name: DEFAULT_VOICE, label: DEFAULT_VOICE, topic: '', levels: [], nsfw: false }]) {
       for (const id of this.voice?.membersOf(channel.name) ?? []) {
         const key = this.keyOf(id)
         if (mutedFor(key)) keys.add(key)
@@ -1264,6 +1264,11 @@ export class SpaceView {
           void this.publish((c) => c.setTopic(channel.name, raw.trim().slice(0, 140)))
         },
       },
+      {
+        label: channel.nsfw ? 'Stop marking as NSFW' : 'Mark as NSFW',
+        note: channel.nsfw ? 'Pictures show straight away again' : 'Pictures and videos are blurred until clicked',
+        run: () => void this.publish((c) => c.setNsfw(channel.name, !channel.nsfw)),
+      },
     ]
     if (channel.name !== DEFAULT_CHANNEL) {
       items.push(this.whoMayEnter(channel, false))
@@ -1726,6 +1731,8 @@ export class SpaceView {
   }
 
   private renderConversation(chat: RoomChat, info: ChannelInfo | undefined, thread: Message[] | null): void {
+    // A thread is in its channel, so it blurs the same.
+    this.chatPanel.setNsfw(!!info?.nsfw)
     if (thread) {
       this.chatPanel.render(thread)
       this.chatPanel.setTitle(`Thread in #${this.channel}`)
@@ -1920,12 +1927,17 @@ export class SpaceView {
   private renderChannelHead(info: ChannelInfo | undefined): void {
     const label = info?.label ?? this.channel
     const topic = info?.topic ?? ''
-    const sig = `${label}\n${topic}`
+    const nsfw = !!info?.nsfw
+    const sig = `${label}\n${topic}\n${nsfw}`
     if (this.channelTitleSig === sig) return
     this.channelTitleSig = sig
     clear(this.channelTitle)
     this.channelTitle.append(
-      h('span', { class: 'channel-name' }, [icon('hash', 18), h('span', { class: 'truncate', text: label })]),
+      h('span', { class: 'channel-name' }, [
+        icon('hash', 18),
+        h('span', { class: 'truncate', text: label }),
+        nsfw ? h('span', { class: 'nsfw-mark', text: 'NSFW', title: 'Pictures are blurred until clicked' }) : null,
+      ]),
     )
     if (topic) this.channelTitle.append(h('span', { class: 'channel-topic truncate', text: topic }))
   }
@@ -2982,7 +2994,7 @@ export class SpaceView {
       queueMicrotask(() => this.openChannel(wanted))
     }
 
-    for (const channel of chat?.channelInfo() ?? [{ name: DEFAULT_CHANNEL, label: DEFAULT_CHANNEL, topic: '', levels: [] }]) {
+    for (const channel of chat?.channelInfo() ?? [{ name: DEFAULT_CHANNEL, label: DEFAULT_CHANNEL, topic: '', levels: [], nsfw: false }]) {
       const name = channel.name
       const muted = channelMuted(this.space.room.id, name)
       const news = muted ? undefined : waiting.get(name)
@@ -2996,6 +3008,7 @@ export class SpaceView {
         [
           icon('hash', 16),
           h('span', { class: 'truncate grow', text: channel.label }),
+          channel.nsfw ? h('span', { class: 'nsfw-mark', text: 'NSFW', title: 'Pictures are blurred until clicked' }) : null,
           muted ? h('span', { class: 'kept-mark', title: 'Muted' }, [icon('bell-off', 13)]) : null,
           liveChannels.has(name) ? h('span', { class: 'pill live', text: 'live' }) : null,
           news?.mentions
@@ -3180,7 +3193,7 @@ export class SpaceView {
     // Kept from you now, or deleted, while you were in it.
     if (chat && here && (!chat.mayEnter(chat.me, here, true) || chat.log.wasDropped(here, true))) queueMicrotask(() => this.leaveVoice())
     const canEdit = chat?.can('channels') === true
-    for (const channel of chat?.channelInfo(true) ?? [{ name: DEFAULT_VOICE, label: DEFAULT_VOICE, topic: '', levels: [] }]) {
+    for (const channel of chat?.channelInfo(true) ?? [{ name: DEFAULT_VOICE, label: DEFAULT_VOICE, topic: '', levels: [], nsfw: false }]) {
       const name = channel.name
       const people = this.sessionsByPerson(this.voice?.membersOf(name) ?? [], peers)
       const join = h(

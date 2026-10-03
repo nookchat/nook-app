@@ -3298,6 +3298,19 @@ select.board-row-group {
   color: var(--fg-faint);
 }
 
+/* A text channel marked NSFW, in the list of channels and in the channel head. */
+.nsfw-mark {
+  flex: 0 0 auto;
+  padding: 0 5px;
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent);
+  border-radius: 4px;
+  color: var(--warn);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 15px;
+}
+
 .pick-list {
   display: flex;
   flex-direction: column;
@@ -7116,6 +7129,54 @@ input[type="text"].gif-search {
 
 .link-card-frame:hover .link-card-play {
   background: var(--media-chip-hover);
+}
+
+/* In a channel marked NSFW, every picture in a message is blurred until one of them is clicked. */
+.chat-log.nsfw .chat-line:not(.shown) :is(.att-tile, .chat-image-wrap, .link-card-frame, .link-card-side) {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.chat-log.nsfw .chat-line:not(.shown) :is(.link-card-frame, .link-card-side) {
+  border-radius: 6px;
+}
+
+.chat-log.nsfw .chat-line:not(.shown) :is(.att-tile, .chat-image-wrap, .link-card-frame, .link-card-side) > *,
+.chat-log.nsfw .chat-line:not(.shown) .embed-image {
+  filter: blur(36px) saturate(0.6);
+}
+
+.chat-log.nsfw .chat-line:not(.shown) .embed-image {
+  clip-path: inset(0 round 6px);
+  cursor: pointer;
+}
+
+.chat-log.nsfw .chat-line:not(.shown) :is(.att-play, .att-meta, .link-card-play) {
+  visibility: hidden;
+}
+
+.chat-log.nsfw .chat-line:not(.shown) :is(.att-tile:not(.failed), .chat-image-wrap, .link-card-frame)::after {
+  content: "NSFW · Click to show";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 6px 12px;
+  border-radius: var(--pill-radius);
+  background: var(--media-chip);
+  color: var(--on-media);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+@media (hover: none) {
+  .chat-log.nsfw .chat-line:not(.shown) :is(.att-tile:not(.failed), .chat-image-wrap, .link-card-frame)::after {
+    content: "NSFW · Tap to show";
+  }
 }
 
 .chat-pinned-mark {

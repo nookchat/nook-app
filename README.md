@@ -61,6 +61,11 @@ with voice does it.
   channel to a new place, or uses Move up and Move down in its menu, and
   everybody sees that order. A channel made later goes at the end. Every
   device ignores an order from somebody without Channels.
+- **NSFW channels**: somebody whose level has Channels picks Mark as NSFW in a
+  text channel's menu. The channel has an NSFW tag, and every picture, video,
+  GIF and link card picture in it is blurred until you click it. The click
+  shows that message's pictures, for you only, and opens nothing else. A
+  notification from it never carries the picture.
 - **Moving people**: somebody whose level has Move people (Admin and
   Moderator to start with) drags a person, from a voice channel or from the
   list of people, onto a voice channel, or picks one under Move to in their

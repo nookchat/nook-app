@@ -291,7 +291,10 @@ async function alertAbout(space: SpaceRuntime, events: LogEvent[]): Promise<void
     }
     const sent = cleanFiles(e.body.files)
     const body = notifyText() ? text || wordsForFiles(sent) : mention ? 'Mentioned you' : 'Sent a message'
-    notify(`${who} (#${channel}, ${spaceName})`, body, open, { tag: e.id, picture, image: pictureOf(space, sent) })
+    // A channel marked NSFW never puts its pictures in a notification.
+    const nsfw = chat.channelInfo().some((c) => c.name === channel && c.nsfw)
+    const image = nsfw ? undefined : pictureOf(space, sent)
+    notify(`${who} (#${channel}, ${spaceName})`, body, open, { tag: e.id, picture, image })
   }
 }
 

@@ -227,6 +227,8 @@ type SuggestKind = 'mention' | 'command' | 'name' | 'emoji'
 type ColourOf = (key: string) => string
 
 const WINDOW_STEP = 120
+/** What a channel marked NSFW blurs: pictures, videos, GIFs, drawings, and the pictures in link cards and embeds. */
+const VEILED = '.att-tile, .chat-image-wrap, .link-card-frame, .link-card-side, .embed-image'
 const WINDOW_MAX = 600
 
 /** A card of who reacted names this many, then how many more. */
@@ -314,6 +316,8 @@ export class ChatPanel {
   private readonly rows = new Map<string, { el: HTMLElement; sig: string }>()
   private quickFor: HTMLElement | null = null
   private found: { id: string; at: number } | null = null
+  /** The messages whose pictures somebody clicked to see, in a channel marked NSFW. */
+  private readonly shown = new Set<string>()
 
   constructor(initialName: string, title = 'Chat') {
     this.name = initialName
@@ -518,6 +522,19 @@ export class ChatPanel {
     })
     // Media events do not bubble, hence the capture.
     this.log.addEventListener('load', () => this.followMedia(), true)
+    // In a channel marked NSFW the first click or key on a blurred picture shows it, and does nothing else.
+    const reveal = (ev: Event): void => {
+      if (!this.log.classList.contains('nsfw') || !(ev.target instanceof Element)) return
+      if (ev instanceof KeyboardEvent && ev.key !== 'Enter' && ev.key !== ' ') return
+      const line = ev.target.closest<HTMLElement>('.chat-line[data-id]:not(.shown)')
+      if (!line || !ev.target.closest(VEILED)) return
+      ev.preventDefault()
+      ev.stopPropagation()
+      this.shown.add(line.dataset.id!)
+      line.classList.add('shown')
+    }
+    this.log.addEventListener('click', reveal, true)
+    this.log.addEventListener('keydown', reveal, true)
     this.log.addEventListener('loadedmetadata', () => this.followMedia(), true)
     // The log, and every row in it: a row that grows (a picture, a link card, an embed) keeps
     // the newest message in view while the log follows it.
@@ -657,6 +674,11 @@ export class ChatPanel {
 
   setTitle(text: string): void {
     this.title.textContent = text
+  }
+
+  /** Blurs the pictures and videos until each message's are clicked. */
+  setNsfw(on: boolean): void {
+    this.log.classList.toggle('nsfw', on)
   }
 
   setReadMark(lamport: number): void {
@@ -1425,6 +1447,7 @@ export class ChatPanel {
       class: `chat-line${mine ? ' mine' : ''}${m.pinned ? ' pinned' : ''}${callsMe ? ' calls-me' : ''}`,
     })
     line.dataset.id = m.id
+    if (this.shown.has(m.id)) line.classList.add('shown')
     if (this.replyTo?.id === m.id || this.editing?.id === m.id) line.classList.add('pending')
     // Drawn again while lit: the light carries on from where it had got to.
     const since = this.found?.id === m.id ? Date.now() - this.found.at : Infinity

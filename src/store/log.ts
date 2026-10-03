@@ -861,6 +861,7 @@ export class RoomLog {
     const label = new Map<string, string>()
     const topic = new Map<string, string>()
     const levels = new Map<string, string[]>()
+    const nsfw = new Set<string>()
     const gone = new Set<string>()
     const auth = this.authority()
     /** The newest order somebody who keeps the channels put them in. */
@@ -883,6 +884,8 @@ export class RoomLog {
         }
         if (typeof e.body.topic === 'string') topic.set(name, e.body.topic.slice(0, 140).trim())
         if (Array.isArray(e.body.levels)) levels.set(name, cleanLevelIds(e.body.levels))
+        if (e.body.nsfw === true) nsfw.add(name)
+        else if (e.body.nsfw === false) nsfw.delete(name)
         if (e.body.gone === true) gone.add(name)
         else gone.delete(name)
       } else if (!voice && e.kind === 'said' && auth.can(e.author, 'channels')) {
@@ -900,7 +903,13 @@ export class RoomLog {
     return [...names]
       .filter((name) => !gone.has(name))
       .sort((a, b) => rank(a) - rank(b) || (a < b ? -1 : a > b ? 1 : 0))
-      .map((name) => ({ name, label: label.get(name) || name, topic: topic.get(name) ?? '', levels: levels.get(name) ?? [] }))
+      .map((name) => ({
+        name,
+        label: label.get(name) || name,
+        topic: topic.get(name) ?? '',
+        levels: levels.get(name) ?? [],
+        nsfw: nsfw.has(name),
+      }))
   }
 
   /**
@@ -1766,6 +1775,8 @@ export interface ChannelInfo {
   topic: string
   /** The levels that may see and use it. Empty is everybody. */
   levels: string[]
+  /** Its pictures and videos are blurred until somebody clicks one. */
+  nsfw: boolean
 }
 
 /** Stored on the server under `id` (SHA-256 of the sealed bytes), sealed with `key`, which the server never sees. */

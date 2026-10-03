@@ -405,6 +405,11 @@ export class RoomChat {
     return this.write('channel', body)
   }
 
+  /** Blurs the pictures and videos in a text channel until somebody clicks one, or stops that. */
+  setNsfw(name: string, nsfw: boolean): Promise<LogEvent> {
+    return this.write('channel', { name: cleanChannel(name), nsfw })
+  }
+
   /** Keeps a channel to these levels. None opens it to everybody. */
   setChannelLevels(name: string, levels: string[], voice = false): Promise<LogEvent> {
     const body: Record<string, unknown> = { name: cleanChannel(name), levels }
