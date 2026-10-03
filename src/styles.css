@@ -4178,6 +4178,13 @@ input[type="text"].space-search {
   color: var(--bad);
 }
 
+.chat-actions-divider {
+  align-self: stretch;
+  width: 1px;
+  margin: 6px 3px;
+  background: var(--line);
+}
+
 /* The name of a message action, over its button. */
 .action-tip {
   position: fixed;

@@ -169,6 +169,11 @@ function pinnedFiles(m: Message): string {
   return [...kinds].map(([kind, n]) => (n === 1 ? `a ${kind}` : `${n} ${kind}s`)).join(', ')
 }
 
+/** Sets delete apart from the actions before it in a message's bar. */
+function actionDivider(): HTMLElement {
+  return h('span', { class: 'chat-actions-divider' })
+}
+
 /** Names a message action over its button while the pointer rests on it or the keyboard reaches it. */
 function withTip(button: HTMLElement, label: string): HTMLElement {
   let tip: HTMLElement | null = null
@@ -2057,6 +2062,7 @@ export class ChatPanel {
           h('button', { ariaLabel: 'Edit', on: { click: () => this.startEdit(m) } }, [icon('edit', 18)]),
           'Edit',
         ),
+        actionDivider(),
         withTip(
           h(
             'button',
@@ -2072,6 +2078,7 @@ export class ChatPanel {
       )
     } else if (this.canDelete) {
       bar.append(
+        actionDivider(),
         withTip(
           h(
             'button',
