@@ -1,7 +1,7 @@
 import { APP_URL, check, finish, launch, poll, stoppedEarly, wait } from './harness.mjs'
 
 // A text channel marked NSFW: its pictures are blurred for everybody until each is clicked,
-// and the mark comes off again.
+// Blur again hides one again, and the mark comes off.
 const browser = await launch()
 const BOX = '[aria-label="Write a message"]'
 const DRAWING = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 20"><rect width="40" height="20" fill="red"/></svg>'
@@ -56,6 +56,13 @@ try {
   await say(alice, 'and some words')
   await bob.waitForSelector('.chat-line:has-text("and some words")')
   check('it stays shown while the conversation goes on', (await blurred(bob)) === false)
+  await bob.locator('.chat-log .chat-image-wrap').last().click({ button: 'right' })
+  await bob.click('.menu-item:has-text("Blur again")')
+  check('Blur again in its right click menu blurs it again', (await blurred(bob)) === true)
+  await bob.locator('.chat-log .chat-image-wrap').last().click({ button: 'right' })
+  check('and a blurred one offers no Blur again', (await bob.locator('.menu-item:has-text("Blur again")').count()) === 0)
+  await bob.keyboard.press('Escape')
+  await bob.locator('.chat-log .chat-image-wrap').last().click()
 
   await alice.click('.rail-left .rail-row:has-text("general")', { button: 'right' })
   await alice.click('.menu-item:has-text("Stop marking as NSFW")')

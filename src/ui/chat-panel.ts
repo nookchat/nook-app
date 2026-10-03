@@ -3,6 +3,7 @@ import type { SpaceFiles } from '../net/files'
 import type { LinkPreview } from '../net/server-api'
 import { seesRecordings } from '../net/recordings'
 import { cleanName, EVERYONE, findMentions, mentionsMe } from '../chat'
+import { CLIP_RE, hasMedia, imageLinks, isDrawing } from '../pictures'
 import { shortKey } from '../store/identity'
 import { canRecordVoice, recordVoice, voiceSeconds, type VoiceRecording } from '../media/voice-note'
 import { confirmDanger } from './ask'
@@ -318,6 +319,7 @@ export class ChatPanel {
   private found: { id: string; at: number } | null = null
   /** The messages whose pictures somebody clicked to see, in a channel marked NSFW. */
   private readonly shown = new Set<string>()
+  private mediaOnly = false
 
   constructor(initialName: string, title = 'Chat') {
     this.name = initialName
@@ -681,6 +683,13 @@ export class ChatPanel {
     this.log.classList.toggle('nsfw', on)
   }
 
+  /** Sends nothing to the channel without a picture, a video or a file. Threads still take words. */
+  setMediaOnly(on: boolean): void {
+    if (this.mediaOnly === on) return
+    this.mediaOnly = on
+    if (this.enabled) this.textInput.placeholder = this.modePlaceholder()
+  }
+
   setReadMark(lamport: number): void {
     this.readMark = lamport
   }
@@ -708,7 +717,8 @@ export class ChatPanel {
 
   private modePlaceholder(): string {
     if (this.directWith) return `Message ${this.directName || 'them'}`
-    return this.threadRoot ? 'Reply in this thread' : 'Say something'
+    if (this.threadRoot) return 'Reply in this thread'
+    return this.mediaOnly ? 'Share a picture, a video or a file' : 'Say something'
   }
 
   setTyping(who: string[]): void {
@@ -1987,6 +1997,16 @@ export class ChatPanel {
         run: () => this.actions?.pin(m.id, !m.pinned),
       })
     }
+    if (this.shown.has(m.id) && this.log.classList.contains('nsfw')) {
+      items.push({
+        label: 'Blur again',
+        lead: lead('eye-off'),
+        run: () => {
+          this.shown.delete(m.id)
+          line.classList.remove('shown')
+        },
+      })
+    }
     if (mine && !m.poll) items.push({ label: 'Edit', lead: lead('edit'), run: () => this.startEdit(m) })
     if (m.text) {
       items.push({
@@ -2268,6 +2288,11 @@ export class ChatPanel {
       }
       return
     }
+    const toChannel = !this.directWith && (this.editing ? !this.editing.inThread : !this.threadRoot)
+    if (this.mediaOnly && toChannel && !hasMedia(text, this.editing ? this.editing.files : files)) {
+      toast('Only pictures, videos and files go in this channel. Words go in a thread.', 'warn')
+      return
+    }
     this.textInput.value = ''
     this.grow()
     this.closeSuggestions()
@@ -2449,57 +2474,6 @@ function formatLine(line: string, names: Map<string, string>, me: string, colour
   return out
 }
 
-const IMAGE_RE = /\.(gif|png|jpe?g|webp|avif|apng|bmp|svg)(\?[^\s]*)?$/i
-const IMAGE_PATH_RE = /\.(gif|png|jpe?g|webp|avif|apng)(\/|$)/i
-const IMAGE_QUERY_RE = /(?:^|&)(?:format|fm|ext|type)=(gif|png|jpe?g|webp|avif)(?:&|$)/i
-const CLIP_RE = /\.(webm|mp4|m4v)(\?[^\s]*)?$/i
-
-const IMAGE_HOSTS = new Set([
-  'i.imgur.com',
-  'pbs.twimg.com',
-  'i.redd.it',
-  'preview.redd.it',
-  'cdn.discordapp.com',
-  'media.discordapp.net',
-  'media.tenor.com',
-  'c.tenor.com',
-  'media.giphy.com',
-  'i.giphy.com',
-  'i.ibb.co',
-  'files.catbox.moe',
-  'images.unsplash.com',
-  'user-images.githubusercontent.com',
-])
-
-const MAX_PICTURES = 4
-
-function looksLikePicture(url: URL): boolean {
-  const pathAndQuery = url.pathname + url.search
-  return (
-    CLIP_RE.test(pathAndQuery) ||
-    IMAGE_RE.test(pathAndQuery) ||
-    IMAGE_PATH_RE.test(url.pathname) ||
-    IMAGE_QUERY_RE.test(url.search.replace(/^\?/, '')) ||
-    IMAGE_HOSTS.has(url.hostname.toLowerCase())
-  )
-}
-
-export function imageLinks(text: string): string[] {
-  const out: string[] = []
-  for (const match of text.matchAll(URL_RE)) {
-    const raw = match[0]
-    let url: URL
-    try {
-      url = new URL(raw)
-    } catch {
-      continue
-    }
-    if (url.protocol !== 'https:' || !looksLikePicture(url)) continue
-    if (!out.includes(raw)) out.push(raw)
-    if (out.length === MAX_PICTURES) break
-  }
-  return out
-}
 
 /** A size after a #, as a GIF from the picker carries it: "#480x270". */
 const SIZE_TAG_RE = /#(\d{1,4})x(\d{1,4})$/
@@ -2616,10 +2590,7 @@ function openLightbox(media: HTMLElement): void {
 
 function svgSource(text: string): string | null {
   const t = text.trim()
-  if (t.length > MAX_TEXT) return null
-  if (!/^<svg[\s>]/i.test(t)) return null
-  if (!/<\/svg>$/i.test(t)) return null
-  return t
+  return t.length <= MAX_TEXT && isDrawing(t) ? t : null
 }
 
 /** Only ever drawn through an img: in image context an SVG runs no script and loads nothing. */

@@ -410,6 +410,11 @@ export class RoomChat {
     return this.write('channel', { name: cleanChannel(name), nsfw })
   }
 
+  /** Lets only messages with a picture, a video or a file into a text channel, or stops that. */
+  setMediaOnly(name: string, mediaOnly: boolean): Promise<LogEvent> {
+    return this.write('channel', { name: cleanChannel(name), mediaOnly })
+  }
+
   /** Keeps a channel to these levels. None opens it to everybody. */
   setChannelLevels(name: string, levels: string[], voice = false): Promise<LogEvent> {
     const body: Record<string, unknown> = { name: cleanChannel(name), levels }

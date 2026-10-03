@@ -276,6 +276,9 @@ async function alertAbout(space: SpaceRuntime, events: LogEvent[]): Promise<void
     // A kept channel you may not see, or one they may not write in, says nothing, and so does a muted one.
     if (!chat.mayEnter(chat.me, channel) || !chat.mayEnter(e.author, channel)) continue
     if (channelMuted(space.room.id, channel)) continue
+    // Words alone in a Media only channel are out of sight, so they say nothing either.
+    const info = chat.channelInfo().find((c) => c.name === channel)
+    if (info?.mediaOnly && !chat.log.messages().some((m) => m.id === e.id)) continue
     const text = String(e.body.text ?? '')
     names ??= chat.log.names()
     const mention = mentionsMe(text, names, chat.me)
@@ -292,8 +295,7 @@ async function alertAbout(space: SpaceRuntime, events: LogEvent[]): Promise<void
     const sent = cleanFiles(e.body.files)
     const body = notifyText() ? text || wordsForFiles(sent) : mention ? 'Mentioned you' : 'Sent a message'
     // A channel marked NSFW never puts its pictures in a notification.
-    const nsfw = chat.channelInfo().some((c) => c.name === channel && c.nsfw)
-    const image = nsfw ? undefined : pictureOf(space, sent)
+    const image = info?.nsfw ? undefined : pictureOf(space, sent)
     notify(`${who} (#${channel}, ${spaceName})`, body, open, { tag: e.id, picture, image })
   }
 }

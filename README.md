@@ -64,8 +64,15 @@ with voice does it.
 - **NSFW channels**: somebody whose level has Channels picks Mark as NSFW in a
   text channel's menu. The channel has an NSFW tag, and every picture, video,
   GIF and link card picture in it is blurred until you click it. The click
-  shows that message's pictures, for you only, and opens nothing else. A
-  notification from it never carries the picture.
+  shows that message's pictures, for you only, and opens nothing else. Blur
+  again, in the message's right click menu, hides them again. A notification
+  from it never carries the picture.
+- **Media only channels**: Media only, in the same menu, lets a message into
+  the channel only with a picture, a video, a GIF, a drawing or a file. The
+  channel has a picture in place of the #, and the box says what to share.
+  Replies in a thread take words, and so does whoever has Channels. Every
+  device keeps words alone out of sight, so a client that skips the box's
+  check gets nowhere. What was said before the mark stays.
 - **Moving people**: somebody whose level has Move people (Admin and
   Moderator to start with) drags a person, from a voice channel or from the
   list of people, onto a voice channel, or picks one under Move to in their

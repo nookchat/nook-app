@@ -1,4 +1,5 @@
 import { toHex } from '../bytes'
+import { hasMedia } from '../pictures'
 import { publicKeyOf, sign, verify } from './identity'
 
 const EVENT_KINDS = [
@@ -862,6 +863,7 @@ export class RoomLog {
     const topic = new Map<string, string>()
     const levels = new Map<string, string[]>()
     const nsfw = new Set<string>()
+    const mediaOnly = new Set<string>()
     const gone = new Set<string>()
     const auth = this.authority()
     /** The newest order somebody who keeps the channels put them in. */
@@ -886,6 +888,8 @@ export class RoomLog {
         if (Array.isArray(e.body.levels)) levels.set(name, cleanLevelIds(e.body.levels))
         if (e.body.nsfw === true) nsfw.add(name)
         else if (e.body.nsfw === false) nsfw.delete(name)
+        if (e.body.mediaOnly === true) mediaOnly.add(name)
+        else if (e.body.mediaOnly === false) mediaOnly.delete(name)
         if (e.body.gone === true) gone.add(name)
         else gone.delete(name)
       } else if (!voice && e.kind === 'said' && auth.can(e.author, 'channels')) {
@@ -909,6 +913,7 @@ export class RoomLog {
         topic: topic.get(name) ?? '',
         levels: levels.get(name) ?? [],
         nsfw: nsfw.has(name),
+        mediaOnly: mediaOnly.has(name),
       }))
   }
 
@@ -1095,6 +1100,29 @@ export class RoomLog {
       if (name && !live.has(name)) gone.add(name)
     }
     return gone
+  }
+
+  /**
+   * When each text channel was Media only, in log order: from the event that turned it on to the
+   * one that turned it off, or Infinity. A message written in that time needs something to show.
+   */
+  private mediaOnlySpans(): Map<string, [number, number][]> {
+    return this.cached('mediaOnly', () => {
+      const auth = this.authority()
+      const spans = new Map<string, [number, number][]>()
+      for (const e of this.all()) {
+        if (e.kind !== 'channel' || e.body.voice === true || typeof e.body.mediaOnly !== 'boolean') continue
+        if (!auth.can(e.author, 'channels')) continue
+        const name = cleanChannel(String(e.body.name ?? ''))
+        if (!name) continue
+        const list = spans.get(name) ?? []
+        const open = list.length > 0 && list[list.length - 1][1] === Infinity
+        if (e.body.mediaOnly && !open) list.push([e.lamport, Infinity])
+        else if (!e.body.mediaOnly && open) list[list.length - 1][1] = e.lamport
+        spans.set(name, list)
+      }
+      return spans
+    })
   }
 
   /**
@@ -1286,7 +1314,15 @@ export class RoomLog {
       if (count) m.replies = count
     }
 
-    return out.filter((m) => !m.retracted)
+    // In a Media only channel, words alone are kept out of sight, as they stand after any edit.
+    const spans = this.mediaOnlySpans()
+    const wordsOnly = (m: Message): boolean =>
+      !m.inThread &&
+      !m.hook &&
+      !!spans.get(m.channel)?.some(([from, to]) => m.lamport > from && m.lamport < to) &&
+      !auth.can(m.author, 'channels') &&
+      (!!m.poll || !hasMedia(m.text, m.files))
+    return out.filter((m) => !m.retracted && !wordsOnly(m))
   }
 
   /** Computed once per state of the log. Callers must not change what it returns. */
@@ -1777,6 +1813,8 @@ export interface ChannelInfo {
   levels: string[]
   /** Its pictures and videos are blurred until somebody clicks one. */
   nsfw: boolean
+  /** A message in it needs a picture, a video or a file. Thread replies, and whoever may keep channels, need none. */
+  mediaOnly: boolean
 }
 
 /** Stored on the server under `id` (SHA-256 of the sealed bytes), sealed with `key`, which the server never sees. */
