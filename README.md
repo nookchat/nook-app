@@ -31,6 +31,20 @@ with voice does it.
   actions under them: Invite people, Space settings, Leave space. A dot on it
   says there is news in another space, and a red count says somebody
   mentioned you or sent you a direct message.
+- **Copy a Discord server**, under New space, makes a space from a Discord
+  server template link (in Discord: Server Settings, Server Template). A
+  link pasted in Join, or in the name box, does the same. The space takes the
+  server's name, its roles as levels, with their colours and what they may
+  do, and its channels in Discord's order, with their names, topics, NSFW,
+  and who may see each. A stage channel, or a voice channel where @everyone
+  may not speak, is No talking, and a media channel is Media only. Nook has
+  no categories, so their channels follow each other in the same order. Nook's
+  own general and lounge are open to all, so the welcome channel, or the
+  first open one, takes their place. Messages and people do not come over:
+  a template has neither. Discord sends a template to any page, so the page
+  asks it straight, and the owner's device writes it all into the log, as if
+  they had set it up by hand (`src/space/discord.ts`).
+  `node test/discord.test.mjs` copies a made up server.
 - **The first visit** asks for the name people will see, and a picture if you
   want one, before anything else, on the home page or on an invite. You can
   change both in Settings.

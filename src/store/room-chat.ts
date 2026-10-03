@@ -393,6 +393,21 @@ export class RoomChat {
     return this.write('channel', body)
   }
 
+  /** A channel with all it is at once, in one event: see src/space/discord.ts. */
+  setUpChannel(channel: ChannelInfo & { voice: boolean }): Promise<LogEvent> {
+    const body: Record<string, unknown> = {
+      name: cleanChannel(channel.name),
+      label: channel.label.slice(0, 32).trim(),
+      topic: channel.topic.slice(0, 140).trim(),
+      levels: channel.levels,
+    }
+    if (channel.voice) body.voice = true
+    if (channel.nsfw) body.nsfw = true
+    if (channel.mediaOnly) body.mediaOnly = true
+    if (channel.noTalking) body.noTalking = true
+    return this.write('channel', body)
+  }
+
   labelChannel(name: string, label: string, voice = false): Promise<LogEvent> {
     const body: Record<string, unknown> = { name: cleanChannel(name), label: label.slice(0, 32).trim() }
     if (voice) body.voice = true

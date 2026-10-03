@@ -21,6 +21,7 @@ import { SOUND_HELD } from './net/unlock'
 import { watchForDesktopUpdates, watchForUpdates } from './net/updates'
 import { warmEmoji } from './ui/emoji'
 import { clearLink, deriveRoom, readLink, setLinkSecret } from './room'
+import type { DiscordSetup } from './space/discord'
 import { spaces } from './space/registry'
 import { filesFor, type SpaceRuntime } from './space/runtime'
 import { nameChosen, shortKey } from './store/identity'
@@ -148,8 +149,8 @@ async function showHome(dm: DirectRef | null = null, making = false): Promise<vo
   const home = new HomeView(chrome.body, chrome, {
     page: () =>
       spaceList({
-        open: (secret, locked, password, name, server) =>
-          void enter(secret, locked, password, name !== undefined, name, server),
+        open: (secret, locked, password, name, server, discord) =>
+          void enter(secret, locked, password, name !== undefined, name, server, discord),
         refresh: () => {
           void spaces.catchUp()
           void showHome(null, true)
@@ -207,6 +208,7 @@ async function enter(
   fresh = false,
   name = '',
   server?: string,
+  discord?: DiscordSetup,
 ): Promise<void> {
   const known = fresh ? null : await findSpace(secret, server)
   const where = server || known?.server || newSpaceServer()
@@ -228,7 +230,7 @@ async function enter(
       return
     }
   }
-  const space = await spaces.open({ secret, locked: needsPassword, password: pass, server: where, fresh, name })
+  const space = await spaces.open({ secret, locked: needsPassword, password: pass, server: where, fresh, name, discord })
   openSpace(space)
 }
 
