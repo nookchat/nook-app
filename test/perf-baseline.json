@@ -1,24 +1,24 @@
 {
-  "commit": "0ea2bb68c3a33b29a7747e0617b5b3a58def2888",
+  "commit": "33fd0b4a1f7daeb2032a5a688ca44e61159aa8e0",
   "changed": false,
-  "at": "2026-10-04T20:10:54.792Z",
+  "at": "2026-10-04T21:04:34.408Z",
   "machine": "Apple M4 Pro",
   "cpu": 4,
   "messages": 2000,
   "rounds": 5,
   "metrics": {
-    "bundle": 3391.41,
-    "start": 229.7,
-    "startJs": 215.96,
-    "openCold": 783.1,
-    "openWarm": 761.3,
-    "switch": 101.5,
-    "send": 33.5,
-    "drawCpu": 3.73,
+    "bundle": 3393.45,
+    "start": 210.4,
+    "startJs": 216.61,
+    "openCold": 613.4,
+    "openWarm": 636.8,
+    "switch": 53.9,
+    "send": 28.6,
+    "drawCpu": 2.8,
     "drawMade": 0,
-    "scroll": 1498.7,
-    "worstFrame": 213.2,
-    "heap": 8.56,
-    "nodes": 20041
+    "scroll": 782.4,
+    "worstFrame": 57.4,
+    "heap": 9.37,
+    "nodes": 9481
   }
 }

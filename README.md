@@ -475,6 +475,25 @@ npm run perf -- --save           # this tree becomes the baseline; commit the fi
 When the side bars kept their rows ([0ea2bb6](https://github.com/nookchat/nook-app/commit/0ea2bb6)), each draw took 3.1 ms
 of processor time in place of 17.3 ms, and made no elements anew in place of 31.
 
+`npm run perf -- --profile` shows where the time goes in each scene: the busiest
+functions, the split of script, style and layout, and the slowest CSS selectors.
+With it, the next changes made the chat lighter. Against that first baseline:
+
+| What, processor slowed 4x | Before | After |
+| --- | --- | --- |
+| Open a big space | 783 ms | 613 ms |
+| Switch channel | 102 ms | 54 ms |
+| 40 frames of scrolling up | 1499 ms | 782 ms |
+| Longest frame in that scroll | 213 ms | 57 ms |
+| Elements on the page | 20,041 | 9,481 |
+
+A message makes its bar of actions when the pointer or the focus first comes to
+it, and every row has one once Tab is pressed. A link's card is asked for when
+its message comes near the screen. Rows are marked when drawn, not found with
+`:has()`, and no selector ends in `:is()`. A channel opens with 60 messages and
+draws 60 more when the page is idle. `content-visibility` on the rows was tried
+twice: it made scrolling a third slower, so it is not used.
+
 `node test/server-bench.mjs` on a space of 50,000 lines:
 
 | What | Time |
