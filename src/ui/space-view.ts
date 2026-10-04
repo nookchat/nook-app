@@ -75,7 +75,7 @@ import { channelMuted, channelMutedItself, MUTED_CHANGED, muteChannel, muteSpace
 import { cleanPresence, cleanStatusText, loadStatus, presenceLook, STATUS_CHANGED, type Presence } from '../store/status'
 import { avatarOf, ChatPanel } from './chat-panel'
 import { imageLinks } from '../pictures'
-import { clear, copyText, fmtKbps, h, onPress, roleInk } from './dom'
+import { clear, copyText, fmtKbps, h, keyed, onPress, roleInk, type KeyedRow } from './dom'
 import { desktopOffer } from './desktop-offer'
 import { forHowLong } from './game-card'
 import { profileCard } from './profile-card'
@@ -1852,7 +1852,7 @@ export class SpaceView {
   }
 
   private fillPageList(kind: PageKind, list: HTMLElement, pages: WhiteboardInfo[], openId: string | null): void {
-    clear(list)
+    const rows: KeyedRow[] = []
     for (const page of pages) {
       const open = h(
         'button',
@@ -1869,8 +1869,9 @@ export class SpaceView {
       const row = h('div', { class: 'row rail-row' }, [open])
       // The newest copy of the page: the row stays while its contents change.
       onContextMenu(row, () => this.pageActions(kind, this.pagesOf(kind).find((p) => p.id === page.id) ?? page))
-      list.append(row)
+      rows.push({ key: page.id, el: row, also: JSON.stringify(page) })
     }
+    keyed(list, rows)
   }
 
   private pagesOf(kind: PageKind): WhiteboardInfo[] {
@@ -3045,7 +3046,7 @@ export class SpaceView {
     if (this.channelDrag && !this.channelDrag.voice) return
     if (this.heldForPress()) return
     const chat = this.chat
-    clear(this.channelList)
+    const rows: KeyedRow[] = []
     const canEdit = chat?.can('channels') === true
     this.newTextButton.classList.toggle('hidden', !canEdit)
     const waiting = chat?.unread(this.read) ?? new Map()
@@ -3086,8 +3087,9 @@ export class SpaceView {
       const railRow = h('div', { class: 'row rail-row' }, [open])
       onContextMenu(railRow, () => this.channelActions(channel))
       if (canEdit) this.orderByHand(railRow, name, false)
-      this.channelList.append(railRow)
+      rows.push({ key: name, el: railRow, also: JSON.stringify(channel) })
     }
+    keyed(this.channelList, rows)
     // Share your screen comes with the channels, never before them.
     if (chat && !this.railShareButton.isConnected) this.shareStart.append(this.railShareButton)
     this.mentions = mentions
@@ -3106,6 +3108,7 @@ export class SpaceView {
       el.classList.add('dragging')
     })
     el.addEventListener('dragend', () => {
+      el.classList.remove('dragging')
       this.personDrag = null
       for (const row of this.voiceList.querySelectorAll('.drop-into')) row.classList.remove('drop-into')
       this.draw()
@@ -3155,6 +3158,7 @@ export class SpaceView {
       row.classList.add('dragging')
     })
     row.addEventListener('dragend', () => {
+      row.classList.remove('dragging')
       this.channelDrag = null
       this.draw()
     })
@@ -3224,12 +3228,12 @@ export class SpaceView {
     ].join('\n')
     if (this.threadListSig === sig) return
     this.threadListSig = sig
-    clear(this.threadList)
-    if (threads.length === 0) return
-    this.threadList.append(h('div', { class: 'rail-head' }, [h('span', { class: 'eyebrow', text: 'Threads' })]))
+    const rows: KeyedRow[] = []
+    if (threads.length) rows.push({ key: ':head', el: h('div', { class: 'rail-head' }, [h('span', { class: 'eyebrow', text: 'Threads' })]) })
     for (const thread of threads) {
-      this.threadList.append(
-        h(
+      rows.push({
+        key: thread.root.id,
+        el: h(
           'button',
           {
             class: `rail-item${this.thread === thread.root.id ? ' on' : ''}${fresh(thread) ? ' unread' : ''}`,
@@ -3241,8 +3245,9 @@ export class SpaceView {
             h('span', { class: 'pill', text: `${thread.replies}` }),
           ],
         ),
-      )
+      })
     }
+    keyed(this.threadList, rows)
   }
 
   private renderVoice(): void {
@@ -3251,7 +3256,8 @@ export class SpaceView {
       return
     }
     const chat = this.chat
-    clear(this.voiceList)
+    const rows: KeyedRow[] = []
+    const members: KeyedRow[][] = []
     this.newVoiceButton.classList.toggle('hidden', !chat?.can('channels'))
     const here = this.voice?.state.channel ?? null
     const peers = this.peersById()
@@ -3280,11 +3286,10 @@ export class SpaceView {
         ],
       )
       const since = this.channelSince(name)
-      const timer = since ? h('span', { class: 'voice-timer', title: 'How long somebody has been in here' }) : null
-      if (timer && since) {
-        timer.dataset.since = String(since)
-        timer.textContent = clockFor(Date.now() - since)
-      }
+      // The time is filled in by tickTimers, so a row drawn a second later still looks the same.
+      const timer = since
+        ? h('span', { class: 'voice-timer', title: 'How long somebody has been in here', data: { since: String(since) } })
+        : null
       const head = h('div', { class: `rail-item voice-head${here === name ? ' on' : ''}` }, [
         join,
         timer,
@@ -3295,15 +3300,21 @@ export class SpaceView {
         this.clickVoice(name)
       })
       if (canEdit) onContextMenu(head, () => this.voiceChannelActions(channel))
-      const row = h('div', { class: 'voice-channel' }, [head])
+      const row = h('div', { class: 'voice-channel' })
       if (canEdit) this.orderByHand(row, name, true)
       // Anybody may drag themselves to another channel; only those who may move people drag others.
       this.takePeople(row, channel)
+      rows.push({ key: name, el: row, also: JSON.stringify(channel) })
+      // Each person in it is a row of their own, so one who starts talking leaves the others be.
+      const inside: KeyedRow[] = [{ key: ':head', el: head, also: JSON.stringify([channel, canEdit]) }]
       for (const [key, ids] of people) {
-        row.append(this.voiceMember(key, ids, peers, names.get(key) ?? '', avatars.get(key) ?? ''))
+        const member = this.voiceMember(key, ids, peers, names.get(key) ?? '', avatars.get(key) ?? '')
+        inside.push({ key, el: member, also: JSON.stringify([ids, this.chat?.can('move') === true]) })
       }
-      this.voiceList.append(row)
+      members.push(inside)
     }
+    keyed(this.voiceList, rows).forEach((row, i) => keyed(row, members[i]))
+    this.tickTimers()
     this.renderVoiceBar()
     this.renderCameras()
   }
@@ -4062,7 +4073,7 @@ export class SpaceView {
 
   private renderPeople(order: PersonRow[]): void {
     if (this.personDrag || this.heldForPress()) return
-    clear(this.peopleList)
+    const rows: KeyedRow[] = []
     const chat = this.chat
     const roles = chat?.roles() ?? new Map<string, string>()
     const avatars = chat?.log.avatars() ?? new Map<string, string>()
@@ -4070,7 +4081,12 @@ export class SpaceView {
     const visible = order.filter((r) => (roles.get(r.key) ?? 'member') !== 'kicked' || r.you)
     const head = (text: string): HTMLElement => h('div', { class: 'rail-head' }, [h('span', { class: 'eyebrow', text })])
     const draw = (row: PersonRow): void => {
-      this.peopleList.append(this.personRow(row, roles.get(row.key) ?? 'member', avatars.get(row.key) ?? ''))
+      const role = roles.get(row.key) ?? 'member'
+      rows.push({
+        key: row.key,
+        el: this.personRow(row, role, avatars.get(row.key) ?? ''),
+        also: JSON.stringify([role, row.you, row.here, this.chat?.can('move') === true]),
+      })
     }
 
     // As Discord does: whoever is connected is under their level, the highest first, idle or
@@ -4088,10 +4104,11 @@ export class SpaceView {
       group.rows.push(row)
       groups.set(id, group)
     }
-    for (const group of [...groups.values()].sort((a, b) => b.rank - a.rank || a.name.localeCompare(b.name))) {
-      this.peopleList.append(head(`${group.name} · ${group.rows.length}`))
+    for (const [id, group] of [...groups].sort(([, a], [, b]) => b.rank - a.rank || a.name.localeCompare(b.name))) {
+      rows.push({ key: `:group:${id}`, el: head(`${group.name} · ${group.rows.length}`) })
       for (const row of group.rows) draw(row)
     }
+    keyed(this.peopleList, rows)
   }
 
   private personRow(row: PersonRow, role: string, avatar: string): HTMLElement {
@@ -4744,13 +4761,15 @@ export class SpaceView {
     // A row like a channel's: what it does, in words.
     this.railShareButton.title = sharing ? 'Stop sharing your screen' : 'Anybody here can share, in voice or not'
     this.railShareButton.classList.toggle('danger', sharing)
-    this.railShareButton.replaceChildren(
-      icon(sharing ? 'stop' : 'monitor', 16),
-      h('span', { class: 'truncate grow', text: sharing ? 'Stop sharing' : 'Share your screen' }),
-    )
+    if (this.railShareButton.dataset.sharing !== String(sharing)) {
+      this.railShareButton.dataset.sharing = String(sharing)
+      this.railShareButton.replaceChildren(
+        icon(sharing ? 'stop' : 'monitor', 16),
+        h('span', { class: 'truncate grow', text: sharing ? 'Stop sharing' : 'Share your screen' }),
+      )
+    }
 
-    clear(this.shareList)
-    if (live.length === 0) return
+    const rows: KeyedRow[] = []
     for (const one of live) {
       const eyes = one.you ? this.watchers.size : this.watcherNames(one.id, peers).length
       const channel = this.sharers.get(one.id)
@@ -4781,15 +4800,16 @@ export class SpaceView {
         ],
       )
       item.dataset.share = one.you ? 'self' : 'peer'
-      this.shareList.append(item)
+      rows.push({ key: one.id, el: item })
     }
+    keyed(this.shareList, rows)
   }
 
   private renderStreams(): void {
     const peers = this.peersById()
     const live = this.liveHere(peers)
     this.renderShareList(live, peers)
-    clear(this.streamBar)
+    const rows: KeyedRow[] = []
     this.streamBar.classList.toggle('hidden', live.length === 0)
 
     for (const [id, entry] of this.watched) {
@@ -4799,9 +4819,12 @@ export class SpaceView {
         if (!entry.tag.textContent?.startsWith(whose)) entry.tag.textContent = whose
       }
     }
-    if (live.length === 0) return
+    if (live.length === 0) {
+      keyed(this.streamBar, rows)
+      return
+    }
 
-    this.streamBar.append(h('span', { class: 'eyebrow', text: 'Live' }))
+    rows.push({ key: ':live', el: h('span', { class: 'eyebrow', text: 'Live' }) })
     for (const one of live) {
       const label = one.you
         ? this.watchers.size > 0
@@ -4823,12 +4846,13 @@ export class SpaceView {
         ],
       )
       tab.dataset.watch = one.you ? 'self' : 'peer'
-      this.streamBar.append(tab)
+      rows.push({ key: one.id, el: tab })
     }
 
     if (this.watched.size > 0) {
-      this.streamBar.append(
-        h('button', {
+      rows.push({
+        key: ':close',
+        el: h('button', {
           class: 'stream-tab quiet',
           text: 'Close',
           title: 'Stop watching. Escape does the same.',
@@ -4839,8 +4863,9 @@ export class SpaceView {
             },
           },
         }),
-      )
+      })
     }
+    keyed(this.streamBar, rows)
   }
 
   private stopWatching(): void {

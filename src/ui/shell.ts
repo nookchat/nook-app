@@ -1,5 +1,5 @@
 import type { RoomNote } from '../store/notes'
-import { h } from './dom'
+import { h, keyed } from './dom'
 
 export interface Navigation {
   home(): void
@@ -20,7 +20,7 @@ export interface WindowChrome {
   readonly status: HTMLElement
   /** The window's title, and the picture before it in the desktop app: a space's face, or somebody's. */
   setTitle(text: string, face?: TitleFace): void
-  setStatus(panels: (HTMLElement | string)[]): void
+  setStatus(panels: string[]): void
 }
 
 /**
@@ -49,9 +49,10 @@ export function createWindow(title: string, nav: Navigation): WindowChrome {
   const status = h('div', { class: 'status-bar' })
   const root = h('div', { class: 'app-shell' }, [body])
 
-  const setStatus = (panels: (HTMLElement | string)[]): void => {
-    status.replaceChildren(
-      ...panels.map((panel, i) => h('div', { class: `status-cell${i === 0 ? ' grow' : ''}` }, [panel])),
+  const setStatus = (panels: string[]): void => {
+    keyed(
+      status,
+      panels.map((panel, i) => ({ key: String(i), el: h('div', { class: `status-cell${i === 0 ? ' grow' : ''}` }, [panel]) })),
     )
   }
 

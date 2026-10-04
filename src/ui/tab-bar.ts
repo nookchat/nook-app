@@ -86,7 +86,7 @@ export function tabBar(current: Tab, go: TabGo): HTMLElement {
       mentions += u.mentions
     }
     for (const [el, n] of [[homeCount, direct], [spaceCount, mentions]] as const) {
-      el.textContent = countText(n)
+      if (el.textContent !== countText(n)) el.textContent = countText(n)
       el.classList.toggle('hidden', n === 0)
     }
   }

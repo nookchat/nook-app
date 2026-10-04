@@ -682,7 +682,7 @@ export class ChatPanel {
   }
 
   setTitle(text: string): void {
-    this.title.textContent = text
+    if (this.title.textContent !== text) this.title.textContent = text
   }
 
   /** Blurs the pictures and videos until each message's are clicked. */

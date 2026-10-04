@@ -62,6 +62,61 @@ export function clear(node: Element): void {
   node.replaceChildren()
 }
 
+/** A row for `keyed`: what names it in its list, the row as it would be drawn now, and what its listeners hold that it does not show. */
+export interface KeyedRow {
+  key: string
+  el: Element
+  also?: string
+}
+
+/** The look of each row `keyed` put in a list: its key and a hash of how it was first drawn. */
+const looks = new WeakMap<Element, { key: string; look: number }>()
+
+/** A 53-bit hash of a string: enough that two looks never pass for one. */
+function hash(text: string): number {
+  let a = 0xdeadbeef
+  let b = 0x41c6ce57
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i)
+    a = Math.imul(a ^ c, 2654435761)
+    b = Math.imul(b ^ c, 1597334677)
+  }
+  a = Math.imul(a ^ (a >>> 16), 2246822507) ^ Math.imul(b ^ (b >>> 13), 3266489909)
+  b = Math.imul(b ^ (b >>> 16), 2246822507) ^ Math.imul(a ^ (a >>> 13), 3266489909)
+  return 4294967296 * (2097151 & b) + (a >>> 0)
+}
+
+/**
+ * Puts these rows in the list in this order, and keeps each row already there that has the same
+ * key and the same look. Only a row that changed goes in anew, so the row under the pointer keeps
+ * its hover, its focus and whatever it is doing. Returns the rows now in the list, kept or new.
+ */
+export function keyed(list: Element, rows: KeyedRow[]): Element[] {
+  const old = new Map<string, Element>()
+  for (const child of [...list.children]) {
+    const seen = looks.get(child)
+    if (seen && !old.has(seen.key)) old.set(seen.key, child)
+    else child.remove()
+  }
+  const out = rows.map((row) => {
+    const look = hash(`${row.also ?? ''}\n${row.el.outerHTML}`)
+    const was = old.get(row.key)
+    if (was && looks.get(was)?.look === look) {
+      old.delete(row.key)
+      return was
+    }
+    looks.set(row.el, { key: row.key, look })
+    return row.el
+  })
+  // Gone or changed: out first, so the rows that stay need not move past them.
+  for (const gone of old.values()) gone.remove()
+  out.forEach((el, i) => {
+    const there = list.children[i]
+    if (there !== el) list.insertBefore(el, there ?? null)
+  })
+  return out
+}
+
 export function fmtKbps(kbps: number): string {
   if (kbps <= 0) return '0'
   return kbps >= 1000 ? `${(kbps / 1000).toFixed(1)} Mb/s` : `${Math.round(kbps)} kb/s`
