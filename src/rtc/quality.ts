@@ -210,7 +210,11 @@ function codecOrder(mode: Mode, choice: CodecChoice, hardware: string[]): string
 
 const HELPER_CODECS = new Set(['rtx', 'red', 'ulpfec', 'flexfec-03'])
 
+let codecs: string[] | null = null
+
+/** Asked of the browser once a page: the asking is slow, and the answer does not change. */
 export function availableCodecs(): string[] {
+  if (codecs) return [...codecs]
   const caps = typeof RTCRtpSender !== 'undefined' ? RTCRtpSender.getCapabilities?.('video') : null
   if (!caps) return []
   const names = new Set<string>()
@@ -218,7 +222,8 @@ export function availableCodecs(): string[] {
     const short = c.mimeType.split('/')[1]?.toLowerCase()
     if (short && !HELPER_CODECS.has(short)) names.add(short.toUpperCase())
   }
-  return [...names]
+  codecs = [...names]
+  return [...codecs]
 }
 
 export function preferCodecs(

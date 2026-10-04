@@ -8,6 +8,8 @@ const REACT = '.chat-row button[aria-label="Add reaction"]'
 
 // The action bar is faded until hovered, so a test asks for it the way a keyboard does.
 async function pressAction(page, selector) {
+  // A row makes its actions when the pointer first comes to it.
+  await page.locator('.chat-row').first().hover()
   await page.$eval(selector, (el) => el.focus())
   await page.click(selector)
 }

@@ -4105,8 +4105,9 @@ input[type="text"].space-search {
   padding-top: 4px;
 }
 
-/* A message that ends in reactions, a card, a picture or a poll gets room under it, so the next one does not crowd it. */
-.chat-row:has(.chat-reacts, .link-card:not(.hidden), .att-block, .poll, .chat-thread, .embed-card) {
+/* A message that ends in reactions, a card, a picture or a poll gets room under it, so the next one does not crowd it.
+   The row is marked when it is drawn: a :has() here searched every row on every change to the log. */
+.chat-row.roomy {
   padding-bottom: 10px;
 }
 
@@ -4164,17 +4165,17 @@ input[type="text"].space-search {
 }
 
 /* A message that names you: a soft ember wash and an ember bar at the left. */
-.chat-row:has(.calls-me) {
+.chat-row.calls-me {
   background: color-mix(in srgb, var(--accent-soft) 70%, transparent);
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
-.chat-row:has(.calls-me):hover {
+.chat-row.calls-me:hover {
   background: var(--accent-soft);
 }
 
 /* The message you are replying to, or editing, lit while you write. */
-.chat-row:has(.chat-line.pending) {
+.chat-row.pending {
   background: color-mix(in srgb, var(--brand) 10%, transparent);
   box-shadow: inset 2px 0 0 var(--brand);
 }

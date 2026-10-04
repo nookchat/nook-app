@@ -176,6 +176,32 @@ function actionDivider(): HTMLElement {
   return h('span', { class: 'chat-actions-divider' })
 }
 
+/** Whether Tab has been pressed on this page, and the panels to tell when it is. */
+let keysMoved = false
+const waitingForKeys = new Set<WeakRef<ChatPanel>>()
+
+/**
+ * Makes every row's actions once Tab is pressed. The key is seen before the focus moves, so the
+ * buttons are there for it. A panel never told is let go: the set holds it weakly.
+ */
+function whenKeysMove(panel: ChatPanel): void {
+  if (keysMoved) {
+    panel.everyRowActionsNow()
+    return
+  }
+  if (waitingForKeys.size === 0) {
+    const onKey = (ev: KeyboardEvent): void => {
+      if (ev.key !== 'Tab') return
+      keysMoved = true
+      document.removeEventListener('keydown', onKey, true)
+      for (const ref of waitingForKeys) ref.deref()?.everyRowActionsNow()
+      waitingForKeys.clear()
+    }
+    document.addEventListener('keydown', onKey, true)
+  }
+  waitingForKeys.add(new WeakRef(panel))
+}
+
 /** Names a message action in the tip over its button (src/ui/tip.ts). */
 function withTip(button: HTMLElement, label: string): HTMLElement {
   button.dataset.tip = label
@@ -226,6 +252,8 @@ type ColourOf = (key: string) => string
 const WINDOW_STEP = 120
 /** What a channel marked NSFW blurs: pictures, videos, GIFs, drawings, and the pictures in link cards and embeds. */
 const VEILED = '.att-tile, .chat-image-wrap, .link-card-frame, .link-card-side, .embed-image'
+/** What gives a message room under it. A link's card shows later, and marks its row then. */
+const ROOMY = '.chat-reacts, .att-block, .poll, .chat-thread, .embed-card'
 const WINDOW_MAX = 600
 
 /** A card of who reacted names this many, then how many more. */
@@ -317,6 +345,22 @@ export class ChatPanel {
   private windowSize = WINDOW_STEP
   private windowKey: string | null = null
   private lastFeed: { messages: Message[]; joins: Join[] } | null = null
+  /** Work that waits until its row comes near the screen, and what watches for that. */
+  private nearWork = new WeakMap<Element, () => void>()
+  /**
+   * Each row's actions, made the first time the pointer or the focus comes to it: a bar of
+   * buttons in every row was most of the elements in the log. Once Tab is pressed, every row
+   * has them, so the keys still reach each one, from either end.
+   */
+  private actionsFor = new WeakMap<Element, () => void>()
+  private everyRowActions = false
+
+  /** Tab was pressed: every row gets its actions now, and every row drawn after. */
+  everyRowActionsNow(): void {
+    this.everyRowActions = true
+    for (const row of this.log.children) this.actionsFor.get(row)?.()
+  }
+  private nearWatch: IntersectionObserver | null = null
   private hiddenAbove = 0
   private intro: Intro | null = null
   private readonly rows = new Map<string, { el: HTMLElement; sig: string }>()
@@ -551,6 +595,7 @@ export class ChatPanel {
       line.classList.add('shown')
     }
     this.log.addEventListener('click', reveal, true)
+    whenKeysMove(this)
     this.log.addEventListener('keydown', reveal, true)
     this.log.addEventListener('loadedmetadata', () => this.followMedia(), true)
     // The log, and every row in it: a row that grows (a picture, a link card, an embed) keeps
@@ -1598,14 +1643,15 @@ export class ChatPanel {
     })
     line.dataset.id = m.id
     if (this.shown.has(m.id)) line.classList.add('shown')
-    if (this.replyTo?.id === m.id || this.editing?.id === m.id) line.classList.add('pending')
+    const pending = this.replyTo?.id === m.id || this.editing?.id === m.id
+    if (pending) line.classList.add('pending')
     // Drawn again while lit: the light carries on from where it had got to.
     const since = this.found?.id === m.id ? Date.now() - this.found.at : Infinity
     if (since < 5000) {
       line.classList.add('found')
       line.style.animationDelay = `-${since}ms`
     }
-    const row = h('div', { class: `chat-row${mine ? ' mine' : ''}` }, [line])
+    const row = h('div', { class: `chat-row${mine ? ' mine' : ''}${callsMe ? ' calls-me' : ''}` }, [line])
     onContextMenu(line, (ev) => {
       const person = (ev.target as Element).closest('.chat-name, .avatar')
       const about = person && this.personMenu ? this.personMenu(m.author) : []
@@ -1731,7 +1777,17 @@ export class ChatPanel {
       line.append(reacts)
     }
 
-    line.append(this.rowActions(m, mine, who))
+    const actions = (): void => {
+      if (this.actionsFor.get(row) !== actions) return
+      this.actionsFor.delete(row)
+      line.append(this.rowActions(m, mine, who))
+    }
+    this.actionsFor.set(row, actions)
+    row.addEventListener('pointerenter', actions, { once: true })
+    row.addEventListener('focusin', actions, { once: true })
+    if (this.everyRowActions) actions()
+    if (pending) row.classList.add('pending')
+    if (line.querySelector(ROOMY)) row.classList.add('roomy')
     return row
   }
 
@@ -1875,6 +1931,31 @@ export class ChatPanel {
     if (!link || pictures.includes(link)) return
     const box = h('div', { class: 'link-card hidden' })
     line.append(box)
+    // Asked for only near the screen: a long channel of links asks for none it does not show.
+    this.whenNear(line.parentElement ?? line, () => this.fillPreview(line, box, link))
+  }
+
+  /** Runs the work once the row is within a few screens of the log's view. */
+  private whenNear(el: Element, work: () => void): void {
+    this.nearWatch ??= new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting && entry.target.isConnected) continue
+          this.nearWatch?.unobserve(entry.target)
+          const run = this.nearWork.get(entry.target)
+          this.nearWork.delete(entry.target)
+          // A row taken out of the log before it came near does nothing.
+          if (entry.target.isConnected) run?.()
+        }
+      },
+      { root: this.log, rootMargin: '1200px 0px' },
+    )
+    this.nearWork.set(el, work)
+    this.nearWatch.observe(el)
+  }
+
+  private fillPreview(line: HTMLElement, box: HTMLElement, link: string): void {
+    if (!this.previewFor) return
     void this.previewFor(link)
       .then((p) => {
         if (!p || (!p.title && !p.description && !p.image)) return
@@ -1937,6 +2018,7 @@ export class ChatPanel {
           box.append(frame)
         }
         box.classList.remove('hidden')
+        line.parentElement?.classList.add('roomy')
       })
       .catch(() => undefined)
   }
@@ -2338,9 +2420,11 @@ export class ChatPanel {
 
   /** Lights the message you reply to, or edit, in the chat. */
   private markPending(id: string | null): void {
-    for (const lit of this.log.querySelectorAll('.chat-line.pending')) lit.classList.remove('pending')
+    for (const lit of this.log.querySelectorAll('.pending')) lit.classList.remove('pending')
     if (!id) return
-    this.log.querySelector(`.chat-line[data-id="${CSS.escape(id)}"]`)?.classList.add('pending')
+    const line = this.log.querySelector(`.chat-line[data-id="${CSS.escape(id)}"]`)
+    line?.classList.add('pending')
+    line?.parentElement?.classList.add('pending')
   }
 
   private cancelPending(): void {

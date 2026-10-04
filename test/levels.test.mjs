@@ -64,6 +64,8 @@ try {
   check('what people write is 15 pixels, as the brand sets it', said[1]?.size === '15px', said[1]?.size)
 
   await bob.waitForFunction(() => document.querySelectorAll('.chat-line').length >= 2, null, { timeout: 20_000 })
+  // A row makes its actions when the pointer first comes to it.
+  await bob.locator('.chat-row').first().hover()
   const first = bob.locator('.chat-row').first().locator('button[aria-label="Reply"]')
   await first.evaluate((el) => el.focus())
   await first.click()
@@ -73,6 +75,7 @@ try {
 
   const PICTURE = 'https://upload.wikimedia.org/wikipedia/commons/a/a7/Camponotus_flavomarginatus_ant.jpg'
   await say(alice, PICTURE)
+  await alice.locator('.chat-row').last().hover()
   const toPicture = alice.locator('.chat-row').last().locator('button[aria-label="Reply"]')
   await toPicture.evaluate((el) => el.focus())
   await toPicture.click()
@@ -168,6 +171,7 @@ try {
     .then((el) => el.evaluate((e) => getComputedStyle(e).color), () => '')
   check('a tag of Bob is in the colour of his level', tagColour === TEAL, tagColour)
 
+  await alice.locator('.chat-row:has(.chat-name:text-is("Bob"))').last().hover()
   const toBob = alice.locator('.chat-row:has(.chat-name:text-is("Bob"))').last().locator('button[aria-label="Reply"]')
   await toBob.evaluate((el) => el.focus())
   await toBob.click()
@@ -177,6 +181,7 @@ try {
   check('the name above the box, when you reply to Bob, is in the colour of his level', replyColour === TEAL, replyColour)
   await alice.keyboard.press('Escape')
 
+  await bob.locator('.chat-row').first().hover()
   const pin = await bob.$('.chat-row button[aria-label="Pin"], .chat-row button[aria-label="Unpin"]')
   check('Bob can pin now', pin !== null)
   await openSettings(bob)

@@ -32,6 +32,8 @@ const texts = (page) =>
 
 // The action bar is faded until hovered, so reach it the way a keyboard does.
 async function pressAction(page, label, index = 0) {
+  // A row makes its actions when the pointer first comes to it.
+  await page.locator('.chat-row').nth(index).hover()
   const button = page.locator('.chat-row').nth(index).locator(`button[aria-label="${label}"]`)
   await button.evaluate((el) => el.focus())
   await button.click()

@@ -14,6 +14,7 @@ import { sql, startServer } from './pg.mjs'
  *   npm run perf                      this tree, against test/perf-baseline.json
  *   npm run perf -- --against main    this tree and main, built and run turn about
  *   npm run perf -- --save            this tree's numbers become the baseline
+ *   npm run perf -- --profile         where the time goes: a CPU profile of each scene, unminified
  *   --rounds 5  --messages 2000  --cpu 4  --limit 10 (per cent a number may grow by)
  *
  * It ends with 1 when something is slower by more than the limit, so it can stand in a check.
@@ -34,6 +35,8 @@ const MESSAGES = Number(option('messages', 2000))
 const CPU = Number(option('cpu', 4))
 const LIMIT = Number(option('limit', 10)) / 100
 const SAVE = args.includes('--save')
+/** One round, unminified, with the functions that took the most time in each scene. Saves no numbers. */
+const PROFILE = args.includes('--profile')
 
 const SERVER_PORT = 8797
 const SEED_PORT = 5197
@@ -83,7 +86,8 @@ function vite(cwd, rest, env = {}) {
 }
 
 function build(src, out, server) {
-  execFileSync('npx', ['vite', 'build', '--outDir', out, '--emptyOutDir', '--logLevel', 'error'], {
+  const minify = PROFILE ? ['--minify', 'false'] : []
+  execFileSync('npx', ['vite', 'build', '--outDir', out, '--emptyOutDir', '--logLevel', 'error', ...minify], {
     cwd: src,
     env: { ...process.env, VITE_NOOK_SERVER: server },
     stdio: ['ignore', 'ignore', 'inherit'],
@@ -165,6 +169,69 @@ const MARKS = (want) => `(() => {
   requestAnimationFrame(look)
 })()`
 
+/** Samples the processor through a scene, saves the profile, and prints where its time went. */
+function profiler(cdp) {
+  const split = async () => {
+    const { metrics } = await cdp.send('Performance.getMetrics')
+    const of = (name) => (metrics.find((m) => m.name === name)?.value ?? 0) * 1000
+    return { script: of('ScriptDuration'), style: of('RecalcStyleDuration'), layout: of('LayoutDuration') }
+  }
+  let before = null
+  let traced = []
+  cdp.on('Tracing.dataCollected', ({ value }) => traced.push(...value))
+  return {
+    async start() {
+      traced = []
+      // The time each CSS selector takes to match, as the Selector stats of DevTools show it.
+      await cdp.send('Tracing.start', { categories: 'disabled-by-default-blink.debug', transferMode: 'ReportEvents' })
+      before = await split()
+      await cdp.send('Profiler.enable')
+      await cdp.send('Profiler.setSamplingInterval', { interval: 200 })
+      await cdp.send('Profiler.start')
+    },
+    async stop(scene) {
+      const { profile } = await cdp.send('Profiler.stop')
+      const after = await split()
+      const done = new Promise((resolve) => cdp.once('Tracing.tracingComplete', resolve))
+      await cdp.send('Tracing.end')
+      await done
+      const selectors = new Map()
+      for (const event of traced) {
+        for (const t of event.args?.selector_stats?.selector_timings ?? []) {
+          const held = selectors.get(t.selector) ?? { us: 0, tries: 0, matches: 0 }
+          held.us += t['elapsed (us)'] ?? 0
+          held.tries += t.match_attempts ?? 0
+          held.matches += t.match_count ?? 0
+          selectors.set(t.selector, held)
+        }
+      }
+      const file = join(OUT, `${scene.replaceAll(' ', '-')}.cpuprofile`)
+      writeFileSync(file, JSON.stringify(profile))
+      const byId = new Map(profile.nodes.map((n) => [n.id, n]))
+      const self = new Map()
+      let total = 0
+      profile.samples.forEach((id, i) => {
+        const ms = (profile.timeDeltas[i] ?? 0) / 1000
+        const { functionName, url, lineNumber } = byId.get(id).callFrame
+        const name = `${functionName || '(anonymous)'}  ${url.split('/').pop()}:${lineNumber + 1}`
+        if (functionName === '(idle)' || functionName === '(program)') return
+        total += ms
+        self.set(name, (self.get(name) ?? 0) + ms)
+      })
+      console.log(`\n${scene}: ${total.toFixed(0)} ms busy (slowed ${CPU}x), saved in ${file.slice(ROOT.length)}`)
+      const part = (key) => `${(after[key] - before[key]).toFixed(0)} ms ${key}`
+      console.log(`  ${part('script')}, ${part('style')}, ${part('layout')}`)
+      for (const [name, ms] of [...self].sort((a, b) => b[1] - a[1]).slice(0, 15)) {
+        console.log(`  ${ms.toFixed(1).padStart(7)} ms  ${name}`)
+      }
+      if (selectors.size) console.log('  slowest CSS selectors:')
+      for (const [selector, t] of [...selectors].sort((a, b) => b[1].us - a[1].us).slice(0, 12)) {
+        console.log(`  ${(t.us / 1000).toFixed(1).padStart(7)} ms  ${String(t.tries).padStart(8)} tries ${String(t.matches).padStart(7)} hits  ${selector}`)
+      }
+    },
+  }
+}
+
 /** One person's visit on one build: every scene once, in a browser of their own. */
 async function visit(browser, origin, hash) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
@@ -184,6 +251,7 @@ async function visit(browser, origin, hash) {
     requestAnimationFrame(next)
   }), n)
   const out = {}
+  const profile = PROFILE ? profiler(cdp) : null
   try {
     await page.goto(origin)
     await page.waitForFunction(() => window.__marks.home, null, { timeout: 60_000 })
@@ -193,15 +261,18 @@ async function visit(browser, origin, hash) {
     )
 
     await page.goto('about:blank')
+    await profile?.start()
     await page.goto(`${origin}${hash}`)
     await page.waitForFunction(() => window.__marks.chat, null, { timeout: 120_000 })
     out.openCold = await page.evaluate(() => window.__marks.chat)
+    await profile?.stop('open a big space')
     await wait(1000)
     await page.reload()
     await page.waitForFunction(() => window.__marks.chat, null, { timeout: 120_000 })
     out.openWarm = await page.evaluate(() => window.__marks.chat)
     await wait(1500)
 
+    await profile?.start()
     const switches = []
     for (let i = 0; i < 6; i++) {
       const name = i % 2 === 0 ? 'other' : 'general'
@@ -221,6 +292,7 @@ async function visit(browser, origin, hash) {
       )
     }
     out.switch = median(switches)
+    await profile?.stop('switch channel')
 
     // Sent in a channel of their own, so #general ends with the same message on every visit.
     const open = (to) =>
@@ -254,6 +326,7 @@ async function visit(browser, origin, hash) {
 
     // The side bars, drawn again as they are on every change in the space.
     const DRAWS = 60
+    await profile?.start()
     const before = await busy()
     out.drawMade = await page.evaluate(async (n) => {
       let made = 0
@@ -269,6 +342,7 @@ async function visit(browser, origin, hash) {
       return made / n
     }, DRAWS)
     out.drawCpu = ((await busy()) - before) / DRAWS
+    await profile?.stop('side bar draws')
 
     // Up through the history, a screen at a time, as fast as frames come.
     await page.evaluate(() => {
@@ -276,6 +350,7 @@ async function visit(browser, origin, hash) {
       log.scrollTop = log.scrollHeight
     })
     await frames(10)
+    await profile?.start()
     const scrolled = await page.evaluate(async () => {
       const log = document.querySelector('.chat-log')
       let last = performance.now()
@@ -292,6 +367,7 @@ async function visit(browser, origin, hash) {
     })
     out.scroll = scrolled.total
     out.worstFrame = scrolled.worst
+    await profile?.stop('scroll up')
 
     await cdp.send('HeapProfiler.collectGarbage')
     out.heap = (await cdp.send('Runtime.getHeapUsage')).usedSize / 1e6
@@ -372,53 +448,58 @@ try {
     // Turn about, and the other way round each time, so a machine that slows down slows both.
     const order = round % 2 ? [...builds].reverse() : builds
     for (const b of order) {
+      if (PROFILE && round < ROUNDS) continue
       const run = await visit(browser, b.origin, hash)
       if (round > 0) b.runs.push(run)
     }
-    console.log(round === 0 ? 'warmed up' : `round ${round} of ${ROUNDS}`)
+    if (!PROFILE) console.log(round === 0 ? 'warmed up' : `round ${round} of ${ROUNDS}`)
   }
 
-  const summary = (b) => {
-    const out = { bundle: b.bundle }
-    for (const m of METRICS) if (m.key !== 'bundle') out[m.key] = median(b.runs.map((r) => r[m.key]))
-    for (const key of Object.keys(out)) out[key] = Number(out[key].toFixed(2))
-    return out
-  }
-  const now = summary(builds[0])
-  const record = {
-    commit: git('rev-parse', 'HEAD'),
-    changed: git('status', '--porcelain', '--untracked-files=no') !== '',
-    at: new Date().toISOString(),
-    machine: cpus()[0]?.model ?? 'unknown',
-    cpu: CPU,
-    messages: MESSAGES,
-    rounds: ROUNDS,
-    metrics: now,
-  }
-  appendFileSync(join(OUT, 'history.jsonl'), `${JSON.stringify(record)}\n`)
-
-  console.log('')
-  console.log(`processor slowed ${CPU}x, ${MESSAGES} messages, median of ${ROUNDS} rounds`)
-  let worse = 0
-  if (AGAINST) {
-    worse = compare(now, summary(builds[1]), builds[1].label)
-  } else if (existsSync(BASELINE)) {
-    const base = JSON.parse(readFileSync(BASELINE, 'utf8'))
-    if (base.machine !== record.machine || base.cpu !== CPU || base.messages !== MESSAGES) {
-      console.log(`The baseline was taken on ${base.machine}, ${base.cpu}x, ${base.messages} messages: the times are not alike.`)
-    }
-    worse = compare(now, base.metrics, `baseline ${base.commit.slice(0, 8)}`)
+  if (PROFILE) {
+    console.log('\nThe numbers from a profiled, unminified build are not kept.')
   } else {
-    compare(now, null, 'baseline')
-    console.log('There is no baseline yet. Make one with --save.')
-  }
+    const summary = (b) => {
+      const out = { bundle: b.bundle }
+      for (const m of METRICS) if (m.key !== 'bundle') out[m.key] = median(b.runs.map((r) => r[m.key]))
+      for (const key of Object.keys(out)) out[key] = Number(out[key].toFixed(2))
+      return out
+    }
+    const now = summary(builds[0])
+    const record = {
+      commit: git('rev-parse', 'HEAD'),
+      changed: git('status', '--porcelain', '--untracked-files=no') !== '',
+      at: new Date().toISOString(),
+      machine: cpus()[0]?.model ?? 'unknown',
+      cpu: CPU,
+      messages: MESSAGES,
+      rounds: ROUNDS,
+      metrics: now,
+    }
+    appendFileSync(join(OUT, 'history.jsonl'), `${JSON.stringify(record)}\n`)
 
-  if (SAVE) {
-    writeFileSync(BASELINE, `${JSON.stringify(record, null, 2)}\n`)
-    console.log(`\nSaved as the baseline in test/perf-baseline.json.`)
-  } else if (worse) {
-    console.log(`\n${worse} slower by more than ${LIMIT * 100}%. Run it again to be sure: a busy machine is slower too.`)
-    failed = true
+    console.log('')
+    console.log(`processor slowed ${CPU}x, ${MESSAGES} messages, median of ${ROUNDS} rounds`)
+    let worse = 0
+    if (AGAINST) {
+      worse = compare(now, summary(builds[1]), builds[1].label)
+    } else if (existsSync(BASELINE)) {
+      const base = JSON.parse(readFileSync(BASELINE, 'utf8'))
+      if (base.machine !== record.machine || base.cpu !== CPU || base.messages !== MESSAGES) {
+        console.log(`The baseline was taken on ${base.machine}, ${base.cpu}x, ${base.messages} messages: the times are not alike.`)
+      }
+      worse = compare(now, base.metrics, `baseline ${base.commit.slice(0, 8)}`)
+    } else {
+      compare(now, null, 'baseline')
+      console.log('There is no baseline yet. Make one with --save.')
+    }
+
+    if (SAVE) {
+      writeFileSync(BASELINE, `${JSON.stringify(record, null, 2)}\n`)
+      console.log(`\nSaved as the baseline in test/perf-baseline.json.`)
+    } else if (worse) {
+      console.log(`\n${worse} slower by more than ${LIMIT * 100}%. Run it again to be sure: a busy machine is slower too.`)
+      failed = true
+    }
   }
 } catch (err) {
   console.log(`The run stopped: ${err?.stack ?? err}`)

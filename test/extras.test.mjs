@@ -155,6 +155,7 @@ try {
     { timeout: 30_000 },
   )
   const bobsRow = alice.locator('.chat-row', { hasText: 'regrettable' })
+  await bobsRow.hover()
   const remove = bobsRow.locator('button[aria-label="Delete this message"]')
   await remove.evaluate((el) => el.focus())
   alice.once('dialog', (d) => d.accept())

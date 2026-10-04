@@ -17,6 +17,8 @@ async function say(page, text) {
 }
 
 async function pressAction(page, label, index = 0) {
+  // A row makes its actions when the pointer first comes to it.
+  await page.locator('.chat-row').nth(index).hover()
   const button = page.locator('.chat-row').nth(index).locator(`button[aria-label="${label}"]`)
   await button.evaluate((el) => el.focus())
   await button.click()
@@ -210,6 +212,8 @@ try {
   check('both rails say what they are', roles.rails.every(Boolean), JSON.stringify(roles.rails))
   check('every button has a name', roles.nameless === 0, `${roles.nameless} without one`)
 
+  // Tab tells the log the keys are in use: from then on every row has its actions.
+  await page.keyboard.press('Tab')
   const reachable = await page.evaluate(async () => {
     const button = document.querySelector('.chat-row button[aria-label="Reply"]')
     button.focus()
