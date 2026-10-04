@@ -1,0 +1,24 @@
+{
+  "commit": "0ea2bb68c3a33b29a7747e0617b5b3a58def2888",
+  "changed": false,
+  "at": "2026-10-04T20:10:54.792Z",
+  "machine": "Apple M4 Pro",
+  "cpu": 4,
+  "messages": 2000,
+  "rounds": 5,
+  "metrics": {
+    "bundle": 3391.41,
+    "start": 229.7,
+    "startJs": 215.96,
+    "openCold": 783.1,
+    "openWarm": 761.3,
+    "switch": 101.5,
+    "send": 33.5,
+    "drawCpu": 3.73,
+    "drawMade": 0,
+    "scroll": 1498.7,
+    "worstFrame": 213.2,
+    "heap": 8.56,
+    "nodes": 20041
+  }
+}

@@ -14,6 +14,7 @@
     "test": "node test/run.mjs",
     "speed": "node test/speed.mjs",
     "bench": "node test/server-bench.mjs",
+    "perf": "node test/perf.mjs",
     "file-speed": "node test/file-speed.mjs",
     "tour": "node test/tour.mjs",
     "desktop": "npm --prefix desktop run dev",

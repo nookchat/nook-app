@@ -454,6 +454,27 @@ Measured with `node test/speed.mjs` on a space with 3000 messages:
 Every signature is checked on a pool of Web Workers, so the page never waits
 on it. A channel draws its newest few screens, and a scroll up draws more.
 
+`npm run perf` builds the page as it ships, fills a space with 2000 messages,
+and times what people do in it with the processor slowed four times: Home, the
+first and a second open of the space, a channel switch, a sent message, the side
+bars drawn again, and a scroll up the history. It counts the JS heap, the
+elements on the page and the size of the build too. Each number is the median of
+five rounds, held up against `test/perf-baseline.json`, and the run ends with 1
+when one is slower by more than 10%.
+
+Before a change that could make the page slower, compare it with the last
+commit. The two builds run turn about in the same run, so a busy machine slows
+both:
+
+```
+npm run perf -- --against HEAD   # this tree against the last commit
+npm run perf -- --against main   # or any branch, tag or commit
+npm run perf -- --save           # this tree becomes the baseline; commit the file
+```
+
+When the side bars kept their rows ([0ea2bb6](https://github.com/nookchat/nook-app/commit/0ea2bb6)), each draw took 3.1 ms
+of processor time in place of 17.3 ms, and made no elements anew in place of 31.
+
 `node test/server-bench.mjs` on a space of 50,000 lines:
 
 | What | Time |
@@ -488,6 +509,7 @@ npm run stack        # Postgres in Docker, a server on 8787, and the page on 517
 CHECKS=all npm test  # every check, against the stack (npm test alone is off for now)
 npm test chat files  # only these checks
 npm run speed        # how long opening, switching and sending take
+npm run perf         # the page's speed and size against test/perf-baseline.json
 npm run bench        # how fast the server reads, writes and passes on
 npm run file-speed   # how fast a video goes up, comes down, plays and jumps
 npm run tour         # screenshots of every screen, in test-output/tour/
@@ -568,6 +590,7 @@ test/
   pg.mjs              a fresh database and a server, for the checks that start their own
   *.test.mjs          one check each: e2e, chat, files, voice, cluster, failover, ...
   speed.mjs           how long opening, switching and sending take
+  perf.mjs            the page's speed and size, against a baseline or another commit
   server-bench.mjs    how fast the server reads, writes and passes on
   tour.mjs            screenshots of every screen, filled with a conversation
 ```
