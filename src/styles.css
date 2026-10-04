@@ -7563,14 +7563,20 @@ input[type="text"].gif-search {
   background: var(--media-chip-hover);
 }
 
-/* In a channel marked NSFW, every picture in a message is blurred until one of them is clicked. */
-.chat-log.nsfw .chat-line:not(.shown) :is(.att-tile, .chat-image-wrap, .link-card-frame, .link-card-side) {
+/* In a channel marked NSFW, every picture in a message is blurred until one of them is clicked.
+   Each selector ends in its own class, not in :is(): one that ends in :is() is tried on every
+   element on the page. */
+.chat-log.nsfw .chat-line:not(.shown) .att-tile,
+.chat-log.nsfw .chat-line:not(.shown) .chat-image-wrap,
+.chat-log.nsfw .chat-line:not(.shown) .link-card-frame,
+.chat-log.nsfw .chat-line:not(.shown) .link-card-side {
   position: relative;
   overflow: hidden;
   cursor: pointer;
 }
 
-.chat-log.nsfw .chat-line:not(.shown) :is(.link-card-frame, .link-card-side) {
+.chat-log.nsfw .chat-line:not(.shown) .link-card-frame,
+.chat-log.nsfw .chat-line:not(.shown) .link-card-side {
   border-radius: 6px;
 }
 
@@ -7584,11 +7590,15 @@ input[type="text"].gif-search {
   cursor: pointer;
 }
 
-.chat-log.nsfw .chat-line:not(.shown) :is(.att-play, .att-meta, .link-card-play) {
+.chat-log.nsfw .chat-line:not(.shown) .att-play,
+.chat-log.nsfw .chat-line:not(.shown) .att-meta,
+.chat-log.nsfw .chat-line:not(.shown) .link-card-play {
   visibility: hidden;
 }
 
-.chat-log.nsfw .chat-line:not(.shown) :is(.att-tile:not(.failed), .chat-image-wrap, .link-card-frame)::after {
+.chat-log.nsfw .chat-line:not(.shown) .att-tile:not(.failed)::after,
+.chat-log.nsfw .chat-line:not(.shown) .chat-image-wrap::after,
+.chat-log.nsfw .chat-line:not(.shown) .link-card-frame::after {
   content: "NSFW · Click to show";
   position: absolute;
   left: 50%;
@@ -7606,7 +7616,9 @@ input[type="text"].gif-search {
 }
 
 @media (hover: none) {
-  .chat-log.nsfw .chat-line:not(.shown) :is(.att-tile:not(.failed), .chat-image-wrap, .link-card-frame)::after {
+  .chat-log.nsfw .chat-line:not(.shown) .att-tile:not(.failed)::after,
+  .chat-log.nsfw .chat-line:not(.shown) .chat-image-wrap::after,
+  .chat-log.nsfw .chat-line:not(.shown) .link-card-frame::after {
     content: "NSFW · Tap to show";
   }
 }

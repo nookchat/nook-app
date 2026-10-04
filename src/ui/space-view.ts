@@ -537,7 +537,10 @@ export class SpaceView {
     for (const env of space.presence.values()) void this.onSignal(env)
 
     setLinkSecret(this.secret, this.locked, this.server)
-    void probeHardwareEncoders(availableCodecs()).then((probe) => (this.gpu = probe))
+    // Wanted only to share a screen: asked once the space is open, not while it opens.
+    const probe = (): void => void probeHardwareEncoders(availableCodecs()).then((found) => (this.gpu = found))
+    if ('requestIdleCallback' in window) requestIdleCallback(probe, { timeout: 3000 })
+    else setTimeout(probe, 1000)
 
     this.timers.push(window.setInterval(() => void this.tick(), STATS_MS))
     this.timers.push(window.setInterval(() => this.tickTimers(), 1000))
