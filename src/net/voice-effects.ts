@@ -1,7 +1,8 @@
 import type { VoiceId } from './mic'
 
-// The file is kept for a week, so the number goes up whenever it changes: an old copy has no `crush`.
-const WORKLET = '/voice-worklet.js?v=2'
+// The file is kept for a week, so the number goes up whenever it changes: an old copy has no `crush`,
+// and one older than 3 never stops.
+const WORKLET = '/voice-worklet.js?v=3'
 
 /** A piece of the audio graph: sound goes in at `input` and comes out of `output`. */
 export interface Effect {
@@ -108,6 +109,8 @@ function parts(ctx: BaseAudioContext) {
     for (const node of nodes) {
       try {
         if (node instanceof OscillatorNode) node.stop()
+        // Taken off the graph it would still run, on the audio thread, until the call ends.
+        if (node instanceof AudioWorkletNode) node.port.postMessage('stop')
         node.disconnect()
       } catch {
         /* it had stopped */

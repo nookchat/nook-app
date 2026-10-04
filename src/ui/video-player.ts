@@ -36,8 +36,12 @@ export interface VideoPlayer {
 }
 
 // A video with controls drawn in the style of the app, in place of the browser's own.
-// knownDuration covers a stream that does not say how long it is.
-export function videoPlayer(label: string, knownDuration = 0): VideoPlayer {
+// knownDuration covers a stream that does not say how long it is. With onSave, the bar has Save.
+export function videoPlayer(
+  label: string,
+  knownDuration = 0,
+  onSave?: (button: HTMLButtonElement) => Promise<void>,
+): VideoPlayer {
   const video = h('video', { class: 'att-player' })
   video.playsInline = true
   video.preload = 'auto'
@@ -77,6 +81,11 @@ export function videoPlayer(label: string, knownDuration = 0): VideoPlayer {
   })
 
   const extras: HTMLElement[] = []
+  if (onSave) {
+    const save: HTMLButtonElement = iconButton('download', 'Save', () => void onSave(save))
+    save.classList.add('vp-save')
+    extras.push(save)
+  }
   if ('pictureInPictureEnabled' in document && document.pictureInPictureEnabled) {
     const pip = iconButton('pip', 'Picture in picture', () => {
       const leave = document.pictureInPictureElement === video

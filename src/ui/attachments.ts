@@ -104,16 +104,60 @@ export function attachmentBlock(files: Attachment[], source: SpaceFiles | null):
   return block
 }
 
+/**
+ * Fetches the whole file and saves it, with how far it has come on the button meanwhile. A second
+ * click while it comes does nothing.
+ */
+async function saveFrom(file: Attachment, source: SpaceFiles, button: HTMLButtonElement): Promise<void> {
+  if (button.disabled) return
+  const face = [...button.childNodes]
+  button.disabled = true
+  button.classList.add('saving')
+  try {
+    const blob = await source.open(file, (done, total) => {
+      if (total) button.textContent = `${Math.min(99, Math.floor((done / total) * 100))}%`
+    })
+    saveFile(blob, file.name)
+  } catch {
+    toast(`Could not save ${file.name}.`, 'warn')
+  } finally {
+    button.replaceChildren(...face)
+    button.disabled = false
+    button.classList.remove('saving')
+  }
+}
+
+/** Save, in the corner of a picture or a video, so it can be kept without opening it first. */
+function cornerSave(file: Attachment, source: SpaceFiles): HTMLButtonElement {
+  const save = h('button', { class: 'att-save icon-only', title: 'Save', ariaLabel: `Save ${file.name}` }, [icon('download', 16)])
+  // Not a click or a key on the tile under it, which would open or play it.
+  save.addEventListener('click', (ev) => {
+    ev.stopPropagation()
+    void saveFrom(file, source, save)
+  })
+  save.addEventListener('keydown', (ev) => ev.stopPropagation())
+  return save
+}
+
 function imageTile(file: Attachment, source: SpaceFiles | null, most: { w: number; h: number }, onOpen: () => void): HTMLElement {
   const size = fit(file, most)
   const img = h('img', { class: 'att-img' })
   img.alt = file.name
   img.decoding = 'async'
-  const tile = h(
-    'button',
-    { class: 'att-tile att-image', title: `${file.name}, ${sizeLabel(file.size)}`, ariaLabel: `Open ${file.name}`, on: { click: onOpen } },
-    [blurredThumb(file), img],
-  )
+  // Not a button, because the Save button sits inside it.
+  const tile = h('div', { class: 'att-tile att-image', title: `${file.name}, ${sizeLabel(file.size)}`, on: { click: onOpen } }, [
+    blurredThumb(file),
+    img,
+    source ? cornerSave(file, source) : null,
+  ])
+  tile.tabIndex = 0
+  tile.setAttribute('role', 'button')
+  tile.setAttribute('aria-label', `Open ${file.name}`)
+  tile.addEventListener('keydown', (ev) => {
+    if (ev.key !== 'Enter' && ev.key !== ' ') return
+    ev.preventDefault()
+    onOpen()
+  })
   tile.style.width = `${size.w}px`
   tile.style.aspectRatio = `${size.w} / ${size.h}`
   img.addEventListener('load', () => tile.classList.add('ready'))
@@ -144,6 +188,7 @@ function videoTile(file: Attachment, source: SpaceFiles | null, most: { w: numbe
       h('span', { text: file.dur ? duration(file.dur) : 'Video' }),
       h('span', { text: sizeLabel(file.size) }),
     ]),
+    source ? cornerSave(file, source) : null,
   ])
   tile.tabIndex = 0
   tile.setAttribute('role', 'button')
@@ -173,7 +218,7 @@ function videoTile(file: Attachment, source: SpaceFiles | null, most: { w: numbe
       // Plays as it arrives when it can; the whole file first when it cannot.
       // The stream counts toward the first part the video needs to start, not the whole file.
       const stream = source.streamUrl(file, shown)
-      const player = videoPlayer(file.name, file.dur ?? 0)
+      const player = videoPlayer(file.name, file.dur ?? 0, (button) => saveFrom(file, source, button))
       const video = player.video
       if (stream) {
         video.src = stream
@@ -224,7 +269,7 @@ function warnIfNoPicture(video: HTMLVideoElement, tile: HTMLElement, file: Attac
     const frames = video.getVideoPlaybackQuality?.().totalVideoFrames ?? 1
     if (video.videoWidth > 0 && frames > 0) return
     const save = h('button', { class: 'small' }, [icon('download', 14), 'Save'])
-    save.addEventListener('click', async () => saveFile(await source.open(file), file.name))
+    save.addEventListener('click', () => void saveFrom(file, source, save))
     tile.append(
       h('div', { class: 'att-cant' }, [
         h('span', { text: 'This browser can play the sound but not the picture of this video.' }),

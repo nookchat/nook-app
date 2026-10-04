@@ -1,10 +1,22 @@
+// A processor that returns true runs for as long as the page does, even with nothing joined to
+// it. So each one listens for 'stop', and then returns false and lets the browser take it down.
+class Stoppable extends AudioWorkletProcessor {
+  constructor() {
+    super()
+    this.running = true
+    this.port.onmessage = (ev) => {
+      if (ev.data === 'stop') this.running = false
+    }
+  }
+}
+
 // Moves the pitch of a voice up or down as it goes by, for the voice changer.
 //
 // The sound is written into a ring of 50 ms. Two readers walk through the ring, half a ring apart,
 // each at the speed the pitch asks for. A reader fades out as it nears the end of the ring and
 // back in at the start, so the jump from one end to the other makes no click. The two fades
 // always add up to one.
-class Pitch extends AudioWorkletProcessor {
+class Pitch extends Stoppable {
   static get parameterDescriptors() {
     return [{ name: 'ratio', defaultValue: 1, minValue: 0.25, maxValue: 4, automationRate: 'k-rate' }]
   }
@@ -29,6 +41,7 @@ class Pitch extends AudioWorkletProcessor {
   }
 
   process(inputs, outputs, parameters) {
+    if (!this.running) return false
     const out = outputs[0][0]
     if (!out) return true
     const input = inputs[0][0]
@@ -51,7 +64,7 @@ class Pitch extends AudioWorkletProcessor {
 registerProcessor('pitch', Pitch)
 
 // Makes a voice sound like an old game: each sample is held for a few, and rounded to a few levels.
-class Crush extends AudioWorkletProcessor {
+class Crush extends Stoppable {
   static get parameterDescriptors() {
     return [
       { name: 'bits', defaultValue: 5, minValue: 1, maxValue: 16, automationRate: 'k-rate' },
@@ -66,6 +79,7 @@ class Crush extends AudioWorkletProcessor {
   }
 
   process(inputs, outputs, parameters) {
+    if (!this.running) return false
     const out = outputs[0][0]
     if (!out) return true
     const input = inputs[0][0]

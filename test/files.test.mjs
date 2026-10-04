@@ -152,6 +152,16 @@ try {
   await wait(1200)
   await shot(bob, 'message')
 
+  // A picture or a video can be saved from the message, without opening it first.
+  await bob.hover('.att-image')
+  await shot(bob, 'save-on-hover')
+  const [pictureDownload] = await Promise.all([
+    bob.waitForEvent('download', { timeout: 20_000 }),
+    bob.click('.att-image button[aria-label="Save screen.webp"]'),
+  ])
+  check('Save on a picture saves it', pictureDownload.suggestedFilename() === 'screen.webp', pictureDownload.suggestedFilename())
+  check('and does not open the viewer', (await bob.$('.viewer')) === null)
+
   await bob.click('.att-image')
   const viewed = await waitFor(
     () =>
@@ -190,6 +200,14 @@ try {
     15_000,
   )
   check('the video shows its first frame before it is played', !!poster)
+  const videoName = await bob.$eval('.att-video', (el) => el.getAttribute('aria-label').replace(/^Play /, ''))
+  await bob.hover('.att-video')
+  const [videoDownload] = await Promise.all([
+    bob.waitForEvent('download', { timeout: 20_000 }),
+    bob.click(`.att-video button[aria-label="Save ${videoName}"]`),
+  ])
+  check('Save on a video saves it', videoDownload.suggestedFilename() === videoName, videoDownload.suggestedFilename())
+  check('and does not play it', (await bob.$('.att-video video')) === null)
   await bob.click('.att-video')
   const playing = await waitFor(
     () =>
@@ -201,6 +219,12 @@ try {
   )
   check('and a click plays it', !!playing, playing ?? 'not playing')
   await shot(bob, 'playing')
+  await bob.hover('.att-video .vp')
+  const [playerDownload] = await Promise.all([
+    bob.waitForEvent('download', { timeout: 20_000 }),
+    bob.click('.att-video .vp-bar button[aria-label="Save"]'),
+  ])
+  check('and the player has Save in its bar too', playerDownload.suggestedFilename() === videoName, playerDownload.suggestedFilename())
 
   const hevc = await alice.evaluate(async () => {
     const { isHevc, reencode } = await import('/src/net/files.ts')
