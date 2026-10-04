@@ -249,6 +249,8 @@ type Row = { key: string; sig: string; make: () => HTMLElement }
 type SuggestKind = 'mention' | 'command' | 'name' | 'emoji'
 type ColourOf = (key: string) => string
 
+/** A channel opens with its newest few screens, and a scroll up draws more, a bigger step at a time. */
+const WINDOW_FIRST = 60
 const WINDOW_STEP = 120
 /** What a channel marked NSFW blurs: pictures, videos, GIFs, drawings, and the pictures in link cards and embeds. */
 const VEILED = '.att-tile, .chat-image-wrap, .link-card-frame, .link-card-side, .embed-image'
@@ -342,7 +344,7 @@ export class ChatPanel {
   private readonly drafts = new Map<string, string>()
   private draftKey = ''
   private olderQueued = false
-  private windowSize = WINDOW_STEP
+  private windowSize = WINDOW_FIRST
   private windowKey: string | null = null
   private lastFeed: { messages: Message[]; joins: Join[] } | null = null
   /** Work that waits until its row comes near the screen, and what watches for that. */
@@ -970,12 +972,26 @@ export class ChatPanel {
     this.olderQueued = true
     requestAnimationFrame(() => {
       this.olderQueued = false
-      if (!this.lastFeed || this.hiddenAbove === 0) return
-      const fromBottom = this.log.scrollHeight - this.log.scrollTop
-      this.windowSize += WINDOW_STEP
-      this.render(this.lastFeed.messages, this.lastFeed.joins)
-      this.log.scrollTop = this.log.scrollHeight - fromBottom
+      this.growWindow(WINDOW_STEP)
     })
+  }
+
+  /** Draws more above, where the log already is. */
+  private growWindow(by: number): void {
+    if (!this.lastFeed || this.hiddenAbove === 0) return
+    const fromBottom = this.log.scrollHeight - this.log.scrollTop
+    this.windowSize += by
+    this.render(this.lastFeed.messages, this.lastFeed.joins)
+    this.log.scrollTop = this.log.scrollHeight - fromBottom
+  }
+
+  /** A view opens with a few screens; once it is on screen and nothing is to do, it has a full step. */
+  private growWhenIdle(view: string): void {
+    const grow = (): void => {
+      if (this.windowKey === view && this.windowSize < WINDOW_STEP) this.growWindow(WINDOW_STEP - this.windowSize)
+    }
+    if ('requestIdleCallback' in window) requestIdleCallback(grow, { timeout: 1500 })
+    else setTimeout(grow, 300)
   }
 
   private showJump(): void {
@@ -1411,16 +1427,17 @@ export class ChatPanel {
       m.replyTo ? (byId ??= new Map(all.map((x) => [x.id, x]))).get(m.replyTo) : undefined
 
     const sameView = this.windowKey === this.draftKey
+    if (!sameView) this.growWhenIdle(this.draftKey)
     if (this.windowKey !== this.draftKey) {
       this.windowKey = this.draftKey
-      this.windowSize = WINDOW_STEP
+      this.windowSize = WINDOW_FIRST
       // Another channel or conversation opens at its newest message.
       stuck = true
       this.pinned = true
       if (this.readMark > 0) {
         const first = messages.findIndex((m) => m.lamport > this.readMark && m.author !== this.me)
         if (first >= 0) {
-          this.windowSize = Math.min(WINDOW_MAX, Math.max(WINDOW_STEP, messages.length - first + 20))
+          this.windowSize = Math.min(WINDOW_MAX, Math.max(WINDOW_FIRST, messages.length - first + 20))
         }
       }
     }
