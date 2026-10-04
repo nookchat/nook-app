@@ -54,7 +54,20 @@ import { spaceFace, switcherButton } from './space-switcher'
 import { voiceDock } from './call'
 import { chirpMention, chirpMessage, chirpStream, isNews, speak } from './sounds'
 import type { LinkQuality } from '../net/voice'
-import { CUSTOM, decodeClip, openSoundboard, playClip, type Sound, type SoundGroup } from './soundboard'
+import {
+  CUSTOM,
+  decodeClip,
+  noteSoundSent,
+  openSoundboard,
+  playClip,
+  soundsSent,
+  soundTurn,
+  SOUND_HOUR_MS,
+  soundWait,
+  SOUNDS_PER_HOUR,
+  type Sound,
+  type SoundGroup,
+} from './soundboard'
 import { canUseYouTube, makeSound, MAX_SOUND_BYTES } from './sound-maker'
 import { ask, askChannel, askSound, confirmDanger, pickSome } from './ask'
 import { saveScreen } from '../store/screen'
@@ -318,6 +331,10 @@ export class SpaceView {
   private soundSentAt = 0
   private readonly clips = new Map<string, Promise<AudioBuffer | null>>()
   private readonly soundHeard = new Map<string, number>()
+  /** When each person's sounds played in the last hour, by key, against the hour's allowance. */
+  private readonly soundHour = new Map<string, number[]>()
+  /** When this device played sounds here, for its own allowance. Kept on disk too. */
+  private soundsSent: number[] = []
   /** Sessions whose soundboard sound is playing now, for the ring round their face. */
   private readonly sounding = new Map<string, { until: number; label: string }>()
   private ttsSentAt = 0
@@ -471,6 +488,7 @@ export class SpaceView {
       toast('Nobody has let you in yet. If somebody was banned here, an old invite no longer works: ask for a new link.', 'warn', 15_000)
     }, KEY_WAIT_MS)
     this.room = space.room
+    this.soundsSent = soundsSent(space.room.id)
     this.chatPanel.setFiles(filesFor(space))
     const chat = space.chat
     this.chat = chat
@@ -988,7 +1006,15 @@ export class SpaceView {
     // Played as fast as it is clicked; a flood beyond that is only thinned out.
     const now = Date.now()
     if (now - this.soundSentAt < SOUND_EVERY_MS) return
+    const wait = soundWait(this.soundsSent, now)
+    if (wait > 0) {
+      const minutes = Math.max(1, Math.ceil(wait / 60_000))
+      toast(`That is ${SOUNDS_PER_HOUR} sounds in the last hour. The next one can go in ${minutes} minute${minutes === 1 ? '' : 's'}.`, 'warn', 5000)
+      return
+    }
     this.soundSentAt = now
+    this.soundsSent = [...this.soundsSent.filter((t) => t > now - SOUND_HOUR_MS), now]
+    if (this.room) noteSoundSent(this.room.id, now)
     this.mesh?.broadcast(JSON.stringify({ t: 'sound', s: sound.id, v: here }))
     if (this.voice?.state.deafened) {
       this.ringFor(this.selfId, sound.label, 0)
@@ -1011,6 +1037,7 @@ export class SpaceView {
     const here = this.voice?.state.channel
     if (!here || note.v !== here || this.voice?.whereIs(from) !== here) return true
     if (!allowNow(this.soundHeard, this.keyOf(from), SOUND_EVERY_MS)) return true
+    if (!soundTurn(this.soundHour, this.keyOf(from))) return true
     if (this.voice?.state.deafened) {
       this.ringFor(from, sound.label, 0)
       return true

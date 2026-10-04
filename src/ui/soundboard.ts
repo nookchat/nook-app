@@ -48,6 +48,58 @@ function foldGroup(id: string, folded: boolean): void {
   }
 }
 
+/** Sounds one person may play in an hour, so nobody can keep at it all evening. */
+export const SOUNDS_PER_HOUR = 20
+export const SOUND_HOUR_MS = 60 * 60 * 1000
+const SENT_KEY = 'nook:board-sent'
+
+/**
+ * How long until one more sound may go, given when the last ones went: 0 when it may go now. Only
+ * the plays of the last hour count.
+ */
+export function soundWait(times: readonly number[], now = Date.now()): number {
+  const recent = times.filter((t) => t > now - SOUND_HOUR_MS && t <= now).sort((a, b) => a - b)
+  if (recent.length < SOUNDS_PER_HOUR) return 0
+  return recent[recent.length - SOUNDS_PER_HOUR] + SOUND_HOUR_MS - now
+}
+
+/** Counts a play by `key` when it is within the hour's allowance. False when it is past it. */
+export function soundTurn(heard: Map<string, number[]>, key: string, now = Date.now()): boolean {
+  const times = (heard.get(key) ?? []).filter((t) => t > now - SOUND_HOUR_MS && t <= now)
+  if (soundWait(times, now) > 0) return false
+  times.push(now)
+  heard.set(key, times)
+  return true
+}
+
+/** When this device played sounds in `space`, kept so a reload does not start the hour again. */
+export function soundsSent(space: string): number[] {
+  try {
+    const saved: unknown = JSON.parse(localStorage.getItem(SENT_KEY) ?? '{}')
+    const times: unknown = saved && typeof saved === 'object' ? (saved as Record<string, unknown>)[space] : null
+    return Array.isArray(times) ? times.filter((t): t is number => typeof t === 'number') : []
+  } catch {
+    return []
+  }
+}
+
+export function noteSoundSent(space: string, at = Date.now()): void {
+  try {
+    const saved: unknown = JSON.parse(localStorage.getItem(SENT_KEY) ?? '{}')
+    const all: Record<string, number[]> = {}
+    if (saved && typeof saved === 'object') {
+      for (const [id, times] of Object.entries(saved)) {
+        const recent = Array.isArray(times) ? times.filter((t): t is number => typeof t === 'number' && t > at - SOUND_HOUR_MS) : []
+        if (recent.length) all[id] = recent
+      }
+    }
+    all[space] = [...(all[space] ?? []), at]
+    localStorage.setItem(SENT_KEY, JSON.stringify(all))
+  } catch {
+    /* storage can be blocked */
+  }
+}
+
 /** How loud the soundboard plays here, from 0 to 1. */
 export function boardVolume(): number {
   try {
