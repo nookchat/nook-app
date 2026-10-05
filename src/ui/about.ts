@@ -1,3 +1,4 @@
+import { CHANGELOG } from '../changelog'
 import { checkForUpdate } from '../net/updates'
 import { h } from './dom'
 import { icon } from './icons'
@@ -107,6 +108,11 @@ export function aboutSettings(): HTMLElement {
         : null
     cards.push(card('Desktop app', row, shellSaid, trayRow))
   }
+
+  const changes = h('button', { text: 'See what’s new' })
+  changes.addEventListener('click', () => void import('./whats-new').then(({ showAllChanges }) => showAllChanges()))
+  const newest = CHANGELOG[0]
+  cards.push(card('What’s new', actionRow(newest?.title ?? 'What changed', 'What came with each update', changes)))
 
   const releases = h('a', { class: 'button-link' }, [icon('link', 15), 'Releases on GitHub'])
   releases.href = RELEASES

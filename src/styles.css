@@ -9699,3 +9699,85 @@ input.invalid:focus {
   flex: 1 1 auto;
   min-width: 0;
 }
+
+/* What's new: what came with an update, once, after it (src/ui/whats-new.ts). */
+.whats-new {
+  max-width: 440px;
+  max-height: min(640px, calc(100dvh - 28px));
+}
+
+.whats-new-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 14px 12px 20px;
+}
+
+.whats-new-words {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.whats-new-heading {
+  font-family: var(--font-display);
+  font-size: 22px;
+  line-height: 28px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--fg);
+}
+
+.whats-new-list {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 18px;
+  min-height: 0;
+  padding: 6px 20px 8px;
+  overflow-y: auto;
+}
+
+.whats-new-entry + .whats-new-entry {
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.whats-new-day {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-faint);
+}
+
+.whats-new-title {
+  margin: 2px 0 8px;
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.whats-new-items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--fg-dim);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.whats-new-items li::marker {
+  color: var(--fg-faint);
+}
+
+.whats-new-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px 16px 20px;
+}

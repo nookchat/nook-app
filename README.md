@@ -207,6 +207,10 @@ with voice does it.
   picture, so copy and find see it. The message box draws them too: a copy
   of its text sits behind it, with each picture over an emoji of the same
   width. Code keeps the device's own.
+- **What’s new** shows, once, on the first start after an update: what came
+  with it, from `src/changelog.ts`. Somebody who signs up now sees none of it.
+  Settings, About has every update. Add an entry at the top of that file for
+  each update people would notice, with the day it goes out as its id.
 - **A new version** of the site downloads by itself, and a popup offers it,
   with Update now and I’ll do it later. A reload is a leave: in a call,
   Update now takes you out of it, and the new version starts out of voice.
@@ -590,6 +594,7 @@ src/
     home-view.ts      Home: direct messages from every space
     welcome.ts        the first visit: your name, and a picture
     landing.ts        the page about Nook, before somebody signs in, in a browser with no invite
+    whats-new.ts      what came with an update, once after it, and all of it in Settings, About
     tour.ts           the tour after I’m new: what Nook is, and how to start
     call.ts           a call ringing, the strip over a conversation, the voice dock
     voice-settings.ts microphone and speaker, a microphone test, a relay test

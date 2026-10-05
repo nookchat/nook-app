@@ -88,6 +88,8 @@ export function nameEveryone(browser) {
     const context = await newContext(...args)
     await context.addInitScript((name) => {
       if (!localStorage.getItem('nook.name.v1')) localStorage.setItem('nook.name.v1', name)
+      // What's new would stand over every check: a named browser has seen it all.
+      if (!localStorage.getItem('nook.changelog-seen.v1')) localStorage.setItem('nook.changelog-seen.v1', '9999-12-31')
     }, `Tester ${Math.random().toString(36).slice(2, 6)}`)
     return context
   }

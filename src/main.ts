@@ -390,11 +390,14 @@ async function start(): Promise<void> {
     bootDone()
     if (await linkFromAddress(mount)) return
   }
-  if (!nameChosen()) {
+  // Somebody who signs up now has nothing new to see in What's new: all of it is new.
+  const fresh = !nameChosen()
+  if (fresh) {
     const { welcome } = await import('./ui/welcome')
     bootDone()
     await welcome(mount, linked !== null)
   }
+  void import('./ui/whats-new').then(({ whatsNewAfterStart }) => whatsNewAfterStart(fresh))
   bootStep(50, 'Opening your spaces')
   const loaded = spaces.load()
   void loaded.then(() => watchPush(() => spaces.all(), ROOMS_CHANGED))
