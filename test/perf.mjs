@@ -52,6 +52,7 @@ const METRICS = [
   { key: 'switch', label: 'Switch channel', unit: 'ms', floor: 3 },
   { key: 'send', label: 'A sent message on screen', unit: 'ms', floor: 3 },
   { key: 'picker', label: 'Open the emoji picker, first time', unit: 'ms', floor: 3 },
+  { key: 'typeCpu', label: 'Processor time per key typed', unit: 'ms', floor: 0.3 },
   { key: 'drawCpu', label: 'Processor time per side bar draw', unit: 'ms', floor: 1 },
   { key: 'drawMade', label: 'Elements made anew per draw', unit: '', floor: 0.5 },
   { key: 'scroll', label: '40 frames of scrolling up', unit: 'ms', floor: 10 },
@@ -185,7 +186,10 @@ function profiler(cdp) {
     async start() {
       traced = []
       // The time each CSS selector takes to match, as the Selector stats of DevTools show it.
-      await cdp.send('Tracing.start', { categories: 'disabled-by-default-blink.debug', transferMode: 'ReportEvents' })
+      await cdp.send('Tracing.start', {
+        categories: 'disabled-by-default-blink.debug,disabled-by-default-devtools.timeline.invalidationTracking',
+        transferMode: 'ReportEvents',
+      })
       before = await split()
       await cdp.send('Profiler.enable')
       await cdp.send('Profiler.setSamplingInterval', { interval: 200 })
@@ -226,6 +230,18 @@ function profiler(cdp) {
       for (const [name, ms] of [...self].sort((a, b) => b[1] - a[1]).slice(0, 15)) {
         console.log(`  ${ms.toFixed(1).padStart(7)} ms  ${name}`)
       }
+      // What marked the page for styling again: the element, and the reason.
+      const marked = new Map()
+      for (const event of traced) {
+        if (!/Invalidation/.test(event.name)) continue
+        const d = event.args?.data ?? {}
+        const node = d.nodeName ?? ''
+        const why = d.reason ?? d.invalidationList?.map((i) => i.classes?.join('.') || i.id || i.tagNames?.join() || '').join('|') ?? ''
+        const key = `${event.name}: ${node} ${why}`.trim()
+        marked.set(key, (marked.get(key) ?? 0) + 1)
+      }
+      if (marked.size) console.log('  most marked for styling:')
+      for (const [key, n] of [...marked].sort((a, b) => b[1] - a[1]).slice(0, 10)) console.log(`  ${String(n).padStart(7)}  ${key.slice(0, 150)}`)
       if (selectors.size) console.log('  slowest CSS selectors:')
       for (const [selector, t] of [...selectors].sort((a, b) => b[1].us - a[1].us).slice(0, 12)) {
         console.log(`  ${(t.us / 1000).toFixed(1).padStart(7)} ms  ${String(t.tries).padStart(8)} tries ${String(t.matches).padStart(7)} hits  ${selector}`)
@@ -308,6 +324,19 @@ async function visit(browser, origin, hash) {
         while (!document.querySelector('.channel-name')?.textContent.includes(name)) await new Promise((r) => requestAnimationFrame(r))
       }, to)
     await open('room-12')
+
+    // Typing a message, a key at a time, with a tag and an emoji in it as people write.
+    const typed = 'so I said to @Speedy that the plan is fine :) and then we went home'
+    await page.click('[aria-label="Write a message"]')
+    await profile?.start()
+    const beforeTyping = await busy()
+    await page.keyboard.type(typed)
+    await frames(3)
+    out.typeCpu = ((await busy()) - beforeTyping) / typed.length
+    await profile?.stop('typing')
+    await page.fill('[aria-label="Write a message"]', '')
+    await frames(3)
+
     const sends = []
     for (let i = 0; i < 5; i++) {
       const words = `perf ${Date.now()} ${i}`

@@ -3886,7 +3886,8 @@ input[type="text"].space-search {
   pointer-events: none;
 }
 
-.space-main:has(.stage:not(.hidden)) .chat-log {
+/* A sibling, not :has(): a :has() on .space-main styled the whole chat again at every key typed. */
+.space-main > .stage:not(.hidden) ~ .chat-panel .chat-log {
   mask-image: linear-gradient(to bottom, transparent 0, var(--mask-solid) 20px);
 }
 
@@ -4491,6 +4492,8 @@ input[type="text"].space-search {
   flex: 1 1 auto;
   min-height: 44px;
   max-height: 116px;
+  /* Grows with its words, up to the most; without it, chat-panel.ts sets the height. */
+  field-sizing: content;
   padding: 11px 4px;
   background: transparent;
   border: 0;
@@ -4651,7 +4654,7 @@ input[type="text"].space-search {
   animation: live-pulse 1.2s ease-in-out infinite;
 }
 
-.compose-box:has(.attach-button:not(.hidden)) {
+.compose-box.can-attach {
   padding-left: 4px;
 }
 

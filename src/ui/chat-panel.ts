@@ -257,6 +257,8 @@ const VEILED = '.att-tile, .chat-image-wrap, .link-card-frame, .link-card-side, 
 /** What gives a message room under it. A link's card shows later, and marks its row then. */
 const ROOMY = '.chat-reacts, .att-block, .poll, .chat-thread, .embed-card'
 const WINDOW_MAX = 600
+/** The message box grows with its words by itself (field-sizing in styles.css), from Chrome 123. */
+const SIZES_ITSELF = typeof CSS !== 'undefined' && CSS.supports?.('field-sizing', 'content') === true
 
 /** A card of who reacted names this many, then how many more. */
 const REACTED_NAMES_MAX = 12
@@ -671,6 +673,7 @@ export class ChatPanel {
   setFiles(files: SpaceFiles | null): void {
     this.files = files
     this.attachButton.classList.toggle('hidden', !files)
+    this.attachButton.parentElement?.classList.toggle('can-attach', !!files)
     this.voiceButton.classList.toggle('hidden', !files || !canRecordVoice())
     this.showSend()
     this.clipButton.classList.toggle('hidden', !files || !seesRecordings())
@@ -1025,9 +1028,13 @@ export class ChatPanel {
   }
 
   private grow(): void {
-    const input = this.textInput
-    input.style.height = 'auto'
-    input.style.height = `${Math.min(input.scrollHeight, 116)}px`
+    // Where the box grows with its words by itself, nothing here sets its height. Set at each
+    // key, even to the height it had, it laid out the page twice a key.
+    if (!SIZES_ITSELF) {
+      const input = this.textInput
+      input.style.height = 'auto'
+      input.style.height = `${Math.min(input.scrollHeight, 116)}px`
+    }
     this.sayRoom()
   }
 

@@ -116,6 +116,8 @@ export function emojiField(field: HTMLTextAreaElement, marks: (text: string) => 
 
   let drawnFor: string | null = null
   const fit = (): void => {
+    // A copy with nothing to draw need not line up: measured, it laid out the page at each key.
+    if (!field.classList.contains('mirrored')) return
     // The box's scroll bar takes width, so the copy wraps where the box does.
     mirror.style.right = `${field.offsetWidth - field.clientWidth}px`
     mirror.scrollTop = field.scrollTop
