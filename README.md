@@ -494,6 +494,20 @@ its message comes near the screen. Rows are marked when drawn, not found with
 draws 60 more when the page is idle. `content-visibility` on the rows was tried
 twice: it made scrolling a third slower, so it is not used.
 
+Then typing and the emoji picker, against [fecfd73](https://github.com/nookchat/nook-app/commit/fecfd73):
+
+| What, processor slowed 4x | Before | After |
+| --- | --- | --- |
+| Open a big space | 654 ms | 461 ms |
+| Processor time per key typed | 2.21 ms | 0.54 ms |
+| Emoji pictures loaded for Home | 227 | 0 |
+| Open the emoji picker, first time | 37 ms | 49 ms |
+
+The picker's groups wait hidden with the device's own emoji, and each is drawn
+as Twemoji when a picker shows it. The message box grows by CSS `field-sizing`
+where the browser has it. A `:has()` with a `:not()` inside, over the chat, made
+the whole chat styled again at every key: a sibling selector does it now.
+
 `node test/server-bench.mjs` on a space of 50,000 lines:
 
 | What | Time |
