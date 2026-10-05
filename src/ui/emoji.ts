@@ -1,6 +1,7 @@
 import { h, clear } from './dom'
 import { asSheet, phone } from './gestures'
 import { fitNear } from './place'
+import { drawLater, drawLaterNow } from './twemoji'
 
 interface EmojiGroup {
   id: string
@@ -413,7 +414,12 @@ function emojiSection(list: string[]): HTMLElement {
 let groupSections: HTMLElement[] | null = null
 
 function sections(): HTMLElement[] {
-  groupSections ??= ALL.map(({ list }) => emojiSection(list.map((e) => e.ch)))
+  groupSections ??= ALL.map(({ list }) => {
+    const section = emojiSection(list.map((e) => e.ch))
+    // Its pictures wait until a picker shows the group.
+    drawLater(section)
+    return section
+  })
   return groupSections
 }
 
@@ -491,8 +497,22 @@ export function openEmojiPicker(options: PickerOptions): void {
       grid.append(hits.length ? emojiSection(hits) : h('div', { class: 'emoji-none tiny faint', text: 'Nothing matches that' }))
       return
     }
-    grid.append(...sections())
+    const groups = sections()
+    grid.append(...groups)
+    // The first group at once, so it never shows the device's own emoji; the rest as they near.
+    if (groups[0]) drawLaterNow(groups[0])
+    for (const group of groups.slice(1)) if ('emojiLater' in group.dataset) near.observe(group)
   }
+  const near = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue
+        near.unobserve(entry.target)
+        drawLaterNow(entry.target as HTMLElement)
+      }
+    },
+    { root: grid, rootMargin: '300px 0px' },
+  )
 
   search.addEventListener('input', () => paint(search.value))
   search.addEventListener('keydown', (ev) => {
@@ -540,6 +560,7 @@ export function openEmojiPicker(options: PickerOptions): void {
   function close(): void {
     if (open?.close !== close) return
     open = null
+    near.disconnect()
     pop.remove()
     park()
     window.removeEventListener('keydown', onKey, true)

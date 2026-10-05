@@ -17,8 +17,8 @@ const EMOJI = /^(?:[#*0-9]\uFE0F?\u20E3|\p{Regional_Indicator}{2}|\p{Emoji_Prese
  * Each SVG picture is a whole document in the browser, about 200 KB of memory, so only here.
  */
 const BIG = '.jumbo'
-/** Typed text and code keep the device's own emoji. */
-const SKIP = 'input, textarea, script, style, code, pre, .twemoji, .emoji-mirror'
+/** Typed text and code keep the device's own emoji, and so does a part marked to be drawn later. */
+const SKIP = 'input, textarea, script, style, code, pre, .twemoji, .emoji-mirror, [data-emoji-later]'
 const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 /** Pictures that have loaded once, so the next copy shows at once. */
 const drawn = new Set<string>()
@@ -201,6 +201,21 @@ function paint(root: Node): void {
 }
 
 let watching = false
+
+/**
+ * Marks a part of the page to keep the device's emoji until drawLaterNow, as the emoji picker's
+ * groups do while they wait hidden: drawn, they loaded some 300 pictures nobody saw.
+ */
+export function drawLater(el: HTMLElement): void {
+  el.dataset.emojiLater = ''
+}
+
+/** Draws the emoji of a part marked with drawLater, now that it is to be seen. */
+export function drawLaterNow(el: HTMLElement): void {
+  if (!('emojiLater' in el.dataset)) return
+  delete el.dataset.emojiLater
+  if (watching) paint(el)
+}
 
 export function drawEmojiAsArt(): void {
   if (watching) return

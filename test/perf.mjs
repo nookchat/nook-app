@@ -46,10 +46,12 @@ const PORTS = { now: 5198, then: 5199 }
 const METRICS = [
   { key: 'start', label: 'Home on screen', unit: 'ms', floor: 5 },
   { key: 'startJs', label: 'JS loaded for Home', unit: 'KB', floor: 1 },
+  { key: 'startEmoji', label: 'Emoji pictures loaded for Home', unit: '', floor: 2 },
   { key: 'openCold', label: 'Open a big space, first time', unit: 'ms', floor: 5 },
   { key: 'openWarm', label: 'Open it again', unit: 'ms', floor: 5 },
   { key: 'switch', label: 'Switch channel', unit: 'ms', floor: 3 },
   { key: 'send', label: 'A sent message on screen', unit: 'ms', floor: 3 },
+  { key: 'picker', label: 'Open the emoji picker, first time', unit: 'ms', floor: 3 },
   { key: 'drawCpu', label: 'Processor time per side bar draw', unit: 'ms', floor: 1 },
   { key: 'drawMade', label: 'Elements made anew per draw', unit: '', floor: 0.5 },
   { key: 'scroll', label: '40 frames of scrolling up', unit: 'ms', floor: 10 },
@@ -253,9 +255,14 @@ async function visit(browser, origin, hash) {
   const out = {}
   const profile = PROFILE ? profiler(cdp) : null
   try {
+    await profile?.start()
     await page.goto(origin)
     await page.waitForFunction(() => window.__marks.home, null, { timeout: 60_000 })
     out.start = await page.evaluate(() => window.__marks.home)
+    await profile?.stop('home')
+    // What Home loads while nobody does anything, once it is idle.
+    await wait(2500)
+    out.startEmoji = await page.evaluate(() => performance.getEntriesByType('resource').filter((r) => r.name.includes('/emoji/')).length)
     out.startJs = await page.evaluate(
       () => performance.getEntriesByType('resource').filter((r) => r.name.endsWith('.js')).reduce((sum, r) => sum + r.encodedBodySize, 0) / 1024,
     )
@@ -321,6 +328,21 @@ async function visit(browser, origin, hash) {
       )
     }
     out.send = median(sends)
+
+    await profile?.start()
+    out.picker = await page.evaluate(async () => {
+      const start = performance.now()
+      document.querySelector('.compose-box button[aria-label="Emoji"]').click()
+      while (!document.querySelector('.emoji-pop .emoji-cell')) {
+        if (performance.now() - start > 10_000) return Number.NaN
+        await new Promise((r) => requestAnimationFrame(r))
+      }
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+      return performance.now() - start
+    })
+    await profile?.stop('emoji picker')
+    await page.keyboard.press('Escape')
+    await frames(5)
     await open('general')
     await wait(1000)
 
