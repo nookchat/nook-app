@@ -5,6 +5,7 @@ import { avatarOf } from './chat-panel'
 import { h } from './dom'
 import { lockup } from './ghost'
 import { icon, type IconName } from './icons'
+import { landing, wantsLanding } from './landing'
 import { backupTaker, linkTaker } from './link-device'
 import { toast } from './toast'
 import { tour } from './tour'
@@ -60,7 +61,9 @@ export function welcome(mount: HTMLElement, invited: boolean): Promise<void> {
 
   const fresh = h('button', { class: 'primary accent big welcome-go', text: 'I’m new' })
   const known = h('button', { class: 'secondary big welcome-go', text: 'I have an account' })
-  const choose = h('div', { class: 'welcome-step' }, [
+  // In a browser, with no invite, the first step is the whole page about Nook.
+  const advertise = wantsLanding(invited)
+  const card = h('div', { class: 'welcome-step' }, [
     h('div', { class: 'welcome-brand' }, [lockup(44)]),
     h('h1', { class: 'welcome-title', text: invited ? 'You have been invited' : 'Welcome to Nook' }),
     h('p', {
@@ -70,6 +73,7 @@ export function welcome(mount: HTMLElement, invited: boolean): Promise<void> {
     fresh,
     known,
   ])
+  const choose = advertise ? landing({ start: () => show(intro.el), signIn: () => show(account) }) : card
   const back = (): HTMLButtonElement => h('button', { class: 'ghost welcome-link', text: 'Back' })
   const naming = h('div', { class: 'welcome-step hidden' }, [
     h('h1', { class: 'welcome-title', text: 'What should people call you?' }),
@@ -130,6 +134,7 @@ export function welcome(mount: HTMLElement, invited: boolean): Promise<void> {
   let shownBefore: HTMLElement = choose
   const show = (step: HTMLElement): void => {
     for (const each of steps) each.classList.toggle('hidden', each !== step)
+    page.classList.toggle('on-landing', advertise && step === choose)
     if (step === intro.el) intro.show(shownBefore === naming ? 'last' : 'first')
     shownBefore = step
     link.stop()
@@ -160,8 +165,10 @@ export function welcome(mount: HTMLElement, invited: boolean): Promise<void> {
     backup.take(dropped)
   })
   paint()
+  page.classList.toggle('on-landing', advertise)
   mount.replaceChildren(page)
-  fresh.focus()
+  // The page about Nook takes no focus: a ring on its first button, and a scroll to it, would greet nobody.
+  if (!advertise) fresh.focus()
 
   return new Promise((done) => {
     const finish = (): void => {

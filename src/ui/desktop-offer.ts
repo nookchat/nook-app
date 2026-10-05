@@ -7,7 +7,7 @@ const RELEASES = 'https://github.com/nookchat/nook-app/releases/latest'
 const CLOSED_KEY = 'nook.desktop-upsell.v1'
 
 /** The computer this browser is on, for the button, or null on a phone or tablet, which has no desktop app. */
-function desktopOs(): string | null {
+export function desktopOs(): string | null {
   const ua = navigator.userAgent
   // An iPad reports as a Mac, so we also look for touch on a Mac.
   if (/iPad|iPhone|iPod|Android/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return null

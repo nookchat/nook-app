@@ -589,6 +589,7 @@ src/
   ui/
     home-view.ts      Home: direct messages from every space
     welcome.ts        the first visit: your name, and a picture
+    landing.ts        the page about Nook, before somebody signs in, in a browser with no invite
     tour.ts           the tour after I’m new: what Nook is, and how to start
     call.ts           a call ringing, the strip over a conversation, the voice dock
     voice-settings.ts microphone and speaker, a microphone test, a relay test
