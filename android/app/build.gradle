@@ -2,7 +2,7 @@ import groovy.json.JsonSlurper
 
 apply plugin: 'com.android.application'
 
-// The app has the version of the site in package.json: 0.3.23 is version code 323.
+// The app has the version of the site in package.json: 0.3.24 is version code 324.
 def site = new JsonSlurper().parse(rootProject.file('../package.json'))
 def (major, minor, patch) = site.version.tokenize('.').collect { it.toInteger() }
 
