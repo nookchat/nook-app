@@ -308,6 +308,7 @@ export class ChatPanel {
   private readonly typingLine: HTMLDivElement
   private readonly roomLeft: HTMLSpanElement
   private readonly mediaNote: HTMLDivElement
+  private readonly mediaNoteText: HTMLSpanElement
   private readonly tray: AttachTray
   private readonly attachButton: HTMLButtonElement
   private readonly voiceButton: HTMLButtonElement
@@ -380,6 +381,8 @@ export class ChatPanel {
     open: (key) => this.spoilersOpen.add(key),
   }
   private mediaOnly = false
+  /** Somebody who keeps the channels is warned, but may still write words. */
+  private mediaExempt = false
 
   constructor(initialName: string, title = 'Chat') {
     this.name = initialName
@@ -545,7 +548,7 @@ export class ChatPanel {
     this.mediaNote = h('div', { class: 'chat-media-note', role: 'status' }, [
       h('div', { class: 'chat-media-note-inner' }, [
         icon('image', 15),
-        h('span', { text: 'Media only. Words go in a thread.' }),
+        (this.mediaNoteText = h('span', { text: 'Media only. Words go in a thread.' })),
       ]),
     ])
     this.mediaNote.setAttribute('aria-live', 'polite')
@@ -751,8 +754,9 @@ export class ChatPanel {
   }
 
   /** Sends nothing to the channel without a picture, a video or a file. Threads still take words. */
-  setMediaOnly(on: boolean): void {
-    if (this.mediaOnly === on) return
+  setMediaOnly(on: boolean, exempt = false): void {
+    this.mediaExempt = exempt
+    if (this.mediaOnly === on) return this.showMediaNote()
     this.mediaOnly = on
     if (this.enabled) this.textInput.placeholder = this.modePlaceholder()
     this.showMediaNote()
@@ -763,6 +767,7 @@ export class ChatPanel {
     const toChannel = !this.directWith && !this.threadRoot && !this.editing
     const words = this.textInput.value.trim()
     const on = this.mediaOnly && toChannel && words !== '' && !hasMedia(words, this.tray.count > 0 ? [0] : [])
+    this.mediaNoteText.textContent = this.mediaExempt ? 'Media only. Words go in a thread, but you may post them.' : 'Media only. Words go in a thread.'
     this.mediaNote.classList.toggle('on', on)
   }
 
@@ -795,7 +800,7 @@ export class ChatPanel {
   private modePlaceholder(): string {
     if (this.directWith) return `Message ${this.directName || 'them'}`
     if (this.threadRoot) return 'Reply in this thread'
-    return this.mediaOnly ? 'Share a picture, a video or a file' : 'Say something'
+    return this.mediaOnly && !this.mediaExempt ? 'Share a picture, a video or a file' : 'Say something'
   }
 
   setTyping(who: string[]): void {
@@ -2560,7 +2565,7 @@ export class ChatPanel {
       return
     }
     const toChannel = !this.directWith && (this.editing ? !this.editing.inThread : !this.threadRoot)
-    if (this.mediaOnly && toChannel && !hasMedia(text, this.editing ? this.editing.files : files)) {
+    if (this.mediaOnly && !this.mediaExempt && toChannel && !hasMedia(text, this.editing ? this.editing.files : files)) {
       toast('Only pictures, videos and files go in this channel. Words go in a thread.', 'warn')
       return
     }

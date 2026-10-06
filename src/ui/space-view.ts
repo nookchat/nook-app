@@ -1808,7 +1808,7 @@ export class SpaceView {
   private renderConversation(chat: RoomChat, info: ChannelInfo | undefined, thread: Message[] | null): void {
     // A thread is in its channel, so it blurs the same.
     this.chatPanel.setNsfw(!!info?.nsfw)
-    this.chatPanel.setMediaOnly(!!info?.mediaOnly && !chat.can('channels'))
+    this.chatPanel.setMediaOnly(!!info?.mediaOnly, chat.can('channels'))
     if (thread) {
       this.chatPanel.render(thread)
       this.chatPanel.setTitle(`Thread in #${this.channel}`)
