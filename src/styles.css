@@ -9781,3 +9781,53 @@ input.invalid:focus {
   gap: 12px;
   padding: 12px 16px 16px 20px;
 }
+
+/* A channel kept to some levels: its icon wears a small lock. */
+.channel-icon {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.channel-lock {
+  position: absolute;
+  right: -4px;
+  bottom: -3px;
+  display: inline-flex;
+  padding: 1px;
+  border-radius: 50%;
+  background: var(--bg);
+  color: var(--fg-dim);
+}
+
+/* Words typed where only media goes: a quiet line slides out above the box. */
+.chat-media-note {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  margin-bottom: -6px;
+  transition: grid-template-rows 0.18s ease, opacity 0.18s ease, margin-bottom 0.18s ease;
+}
+
+.chat-media-note.on {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  margin-bottom: 0;
+}
+
+.chat-media-note-inner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0 4px;
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-media-note {
+    transition: none;
+  }
+}

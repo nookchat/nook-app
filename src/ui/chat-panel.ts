@@ -307,6 +307,7 @@ export class ChatPanel {
   private readonly nameRow: HTMLDivElement
   private readonly typingLine: HTMLDivElement
   private readonly roomLeft: HTMLSpanElement
+  private readonly mediaNote: HTMLDivElement
   private readonly tray: AttachTray
   private readonly attachButton: HTMLButtonElement
   private readonly voiceButton: HTMLButtonElement
@@ -540,6 +541,14 @@ export class ChatPanel {
 
     this.typingLine = h('div', { class: 'chat-typing nook-typing hidden', role: 'status' })
     this.typingLine.setAttribute('aria-live', 'polite')
+    // Slides out above the box while words are typed where only media goes.
+    this.mediaNote = h('div', { class: 'chat-media-note', role: 'status' }, [
+      h('div', { class: 'chat-media-note-inner' }, [
+        icon('image', 15),
+        h('span', { text: 'Media only. Words go in a thread.' }),
+      ]),
+    ])
+    this.mediaNote.setAttribute('aria-live', 'polite')
     this.roomLeft = h('span', { class: 'chat-room-left tiny hidden', ariaLabel: 'Room left in this message' })
     this.toBottom = h(
       'button',
@@ -637,6 +646,7 @@ export class ChatPanel {
       this.head,
       h('div', { class: 'chat-scroll' }, [this.log, this.toBottom]),
       h('div', { class: 'chat-compose stack tight' }, [
+        this.mediaNote,
         this.typingLine,
         this.replyBar,
         this.nameRow,
@@ -745,6 +755,15 @@ export class ChatPanel {
     if (this.mediaOnly === on) return
     this.mediaOnly = on
     if (this.enabled) this.textInput.placeholder = this.modePlaceholder()
+    this.showMediaNote()
+  }
+
+  /** Warns, once words are typed, that this channel takes only pictures, videos and files. */
+  private showMediaNote(): void {
+    const toChannel = !this.directWith && !this.threadRoot && !this.editing
+    const words = this.textInput.value.trim()
+    const on = this.mediaOnly && toChannel && words !== '' && !hasMedia(words, this.tray.count > 0 ? [0] : [])
+    this.mediaNote.classList.toggle('on', on)
   }
 
   setReadMark(lamport: number): void {
@@ -770,6 +789,7 @@ export class ChatPanel {
     this.backButton.classList.toggle('hidden', !away)
     this.head.classList.toggle('hidden', !away)
     this.textInput.placeholder = this.modePlaceholder()
+    this.showMediaNote()
   }
 
   private modePlaceholder(): string {
@@ -1064,6 +1084,7 @@ export class ChatPanel {
     this.sendButton.classList.toggle('empty', empty)
     // The microphone shows while there is nothing to send, and gives way to the send button after.
     this.voiceButton.classList.toggle('empty', !empty)
+    this.showMediaNote()
   }
 
   /**

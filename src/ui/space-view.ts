@@ -273,6 +273,16 @@ function randomId(): string {
   return [...crypto.getRandomValues(new Uint8Array(8))].map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
+
+/** A channel's icon; a channel kept to some levels wears a small lock, as in Discord. */
+function channelIcon(name: 'image' | 'hash' | 'volume', size: number, kept: boolean): SVGElement | HTMLElement {
+  if (!kept) return icon(name, size)
+  return h('span', { class: 'channel-icon kept', title: 'Kept to some levels' }, [
+    icon(name, size),
+    h('span', { class: 'channel-lock' }, [icon('lock', 9)]),
+  ])
+}
+
 export class SpaceView {
   private readonly root: HTMLElement
   private readonly chrome: WindowChrome | null
@@ -1998,13 +2008,14 @@ export class SpaceView {
     const topic = info?.topic ?? ''
     const nsfw = !!info?.nsfw
     const media = !!info?.mediaOnly
-    const sig = `${label}\n${topic}\n${nsfw}\n${media}`
+    const kept = !!info?.levels.length
+    const sig = `${label}\n${topic}\n${nsfw}\n${media}\n${kept}`
     if (this.channelTitleSig === sig) return
     this.channelTitleSig = sig
     clear(this.channelTitle)
     this.channelTitle.append(
       h('span', { class: 'channel-name' }, [
-        icon(media ? 'image' : 'hash', 18),
+        channelIcon(media ? 'image' : 'hash', 18, kept),
         h('span', { class: 'truncate', text: label }),
         nsfw ? h('span', { class: 'nsfw-mark', text: 'NSFW', title: 'Pictures are blurred until clicked' }) : null,
       ]),
@@ -3077,7 +3088,7 @@ export class SpaceView {
           on: { click: () => this.openChannel(name) },
         },
         [
-          icon(channel.mediaOnly ? 'image' : 'hash', 16),
+          channelIcon(channel.mediaOnly ? 'image' : 'hash', 16, channel.levels.length > 0),
           h('span', { class: 'truncate grow', text: channel.label }),
           channel.nsfw ? h('span', { class: 'nsfw-mark', text: 'NSFW', title: 'Pictures are blurred until clicked' }) : null,
           muted ? h('span', { class: 'kept-mark', title: 'Muted' }, [icon('bell-off', 13)]) : null,
@@ -3283,7 +3294,7 @@ export class SpaceView {
           on: { click: () => this.clickVoice(name) },
         },
         [
-          icon('volume', 16),
+          channelIcon('volume', 16, channel.levels.length > 0),
           h('span', { class: 'truncate grow', text: channel.label }),
           channel.noTalking ? h('span', { class: 'kept-mark', title: 'No talking: only listening' }, [icon('mic-off', 13)]) : null,
         ],
