@@ -14,6 +14,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    id: '2026-10-06',
+    title: 'Opens at once, and a quieter media only warning',
+    items: [
+      'Your spaces, channels and messages show the moment Nook opens. A thin line under the top says it is still catching up.',
+      'A media only channel warns, quietly above the box, when you type words. A channel kept to some levels wears a lock.',
+      'Deleting a message asks in its own row, not in a window.',
+      'Somebody not signed in sees a page about Nook: what it does and how it keeps a secret.',
+    ],
+  },
+  {
     id: '2026-10-05',
     title: 'Faster everywhere',
     items: [

@@ -123,6 +123,8 @@ export class SpaceRuntime {
   readonly ready: Promise<void>
   /** The server has sent the history. Before that, an empty channel may only be one still coming. */
   historyIn = false
+  /** What shows came from the copy this device kept, and the server has not yet said it has sent the rest. */
+  syncing = false
   readonly presence = new Map<string, Envelope>()
   extras: () => Record<string, unknown> = () => ({})
 
@@ -276,6 +278,15 @@ export class SpaceRuntime {
       callNews({ kind: 'changed', space: this })
     }
     this.voice = voice
+    // Before the connection starts, so its hello asks only for what came after the kept copy.
+    this.syncing = await channel.restore().catch(() => false)
+    if (this.stopped) return
+    if (this.syncing) {
+      void channel.loaded.then(() => {
+        this.syncing = false
+        if (!this.stopped) this.emit('changed')
+      })
+    }
     bus.start()
     mesh.start()
     document.addEventListener('visibilitychange', this.announceAgain)
@@ -286,7 +297,7 @@ export class SpaceRuntime {
     this.lastLook = Date.now()
     this.stillHere = window.setInterval(this.lookAround, STILL_HERE_MS)
 
-    await Promise.race([channel.loaded, new Promise((r) => window.setTimeout(r, HISTORY_WAIT_MS))])
+    await Promise.race([channel.shown, new Promise((r) => window.setTimeout(r, HISTORY_WAIT_MS))])
     if (this.stopped) return
     // Only once the history is in: a device part way through it could think a key is missing.
     void channel.loaded.then(() => {
@@ -299,6 +310,19 @@ export class SpaceRuntime {
     void chat.readDirect()
     void this.showPass()
 
+    // What this device kept is on screen already. What it says about this person waits for the
+    // server's side of the log, so an old copy never has this device speak over a newer one.
+    const finish = async (): Promise<void> => {
+      await Promise.race([channel.loaded, new Promise((r) => window.setTimeout(r, HISTORY_WAIT_MS))])
+      if (this.stopped) return
+      await this.introduce(open)
+    }
+    if (this.syncing) void finish().catch((err) => console.error('[nook] a space did not finish starting', err))
+    else await this.introduce(open)
+  }
+
+  private async introduce(open: OpenSpace): Promise<void> {
+    const chat = this.chat
     if (open.fresh && !chat.founder) {
       await chat.claimFounder()
       await this.remember({ founder: chat.me })

@@ -1744,6 +1744,7 @@ export class SpaceView {
       this.loaded = true
       this.shell.classList.remove('loading')
     }
+    this.shell.classList.toggle('syncing', this.space.syncing)
     this.chatPanel.canPin = chat.can('pin')
     this.chatPanel.canDelete = chat.can('delete')
     this.chatPanel.canRelocate = chat.can('relocate')

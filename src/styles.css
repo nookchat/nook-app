@@ -9859,3 +9859,40 @@ input.invalid:focus {
   border-color: var(--bad);
   color: #fff;
 }
+
+/* What shows came from this device's copy, and the server is still sending the rest: a thin line runs under the head. */
+.space-grid.syncing .space-head {
+  position: relative;
+}
+
+.space-grid.syncing .space-head::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--fg-faint), transparent);
+  background-size: 40% 100%;
+  background-repeat: no-repeat;
+  opacity: 0.7;
+  animation: syncing-run 1.4s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes syncing-run {
+  from {
+    background-position: -40% 0;
+  }
+  to {
+    background-position: 140% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .space-grid.syncing .space-head::after {
+    animation: none;
+    background-size: 100% 100%;
+    opacity: 0.3;
+  }
+}

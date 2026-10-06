@@ -1,4 +1,5 @@
 import { serverUrl } from '../backend'
+import { dropRoom, readMine, readRoom, writeMine, writeRoom } from '../store/cache'
 import type { Room } from '../room'
 import { tagged, untag, type SpaceKeys } from '../space/keys'
 import type { LogEvent } from '../store/log'
@@ -13,6 +14,13 @@ const PUT_BATCH_BYTES = 600_000
 const FAILURES_BEFORE_NEXT_SERVER = 2
 /** Lines sealed with a key this device does not hold yet, kept to open once it does. */
 const HELD_LINES_LIMIT = 20_000
+/** How many lines of a kept copy go into the log at a time. */
+const RESTORE_PIECE = 400
+/** A room with more lines than this is not kept on this device: it loads from the server. */
+const KEEP_LIMIT_BYTES = 60_000_000
+const KEEP_EVERY_MS = 800
+/** How many of this device's own lines are kept for a start, until the server's copy has them. */
+const KEEP_MINE = 300
 /**
  * A socket can look open and carry nothing: after the computer slept, or moved to another
  * network, a browser may take many minutes to see it has gone. When the server has said nothing
@@ -25,7 +33,7 @@ const LOOK_EVERY_MS = 10_000
 
 type Incoming =
   | { t: 'page' | 'ev'; room: string; at: number; lines: unknown[] }
-  | { t: 'live'; room: string; at: number }
+  | { t: 'live'; room: string; at: number; top?: number }
   | { t: 'ack'; room: string; id: string; at: number }
   | { t: 'nack'; room: string; id?: string; code?: string; message?: string }
   | { t: 'sig'; room: string; d: string }
@@ -265,6 +273,13 @@ export class Channel implements Transport {
   onHere: ((ids: Set<string>, up: number) => void) | null = null
   onRefused: ((why: string) => void) | null = null
   readonly loaded: Promise<void>
+  /**
+   * The copy this device kept is in the log, when there was one. Without one, the same as
+   * `loaded`. `loaded` itself waits for the server: only it says the history is whole.
+   */
+  shown: Promise<void>
+  /** The server has sent all it had. Until then, what shows may be only what this device kept. */
+  synced = false
 
   /** Each server numbers lines its own way, so the read position is kept per server. */
   private readonly readTo = new Map<string, number>()
@@ -285,6 +300,18 @@ export class Channel implements Transport {
   private sent = 0
   /** Closed: it has said it left, and a last announce on its way must not have it back. */
   private closed = false
+  /** The copy of the lines kept on this device. Null once it stopped being a true one. */
+  private kept: {
+    server: string
+    bytes: number
+    written: number
+    waiting: string[]
+    at: number
+    timer: number
+    /** This device's own lines the server has not sent back, and how many of them came from an earlier start. */
+    mine: string[]
+    older: number
+  } | null = { server: '', bytes: 0, written: 0, waiting: [], at: 0, timer: 0, mine: [], older: 0 }
 
   constructor(connection: Connection, room: Room, name: string, keys: SpaceKeys) {
     this.connection = connection
@@ -292,6 +319,7 @@ export class Channel implements Transport {
     this.name = name
     this.keys = keys
     this.loaded = new Promise((done) => (this.markLoaded = done))
+    this.shown = this.loaded
     keys.changed.add(this.openWaiting)
   }
 
@@ -327,12 +355,106 @@ export class Channel implements Transport {
     )
   }
 
+  /**
+   * Puts the copy this device kept into the log, and has the next hello ask only for what came
+   * after it. Call before the connection starts. Returns whether there was a copy.
+   */
+  async restore(): Promise<boolean> {
+    const copy = await readRoom(this.room.id)
+    const mine = copy ? await readMine(this.room.id) : []
+    const kept = this.kept
+    if (!copy || !kept || this.sent > 0 || copy.lines.length + mine.length === 0) return false
+    kept.server = copy.server
+    kept.written = copy.lines.length
+    kept.at = copy.at
+    kept.bytes = copy.lines.reduce((sum, line) => sum + line.length, 0)
+    this.readTo.set(copy.server, copy.at)
+    this.sent = copy.lines.length
+    // A piece at a time, so the page stays alive while a long history opens.
+    for (let from = 0; from < copy.lines.length; from += RESTORE_PIECE) {
+      const piece = copy.lines.slice(from, from + RESTORE_PIECE)
+      const places = piece.map((_, i) => from + i)
+      this.openInOrder = this.openInOrder.then(() => this.deliverLines(piece, places))
+    }
+    // Between the last kept line and the first the server sends next.
+    kept.mine = mine
+    kept.older = mine.length
+    if (mine.length) {
+      const places = mine.map((_, i) => copy.lines.length - 1 + (i + 1) / (mine.length + 1))
+      this.openInOrder = this.openInOrder.then(() => this.deliverLines(mine, places))
+    }
+    this.shown = this.openInOrder.then(() => undefined)
+    return true
+  }
+
   /** Lines just sent by the server, numbered in the order they came. */
   private deliverSent(lines: unknown[]): void {
     const first = this.sent
     this.sent += lines.length
     const places = lines.map((_, i) => first + i)
+    this.keep(lines, first)
     this.openInOrder = this.openInOrder.then(() => this.deliverLines(lines, places))
+  }
+
+  /** Remembers lines to keep on this device, soon. A copy with a hole in it is worse than none. */
+  private keep(lines: unknown[], first: number): void {
+    const kept = this.kept
+    if (!kept) return
+    const server = this.connection.serving
+    if (!kept.server) kept.server = server
+    const whole = first === kept.written + kept.waiting.length && server === kept.server
+    const text = lines.filter((line): line is string => typeof line === 'string')
+    kept.bytes += text.reduce((sum, line) => sum + line.length, 0)
+    // Another server numbers lines its own way, and one too big to keep is not kept at all.
+    if (!whole || text.length !== lines.length || kept.bytes > KEEP_LIMIT_BYTES) return this.stopKeeping()
+    kept.waiting.push(...text)
+    kept.at = Math.max(kept.at, this.at)
+    this.keepSoon()
+  }
+
+  /** Lines this device wrote, to show at the next start before the server has sent them back. */
+  private keepMine(lines: string[]): void {
+    const kept = this.kept
+    if (!kept) return
+    kept.mine = [...kept.mine, ...lines].slice(-KEEP_MINE)
+    kept.older = Math.min(kept.older, kept.mine.length)
+    void writeMine(this.room.id, kept.mine)
+  }
+
+  /** The server has sent everything: lines of this device's from an earlier start are in the copy now. */
+  private mineArrived(): void {
+    const kept = this.kept
+    if (!kept || kept.older === 0) return
+    this.writeKept()
+    kept.mine = kept.mine.slice(kept.older)
+    kept.older = 0
+    void writeMine(this.room.id, kept.mine)
+  }
+
+  private keepSoon(): void {
+    const kept = this.kept
+    if (!kept || kept.timer) return
+    kept.timer = window.setTimeout(() => this.writeKept(), KEEP_EVERY_MS)
+  }
+
+  private writeKept(): void {
+    const kept = this.kept
+    if (!kept) return
+    window.clearTimeout(kept.timer)
+    kept.timer = 0
+    const lines = kept.waiting
+    kept.waiting = []
+    const from = kept.written
+    kept.written += lines.length
+    void writeRoom(this.room.id, kept.server, from, lines, kept.at)
+  }
+
+  private stopKeeping(): void {
+    const kept = this.kept
+    if (!kept) return
+    window.clearTimeout(kept.timer)
+    this.kept = null
+    void dropRoom(this.room.id)
   }
 
   /** Never fails: the lines go in a chain, and one batch that threw would stop every batch after it. */
@@ -394,6 +516,7 @@ export class Channel implements Transport {
 
   close(): void {
     this.closed = true
+    if (this.kept?.waiting.length) this.writeKept()
     this.signals = []
     this.waiting = []
     this.keys.changed.delete(this.openWaiting)
@@ -404,6 +527,7 @@ export class Channel implements Transport {
   async put(events: LogEvent[]): Promise<void> {
     if (events.length === 0) return
     const lines = await Promise.all(events.map((e) => this.sealLine(e)))
+    this.keepMine(lines)
     let batch: string[] = []
     let size = 0
     const flush = (): void => {
@@ -460,8 +584,14 @@ export class Channel implements Transport {
         return
       }
       case 'live': {
+        // A server with less than this device kept has been started over: the copy is no true one.
+        if (typeof message.top === 'number' && message.top < this.at) this.stopKeeping()
         if (message.at > this.at) this.at = message.at
-        void this.openInOrder.then(() => this.markLoaded())
+        void this.openInOrder.then(() => {
+          this.mineArrived()
+          this.synced = true
+          this.markLoaded()
+        })
         const since = this.helloAt
         this.helloAt = 0
         if (since) this.onEveryone?.(since)

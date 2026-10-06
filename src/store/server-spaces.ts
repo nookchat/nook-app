@@ -1,6 +1,7 @@
 import { BUILT_IN_SERVER, defaultServer, serverUrl, setDefaultServer } from '../backend'
 import { fromBase64, toBase64, toHex } from '../bytes'
 import { ask } from '../net/cluster'
+import { readPeople, writePeople } from './cache'
 import { personalBytes } from './identity'
 import { roomsChanged, type RoomNote } from './notes'
 import { localPrefs, takePrefs, watchPrefs } from './prefs'
@@ -104,13 +105,40 @@ export class ServerBook {
     this.server = server
   }
 
+  /**
+   * With a copy kept on this device, the list is there at once, and the server's answer comes
+   * after, changing it only where it differs. Without one, it waits for the server.
+   */
   load(): Promise<void> {
-    this.loading ??= this.pull().then((notes) => {
-      if (notes === null) this.loading = null
-      for (const note of notes ?? []) this.take(note)
-      if (notes?.length) roomsChanged()
-    })
+    this.loading ??= (async () => {
+      const kept = await this.kept()
+      const fresh = this.pull().then((notes) => {
+        if (notes === null) this.loading = null
+        for (const note of notes ?? []) this.take(note)
+        if (notes?.length) roomsChanged()
+      })
+      if (kept?.length) {
+        for (const note of kept) this.take(note)
+        roomsChanged()
+        void fresh
+        return
+      }
+      await fresh
+    })()
     return this.loading
+  }
+
+  /** The list this device saw last, from the server's own sealed copy of it. */
+  private async kept(): Promise<Kept[] | null> {
+    try {
+      const blob = await readPeople(this.server)
+      if (!blob) return null
+      const record = (await unseal((await personal()).key, blob)) as { notes?: unknown } | null
+      if (!record || !Array.isArray(record.notes)) return null
+      return record.notes.filter((n) => n && typeof n === 'object' && typeof (n as Kept).room === 'string') as Kept[]
+    } catch {
+      return null
+    }
   }
 
   async list(): Promise<RoomNote[]> {
@@ -204,6 +232,7 @@ export class ServerBook {
       if (typeof body.blob !== 'string') return null
       const record = (await unseal(key, body.blob)) as { notes?: unknown; prefs?: unknown } | null
       if (!record) return null
+      void writePeople(this.server, body.blob)
       takePrefs(record.prefs)
       return Array.isArray(record.notes)
         ? (record.notes.filter((n) => n && typeof n === 'object' && typeof (n as Kept).room === 'string') as Kept[])
@@ -226,6 +255,7 @@ export class ServerBook {
       for (const note of theirs) this.take(note)
       const { id, token, key } = await personal()
       const blob = await seal(key, { notes: [...this.notes.values()], prefs: localPrefs() })
+      void writePeople(this.server, blob)
       await ask(this.server, `/api/v1/people/${id}`, {
         method: 'PUT',
         headers: { 'content-type': 'application/json', 'x-nook-write': token },

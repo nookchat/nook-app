@@ -235,7 +235,9 @@ async function stream(member, from, live) {
         if (fresh(session)) deliver(member, { t: 'sig', d: session.d }, false)
       }
       deliver(member, hereNow(member.room), false)
-      deliver(member, { t: 'live', at: Math.max(cursor, await newest(member.room)) }, false)
+      const top = await newest(member.room)
+      // `top` lets a device that kept lines see that this server holds fewer: it was started over.
+      deliver(member, { t: 'live', at: Math.max(cursor, top), top }, false)
     }
   } finally {
     member.streaming = false

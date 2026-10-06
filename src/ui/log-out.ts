@@ -1,6 +1,7 @@
 import { closeConnections } from '../net/connection'
 import { forgetPush } from '../net/push'
 import { spaces } from '../space/registry'
+import { wipeCache } from '../store/cache'
 import { forgetEverything } from '../store/identity'
 import { showBoot } from './boot'
 import { THEME_KEY } from './theme'
@@ -27,5 +28,6 @@ export async function logOutHere(): Promise<void> {
   ])
   closeConnections()
   forgetEverything([THEME_KEY])
+  await Promise.race([wipeCache(), new Promise((done) => window.setTimeout(done, LOG_OUT_WAIT_MS))])
   window.location.replace(window.location.pathname)
 }
