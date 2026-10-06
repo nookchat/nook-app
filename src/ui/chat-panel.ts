@@ -6,7 +6,6 @@ import { cleanName, EVERYONE, findMentions, findSpoilers, mentionsMe, type Spoil
 import { CLIP_RE, hasMedia, imageLinks, isDrawing } from '../pictures'
 import { shortKey } from '../store/identity'
 import { canRecordVoice, recordVoice, voiceSeconds, type VoiceRecording } from '../media/voice-note'
-import { confirmDanger } from './ask'
 import { AttachTray, attachmentBlock } from './attachments'
 import { clear, copyText, h, roleInk } from './dom'
 import {
@@ -1706,7 +1705,7 @@ export class ChatPanel {
       const person = (ev.target as Element).closest('.chat-name, .avatar')
       const about = person && this.personMenu ? this.personMenu(m.author) : []
       if (about.length) return about
-      return [...mediaMenu(ev.target as Element), ...this.messageMenu(m, mine, who, line)]
+      return [...mediaMenu(ev.target as Element), ...this.messageMenu(m, mine, line)]
     })
 
     if (m.replyTo && m.replyTo !== this.threadRoot) {
@@ -1830,7 +1829,7 @@ export class ChatPanel {
     const actions = (): void => {
       if (this.actionsFor.get(row) !== actions) return
       this.actionsFor.delete(row)
-      line.append(this.rowActions(m, mine, who))
+      line.append(this.rowActions(m, mine))
     }
     this.actionsFor.set(row, actions)
     row.addEventListener('pointerenter', actions, { once: true })
@@ -2137,7 +2136,7 @@ export class ChatPanel {
     row.classList.add('found')
   }
 
-  private rowActions(m: Message, mine: boolean, who: string): HTMLElement {
+  private rowActions(m: Message, mine: boolean): HTMLElement {
     const bar = h('div', { class: 'chat-actions' })
     if (this.canPin) {
       bar.append(
@@ -2193,7 +2192,7 @@ export class ChatPanel {
             {
               class: 'danger',
               ariaLabel: 'Delete',
-              on: { click: () => this.actions?.retract(m.id) },
+              on: { click: () => this.askDelete(m.id) },
             },
             [icon('trash', 19)],
           ),
@@ -2210,10 +2209,7 @@ export class ChatPanel {
               class: 'danger',
               ariaLabel: 'Delete this message',
               on: {
-                click: async () => {
-                  if (!(await confirmDanger('Delete this message?', `It is from ${who}.`, 'Delete'))) return
-                  this.actions?.retract(m.id)
-                },
+                click: () => this.askDelete(m.id),
               },
             },
             [icon('trash', 19)],
@@ -2225,7 +2221,41 @@ export class ChatPanel {
     return bar
   }
 
-  private messageMenu(m: Message, mine: boolean, who: string, line: HTMLElement): MenuEntry[] {
+  /** Asks in the message's own row, not in a window, before a message goes. */
+  private askDelete(id: string): void {
+    const row = this.log.querySelector(`[data-id="${id}"]`)
+    if (!(row instanceof HTMLElement)) return
+    this.log.querySelector('.chat-delete-ask')?.remove()
+    const close = (): void => {
+      ask.remove()
+      document.removeEventListener('keydown', onKey, true)
+    }
+    const onKey = (ev: KeyboardEvent): void => {
+      if (ev.key !== 'Escape') return
+      ev.stopPropagation()
+      close()
+    }
+    const yes = h('button', {
+      class: 'small danger-fill',
+      text: 'Delete',
+      on: {
+        click: () => {
+          close()
+          this.actions?.retract(id)
+        },
+      },
+    })
+    const ask = h('div', { class: 'chat-delete-ask', role: 'alertdialog', ariaLabel: 'Delete this message?' }, [
+      h('span', { text: 'Delete this message?' }),
+      h('button', { class: 'ghost small', text: 'Cancel', on: { click: close } }),
+      yes,
+    ])
+    row.append(ask)
+    document.addEventListener('keydown', onKey, true)
+    yes.focus()
+  }
+
+  private messageMenu(m: Message, mine: boolean, line: HTMLElement): MenuEntry[] {
     const lead = (name: Parameters<typeof icon>[0]): HTMLElement => h('span', { class: 'menu-icon' }, [icon(name, 16)])
     const reacted = (emoji: string): boolean => m.reactions.get(emoji)?.has(this.me) === true
     const quick = h('div', { class: 'menu-reacts' })
@@ -2307,10 +2337,7 @@ export class ChatPanel {
         label: 'Delete',
         lead: lead('trash'),
         danger: true,
-        run: async () => {
-          if (!mine && !(await confirmDanger('Delete this message?', `It is from ${who}.`, 'Delete'))) return
-          this.actions?.retract(m.id)
-        },
+        run: () => this.askDelete(m.id),
       })
     }
     return items

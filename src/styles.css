@@ -9831,3 +9831,31 @@ input.invalid:focus {
     transition: none;
   }
 }
+
+/* Delete asked in the message's own row, over the corner where its buttons are. */
+.chat-delete-ask {
+  position: absolute;
+  top: -16px;
+  right: 8px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 3px 3px 10px;
+  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--bad) 45%, var(--line));
+  border-radius: calc(var(--icon-btn-radius-small) + 3px);
+  box-shadow: var(--shadow-small);
+  font-size: 13px;
+  color: var(--fg);
+}
+
+.chat-row:not(.first) .chat-delete-ask {
+  top: -20px;
+}
+
+.chat-delete-ask button.danger-fill {
+  background: var(--bad);
+  border-color: var(--bad);
+  color: #fff;
+}
