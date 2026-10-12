@@ -8463,6 +8463,8 @@ main.settings {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* A list taller than the screen scrolls; it does not squeeze a title short. */
+  flex: none;
 }
 
 .settings-nav-group:first-of-type {
