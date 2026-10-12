@@ -9,8 +9,8 @@ const UPDATING_KEY = 'nook.updating.v1'
 /** However the start goes, the screen is gone by then. */
 const MOST_MS = 12_000
 const FADE_MS = 280
-/** A start quicker than this still lets the ghost finish coming in, so it never flickers. */
-const LEAST_MS = 700
+/** The full bar shows this long before the screen goes. */
+const FULL_MS = 220
 
 const first = document.getElementById('boot')
 /** A copy, for an update to show again once the first one has gone. */
@@ -73,7 +73,7 @@ export function bootDone(): void {
   window.setTimeout(() => {
     going.classList.add('gone')
     window.setTimeout(() => going.remove(), FADE_MS)
-  }, Math.max(220, LEAST_MS - performance.now()))
+  }, FULL_MS)
 }
 
 /**

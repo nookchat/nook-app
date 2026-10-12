@@ -30,7 +30,6 @@
       #boot .boot-stage { position: relative; width: 104px; height: 104px; }
       #boot .boot-ghost {
         position: absolute; left: 0; top: 0; width: 104px; height: 104px; overflow: visible;
-        animation: boot-peek 0.56s cubic-bezier(0.34, 1.56, 0.64, 1) both;
       }
       #boot .boot-body { fill: var(--boot-brand); }
       #boot .boot-eyes { fill: var(--boot-on-brand); transform-box: fill-box; transform-origin: center; animation: boot-blink 5.2s ease-in-out 1.2s infinite; }
@@ -38,12 +37,11 @@
       #boot .boot-shadow {
         position: absolute; left: 28px; bottom: 4px; width: 48px; height: 7px; border-radius: 50%;
         background: var(--boot-brand); opacity: 0.12;
-        animation: boot-fade 0.56s ease both;
       }
-      #boot .boot-word { height: 26px; margin-top: 18px; fill: var(--boot-brand); animation: boot-rise 0.4s ease 0.22s both; }
+      #boot .boot-word { height: 26px; margin-top: 18px; fill: var(--boot-brand); }
       #boot .boot-bar {
         position: relative; width: 176px; height: 4px; margin-top: 26px; border-radius: 999px;
-        overflow: hidden; background: var(--boot-track); animation: boot-fade 0.4s ease 0.3s both;
+        overflow: hidden; background: var(--boot-track);
       }
       #boot .boot-fill {
         position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 999px;
@@ -57,12 +55,9 @@
       }
       #boot .boot-say {
         min-height: 18px; margin-top: 12px; font: 500 13px/18px system-ui, -apple-system, "Segoe UI", sans-serif;
-        color: var(--boot-words); animation: boot-fade 0.4s ease 0.38s both; transition: opacity 0.18s ease;
+        color: var(--boot-words); transition: opacity 0.18s ease;
       }
-      @keyframes boot-peek { from { transform: translateY(45%) scale(0.9); opacity: 0; } to { transform: none; opacity: 1; } }
       @keyframes boot-blink { 0%, 90%, 100% { transform: scaleY(1); } 93% { transform: scaleY(0.12); } 96% { transform: scaleY(1); } }
-      @keyframes boot-fade { from { opacity: 0; } }
-      @keyframes boot-rise { from { opacity: 0; transform: translateY(6px); } }
       @keyframes boot-shine { from { left: -48px; } to { left: 100%; } }
       @media (prefers-reduced-motion: reduce) {
         #boot .boot-ghost, #boot .boot-eyes, #boot .boot-shadow, #boot .boot-word, #boot .boot-fill::after { animation: none; }

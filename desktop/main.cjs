@@ -339,12 +339,16 @@ const SPLASH_MOST_MS = 20_000
 /** Takes the splash away. Null when there is none. */
 let hideSplash = null
 
+/** However the splash's start goes, the window shows by then. */
+const SPLASH_READY_MOST_MS = 1500
+
 /**
  * Shows desktop/splash.html over the window at once: the page's loading screen, which comes
  * from the network and needs a few seconds on a cold start. It goes when the page says it has
  * painted its own (boot:shown), when the page has loaded or failed, or after SPLASH_MOST_MS.
+ * `ready` runs once the splash has drawn, so the window never shows empty before it.
  */
-function showSplash(win) {
+function showSplash(win, ready) {
   const view = new WebContentsView()
   view.setBackgroundColor(pageColour())
   const fit = () => {
@@ -357,6 +361,14 @@ function showSplash(win) {
   for (const ev of SIZE_EVENTS) win.on(ev, fit)
   win.contentView.addChildView(view)
   const picked = savedTheme()
+  let readyOnce = () => {
+    readyOnce = () => undefined
+    clearTimeout(readyTimer)
+    ready()
+  }
+  const readyTimer = setTimeout(() => readyOnce(), SPLASH_READY_MOST_MS)
+  view.webContents.once('did-finish-load', () => readyOnce())
+  view.webContents.once('did-fail-load', () => readyOnce())
   view.webContents.loadFile(path.join(__dirname, 'splash.html'), picked ? { query: { theme: picked } } : undefined)
 
   const failed = (_ev, code, _desc, _url, mainFrame) => {
@@ -367,6 +379,7 @@ function showSplash(win) {
     if (hideSplash !== hide) return
     hideSplash = null
     clearTimeout(timer)
+    readyOnce()
     if (!win.isDestroyed()) {
       for (const ev of SIZE_EVENTS) win.removeListener(ev, fit)
       win.webContents.removeListener('did-finish-load', hide)
@@ -392,6 +405,8 @@ function createWindow() {
     minWidth: MIN_SIZE.width,
     minHeight: MIN_SIZE.height,
     backgroundColor: pageColour(),
+    // Shown once the splash has drawn: before that it is only the empty colour of the page.
+    show: false,
     title: 'Nook',
     autoHideMenuBar: true,
     // The click that brings the window forward also presses what is under it, as in a browser.
@@ -437,7 +452,6 @@ function createWindow() {
     ev.preventDefault()
     openOutside(url)
   })
-  if (place && saved.maximized) main.maximize()
   rememberPlace(main, place ? { ...saved, bounds: place } : null)
   main.on('close', (ev) => {
     if (quitting || installing || !keepsInTray()) return
@@ -474,7 +488,13 @@ function createWindow() {
     looking()
   })
 
-  showSplash(main)
+  const win = main
+  showSplash(win, () => {
+    if (win.isDestroyed()) return
+    // Maximize shows the window, so it waits for the splash too.
+    if (place && saved.maximized) win.maximize()
+    win.show()
+  })
   const start = pendingLink || process.argv.map(appLink).find(Boolean)
   pendingLink = null
   main.loadURL(start || HOME)

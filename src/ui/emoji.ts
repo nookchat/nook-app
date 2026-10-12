@@ -199,7 +199,7 @@ const GROUPS: EmojiGroup[] = [
       '💳 card payment', '🧾 receipt', '⚖️ scales balance justice',
       '🔧 spanner wrench fix', '🔨 hammer', '⚒️ hammer pick', '🛠️ tools',
       '⛏️ pick', '🔩 nut bolt', '⚙️ gear settings cog', '🧰 toolbox',
-      '🧲 magnet', '🔫 water pistol', '💣 bomb', '🧨 firecracker',
+      '🧲 magnet', '🔫 water pistol gun airsoft', '💣 bomb', '🧨 firecracker',
       '🔪 knife', '🗡️ dagger', '⚔️ crossed swords', '🛡️ shield',
       '🚬 cigarette', '⚰️ coffin', '🏺 amphora', '🔭 telescope',
       '🔬 microscope', '🕳️ hole', '💊 pill medicine', '💉 syringe injection',

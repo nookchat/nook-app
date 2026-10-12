@@ -9783,6 +9783,22 @@ input.invalid:focus {
 }
 
 /* A channel kept to some levels: its icon wears a small lock. */
+/* An emoji a channel was given, in its mark's place and at its mark's size. */
+.channel-emoji {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85em;
+  line-height: 1;
+}
+
+.channel-emoji .twemoji {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
 .channel-icon {
   position: relative;
   display: inline-flex;

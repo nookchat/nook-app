@@ -7,6 +7,4 @@
   } catch (e) {}
   var dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches
   document.querySelector('meta[name="theme-color"]').content = dark ? '#100C0B' : '#FDF6F3'
-  // The desktop app showed the same screen while the page came, so it does not come in again.
-  if (window.nookDesktop && window.nookDesktop.splash) root.classList.add('boot-held')
 })()

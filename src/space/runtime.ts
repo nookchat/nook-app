@@ -21,7 +21,7 @@ import { cleanChannel, passProof, type LogEvent } from '../store/log'
 import type { RoomNote } from '../store/notes'
 import { PREFS_CHANGED } from '../store/prefs'
 import { RoomChat } from '../store/room-chat'
-import { bookFor, stable } from '../store/server-spaces'
+import { bookFor, READ_CHANGED, stable } from '../store/server-spaces'
 import { adoptAvatar, adoptCover, avatarKnown, avatarSavedAt, coverKnown, coverSavedAt, loadAvatar, loadCover } from '../ui/avatar'
 import { chirpDeafen, chirpHangup, chirpJoin, chirpLeave, chirpMute } from '../ui/sounds'
 
@@ -290,6 +290,7 @@ export class SpaceRuntime {
     bus.start()
     mesh.start()
     document.addEventListener('visibilitychange', this.announceAgain)
+    window.addEventListener(READ_CHANGED, this.readElsewhere)
     window.addEventListener(PLAYING_CHANGED, this.announceAgain)
     window.addEventListener(LISTENING_CHANGED, this.announceAgain)
     window.addEventListener(STATUS_CHANGED, this.announceAgain)
@@ -524,6 +525,15 @@ export class SpaceRuntime {
     return { count, mentions, direct }
   }
 
+  /** Read on another device: read here too. */
+  private readonly readElsewhere = (ev: Event): void => {
+    const marks = (ev as CustomEvent<{ room: string; read?: Record<string, number>; readDm?: Record<string, number> }>).detail
+    if (!this.room || marks.room !== this.room.id || !this.note || this.stopped) return
+    this.note = { ...this.note, read: marks.read, readDm: marks.readDm }
+    if (marks.readDm) this.chat?.setDirectRead(marks.readDm)
+    this.emit('changed')
+  }
+
   remember(patch: NotePatch): Promise<void> {
     const own: NotePatch = {
       ...patch,
@@ -743,6 +753,7 @@ export class SpaceRuntime {
     this.endCall()
     this.voice?.dispose()
     document.removeEventListener('visibilitychange', this.announceAgain)
+    window.removeEventListener(READ_CHANGED, this.readElsewhere)
     window.removeEventListener(PLAYING_CHANGED, this.announceAgain)
     window.removeEventListener(LISTENING_CHANGED, this.announceAgain)
     window.removeEventListener(STATUS_CHANGED, this.announceAgain)

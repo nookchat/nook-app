@@ -37,8 +37,8 @@
     <meta name="apple-mobile-web-app-title" content="Nook" />
     <style>
       /* The loading screen: plain CSS in the page, so it shows before any script or stylesheet arrives.
-         The colours are the brand tokens (src/brand/tokens.css) for each theme. The ghost does the
-         moving, as the brand's motion rules say: it peeks in, then floats and blinks. src/ui/boot.ts
+         The colours are the brand tokens (src/brand/tokens.css) for each theme. It is all there from
+         the first paint, with nothing to fade in: the ghost only floats and blinks. src/ui/boot.ts
          moves the bar through the real steps of the start, and takes the screen away. */
       :root { --boot-page: #FDF6F3; --boot-brand: #191412; --boot-on-brand: #FDF6F3; --boot-track: #ECDFDA; --boot-words: #6F6561; }
       :root[data-theme="dark"] { --boot-page: #100C0B; --boot-brand: #FDF6F3; --boot-on-brand: #191412; --boot-track: #312A27; --boot-words: #A89F9C; }
@@ -55,7 +55,7 @@
       #boot .boot-stage { position: relative; width: 104px; height: 104px; }
       #boot .boot-ghost {
         position: absolute; left: 0; top: 0; width: 104px; height: 104px; overflow: visible;
-        animation: boot-peek 0.56s cubic-bezier(0.34, 1.56, 0.64, 1) both, boot-float 2.8s cubic-bezier(0.45, 0, 0.55, 1) 0.56s infinite;
+        animation: boot-float 2.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
       }
       #boot .boot-body { fill: var(--boot-brand); }
       #boot .boot-eyes { fill: var(--boot-on-brand); transform-box: fill-box; transform-origin: center; animation: boot-blink 5.2s ease-in-out 1.2s infinite; }
@@ -63,12 +63,12 @@
       #boot .boot-shadow {
         position: absolute; left: 28px; bottom: 4px; width: 48px; height: 7px; border-radius: 50%;
         background: var(--boot-brand); opacity: 0.12;
-        animation: boot-fade 0.56s ease both, boot-shadow 2.8s cubic-bezier(0.45, 0, 0.55, 1) 0.56s infinite;
+        animation: boot-shadow 2.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
       }
-      #boot .boot-word { height: 26px; margin-top: 18px; fill: var(--boot-brand); animation: boot-rise 0.4s ease 0.22s both; }
+      #boot .boot-word { height: 26px; margin-top: 18px; fill: var(--boot-brand); }
       #boot .boot-bar {
         position: relative; width: 176px; height: 4px; margin-top: 26px; border-radius: 999px;
-        overflow: hidden; background: var(--boot-track); animation: boot-fade 0.4s ease 0.3s both;
+        overflow: hidden; background: var(--boot-track);
       }
       #boot .boot-fill {
         position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 999px;
@@ -76,7 +76,7 @@
         overflow: hidden;
       }
       /* Before the script takes over, the bar creeps on by itself, so it never looks stuck. */
-      #boot .boot-fill.creep { animation: boot-creep 2.4s cubic-bezier(0.1, 0.8, 0.3, 1) 0.3s both; }
+      #boot .boot-fill.creep { animation: boot-creep 2.4s cubic-bezier(0.1, 0.8, 0.3, 1) both; }
       #boot .boot-fill::after {
         content: ""; position: absolute; top: 0; bottom: 0; width: 48px;
         background: linear-gradient(90deg, transparent, var(--boot-page), transparent); opacity: 0.35;
@@ -84,23 +84,14 @@
       }
       #boot .boot-say {
         min-height: 18px; margin-top: 12px; font: 500 13px/18px system-ui, -apple-system, "Segoe UI", sans-serif;
-        color: var(--boot-words); animation: boot-fade 0.4s ease 0.38s both; transition: opacity 0.18s ease;
+        color: var(--boot-words); transition: opacity 0.18s ease;
       }
       #boot .boot-say.swap { opacity: 0; }
-      @keyframes boot-peek { from { transform: translateY(45%) scale(0.9); opacity: 0; } to { transform: none; opacity: 1; } }
       @keyframes boot-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5%); } }
       @keyframes boot-shadow { 0%, 100% { transform: scaleX(1); opacity: 0.12; } 50% { transform: scaleX(0.8); opacity: 0.07; } }
       @keyframes boot-blink { 0%, 90%, 100% { transform: scaleY(1); } 93% { transform: scaleY(0.12); } 96% { transform: scaleY(1); } }
-      @keyframes boot-fade { from { opacity: 0; } }
-      @keyframes boot-rise { from { opacity: 0; transform: translateY(6px); } }
       @keyframes boot-creep { from { width: 0; } to { width: 22%; } }
       @keyframes boot-shine { from { left: -48px; } to { left: 100%; } }
-      /* After the desktop app's splash (desktop/splash.html): the ghost floats from where it rests, and nothing fades in. */
-      .boot-held #boot .boot-ghost, .boot-held #boot .boot-shadow, .boot-held #boot .boot-word, .boot-held #boot .boot-bar, .boot-held #boot .boot-say { animation: none; }
-      @media (prefers-reduced-motion: no-preference) {
-        .boot-held #boot .boot-ghost { animation: boot-float 2.8s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
-        .boot-held #boot .boot-shadow { animation: boot-shadow 2.8s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
-      }
       @media (prefers-reduced-motion: reduce) {
         #boot .boot-ghost, #boot .boot-eyes, #boot .boot-shadow, #boot .boot-word, #boot .boot-fill::after { animation: none; }
       }

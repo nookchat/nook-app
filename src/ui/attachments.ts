@@ -226,6 +226,7 @@ function videoTile(file: Attachment, source: SpaceFiles | null, most: { w: numbe
           video.addEventListener('loadedmetadata', () => ok(), { once: true })
           video.addEventListener('error', () => fail(new Error('the stream did not play')), { once: true })
         })
+          .then(() => source.keepLater(file))
           .catch(async () => {
             progress.textContent = '0%'
             video.src = await source.url(file, shown)
@@ -395,6 +396,7 @@ function fileCard(file: Attachment, source: SpaceFiles | null): HTMLElement {
       const audio = h('audio', { class: 'att-audio' })
       audio.controls = true
       audio.src = stream ?? (await source.url(file))
+      if (stream) source.keepLater(file)
       play.remove()
       card.after(audio)
       await audio.play().catch(() => undefined)

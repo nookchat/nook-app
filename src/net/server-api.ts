@@ -1,3 +1,4 @@
+import { readPreview, writePreview } from '../store/cache'
 import type { Gif } from '../store/gifs'
 import { open as unseal, seal, type Envelope } from '../signal/envelope'
 import type { LogEvent } from '../store/log'
@@ -34,11 +35,15 @@ export async function openLine(key: CryptoKey, line: unknown): Promise<unknown> 
 
 const previews = new Map<string, Promise<LinkPreview | null>>()
 
+/**
+ * The card for a link. One this device kept comes at once, and the server's answer only
+ * replaces it for the next start, so a card never jumps on the screen.
+ */
 export function preview(server: string, url: string): Promise<LinkPreview | null> {
   const key = `${server} ${url}`
   const held = previews.get(key)
   if (held) return held
-  const asking = (async (): Promise<LinkPreview | null> => {
+  const fresh = async (): Promise<LinkPreview | null> => {
     const res = await ask(server, `/api/v1/preview?url=${encodeURIComponent(url)}`)
     if (!res?.ok) return null
     const body = (await res.json().catch(() => null)) as LinkPreview | null
@@ -49,7 +54,16 @@ export function preview(server: string, url: string): Promise<LinkPreview | null
       const path = body[field]
       if (path?.startsWith('/api/')) body[field] = `${base}${path}`
     }
+    void writePreview(key, body)
     return body
+  }
+  const asking = (async (): Promise<LinkPreview | null> => {
+    const kept = (await readPreview(key)) as LinkPreview | null
+    if (kept && typeof kept === 'object') {
+      void fresh().catch(() => null)
+      return kept
+    }
+    return fresh()
   })()
   previews.set(key, asking)
   return asking

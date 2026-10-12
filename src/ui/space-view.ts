@@ -92,7 +92,7 @@ import { actionFor, type Action } from './shortcuts'
 import { NoteEditor } from './notes-view'
 import { WHITEBOARDS, WhiteboardView } from './whiteboard-view'
 import { LOOKING_CHANGED, nookInView } from './looking'
-import { placeNear } from './emoji'
+import { openEmojiPicker, placeNear } from './emoji'
 import { playWhileSeen } from './clips'
 import { asSheet, closeOnBack, onDrag, phone, PHONE, scrollsThatWay } from './gestures'
 import { loadAvatar, squareThumb } from './avatar'
@@ -275,10 +275,14 @@ function randomId(): string {
 
 
 /** A channel's icon; a channel kept to some levels wears a small lock, as in Discord. */
-function channelIcon(name: 'image' | 'hash' | 'volume', size: number, kept: boolean): SVGElement | HTMLElement {
-  if (!kept) return icon(name, size)
+/** A channel's mark, or the emoji it was given in its place. */
+function channelIcon(name: 'image' | 'hash' | 'volume', size: number, kept: boolean, emoji = ''): SVGElement | HTMLElement {
+  const mark = emoji
+    ? h('span', { class: 'channel-emoji', text: emoji, style: { width: `${size}px`, height: `${size}px` } })
+    : icon(name, size)
+  if (!kept) return mark
   return h('span', { class: 'channel-icon kept', title: 'Kept to some levels' }, [
-    icon(name, size),
+    mark,
     h('span', { class: 'channel-lock' }, [icon('lock', 9)]),
   ])
 }
@@ -591,7 +595,7 @@ export class SpaceView {
   /** Everyone currently in a voice channel that I've muted for myself. */
   private mutedKeysNow(): Set<string> {
     const keys = new Set<string>()
-    for (const channel of this.chat?.channelInfo(true) ?? [{ name: DEFAULT_VOICE, label: DEFAULT_VOICE, topic: '', levels: [], nsfw: false, mediaOnly: false, noTalking: false }]) {
+    for (const channel of this.chat?.channelInfo(true) ?? [{ name: DEFAULT_VOICE, label: DEFAULT_VOICE, topic: '', emoji: '', levels: [], nsfw: false, mediaOnly: false, noTalking: false }]) {
       for (const id of this.voice?.membersOf(channel.name) ?? []) {
         const key = this.keyOf(id)
         if (mutedFor(key)) keys.add(key)
@@ -1292,7 +1296,30 @@ export class SpaceView {
     }
   }
 
-  private channelActions(channel: ChannelInfo): MenuItem[] {
+  /** Set, change or take away the emoji before a channel's name. The picker opens by `anchor`. */
+  private emojiItems(channel: ChannelInfo, voice: boolean, anchor: HTMLElement): MenuItem[] {
+    const items: MenuItem[] = [
+      {
+        label: channel.emoji ? 'Change the emoji' : 'Set an emoji',
+        note: channel.emoji ? `Shown before ${channel.label}` : `Shown before ${channel.label}, in place of its mark`,
+        run: () =>
+          openEmojiPicker({
+            anchor,
+            title: `An emoji for ${channel.label}`,
+            onPick: (picked) => void this.publish((c) => c.setChannelEmoji(channel.name, picked, voice)),
+          }),
+      },
+    ]
+    if (channel.emoji) {
+      items.push({
+        label: 'Take the emoji away',
+        run: () => void this.publish((c) => c.setChannelEmoji(channel.name, '', voice)),
+      })
+    }
+    return items
+  }
+
+  private channelActions(channel: ChannelInfo, anchor: HTMLElement): MenuItem[] {
     const room = this.space.room.id
     const mutedItself = channelMutedItself(room, channel.name)
     const mute: MenuItem = spaceMuted(room)
@@ -1316,6 +1343,7 @@ export class SpaceView {
           void this.publish((c) => c.labelChannel(channel.name, label))
         },
       },
+      ...this.emojiItems(channel, false, anchor),
       {
         label: channel.topic ? 'Change the topic' : 'Set a topic',
         note: channel.topic || 'A line saying what it is for',
@@ -1360,7 +1388,7 @@ export class SpaceView {
   }
 
   /** For whoever can change channels: the name, who may join, and, but for the default one, delete. */
-  private voiceChannelActions(channel: ChannelInfo): MenuItem[] {
+  private voiceChannelActions(channel: ChannelInfo, anchor: HTMLElement): MenuItem[] {
     const items: MenuItem[] = [
       ...this.moveItems(channel.name, true),
       {
@@ -1380,6 +1408,7 @@ export class SpaceView {
           void this.publish((c) => c.labelChannel(channel.name, label, true))
         },
       },
+      ...this.emojiItems(channel, true, anchor),
     ]
     if (channel.name === DEFAULT_VOICE) return items
     items.push(this.whoMayEnter(channel, true), {
@@ -2010,13 +2039,14 @@ export class SpaceView {
     const nsfw = !!info?.nsfw
     const media = !!info?.mediaOnly
     const kept = !!info?.levels.length
-    const sig = `${label}\n${topic}\n${nsfw}\n${media}\n${kept}`
+    const emoji = info?.emoji ?? ''
+    const sig = `${label}\n${topic}\n${nsfw}\n${media}\n${kept}\n${emoji}`
     if (this.channelTitleSig === sig) return
     this.channelTitleSig = sig
     clear(this.channelTitle)
     this.channelTitle.append(
       h('span', { class: 'channel-name' }, [
-        channelIcon(media ? 'image' : 'hash', 18, kept),
+        channelIcon(media ? 'image' : 'hash', 18, kept, emoji),
         h('span', { class: 'truncate', text: label }),
         nsfw ? h('span', { class: 'nsfw-mark', text: 'NSFW', title: 'Pictures are blurred until clicked' }) : null,
       ]),
@@ -3064,6 +3094,10 @@ export class SpaceView {
     const rows: KeyedRow[] = []
     const canEdit = chat?.can('channels') === true
     this.newTextButton.classList.toggle('hidden', !canEdit)
+    // Read on another device: read here too.
+    for (const [channel, at] of Object.entries(this.space.note?.read ?? {})) {
+      if (at > (this.read[channel] ?? 0)) this.read[channel] = at
+    }
     const waiting = chat?.unread(this.read) ?? new Map()
     let mentions = 0
     for (const [, count] of waiting) mentions += count.mentions
@@ -3077,7 +3111,7 @@ export class SpaceView {
       queueMicrotask(() => this.openChannel(wanted))
     }
 
-    for (const channel of chat?.channelInfo() ?? [{ name: DEFAULT_CHANNEL, label: DEFAULT_CHANNEL, topic: '', levels: [], nsfw: false, mediaOnly: false, noTalking: false }]) {
+    for (const channel of chat?.channelInfo() ?? [{ name: DEFAULT_CHANNEL, label: DEFAULT_CHANNEL, topic: '', emoji: '', levels: [], nsfw: false, mediaOnly: false, noTalking: false }]) {
       const name = channel.name
       const muted = channelMuted(this.space.room.id, name)
       const news = muted ? undefined : waiting.get(name)
@@ -3089,7 +3123,7 @@ export class SpaceView {
           on: { click: () => this.openChannel(name) },
         },
         [
-          channelIcon(channel.mediaOnly ? 'image' : 'hash', 16, channel.levels.length > 0),
+          channelIcon(channel.mediaOnly ? 'image' : 'hash', 16, channel.levels.length > 0, channel.emoji),
           h('span', { class: 'truncate grow', text: channel.label }),
           channel.nsfw ? h('span', { class: 'nsfw-mark', text: 'NSFW', title: 'Pictures are blurred until clicked' }) : null,
           muted ? h('span', { class: 'kept-mark', title: 'Muted' }, [icon('bell-off', 13)]) : null,
@@ -3100,7 +3134,7 @@ export class SpaceView {
         ],
       )
       const railRow = h('div', { class: 'row rail-row' }, [open])
-      onContextMenu(railRow, () => this.channelActions(channel))
+      onContextMenu(railRow, () => this.channelActions(channel, railRow))
       if (canEdit) this.orderByHand(railRow, name, false)
       rows.push({ key: name, el: railRow, also: JSON.stringify(channel) })
     }
@@ -3281,7 +3315,7 @@ export class SpaceView {
     // Kept from you now, or deleted, while you were in it.
     if (chat && here && (!chat.mayEnter(chat.me, here, true) || chat.log.wasDropped(here, true))) queueMicrotask(() => this.leaveVoice())
     const canEdit = chat?.can('channels') === true
-    for (const channel of chat?.channelInfo(true) ?? [{ name: DEFAULT_VOICE, label: DEFAULT_VOICE, topic: '', levels: [], nsfw: false, mediaOnly: false, noTalking: false }]) {
+    for (const channel of chat?.channelInfo(true) ?? [{ name: DEFAULT_VOICE, label: DEFAULT_VOICE, topic: '', emoji: '', levels: [], nsfw: false, mediaOnly: false, noTalking: false }]) {
       const name = channel.name
       const people = this.sessionsByPerson(this.voice?.membersOf(name) ?? [], peers)
       const join = h(
@@ -3295,7 +3329,7 @@ export class SpaceView {
           on: { click: () => this.clickVoice(name) },
         },
         [
-          channelIcon('volume', 16, channel.levels.length > 0),
+          channelIcon('volume', 16, channel.levels.length > 0, channel.emoji),
           h('span', { class: 'truncate grow', text: channel.label }),
           channel.noTalking ? h('span', { class: 'kept-mark', title: 'No talking: only listening' }, [icon('mic-off', 13)]) : null,
         ],
@@ -3314,7 +3348,7 @@ export class SpaceView {
         if ((ev.target as Element).closest('button')) return
         this.clickVoice(name)
       })
-      if (canEdit) onContextMenu(head, () => this.voiceChannelActions(channel))
+      if (canEdit) onContextMenu(head, () => this.voiceChannelActions(channel, head))
       const row = h('div', { class: 'voice-channel' })
       if (canEdit) this.orderByHand(row, name, true)
       // Anybody may drag themselves to another channel; only those who may move people drag others.

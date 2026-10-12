@@ -11,6 +11,21 @@ const OWN_KEY = 'nook.own.v1'
 const SAVE_MS = 2000
 const SAVE_SOON_MS = 300
 const RETRY_MS = SAVE_MS * 10
+/** How often a device in view asks for what the others read. It asks at once when it comes into view. */
+const REFRESH_EVERY_MS = 20_000
+
+/** A space's read marks moved on, from another device: `detail` is { room, read, readDm }. */
+export const READ_CHANGED = 'nook:read-changed'
+
+type Marks = Record<string, number> | undefined
+
+/** The furthest each device has read, channel by channel. A read mark never goes back. */
+function furthest(a: Marks, b: Marks): Marks {
+  if (!a || !b) return a ?? b
+  const out = { ...a }
+  for (const [key, at] of Object.entries(b)) if (typeof at === 'number' && at > (out[key] ?? 0)) out[key] = at
+  return out
+}
 
 /** JSON with sorted object keys, so equal values give equal strings. */
 export function stable(value: unknown): string {
@@ -97,6 +112,7 @@ export class ServerBook {
   readonly server: string
   private notes = new Map<string, Kept>()
   private loading: Promise<void> | null = null
+  private refreshing: Promise<void> | null = null
   private timer = 0
   private due = 0
   private saving: Promise<void> = Promise.resolve()
@@ -161,7 +177,13 @@ export class ServerBook {
     const was = this.notes.get(note.room)
     if (was?.gone && !joined) return
     const now = Date.now()
-    this.notes.set(note.room, { ...structuredClone(note), server: this.server, changed: now, joined: joined ? now : was?.joined })
+    const own = structuredClone(note)
+    // Read on another device since this one last looked: that stays read.
+    if (was && !was.gone) {
+      own.read = furthest(was.read, own.read)
+      own.readDm = furthest(was.readDm, own.readDm)
+    }
+    this.notes.set(note.room, { ...own, server: this.server, changed: now, joined: joined ? now : was?.joined })
     const fresh = !was || was.gone === true
     const onlyRead = !fresh && stable(withoutMarks(was)) === stable(withoutMarks(note))
     this.later(fresh ? 0 : onlyRead ? SAVE_MS : SAVE_SOON_MS)
@@ -195,13 +217,32 @@ export class ServerBook {
     return this.saving
   }
 
+  /** Asks the server for what the other devices saved, such as what they read. */
+  refresh(): void {
+    if (!this.loading || this.refreshing) return
+    this.refreshing = this.pull()
+      .then((notes) => {
+        for (const note of notes ?? []) this.take(note)
+      })
+      .finally(() => (this.refreshing = null))
+  }
+
   private take(note: Kept): void {
     const held = this.notes.get(note.room)
-    const kept = held ? winner(held, note) : note
+    let kept = held ? winner(held, note) : note
+    // Whichever copy stands, each channel is read as far as any device read it.
+    if (held && !kept.gone) {
+      const read = furthest(held.read, note.read)
+      const readDm = furthest(held.readDm, note.readDm)
+      if (stable(read) !== stable(kept.read) || stable(readDm) !== stable(kept.readDm)) kept = { ...kept, read, readDm }
+    }
     if (kept === held) return
     this.notes.set(note.room, kept)
     // Left on another device: gone from this one's list too.
     if (kept.gone && held && !held.gone) roomsChanged()
+    if (held && !kept.gone && (stable(kept.read) !== stable(held.read) || stable(kept.readDm) !== stable(held.readDm))) {
+      window.dispatchEvent(new CustomEvent(READ_CHANGED, { detail: { room: note.room, read: kept.read, readDm: kept.readDm } }))
+    }
   }
 
   private queuePush(): void {
@@ -277,6 +318,16 @@ const books = new Map<string, ServerBook>()
 watchPrefs(() => {
   for (const server of knownServers()) bookFor(server).touch()
 })
+
+// What another device read shows as read here too: asked for when Nook comes into view, and
+// now and then while it is.
+function refreshAll(): void {
+  if (document.visibilityState !== 'visible') return
+  for (const book of books.values()) book.refresh()
+}
+window.addEventListener('focus', refreshAll)
+document.addEventListener('visibilitychange', refreshAll)
+window.setInterval(refreshAll, REFRESH_EVERY_MS)
 
 export function bookFor(server: string): ServerBook {
   const url = serverUrl(server)

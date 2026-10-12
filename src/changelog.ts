@@ -14,6 +14,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    id: '2026-10-12',
+    title: 'Pictures kept on your device, and an emoji for each channel',
+    items: [
+      'Pictures, videos, voice messages and link cards are kept on your device, so they show the moment Nook opens, with no network.',
+      'The loading screen shows at once when Nook starts, not after a dark wait.',
+      'A channel can wear an emoji in place of its #. Right click it, then Set an emoji.',
+      'Read something on one device, and it is read on your others too.',
+    ],
+  },
+  {
     id: '2026-10-06',
     title: 'Opens at once, and a quieter media only warning',
     items: [

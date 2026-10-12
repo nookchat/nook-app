@@ -1,4 +1,5 @@
 import { fromBase64Url, toBase64Url } from '../bytes'
+import { FILE_MOST_BYTES, fileKept, readFile, writeFile } from '../store/cache'
 import type { Attachment } from '../store/log'
 import { endpoints } from './cluster'
 import { convertQuickly } from './convert'
@@ -336,6 +337,8 @@ async function lookAt(file: File): Promise<Look> {
   return {}
 }
 
+/** Files being got whole to keep, after they played as a stream. */
+const keepingLater = new Set<string>()
 const opened = new Map<string, Promise<Blob>>()
 const sizes = new Map<string, number>()
 const urls = new Map<string, string>()
@@ -431,6 +434,9 @@ export class SpaceFiles {
     if (look.thumb && look.thumb.length <= 4000) attachment.thumb = look.thumb
     if (poster) attachment.poster = poster
     remember(id, Promise.resolve(new Blob([file], { type: attachment.type })))
+    // The next start shows it from this device, as it shows what others sent.
+    void writeFile(id, sealed)
+    if (poster && posterSealed) void writeFile(poster, posterSealed)
     return attachment
   }
 
@@ -487,7 +493,8 @@ export class SpaceFiles {
    * service worker. Null when there is no service worker, or the file was sealed whole.
    */
   streamUrl(file: Attachment, onProgress?: Progress): string | null {
-    if (!file.chunk || opened.has(file.id)) return null
+    // Kept on this device: it opens from there at once.
+    if (!file.chunk || opened.has(file.id) || fileKept(file.id)) return null
     if (!streamReady()) return null
     if (onProgress) watchStream(file.id, onProgress)
     const token = toBase64Url(crypto.getRandomValues(new Uint8Array(16)))
@@ -500,6 +507,27 @@ export class SpaceFiles {
       urls: this.bases().map((base) => `${base}/api/v1/spaces/${this.room}/files/${file.id}`),
     })
     return `${STREAM_PATH}${token}`
+  }
+
+  /**
+   * A file that plays as a stream comes in parts, and none of them is kept. This gets it whole,
+   * after, so the next time it opens from this device.
+   */
+  keepLater(file: Attachment): void {
+    if (fileKept(file.id) || file.size > FILE_MOST_BYTES || keepingLater.has(file.id)) return
+    keepingLater.add(file.id)
+    void (async () => {
+      for (const base of this.bases()) {
+        try {
+          const res = await fetch(`${base}/api/v1/spaces/${this.room}/files/${file.id}`, { mode: 'cors' })
+          if (!res.ok) continue
+          await writeFile(file.id, await res.blob())
+          return
+        } catch {
+          /* the next server */
+        }
+      }
+    })().finally(() => keepingLater.delete(file.id))
   }
 
   poster(file: Attachment): Promise<Blob | null> {
@@ -531,6 +559,20 @@ export class SpaceFiles {
     // The sender names the type. A blob: address has this page's origin, so a type the browser
     // would run as a document (HTML, SVG, XML) never goes on one: such a file is only bytes to save.
     const type = blobType(asked)
+    const kept = await readFile(id).catch(() => null)
+    if (kept) {
+      try {
+        onProgress?.(kept.size, kept.size)
+        if (file?.chunk) {
+          const pieces = new PieceOpener(importKey(key), file.size, file.chunk)
+          pieces.add(new Uint8Array(await kept.arrayBuffer()))
+          return new Blob([await pieces.done()], { type })
+        }
+        return new Blob([await openBytes(key, await kept.arrayBuffer())], { type })
+      } catch {
+        /* the kept copy does not open: the server's does */
+      }
+    }
     let last: unknown = null
     for (const base of this.bases()) {
       try {
@@ -545,18 +587,28 @@ export class SpaceFiles {
         // Sealed in pieces: each is opened while the rest arrives. Sealed whole, as the first files were: at the end.
         const pieces = file?.chunk ? new PieceOpener(importKey(key), file.size, file.chunk) : null
         const parts: Uint8Array[] = []
+        // The sealed bytes are kept on this device too, unless the file is too big to keep.
+        let keeping = !total || total <= FILE_MOST_BYTES
         let done = 0
         for (;;) {
           const chunk = await reader.read()
           if (chunk.done) break
           if (pieces) pieces.add(chunk.value)
-          else parts.push(chunk.value)
+          if (!pieces || keeping) parts.push(chunk.value)
           done += chunk.value.length
+          if (done > FILE_MOST_BYTES && pieces && keeping) {
+            keeping = false
+            parts.length = 0
+          }
           onProgress?.(done, total)
         }
-        if (pieces) return new Blob([await pieces.done()], { type })
-        const sealed = await new Blob(parts as BlobPart[]).arrayBuffer()
-        return new Blob([await openBytes(key, sealed)], { type })
+        const sealed = !pieces || keeping ? new Blob(parts as BlobPart[]) : null
+        const opened = pieces
+          ? new Blob([await pieces.done()], { type })
+          : new Blob([await openBytes(key, await sealed!.arrayBuffer())], { type })
+        // Kept only once it opened: a copy cut short would never open again.
+        if (sealed) void writeFile(id, sealed)
+        return opened
       } catch (err) {
         last = err
       }

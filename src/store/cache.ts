@@ -5,8 +5,19 @@
  */
 
 const DB_NAME = 'nook-cache'
+const DB_VERSION = 2
 const LINES = 'lines'
 const META = 'meta'
+/** The sealed bytes of each file and picture, as the server holds them, by the file's id. */
+const FILES = 'files'
+/** Each kept file's size and when it was last looked at: small, so a start reads it all. */
+const FILE_INFO = 'file-info'
+/** The kept files stay under this. The ones looked at longest ago go first. */
+const FILES_MOST_BYTES = 2 * 1024 * 1024 * 1024
+/** A bigger file than this is not kept: it plays from the server, as before. */
+export const FILE_MOST_BYTES = 200 * 1024 * 1024
+/** How often a kept file that is looked at again has its time moved on. */
+const TOUCH_EVERY_MS = 60 * 60 * 1000
 
 export interface RoomCopy {
   /** The server whose numbering `at` and the places follow. */
@@ -30,10 +41,13 @@ let queue: Promise<unknown> = Promise.resolve()
 function db(): Promise<IDBDatabase | null> {
   opening ??= new Promise((done) => {
     try {
-      const request = indexedDB.open(DB_NAME, 1)
+      const request = indexedDB.open(DB_NAME, DB_VERSION)
       request.onupgradeneeded = () => {
-        request.result.createObjectStore(LINES, { keyPath: ['room', 'place'] })
-        request.result.createObjectStore(META, { keyPath: 'key' })
+        const made = request.result.objectStoreNames
+        if (!made.contains(LINES)) request.result.createObjectStore(LINES, { keyPath: ['room', 'place'] })
+        if (!made.contains(META)) request.result.createObjectStore(META, { keyPath: 'key' })
+        if (!made.contains(FILES)) request.result.createObjectStore(FILES, { keyPath: 'id' })
+        if (!made.contains(FILE_INFO)) request.result.createObjectStore(FILE_INFO, { keyPath: 'id' }).createIndex('used', 'used')
       }
       request.onsuccess = () => done(request.result)
       request.onerror = () => done(null)
@@ -163,12 +177,137 @@ export function writePeople(server: string, blob: string): Promise<unknown> {
   })
 }
 
+interface FileInfo {
+  id: string
+  size: number
+  /** When it was last looked at. */
+  used: number
+}
+
+/** The ids of the files kept here, known at once, so a video kept here plays from it, not as a stream. */
+const keptIds = new Set<string>()
+let keptBytes = 0
+const listed = (async () => {
+  const open = await db()
+  if (!open) return
+  try {
+    const all = (await wait(open.transaction(FILE_INFO, 'readonly').objectStore(FILE_INFO).getAll())) as FileInfo[]
+    for (const info of all) {
+      keptIds.add(info.id)
+      keptBytes += info.size || 0
+    }
+  } catch {
+    /* the list stays empty: files load from the server */
+  }
+})()
+
+export function fileKept(id: string): boolean {
+  return keptIds.has(id)
+}
+
+/** The sealed bytes of a file kept here, or null. */
+export async function readFile(id: string): Promise<Blob | null> {
+  await listed
+  if (!keptIds.has(id)) return null
+  const open = await db()
+  if (!open) return null
+  try {
+    const tx = open.transaction([FILES, FILE_INFO], 'readonly')
+    const info = (await wait(tx.objectStore(FILE_INFO).get(id))) as FileInfo | undefined
+    const found = (await wait(tx.objectStore(FILES).get(id))) as { sealed?: unknown } | undefined
+    if (!info || !(found?.sealed instanceof Blob)) {
+      keptIds.delete(id)
+      return null
+    }
+    if (Date.now() - info.used > TOUCH_EVERY_MS) {
+      void inOrder(async () => {
+        const touch = open.transaction(FILE_INFO, 'readwrite')
+        touch.objectStore(FILE_INFO).put({ ...info, used: Date.now() } satisfies FileInfo)
+        await finished(touch)
+      })
+    }
+    return found.sealed
+  } catch {
+    return null
+  }
+}
+
+/** Keeps a file's sealed bytes. The ones looked at longest ago go to make room. */
+export function writeFile(id: string, sealed: Blob): Promise<unknown> {
+  if (sealed.size > FILE_MOST_BYTES || keptIds.has(id)) return Promise.resolve()
+  keptIds.add(id)
+  return inOrder(async () => {
+    await listed
+    const open = await db()
+    if (!open) return
+    try {
+      if (keptBytes + sealed.size > FILES_MOST_BYTES) await makeRoom(open, keptBytes + sealed.size - FILES_MOST_BYTES)
+      const tx = open.transaction([FILES, FILE_INFO], 'readwrite')
+      tx.objectStore(FILES).put({ id, sealed })
+      tx.objectStore(FILE_INFO).put({ id, size: sealed.size, used: Date.now() } satisfies FileInfo)
+      await finished(tx)
+      keptBytes += sealed.size
+    } catch {
+      // The disk is full, or the browser keeps no more: it loads from the server next time.
+      keptIds.delete(id)
+    }
+  })
+}
+
+async function makeRoom(open: IDBDatabase, needed: number): Promise<void> {
+  const tx = open.transaction([FILES, FILE_INFO], 'readwrite')
+  const bytes = tx.objectStore(FILES)
+  let freed = 0
+  await new Promise<void>((done, fail) => {
+    const cursor = tx.objectStore(FILE_INFO).index('used').openCursor()
+    cursor.onerror = () => fail(cursor.error)
+    cursor.onsuccess = () => {
+      const at = cursor.result
+      if (!at || freed >= needed) return done()
+      const info = at.value as FileInfo
+      freed += info.size || 0
+      keptIds.delete(info.id)
+      bytes.delete(info.id)
+      at.delete()
+      at.continue()
+    }
+  })
+  await finished(tx)
+  keptBytes = Math.max(0, keptBytes - freed)
+}
+
+/** What a server said about a link last time, for its card. */
+export async function readPreview(key: string): Promise<unknown> {
+  const open = await db()
+  if (!open) return null
+  try {
+    const found = (await wait(open.transaction(META, 'readonly').objectStore(META).get(`preview:${key}`))) as
+      | { card?: unknown }
+      | undefined
+    return found?.card ?? null
+  } catch {
+    return null
+  }
+}
+
+export function writePreview(key: string, card: unknown): Promise<unknown> {
+  return inOrder(async () => {
+    const open = await db()
+    if (!open) return
+    const tx = open.transaction(META, 'readwrite')
+    tx.objectStore(META).put({ key: `preview:${key}`, card })
+    await finished(tx)
+  })
+}
+
 /** A log out: what this device kept goes with the rest. */
 export async function wipeCache(): Promise<void> {
   try {
     const open = await db()
     open?.close()
     opening = null
+    keptIds.clear()
+    keptBytes = 0
     await new Promise<void>((done) => {
       const request = indexedDB.deleteDatabase(DB_NAME)
       request.onsuccess = () => done()

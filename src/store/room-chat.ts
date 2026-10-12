@@ -8,6 +8,7 @@ import {
   cleanCover,
   cleanSpacePicture,
   cleanChannel,
+  cleanChannelEmoji,
   cleanOrder,
   cleanNoteTitle,
   cleanFiles,
@@ -394,7 +395,7 @@ export class RoomChat {
   }
 
   /** A channel with all it is at once, in one event: see src/space/discord.ts. */
-  setUpChannel(channel: ChannelInfo & { voice: boolean }): Promise<LogEvent> {
+  setUpChannel(channel: Omit<ChannelInfo, 'emoji'> & { emoji?: string; voice: boolean }): Promise<LogEvent> {
     const body: Record<string, unknown> = {
       name: cleanChannel(channel.name),
       label: channel.label.slice(0, 32).trim(),
@@ -405,6 +406,8 @@ export class RoomChat {
     if (channel.nsfw) body.nsfw = true
     if (channel.mediaOnly) body.mediaOnly = true
     if (channel.noTalking) body.noTalking = true
+    const emoji = cleanChannelEmoji(channel.emoji ?? '')
+    if (emoji) body.emoji = emoji
     return this.write('channel', body)
   }
 
@@ -416,6 +419,13 @@ export class RoomChat {
 
   setTopic(name: string, topic: string, voice = false): Promise<LogEvent> {
     const body: Record<string, unknown> = { name: cleanChannel(name), topic: topic.slice(0, 140).trim() }
+    if (voice) body.voice = true
+    return this.write('channel', body)
+  }
+
+  /** Puts one emoji before a channel's name, in place of its mark. Empty takes it away. */
+  setChannelEmoji(name: string, emoji: string, voice = false): Promise<LogEvent> {
+    const body: Record<string, unknown> = { name: cleanChannel(name), emoji: cleanChannelEmoji(emoji) }
     if (voice) body.voice = true
     return this.write('channel', body)
   }

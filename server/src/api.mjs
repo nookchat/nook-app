@@ -195,7 +195,7 @@ export async function handle(req, res) {
           ...corsHeaders(req),
           'content-type': picture.type,
           'content-length': picture.body.length,
-          'cache-control': 'public, max-age=86400',
+          'cache-control': 'public, max-age=2592000',
           'content-security-policy': "default-src 'none'; sandbox",
           'cross-origin-resource-policy': 'cross-origin',
           'x-content-type-options': 'nosniff',

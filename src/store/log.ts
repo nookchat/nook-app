@@ -869,6 +869,7 @@ export class RoomLog {
     const names = new Set<string>([defaultName])
     const label = new Map<string, string>()
     const topic = new Map<string, string>()
+    const emoji = new Map<string, string>()
     const levels = new Map<string, string[]>()
     const nsfw = new Set<string>()
     const mediaOnly = new Set<string>()
@@ -894,6 +895,7 @@ export class RoomLog {
           if (shown) label.set(name, shown)
         }
         if (typeof e.body.topic === 'string') topic.set(name, e.body.topic.slice(0, 140).trim())
+        if (typeof e.body.emoji === 'string') emoji.set(name, cleanChannelEmoji(e.body.emoji))
         if (Array.isArray(e.body.levels)) levels.set(name, cleanLevelIds(e.body.levels))
         if (e.body.nsfw === true) nsfw.add(name)
         else if (e.body.nsfw === false) nsfw.delete(name)
@@ -922,6 +924,7 @@ export class RoomLog {
         name,
         label: label.get(name) || name,
         topic: topic.get(name) ?? '',
+        emoji: emoji.get(name) ?? '',
         levels: levels.get(name) ?? [],
         nsfw: nsfw.has(name),
         mediaOnly: mediaOnly.has(name),
@@ -1817,10 +1820,19 @@ export function cleanNoteTitle(raw: string): string {
   return raw.replace(/\s+/g, ' ').trim().slice(0, 80)
 }
 
+/** One emoji, or nothing: what shows before a channel's name in place of its mark. */
+export function cleanChannelEmoji(raw: string): string {
+  const first = new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(raw.trim())[Symbol.iterator]().next()
+  const ch = first.done ? '' : first.value.segment
+  return /\p{Extended_Pictographic}|\p{Regional_Indicator}|\u20e3/u.test(ch) && ch.length <= 32 ? ch : ''
+}
+
 export interface ChannelInfo {
   name: string
   label: string
   topic: string
+  /** One emoji shown before its name, in place of its mark. Empty for none. */
+  emoji: string
   /** The levels that may see and use it. Empty is everybody. */
   levels: string[]
   /** Its pictures and videos are blurred until somebody clicks one. */
