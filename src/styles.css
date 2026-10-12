@@ -3971,7 +3971,7 @@ input[type="text"].space-search {
 
   .rail-left {
     left: 0;
-    border-radius: 0 var(--pane-radius) var(--pane-radius) 0;
+    border-radius: 0 0 var(--pane-radius) 0;
     transform: translateX(-102%);
   }
 
