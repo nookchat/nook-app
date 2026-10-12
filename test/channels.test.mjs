@@ -1,4 +1,4 @@
-import { answer, APP_URL, check, FAKE_MEDIA, finish, HOME, launch, makeSpace, poll, stoppedEarly, wait } from './harness.mjs'
+import { answer, APP_URL, check, FAKE_MEDIA, finish, HOME, launch, makeSpace, poll, stoppedEarly, wait, editChannel } from './harness.mjs'
 
 // Your own mutes, for a channel or a whole space; the offer to turn notifications on;
 // and a voice channel renamed and deleted.
@@ -104,13 +104,13 @@ try {
   await wait(500)
   await bob.click('.voice-channel .rail-item:has-text("den")')
   await bob.waitForSelector('.voice-head.on:has-text("den")', { timeout: 10_000 })
-  await alice.click('.voice-channel .voice-head:has-text("den")', { button: 'right' })
-  await alice.click('.menu-item:has-text("Rename")')
-  await answer(alice, 'The Den')
+  await editChannel(alice, '.voice-channel .voice-head:has-text("den")')
+  await alice.fill('input[aria-label="Channel name"]', 'The Den')
+  await alice.click('button:text-is("Save changes")')
   const renamed = await poll(async () => (await bob.$$eval('.voice-join', (els) => els.map((e) => e.textContent))).some((t) => t.includes('The Den')), 15_000)
   check('a voice channel can be renamed', renamed)
-  await alice.click('.voice-channel .voice-head:has-text("The Den")', { button: 'right' })
-  await alice.click('.menu-item:has-text("Delete")')
+  await alice.click('.settings-tab[data-tab="delete"]')
+  await alice.click('.settings-page button.danger:text-is("Delete")')
   await alice.click('.confirm-ok')
   const gone = await poll(async () => !(await bob.$$eval('.voice-join', (els) => els.map((e) => e.textContent))).some((t) => t.includes('The Den')), 15_000)
   check('and deleted', gone)

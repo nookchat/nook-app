@@ -92,7 +92,7 @@ import { actionFor, type Action } from './shortcuts'
 import { NoteEditor } from './notes-view'
 import { WHITEBOARDS, WhiteboardView } from './whiteboard-view'
 import { LOOKING_CHANGED, nookInView } from './looking'
-import { openEmojiPicker, placeNear } from './emoji'
+import { placeNear } from './emoji'
 import { playWhileSeen } from './clips'
 import { asSheet, closeOnBack, onDrag, phone, PHONE, scrollsThatWay } from './gestures'
 import { loadAvatar, squareThumb } from './avatar'
@@ -324,7 +324,7 @@ export class SpaceView {
   private forgotten = false
   private closing = false
   private loaded = false
-  private settingsOpen: 'user' | 'space' | null = null
+  private settingsOpen: 'user' | 'space' | 'channel' | null = null
 
   private capture: ScreenCapture | null = null
   /** When this page's share started, by this clock. */
@@ -1296,30 +1296,8 @@ export class SpaceView {
     }
   }
 
-  /** Set, change or take away the emoji before a channel's name. The picker opens by `anchor`. */
-  private emojiItems(channel: ChannelInfo, voice: boolean, anchor: HTMLElement): MenuItem[] {
-    const items: MenuItem[] = [
-      {
-        label: channel.emoji ? 'Change the emoji' : 'Set an emoji',
-        note: channel.emoji ? `Shown before ${channel.label}` : `Shown before ${channel.label}, in place of its mark`,
-        run: () =>
-          openEmojiPicker({
-            anchor,
-            title: `An emoji for ${channel.label}`,
-            onPick: (picked) => void this.publish((c) => c.setChannelEmoji(channel.name, picked, voice)),
-          }),
-      },
-    ]
-    if (channel.emoji) {
-      items.push({
-        label: 'Take the emoji away',
-        run: () => void this.publish((c) => c.setChannelEmoji(channel.name, '', voice)),
-      })
-    }
-    return items
-  }
-
-  private channelActions(channel: ChannelInfo, anchor: HTMLElement): MenuItem[] {
+  /** The menu on a text channel: your own mute, and Edit channel for whoever keeps the channels. Its place changes with a drag, or in its settings. */
+  private channelActions(channel: ChannelInfo): MenuItem[] {
     const room = this.space.room.id
     const mutedItself = channelMutedItself(room, channel.name)
     const mute: MenuItem = spaceMuted(room)
@@ -1330,119 +1308,93 @@ export class SpaceView {
           run: () => muteChannel(room, channel.name, !mutedItself),
         }
     if (!this.chat?.can('channels')) return [mute]
-    const items: MenuItem[] = [
-      mute,
-      ...this.moveItems(channel.name, false),
-      {
-        label: 'Rename',
-        note: `Shown instead of ${channel.name}`,
-        run: async () => {
-          const raw = (await ask('Channel name', { value: channel.label, ok: 'Save changes' })) ?? ''
-          const label = raw.trim().slice(0, 32)
-          if (!label) return
-          void this.publish((c) => c.labelChannel(channel.name, label))
-        },
-      },
-      ...this.emojiItems(channel, false, anchor),
-      {
-        label: channel.topic ? 'Change the topic' : 'Set a topic',
-        note: channel.topic || 'A line saying what it is for',
-        run: async () => {
-          const raw = await ask('What is this channel for?', { value: channel.topic, ok: 'Save' })
-          if (raw === null) return
-          void this.publish((c) => c.setTopic(channel.name, raw.trim().slice(0, 140)))
-        },
-      },
-      {
-        label: channel.nsfw ? 'Stop marking as NSFW' : 'Mark as NSFW',
-        note: channel.nsfw ? 'Pictures show straight away again' : 'Pictures and videos are blurred until clicked',
-        run: () => void this.publish((c) => c.setNsfw(channel.name, !channel.nsfw)),
-      },
-      {
-        label: channel.mediaOnly ? 'Allow words again' : 'Media only',
-        note: channel.mediaOnly
-          ? 'Messages need no picture again'
-          : 'Each message needs a picture, a video or a file. Threads take words',
-        run: () => void this.publish((c) => c.setMediaOnly(channel.name, !channel.mediaOnly)),
-      },
-    ]
-    if (channel.name !== DEFAULT_CHANNEL) {
-      items.push(this.whoMayEnter(channel, false))
-      items.push({
-        label: 'Delete',
-        note: 'Takes the channel and everything said in it',
-        danger: true,
-        run: async () => {
-          const ok = await confirmDanger(
-            `Delete ${channel.label}?`,
-            'Everything said in it goes with it, on every device that reads the log. It cannot be undone.',
-            'Delete',
-          )
-          if (!ok) return
-          if (this.channel === channel.name) this.openChannel(DEFAULT_CHANNEL)
-          void this.publish((c) => c.dropChannel(channel.name))
-        },
-      })
-    }
-    return items
+    return [mute, this.editItem(channel.name, false)]
   }
 
-  /** For whoever can change channels: the name, who may join, and, but for the default one, delete. */
-  private voiceChannelActions(channel: ChannelInfo, anchor: HTMLElement): MenuItem[] {
-    const items: MenuItem[] = [
-      ...this.moveItems(channel.name, true),
-      {
-        label: channel.noTalking ? 'Let everybody talk' : 'No talking',
-        note: channel.noTalking
-          ? 'Everybody can turn their mic on again'
-          : 'Mics stay off, but for the owner and whoever has Channels',
-        run: () => void this.publish((c) => c.setNoTalking(channel.name, !channel.noTalking)),
-      },
-      {
-        label: 'Rename',
-        note: `Shown instead of ${channel.name}`,
-        run: async () => {
-          const raw = (await ask('Channel name', { value: channel.label, ok: 'Save changes' })) ?? ''
-          const label = raw.trim().slice(0, 32)
-          if (!label) return
-          void this.publish((c) => c.labelChannel(channel.name, label, true))
-        },
-      },
-      ...this.emojiItems(channel, true, anchor),
-    ]
-    if (channel.name === DEFAULT_VOICE) return items
-    items.push(this.whoMayEnter(channel, true), {
-      label: 'Delete',
-      note: 'Anybody in it now is taken out',
-      danger: true,
-      run: async () => {
-        if (!(await confirmDanger(`Delete the voice channel ${channel.label}?`, 'Anybody in it now is taken out.', 'Delete'))) return
-        if (this.voice?.state.channel === channel.name) this.leaveVoice()
-        void this.publish((c) => c.dropChannel(channel.name, true))
-      },
-    })
-    return items
+  /** The menu on a voice channel, for whoever keeps the channels. Its place changes with a drag, or in its settings. */
+  private voiceChannelActions(channel: ChannelInfo): MenuItem[] {
+    return [this.editItem(channel.name, true)]
   }
 
-  /** Keeps a channel to some levels. The default channels stay open to everybody. */
-  private whoMayEnter(channel: ChannelInfo, voice: boolean): MenuItem {
-    const levels = this.chat?.levels() ?? []
-    const names = channel.levels.map((id) => levels.find((l) => l.id === id)?.name).filter(Boolean)
+  private editItem(name: string, voice: boolean): MenuItem {
     return {
-      label: voice ? 'Who can see and join' : 'Who can see it',
-      note: names.length ? `Only ${names.join(', ')}` : 'Everybody',
-      run: async () => {
-        const choices = levels.filter((l) => l.id !== OWNER).map((l) => ({ id: l.id, name: l.name, colour: l.colour }))
-        const picked = await pickSome(
-          voice ? `Who can see and join ${channel.label}` : `Who can see ${channel.label}`,
-          'Tick nobody for everybody. The owner, and whoever can change channels, always get in.',
-          choices,
-          channel.levels,
-        )
-        if (picked === null) return
-        void this.publish((c) => c.setChannelLevels(channel.name, picked, voice))
-      },
+      label: 'Edit channel',
+      lead: h('span', { class: 'menu-icon' }, [icon('settings', 16)]),
+      run: () => void this.openChannelSettings(name, voice),
     }
+  }
+
+  /** The settings of one channel, on a page of their own: everything about it in one place. */
+  private async openChannelSettings(name: string, voice: boolean, start?: string): Promise<void> {
+    const chat = this.chat
+    const channel = chat?.channelInfo(voice).find((c) => c.name === name)
+    if (!chat || !channel) return
+    if (!chat.can('channels')) {
+      toast('Your level cannot change channels.', 'warn')
+      return
+    }
+    const { channelSettingsView } = await import('./channel-settings')
+    if (this.stopped) return
+    const levels = chat.levels()
+    const isDefault = name === (voice ? DEFAULT_VOICE : DEFAULT_CHANNEL)
+    const order = chat.channelInfo(voice).map((c) => c.name)
+    // After a change the page draws again, from what the log says now.
+    const again = (tab: string): void => {
+      if (this.settingsOpen === 'channel') void this.openChannelSettings(name, voice, tab)
+    }
+    clear(this.root)
+    this.settingsOpen = 'channel'
+    this.root.append(
+      channelSettingsView({
+        channel,
+        voice,
+        isDefault,
+        place: { at: order.indexOf(name), of: order.length },
+        move: async (step) => {
+          await this.moveChannel(name, voice, step)
+          again('overview')
+        },
+        keptTo: channel.levels.map((id) => levels.find((l) => l.id === id)?.name ?? '').filter(Boolean),
+        save: async (change) => {
+          if (change.label !== undefined) await this.publish((c) => c.labelChannel(name, change.label!, voice))
+          if (change.emoji !== undefined) await this.publish((c) => c.setChannelEmoji(name, change.emoji!, voice))
+          if (change.topic !== undefined) await this.publish((c) => c.setTopic(name, change.topic!))
+          toast('Channel saved.', 'info')
+          again('overview')
+        },
+        setNsfw: (on) => this.publish((c) => c.setNsfw(name, on)).then(() => undefined),
+        setMediaOnly: (on) => this.publish((c) => c.setMediaOnly(name, on)).then(() => undefined),
+        setNoTalking: (on) => this.publish((c) => c.setNoTalking(name, on)).then(() => undefined),
+        chooseLevels: async () => {
+          const choices = levels.filter((l) => l.id !== OWNER).map((l) => ({ id: l.id, name: l.name, colour: l.colour }))
+          const picked = await pickSome(
+            voice ? `Who can see and join ${channel.label}` : `Who can see ${channel.label}`,
+            'Tick nobody for everybody. The owner, and whoever can change channels, always get in.',
+            choices,
+            channel.levels,
+          )
+          if (picked === null) return
+          await this.publish((c) => c.setChannelLevels(name, picked, voice))
+          again('access')
+        },
+        remove: async () => {
+          const sure = voice
+            ? await confirmDanger(`Delete the voice channel ${channel.label}?`, 'Anybody in it now is taken out.', 'Delete')
+            : await confirmDanger(
+                `Delete ${channel.label}?`,
+                'Everything said in it goes with it, on every device that reads the log. It cannot be undone.',
+                'Delete',
+              )
+          if (!sure) return
+          if (voice && this.voice?.state.channel === name) this.leaveVoice()
+          if (!voice && this.channel === name) this.openChannel(DEFAULT_CHANNEL)
+          await this.publish((c) => c.dropChannel(name, voice))
+          this.closeSettings()
+        },
+        start,
+        back: () => this.closeSettings(),
+      }),
+    )
   }
 
   private runCommand(line: string): boolean {
@@ -3134,7 +3086,7 @@ export class SpaceView {
         ],
       )
       const railRow = h('div', { class: 'row rail-row' }, [open])
-      onContextMenu(railRow, () => this.channelActions(channel, railRow))
+      onContextMenu(railRow, () => this.channelActions(channel))
       if (canEdit) this.orderByHand(railRow, name, false)
       rows.push({ key: name, el: railRow, also: JSON.stringify(channel) })
     }
@@ -3228,12 +3180,12 @@ export class SpaceView {
       if (!dragged || !mine()) return
       ev.preventDefault()
       this.channelDrag = null
-      this.moveChannel(dragged.name, voice, name, after(ev))
+      void this.moveChannel(dragged.name, voice, name, after(ev))
     })
   }
 
   /** Puts a channel just before or after another one, or up and down one place with no target. */
-  private moveChannel(name: string, voice: boolean, target: string | number, below = false): void {
+  private async moveChannel(name: string, voice: boolean, target: string | number, below = false): Promise<void> {
     const chat = this.chat
     if (!chat?.can('channels')) return
     const names = chat.channelInfo(voice).map((c) => c.name)
@@ -3252,19 +3204,7 @@ export class SpaceView {
       this.draw()
       return
     }
-    void this.publish((c) => c.orderChannels(names, voice))
-  }
-
-  /** Move up and Move down, for a channel's menu: a drag is not there on a touch screen. */
-  private moveItems(name: string, voice: boolean): MenuItem[] {
-    const names = this.chat?.channelInfo(voice).map((c) => c.name) ?? []
-    const at = names.indexOf(name)
-    const items: MenuItem[] = []
-    if (at > 0) items.push({ label: 'Move up', lead: h('span', { class: 'menu-icon' }, [icon('arrow-up', 16)]), run: () => this.moveChannel(name, voice, -1) })
-    if (at >= 0 && at < names.length - 1) {
-      items.push({ label: 'Move down', lead: h('span', { class: 'menu-icon' }, [icon('arrow-down', 16)]), run: () => this.moveChannel(name, voice, 1) })
-    }
-    return items
+    await this.publish((c) => c.orderChannels(names, voice))
   }
 
   private renderThreads(): void {
@@ -3348,7 +3288,7 @@ export class SpaceView {
         if ((ev.target as Element).closest('button')) return
         this.clickVoice(name)
       })
-      if (canEdit) onContextMenu(head, () => this.voiceChannelActions(channel, head))
+      if (canEdit) onContextMenu(head, () => this.voiceChannelActions(channel))
       const row = h('div', { class: 'voice-channel' })
       if (canEdit) this.orderByHand(row, name, true)
       // Anybody may drag themselves to another channel; only those who may move people drag others.

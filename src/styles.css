@@ -3611,6 +3611,17 @@ button.sound-source-file {
   border-radius: var(--radius-md);
 }
 
+/* A channel's emoji in its settings: its mark, faint, until it has one. */
+.channel-face.empty {
+  color: var(--fg-faint);
+  font-size: 20px;
+}
+
+.channel-name-edit {
+  gap: 10px;
+  align-items: center;
+}
+
 /* The yes of a dialog that deletes: red, but not so loud it is pressed without a look. */
 .ask-buttons button.confirm-ok {
   background: color-mix(in srgb, var(--danger) 16%, var(--surface-2));

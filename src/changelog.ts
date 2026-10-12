@@ -19,7 +19,8 @@ export const CHANGELOG: ChangelogEntry[] = [
     items: [
       'Pictures, videos, voice messages and link cards are kept on your device, so they show the moment Nook opens, with no network.',
       'The loading screen shows at once when Nook starts, not after a dark wait.',
-      'A channel can wear an emoji in place of its #. Right click it, then Set an emoji.',
+      'A channel can wear an emoji in place of its #.',
+      'Edit channel, in a channel’s right click menu, opens one page for its name, emoji, topic, place in the list, who can see it, its rules and delete.',
       'Read something on one device, and it is read on your others too.',
     ],
   },

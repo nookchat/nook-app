@@ -1,4 +1,4 @@
-import { answer, APP_URL, check, FAKE_MEDIA, finish, HOME, launch, makeSpace, poll, stoppedEarly, wait } from './harness.mjs'
+import { answer, APP_URL, check, FAKE_MEDIA, finish, HOME, launch, makeSpace, poll, stoppedEarly, wait, closeSettings, editChannel } from './harness.mjs'
 
 // A channel kept to some levels: the others do not see it, cannot read it, and what they
 // write into it anyway is left out.
@@ -50,10 +50,11 @@ try {
   const bobKey = await chatOf(bob, (chat) => chat.me)
   await chatOf(alice, (chat, key) => chat.setRole(key, 'mod'), bobKey)
 
-  await alice.click('.rail-left .rail-row:has-text("staff")', { button: 'right' })
-  await alice.click('.menu-item:has-text("Who can see it")')
+  await editChannel(alice, '.rail-left .rail-row:has-text("staff")', 'access')
+  await alice.click('.settings-page button:text-is("Choose")')
   await alice.check('.pick-row input[aria-label="Moderator"]')
   await alice.click('.ask-modal button:text-is("Save")')
+  await closeSettings(alice)
 
   const hidden = await poll(async () => !(await textRail(carol)).includes('staff'), 20_000)
   check('a member no longer sees staff', hidden, (await textRail(carol)).join(', '))
@@ -75,10 +76,11 @@ try {
   check('what a member writes into staff anyway is left out', !(await said(alice)).includes('sneaking in'))
 
   await poll(async () => (await voiceRail(carol)).includes('backroom'), 10_000)
-  await alice.click('.voice-channel .voice-head:has-text("backroom")', { button: 'right' })
-  await alice.click('.menu-item:has-text("Who can see and join")')
+  await editChannel(alice, '.voice-channel .voice-head:has-text("backroom")', 'access')
+  await alice.click('.settings-page button:text-is("Choose")')
   await alice.check('.pick-row input[aria-label="Moderator"]')
   await alice.click('.ask-modal button:text-is("Save")')
+  await closeSettings(alice)
   const noRoom = await poll(async () => !(await voiceRail(carol)).includes('backroom'), 20_000)
   check('a member no longer sees the kept voice channel', noRoom, (await voiceRail(carol)).join(', '))
   check('a moderator does', (await voiceRail(bob)).includes('backroom'))
@@ -92,10 +94,11 @@ try {
   const carolHasIt = await poll(() => chatOf(carol, (chat) => chat.log.everyChannel().some((c) => c.name === 'secret')), 20_000)
   check('and never to a member, who has the channel in the log', carolHasIt && !(await textRail(carol)).includes('secret'), (await textRail(carol)).join(', '))
 
-  await alice.click('.rail-left .rail-row:has-text("staff")', { button: 'right' })
-  await alice.click('.menu-item:has-text("Who can see it")')
+  await editChannel(alice, '.rail-left .rail-row:has-text("staff")', 'access')
+  await alice.click('.settings-page button:text-is("Choose")')
   await alice.uncheck('.pick-row input[aria-label="Moderator"]')
   await alice.click('.ask-modal button:text-is("Save")')
+  await closeSettings(alice)
   const back = await poll(async () => (await textRail(carol)).includes('staff'), 20_000)
   check('opened up again, the member sees staff', back)
 

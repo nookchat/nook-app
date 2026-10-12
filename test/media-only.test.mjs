@@ -1,4 +1,4 @@
-import { APP_URL, check, finish, HOME, launch, makeSpace, poll, stoppedEarly, wait } from './harness.mjs'
+import { APP_URL, check, finish, HOME, launch, makeSpace, poll, stoppedEarly, wait, closeSettings, editChannel } from './harness.mjs'
 
 // A text channel marked Media only: a message needs a picture, a video or a file, what was said
 // before stays, whoever keeps the channels still writes words, and the mark comes off.
@@ -35,8 +35,9 @@ try {
   await say(bob, 'said before the mark')
   await alice.waitForSelector('.chat-line:has-text("said before the mark")')
 
-  await alice.click('.rail-left .rail-row:has-text("general")', { button: 'right' })
-  await alice.click('.menu-item:has-text("Media only")')
+  await editChannel(alice, '.rail-left .rail-row:has-text("general")', 'access')
+  await alice.click('.switch-row:has-text("Media only")')
+  await closeSettings(alice)
   const marked = await poll(() => bob.evaluate(() => document.querySelector('[aria-label="Write a message"]')?.placeholder.includes('picture')), 15_000)
   check('a channel marked Media only asks for a picture in the box', marked)
   check('what was said before stays', (await lines(bob, 'said before the mark')) === 1)
@@ -62,8 +63,9 @@ try {
   const rules = await poll(async () => (await lines(bob, 'the rules, from the owner')) === 1, 15_000)
   check('whoever keeps the channels still writes words', rules)
 
-  await alice.click('.rail-left .rail-row:has-text("general")', { button: 'right' })
-  await alice.click('.menu-item:has-text("Allow words again")')
+  await editChannel(alice, '.rail-left .rail-row:has-text("general")', 'access')
+  await alice.click('.switch-row:has-text("Media only")')
+  await closeSettings(alice)
   const open = await poll(() => bob.evaluate(() => document.querySelector('[aria-label="Write a message"]')?.placeholder === 'Say something'), 15_000)
   check('the mark comes off', open)
   await bob.fill(BOX, '')

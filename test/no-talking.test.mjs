@@ -1,4 +1,4 @@
-import { APP_URL, check, FAKE_MEDIA, finish, HOME, launch, makeSpace, poll, stoppedEarly } from './harness.mjs'
+import { APP_URL, check, FAKE_MEDIA, finish, HOME, launch, makeSpace, poll, stoppedEarly, closeSettings, editChannel } from './harness.mjs'
 
 // A voice channel marked No talking: a member's mic stays off and nobody hears them, the owner
 // still talks, and the mark comes off.
@@ -47,8 +47,9 @@ try {
   const heard = await poll(async () => (await levels(alice)).some((l) => l > 0), 15_000)
   check('before the mark, Alice hears Bob', heard)
 
-  await alice.click('.voice-channel .voice-head', { button: 'right' })
-  await alice.click('.menu-item:has-text("No talking")')
+  await editChannel(alice, '.voice-channel .voice-head', 'access')
+  await alice.click('.switch-row:has-text("No talking")')
+  await closeSettings(alice)
   const marked = await poll(async () => (await bob.locator('.voice-head [title^="No talking"]').count()) === 1, 15_000)
   check('a voice channel marked No talking says so, for everybody', marked)
   check("Bob's mic goes off by itself", await poll(() => muted(bob), 10_000))
@@ -62,8 +63,9 @@ try {
   check('the owner still talks', (await muted(alice)) === false)
   check('and Bob still hears her', (await levels(bob)).some((l) => l > 0))
 
-  await alice.click('.voice-channel .voice-head', { button: 'right' })
-  await alice.click('.menu-item:has-text("Let everybody talk")')
+  await editChannel(alice, '.voice-channel .voice-head', 'access')
+  await alice.click('.switch-row:has-text("No talking")')
+  await closeSettings(alice)
   const unmarked = await poll(async () => (await bob.locator('.voice-head [title^="No talking"]').count()) === 0, 15_000)
   check('the mark comes off', unmarked)
   await bob.click('.voice-tool[aria-label="Unmute"]')

@@ -1,4 +1,4 @@
-import { APP_URL, check, finish, HOME, launch, makeSpace, poll, stoppedEarly, wait } from './harness.mjs'
+import { APP_URL, check, finish, HOME, launch, makeSpace, poll, stoppedEarly, wait, closeSettings, editChannel } from './harness.mjs'
 
 // A text channel marked NSFW: its pictures are blurred for everybody until each is clicked,
 // Blur again hides one again, and the mark comes off.
@@ -37,8 +37,9 @@ try {
   await bob.waitForSelector(BOX)
   await wait(1500)
 
-  await alice.click('.rail-left .rail-row:has-text("general")', { button: 'right' })
-  await alice.click('.menu-item:has-text("Mark as NSFW")')
+  await editChannel(alice, '.rail-left .rail-row:has-text("general")', 'access')
+  await alice.click('.switch-row:has-text("NSFW")')
+  await closeSettings(alice)
   const marked = await poll(async () => (await bob.locator('.rail-left .rail-item:has-text("general") .nsfw-mark').count()) === 1, 15_000)
   check('a channel marked NSFW says so in the list, for everybody', marked)
   check('and in the channel head', (await bob.locator('.channel-name .nsfw-mark').count()) === 1)
@@ -63,8 +64,9 @@ try {
   await bob.keyboard.press('Escape')
   await bob.locator('.chat-log .chat-image-wrap').last().click()
 
-  await alice.click('.rail-left .rail-row:has-text("general")', { button: 'right' })
-  await alice.click('.menu-item:has-text("Stop marking as NSFW")')
+  await editChannel(alice, '.rail-left .rail-row:has-text("general")', 'access')
+  await alice.click('.switch-row:has-text("NSFW")')
+  await closeSettings(alice)
   const unmarked = await poll(async () => (await bob.locator('.nsfw-mark').count()) === 0, 15_000)
   check('the mark comes off', unmarked)
   check('and the pictures show straight away again', (await blurred(alice)) === false)

@@ -112,6 +112,18 @@ export async function makeSpace(page, name, { password = '', template = 'Start f
   await page.click('.space-flow button:has-text("Make the space")')
 }
 
+/** Opens Edit channel from a channel's menu, on the tab `tab` (overview, access or delete). */
+export async function editChannel(page, row, tab = 'overview') {
+  await page.click(row, { button: 'right' })
+  await page.click('.menu-item:has-text("Edit channel")')
+  await page.click(`.settings-tab[data-tab="${tab}"]`)
+}
+
+/** Closes a settings page. */
+export async function closeSettings(page) {
+  await page.click('button[aria-label="Close settings"]:visible')
+}
+
 export async function hostAndShare(host) {
   await makeSpace(host, 'shared')
   await host.click('.voice-channel .rail-item:has-text("lounge")', { timeout: 15_000 })

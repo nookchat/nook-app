@@ -1,4 +1,4 @@
-import { APP_URL, check, FAKE_MEDIA, finish, HOME, launch, makeSpace, stoppedEarly } from './harness.mjs'
+import { APP_URL, check, closeSettings, FAKE_MEDIA, finish, HOME, launch, makeSpace, stoppedEarly } from './harness.mjs'
 
 // Somebody who keeps the channels drags them into an order, and everybody sees that order.
 // Nobody else can: not in the page, and not by writing an order to the log.
@@ -60,10 +60,14 @@ try {
   check('a voice channel can be dragged too', await until(alice, voiceIs, 'studio,lounge'), (await voiceOrder(alice)).join())
   check('and Bob sees that as well', await until(bob, voiceIs, 'studio,lounge'), (await voiceOrder(bob)).join())
 
-  // The right click menu has Move up and Move down, for a touch screen's long press.
+  // The channel's settings have Move up and Move down, for a touch screen, which has no drag.
   await alice.click('.rail-row:has-text("bravo")', { button: 'right' })
-  await alice.click('.menu-item:has-text("Move up")')
-  check('Move up in the menu moves it up one', await until(alice, orderIs, 'charlie,alpha,bravo,general'), (await textOrder(alice)).join())
+  const menu = await alice.$$eval('.menu-item', (els) => els.map((e) => e.textContent ?? ''))
+  check('the menu has no Move up or Move down', !menu.some((t) => t.includes('Move')), JSON.stringify(menu))
+  await alice.click('.menu-item:has-text("Edit channel")')
+  await alice.click('.settings-page button:has-text("Move up")')
+  await closeSettings(alice)
+  check('Move up in its settings moves it up one', await until(alice, orderIs, 'charlie,alpha,bravo,general'), (await textOrder(alice)).join())
 
   // A new channel goes after the ones in the order.
   await alice.evaluate(async () => {
