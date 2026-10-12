@@ -1325,7 +1325,7 @@ export class SpaceView {
   }
 
   /** The settings of one channel, on a page of their own: everything about it in one place. */
-  private async openChannelSettings(name: string, voice: boolean, start?: string): Promise<void> {
+  private async openChannelSettings(name: string, voice: boolean, start?: string, fromSpace = false): Promise<void> {
     const chat = this.chat
     const channel = chat?.channelInfo(voice).find((c) => c.name === name)
     if (!chat || !channel) return
@@ -1340,8 +1340,10 @@ export class SpaceView {
     const order = chat.channelInfo(voice).map((c) => c.name)
     // After a change the page draws again, from what the log says now.
     const again = (tab: string): void => {
-      if (this.settingsOpen === 'channel') void this.openChannelSettings(name, voice, tab)
+      if (this.settingsOpen === 'channel') void this.openChannelSettings(name, voice, tab, fromSpace)
     }
+    // Opened from the Channels tab of the space's settings: back goes there.
+    const back = (): void => (fromSpace ? void this.openSpaceSettings('channels') : this.closeSettings())
     clear(this.root)
     this.settingsOpen = 'channel'
     this.root.append(
@@ -1389,10 +1391,10 @@ export class SpaceView {
           if (voice && this.voice?.state.channel === name) this.leaveVoice()
           if (!voice && this.channel === name) this.openChannel(DEFAULT_CHANNEL)
           await this.publish((c) => c.dropChannel(name, voice))
-          this.closeSettings()
+          back()
         },
         start,
-        back: () => this.closeSettings(),
+        back,
       }),
     )
   }
@@ -2647,13 +2649,14 @@ export class SpaceView {
   }
 
   /** What your level lets you change in this space's settings. */
-  private spaceRights(): { space: boolean; levels: boolean; remove: boolean; webhooks: boolean; soundboard: boolean; any: boolean } {
+  private spaceRights(): { space: boolean; channels: boolean; levels: boolean; remove: boolean; webhooks: boolean; soundboard: boolean; any: boolean } {
     const space = this.chat?.can('space') === true
+    const channels = this.chat?.can('channels') === true
     const levels = this.chat?.can('levels') === true
     const remove = this.chat?.can('remove') === true
     const webhooks = this.chat?.can('webhooks') === true
     const soundboard = this.chat?.can('soundboard') === true
-    return { space, levels, remove, webhooks, soundboard, any: space || levels || remove || webhooks || soundboard }
+    return { space, channels, levels, remove, webhooks, soundboard, any: space || channels || levels || remove || webhooks || soundboard }
   }
 
   /** Said before somebody is removed, when that stops the space's webhooks. */
@@ -2749,6 +2752,19 @@ export class SpaceView {
         levels: () => this.levelsEditor(),
         hooks: this.hookActions(),
         board: this.boardActions(),
+        channels: {
+          list: (voice) =>
+            (this.chat?.channelInfo(voice) ?? []).map((c) => ({
+              name: c.name,
+              label: c.label,
+              emoji: c.emoji,
+              topic: c.topic,
+              kept: c.levels.length > 0,
+              mediaOnly: c.mediaOnly,
+            })),
+          order: (names, voice) => this.publish((c) => c.orderChannels(names, voice)).then(() => undefined),
+          edit: (name, voice) => void this.openChannelSettings(name, voice, undefined, true),
+        },
         members: () => this.memberRows(),
         setLevel: (key, level) => this.setRole(key, level),
         kick: async (key) => {

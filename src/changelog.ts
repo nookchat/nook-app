@@ -3,8 +3,11 @@
  * after the update that brings it, and all of them are in Settings, About.
  *
  * Add an entry at the top for each update people would notice. The id is the day it goes out,
- * as YYYY-MM-DD; two on one day take -2, -3. Write what somebody can now do, in a few words,
- * not how it was made.
+ * as YYYY-MM-DD; two on one day take -2, -3.
+ *
+ * Write for people, not developers: short, plain and friendly, like an app store's What's new.
+ * Say what somebody can now do or what got better, never how it was made. Only what people would
+ * notice and care about; leave out small fixes and anything technical.
  */
 export interface ChangelogEntry {
   id: string
@@ -15,76 +18,69 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     id: '2026-10-12',
-    title: 'Pictures kept on your device, and an emoji for each channel',
+    title: 'Instant pictures and channel emoji',
     items: [
-      'Pictures, videos, voice messages and link cards are kept on your device, so they show the moment Nook opens, with no network.',
-      'The loading screen shows at once when Nook starts, not after a dark wait.',
-      'A channel can wear an emoji in place of its #.',
-      'Edit channel, in a channel’s right click menu, opens one page for its name, emoji, topic, place in the list, who can see it, its rules and delete.',
-      'Read something on one device, and it is read on your others too.',
+      'Pictures, videos and link previews now load instantly, even offline.',
+      'Give any channel an emoji, like 🔫 for an airsoft channel.',
+      'Right click a channel and pick Edit channel to change everything about it in one place.',
+      'Reorder your channels in Space settings, under Channels.',
+      'Read something on one device and it shows as read on all of them.',
     ],
   },
   {
     id: '2026-10-06',
-    title: 'Opens at once, and a quieter media only warning',
+    title: 'Opens instantly',
     items: [
-      'Your spaces, channels and messages show the moment Nook opens. A thin line under the top says it is still catching up.',
-      'A media only channel warns, quietly above the box, when you type words. A channel kept to some levels wears a lock.',
-      'Deleting a message asks in its own row, not in a window.',
-      'Somebody not signed in sees a page about Nook: what it does and how it keeps a secret.',
+      'Your spaces and messages show up the moment you open Nook.',
+      'Deleting a message is quicker to confirm.',
     ],
   },
   {
     id: '2026-10-05',
     title: 'Faster everywhere',
     items: [
-      'Spaces open about a quarter sooner, and typing takes a third of the work it did.',
-      'Long channels scroll more smoothly, with half as much on the page.',
-      'The side bars no longer flash under the pointer when something changes.',
-      'What’s new: this window, after each update. Find it again in Settings, About.',
+      'Spaces open faster and typing feels snappier.',
+      'Long chats scroll more smoothly.',
+      'See what’s new after each update. Find it again in Settings, About.',
     ],
   },
   {
     id: '2026-10-04',
-    title: 'Clearer voice, and Save',
+    title: 'Clearer voice',
     items: [
-      'Voice no longer crackles after Nook has been put away for a while.',
-      'Pictures and videos have Save.',
-      'Each person can play twenty soundboard sounds an hour.',
-      'Nook takes less memory: emoji are lighter, and GIFs play only while you can see them.',
+      'Fixed crackly voice after Nook had been in the background for a while.',
+      'Save pictures and videos to your device.',
+      'Nook uses less memory.',
     ],
   },
   {
     id: '2026-10-03',
-    title: 'Spoilers, NSFW channels and Discord templates',
+    title: 'Spoilers and NSFW channels',
     items: [
-      'Hide words in a ||spoiler||. People scratch it to read it.',
-      'Mark a channel NSFW, and its pictures stay blurred until clicked. Or make it Media only.',
-      'Paste a Discord template link to make a space with its channels and roles.',
-      'A voice channel can be No talking: only its owner and the people who keep channels are heard.',
-      'A markdown file in a message shows its top, and opens in a reader.',
-      'Change your voice right from the voice channel.',
+      'Hide text in a ||spoiler||. Others tap it to reveal it.',
+      'Mark a channel as NSFW to blur its pictures, or Media only for just pictures and videos.',
+      'Start a space from a Discord template link.',
+      'Make a voice channel listen only, so only hosts can talk.',
     ],
   },
   {
     id: '2026-10-02',
-    title: 'Ten new voices, and an Android app',
+    title: 'Nook for Android',
     items: [
-      'Ten more voices in the voice changer, with a live preview of each.',
-      'An Android app, with notifications and calls that keep going in the background.',
-      'Somebody new gets a short tour of Nook.',
-      'Add a sound straight from the soundboard.',
+      'Nook is on Android, with notifications and calls that keep going in the background.',
+      'Ten new voices in the voice changer.',
+      'New here? A quick tour shows you around.',
     ],
   },
   {
     id: '2026-10-01',
-    title: 'Voice messages, and a cover for your profile',
+    title: 'Voice messages',
     items: [
-      'Record a voice message right in the message box.',
-      'Your profile has a cover picture.',
-      'A voice changer, and a phone can play the soundboard into your call on another device.',
-      'Star a GIF to keep it in Favourites.',
-      'The desktop app can close to the tray, and counts what you missed.',
+      'Send voice messages.',
+      'Add a cover picture to your profile.',
+      'Change how you sound with the voice changer.',
+      'Favourite GIFs to find them again.',
+      'The desktop app can keep running in the tray.',
     ],
   },
 ]

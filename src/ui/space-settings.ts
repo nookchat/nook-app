@@ -11,7 +11,7 @@ export interface SpaceSettingsActions {
   name: string
   picture: string
   /** What your level lets you change here. */
-  can: { space: boolean; levels: boolean; remove: boolean; webhooks: boolean; soundboard: boolean }
+  can: { space: boolean; channels: boolean; levels: boolean; remove: boolean; webhooks: boolean; soundboard: boolean }
   rename(): Promise<void>
   /** null takes the picture away. */
   setPicture(file: File | null): Promise<void>
@@ -30,8 +30,28 @@ export interface SpaceSettingsActions {
   levels(): HTMLElement
   hooks: HookActions
   board: SoundboardActions
+  channels: ChannelListActions
   start?: string
   back(): void
+}
+
+export interface ChannelRow {
+  name: string
+  label: string
+  emoji: string
+  topic: string
+  /** Kept to some levels. */
+  kept: boolean
+  mediaOnly: boolean
+}
+
+export interface ChannelListActions {
+  /** In their order, as the list of channels shows them. */
+  list(voice: boolean): ChannelRow[]
+  /** Puts them in this order, for everybody. */
+  order(names: string[], voice: boolean): Promise<void>
+  /** Opens the channel's own settings. */
+  edit(name: string, voice: boolean): void
 }
 
 export interface MemberRow {
@@ -84,6 +104,105 @@ export interface SoundboardActions {
   editGroup(id: string): Promise<void>
   /** Asks first. Its sounds stay, outside any group. */
   removeGroup(id: string): Promise<void>
+}
+
+/**
+ * Every text or voice channel, in its order. A drag puts one in another place, and so do the
+ * arrows, which a touch screen needs: it has no drag. Edit opens the channel's own settings.
+ */
+function channelList(actions: ChannelListActions, voice: boolean): HTMLElement {
+  const rows = actions.list(voice)
+  let names = rows.map((r) => r.name)
+  const byName = new Map(rows.map((r) => [r.name, r]))
+  const list = h('div', { class: 'action-list channel-order-list' })
+  let dragged: string | null = null
+
+  const move = (name: string, to: number): void => {
+    const from = names.indexOf(name)
+    if (from < 0 || to < 0 || to >= names.length || to === from) return
+    names = names.filter((n) => n !== name)
+    names.splice(to, 0, name)
+    paint()
+    void actions.order(names, voice)
+  }
+
+  const rowOf = (row: ChannelRow, at: number): HTMLElement => {
+    const mark = row.emoji
+      ? h('span', { class: 'channel-emoji', text: row.emoji, style: { width: '18px', height: '18px' } })
+      : icon(voice ? 'volume' : row.mediaOnly ? 'image' : 'hash', 18)
+    const up = h('button', { class: 'ghost small', title: 'Move up', ariaLabel: `Move ${row.label} up`, on: { click: () => move(row.name, at - 1) } }, [
+      icon('arrow-up', 14),
+    ])
+    const down = h('button', { class: 'ghost small', title: 'Move down', ariaLabel: `Move ${row.label} down`, on: { click: () => move(row.name, at + 1) } }, [
+      icon('arrow-down', 14),
+    ])
+    up.disabled = at === 0
+    down.disabled = at === names.length - 1
+    const el = h('div', { class: 'action-row board-row channel-order-row', title: 'Drag to put it in another place' }, [
+      h('span', { class: 'channel-order-mark' }, [mark]),
+      h('span', { class: 'switch-words' }, [
+        h('span', { class: 'switch-label truncate', text: row.label }),
+        row.topic || row.kept
+          ? h('span', { class: 'tiny faint switch-about truncate', text: [row.kept ? 'Kept to some levels' : '', row.topic].filter(Boolean).join(' · ') })
+          : null,
+      ]),
+      up,
+      down,
+      h('button', { class: 'ghost small', title: 'Edit channel', ariaLabel: `Edit ${row.label}`, on: { click: () => actions.edit(row.name, voice) } }, [
+        icon('edit', 14),
+      ]),
+    ])
+    el.dataset.channel = row.name
+    el.draggable = true
+    const below = (ev: DragEvent): boolean => {
+      const box = el.getBoundingClientRect()
+      return ev.clientY > box.top + box.height / 2
+    }
+    const unmark = (): void => el.classList.remove('drop-before', 'drop-after')
+    el.addEventListener('dragstart', (ev) => {
+      dragged = row.name
+      if (ev.dataTransfer) {
+        ev.dataTransfer.effectAllowed = 'move'
+        ev.dataTransfer.setData('text/plain', row.name)
+      }
+      el.classList.add('dragging')
+    })
+    el.addEventListener('dragend', () => {
+      dragged = null
+      el.classList.remove('dragging')
+    })
+    el.addEventListener('dragover', (ev) => {
+      if (!dragged || dragged === row.name) return
+      ev.preventDefault()
+      const after = below(ev)
+      el.classList.toggle('drop-after', after)
+      el.classList.toggle('drop-before', !after)
+    })
+    el.addEventListener('dragleave', (ev) => {
+      if (!(ev.relatedTarget instanceof Node && el.contains(ev.relatedTarget))) unmark()
+    })
+    el.addEventListener('drop', (ev) => {
+      unmark()
+      const name = dragged
+      if (!name || name === row.name) return
+      ev.preventDefault()
+      dragged = null
+      const rest = names.filter((n) => n !== name)
+      const target = rest.indexOf(row.name) + (below(ev) ? 1 : 0)
+      move(name, target)
+    })
+    return el
+  }
+
+  function paint(): void {
+    list.replaceChildren(...names.map((name, at) => rowOf(byName.get(name)!, at)))
+  }
+  paint()
+  return card(
+    voice ? 'Voice channels' : 'Text channels',
+    note('Drag one to put it in another place, or use the arrows. Everybody sees this order.'),
+    list,
+  )
 }
 
 /** Every sound and group on the soundboard, to play, rename, sort into groups, or take off. */
@@ -346,6 +465,19 @@ export function spaceTabs(actions: SpaceSettingsActions): SettingsTab[] {
           ),
         ])
       },
+    })
+  }
+  if (actions.can.channels) {
+    tabs.push({
+      id: 'channels',
+      label: 'Channels',
+      icon: 'hash',
+      group,
+      build: () =>
+        h('div', { class: 'stack settings-stack' }, [
+          channelList(actions.channels, false),
+          channelList(actions.channels, true),
+        ]),
     })
   }
   if (actions.can.levels || actions.can.remove) {

@@ -3264,6 +3264,29 @@ button.start {
   flex: 0 0 auto;
 }
 
+/* A channel in the Channels tab of the space's settings: it is dragged into its place. */
+.channel-order-row {
+  cursor: grab;
+}
+
+.channel-order-row.dragging {
+  opacity: 0.5;
+}
+
+.channel-order-row.drop-before {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.channel-order-row.drop-after {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.channel-order-mark {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--fg-faint);
+}
+
 .board-row-emoji {
   font-size: 20px;
   line-height: 1;
