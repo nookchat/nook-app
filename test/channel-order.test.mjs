@@ -1,4 +1,4 @@
-import { APP_URL, check, closeSettings, openSpaceSettings, FAKE_MEDIA, finish, HOME, launch, makeSpace, poll, stoppedEarly } from './harness.mjs'
+import { answer, APP_URL, check, closeSettings, openSpaceSettings, FAKE_MEDIA, finish, HOME, launch, makeSpace, poll, stoppedEarly } from './harness.mjs'
 
 // Somebody who keeps the channels drags them into an order, and everybody sees that order.
 // Nobody else can: not in the page, and not by writing an order to the log.
@@ -65,9 +65,13 @@ try {
   const menu = await alice.$$eval('.menu-item', (els) => els.map((e) => e.textContent ?? ''))
   check('the menu has no Move up or Move down', !menu.some((t) => t.includes('Move')), JSON.stringify(menu))
   await alice.click('.menu-item:has-text("Edit channel")')
-  await alice.click('.settings-page button:has-text("Move up")')
+  await alice.waitForSelector('.settings-nav-title:has-text("Channel settings")')
+  check('the channel page has no Move up either: its place is in Space settings', (await alice.locator('.settings-page button:has-text("Move")').count()) === 0)
   await closeSettings(alice)
-  check('Move up in its settings moves it up one', await until(alice, orderIs, 'charlie,alpha,bravo,general'), (await textOrder(alice)).join())
+  await alice.locator('.rail-row', { hasText: 'bravo' }).dragTo(alice.locator('.rail-row', { hasText: 'general' }), {
+    targetPosition: { x: 40, y: 4 },
+  })
+  check('a drag puts bravo back above general', await until(alice, orderIs, 'charlie,alpha,bravo,general'), (await textOrder(alice)).join())
 
   // A new channel goes after the ones in the order.
   await alice.evaluate(async () => {
@@ -111,6 +115,17 @@ try {
   await closeSettings(alice)
   const back = await poll(async () => (await listed(alice, 'Voice channels')).length === 2, 5000)
   check('and back from it is the Channels tab again', back)
+
+  // Channels are made there too.
+  await alice.click('button:has-text("Create text channel")')
+  await answer(alice, 'zulu')
+  const made = await poll(async () => (await listed(alice, 'Text channels')).includes('zulu'), 10_000)
+  check('Create text channel makes one, and the list shows it', made, (await listed(alice, 'Text channels')).join())
+  await alice.click('button:has-text("Create voice channel")')
+  await answer(alice, 'quiet')
+  const madeVoice = await poll(async () => (await listed(alice, 'Voice channels')).includes('quiet'), 10_000)
+  check('and so does Create voice channel', madeVoice, (await listed(alice, 'Voice channels')).join())
+  check('Bob gets both', await until(bob, (w) => [...document.querySelectorAll('.rail-row, .voice-join')].map((e) => e.textContent).join().includes(w), 'zulu') && (await bob.locator('.voice-join:has-text("quiet")').count()) === 1)
 } catch (err) {
   stoppedEarly(err)
 }

@@ -23,7 +23,7 @@ export const CHANGELOG: ChangelogEntry[] = [
       'Pictures, videos and link previews now load instantly, even offline.',
       'Give any channel an emoji, like 🔫 for an airsoft channel.',
       'Right click a channel and pick Edit channel to change everything about it in one place.',
-      'Reorder your channels in Space settings, under Channels.',
+      'Create and reorder your channels in Space settings, under Channels.',
       'Read something on one device and it shows as read on all of them.',
     ],
   },

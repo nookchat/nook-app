@@ -1337,7 +1337,6 @@ export class SpaceView {
     if (this.stopped) return
     const levels = chat.levels()
     const isDefault = name === (voice ? DEFAULT_VOICE : DEFAULT_CHANNEL)
-    const order = chat.channelInfo(voice).map((c) => c.name)
     // After a change the page draws again, from what the log says now.
     const again = (tab: string): void => {
       if (this.settingsOpen === 'channel') void this.openChannelSettings(name, voice, tab, fromSpace)
@@ -1351,11 +1350,6 @@ export class SpaceView {
         channel,
         voice,
         isDefault,
-        place: { at: order.indexOf(name), of: order.length },
-        move: async (step) => {
-          await this.moveChannel(name, voice, step)
-          again('overview')
-        },
         keptTo: channel.levels.map((id) => levels.find((l) => l.id === id)?.name ?? '').filter(Boolean),
         save: async (change) => {
           if (change.label !== undefined) await this.publish((c) => c.labelChannel(name, change.label!, voice))
@@ -1801,12 +1795,18 @@ export class SpaceView {
     }
     const label = info?.label ?? this.channel
     const messages = chat.messages(this.channel)
-    this.chatPanel.setIntro({
-      title: `Welcome to #${label}`,
-      text: info?.topic || (info?.mediaOnly ? `#${label} is for pictures, videos and files.` : `This is the start of #${label}.`),
-      // A slow server: the start of the channel only shows once the history says it is the start.
-      loading: messages.length === 0 && !this.space.historyIn,
-    })
+    // Until the history says it is whole, what shows may be only the end of the channel, so its
+    // start is not drawn: a spinner when nothing shows yet, and nothing above what does.
+    const waiting = !this.space.historyIn
+    this.chatPanel.setIntro(
+      waiting && messages.length > 0
+        ? null
+        : {
+            title: `Welcome to #${label}`,
+            text: info?.topic || (info?.mediaOnly ? `#${label} is for pictures, videos and files.` : `This is the start of #${label}.`),
+            loading: waiting,
+          },
+    )
     this.chatPanel.render(messages)
     this.chatPanel.setTitle('Chat')
     this.showPinsButton(messages.filter((m) => m.pinned).length)
@@ -2764,6 +2764,10 @@ export class SpaceView {
             })),
           order: (names, voice) => this.publish((c) => c.orderChannels(names, voice)).then(() => undefined),
           edit: (name, voice) => void this.openChannelSettings(name, voice, undefined, true),
+          create: async (voice) => {
+            await this.newChannel(voice, false)
+            if (this.settingsOpen === 'space') void this.openSpaceSettings('channels')
+          },
         },
         members: () => this.memberRows(),
         setLevel: (key, level) => this.setRole(key, level),
@@ -4493,7 +4497,8 @@ export class SpaceView {
     this.draw()
   }
 
-  private async newChannel(voice: boolean): Promise<void> {
+  /** Asks for a name and who can see it, and makes the channel. `open` goes to a new text channel. */
+  private async newChannel(voice: boolean, open = true): Promise<void> {
     if (!this.chat?.can('channels')) {
       toast('Your level cannot make channels.', 'warn')
       return
@@ -4507,6 +4512,7 @@ export class SpaceView {
       return
     }
     await this.publish((c) => c.makeChannel(name, voice, answer.levels))
+    if (!open) return
     if (!voice) this.openChannel(name)
     else this.draw()
   }

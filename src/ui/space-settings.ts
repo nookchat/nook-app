@@ -52,6 +52,8 @@ export interface ChannelListActions {
   order(names: string[], voice: boolean): Promise<void>
   /** Opens the channel's own settings. */
   edit(name: string, voice: boolean): void
+  /** Asks for its name and who can see it, then makes it. */
+  create(voice: boolean): Promise<void>
 }
 
 export interface MemberRow {
@@ -202,6 +204,12 @@ function channelList(actions: ChannelListActions, voice: boolean): HTMLElement {
     voice ? 'Voice channels' : 'Text channels',
     note('Drag one to put it in another place, or use the arrows. Everybody sees this order.'),
     list,
+    h('div', { class: 'row' }, [
+      h('button', { class: 'small', on: { click: () => void actions.create(voice) } }, [
+        icon('plus', 14),
+        voice ? 'Create voice channel' : 'Create text channel',
+      ]),
+    ]),
   )
 }
 

@@ -1,7 +1,6 @@
 import type { ChannelInfo } from '../store/log'
 import { h } from './dom'
 import { openEmojiPicker } from './emoji'
-import { icon } from './icons'
 import { actionRow, card, note, settingsShell, toggle, type SettingsTab } from './settings-shell'
 
 export interface ChannelSettingsActions {
@@ -9,10 +8,6 @@ export interface ChannelSettingsActions {
   voice: boolean
   /** General and lounge: everybody lands in them, so they stay open to all and cannot go. */
   isDefault: boolean
-  /** Where it is in the list, from 0, and how many there are. */
-  place: { at: number; of: number }
-  /** -1 moves it up one, 1 down one. */
-  move(step: number): Promise<void>
   /** The names of the levels it is kept to. Empty is everybody. */
   keptTo: string[]
   /** Only what changed: each resolves once it is written. */
@@ -28,7 +23,7 @@ export interface ChannelSettingsActions {
   back(): void
 }
 
-/** Everything about one channel in one place: its name, emoji, topic and place, who gets in, its rules, and delete. */
+/** Everything about one channel in one place: its name, emoji and topic, who gets in, its rules, and delete. Its place is in the space's settings, under Channels. */
 export function channelSettingsView(actions: ChannelSettingsActions): HTMLElement {
   const { channel, voice } = actions
   const group = voice ? channel.label : `#${channel.label}`
@@ -140,23 +135,7 @@ function overviewPage(actions: ChannelSettingsActions): HTMLElement {
     ),
     voice ? null : card('Topic', note('Shown at the top of the channel.'), topic),
     h('div', { class: 'row' }, [save]),
-    placeCard(actions),
   ])
-}
-
-/** Up and down the list: the same as a drag in the list, which a touch screen does not have. */
-function placeCard(actions: ChannelSettingsActions): HTMLElement | null {
-  const { at, of } = actions.place
-  if (of < 2) return null
-  const up = h('button', { class: 'small', on: { click: () => void actions.move(-1) } }, [icon('arrow-up', 14), 'Move up'])
-  const down = h('button', { class: 'small', on: { click: () => void actions.move(1) } }, [icon('arrow-down', 14), 'Move down'])
-  up.disabled = at <= 0
-  down.disabled = at < 0 || at >= of - 1
-  return card(
-    'Place in the list',
-    note(`${at + 1} of ${of}. You can also drag it in the list of channels.`),
-    h('div', { class: 'row wrap' }, [up, down]),
-  )
 }
 
 function accessPage(actions: ChannelSettingsActions): HTMLElement {
