@@ -259,7 +259,7 @@ export class Channel implements Transport {
   readonly keys: SpaceKeys
 
   /** Events opened, each with its place in the order the server sent the lines: see RoomLog.add. */
-  onEvents: ((events: unknown[], places: number[]) => void) | null = null
+  onEvents: ((events: unknown[], places: number[]) => void | Promise<void>) | null = null
   onLeft: ((session: string) => void) | null = null
   /**
    * The server has sent everybody here now, after a hello sent at `since`. Somebody who
@@ -468,7 +468,8 @@ export class Channel implements Transport {
         events.push(e)
         at.push(places[i])
       })
-      if (events.length) this.onEvents?.(events, at)
+      // Waited for: `shown` and `loaded` mean the lines are in the log, not only opened.
+      if (events.length) await this.onEvents?.(events, at)
     } catch (err) {
       console.warn('[nook] some lines did not open', err)
     }

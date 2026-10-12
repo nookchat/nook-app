@@ -185,7 +185,7 @@ export class SpaceRuntime {
     this.chat = chat
 
     const channel = new Channel(connectionTo(this.server), this.room, serverTag(this.server), this.keys)
-    channel.onEvents = (events, places) => void this.take(events, places)
+    channel.onEvents = (events, places) => this.take(events, places)
     channel.onLeft = (session) => this.drop(session, 'left')
     channel.onHere = (ids, up) => void this.checkHere(ids, up, Date.now())
     // The others reconnect too after a server restart, some later than us, so they get a while to say hello.
