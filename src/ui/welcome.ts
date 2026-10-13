@@ -83,6 +83,7 @@ export function welcome(mount: HTMLElement, invited: boolean): Promise<void> {
     h('div', { class: 'welcome-picture' }, [face, h('div', { class: 'row' }, [removeButton, pictureButton]), picker]),
     h('label', { class: 'welcome-field' }, [h('span', { class: 'eyebrow', text: 'Your name' }), name]),
     go,
+    agreement(),
   ])
 
   const option = (glyph: IconName, title: string, about: string): HTMLButtonElement =>
@@ -209,4 +210,22 @@ export function welcome(mount: HTMLElement, invited: boolean): Promise<void> {
       if (ev.key === 'Enter') finish()
     })
   })
+}
+
+/** Under Continue or Join: using Nook agrees to the terms of use and the privacy policy. */
+function agreement(): HTMLElement {
+  const link = (text: string, to: string): HTMLAnchorElement => {
+    const a = h('a', { text })
+    a.href = to
+    a.target = '_blank'
+    a.rel = 'noopener noreferrer'
+    return a
+  }
+  return h('p', { class: 'tiny faint welcome-agree' }, [
+    'When you use Nook, you agree to the ',
+    link('Terms of use', './terms.html'),
+    ' and the ',
+    link('Privacy policy', './privacy.html'),
+    '. Nook has no place for abuse.',
+  ])
 }

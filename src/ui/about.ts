@@ -6,6 +6,8 @@ import { actionRow, card, note, toggle } from './settings-shell'
 
 const RELEASES = 'https://github.com/nookchat/nook-app/releases'
 const HOW_IT_WORKS = './how-it-works.html'
+const TERMS = './terms.html'
+const PRIVACY = './privacy.html'
 const CHECK_WAIT_MS = 15_000
 
 type DesktopCheck = { state: 'newest' | 'available' | 'downloading' | 'ready' | 'failed' | 'dev'; version?: string }
@@ -127,6 +129,20 @@ export function aboutSettings(): HTMLElement {
       'How Nook works',
       note('What Nook encrypts, what a server can see, and how voice, calls and screen share work.'),
       h('div', { class: 'row wrap' }, [howItWorks]),
+    ),
+  )
+  const legal = (text: string, to: string): HTMLAnchorElement => {
+    const a = h('a', { class: 'button-link', text })
+    a.href = to
+    a.target = '_blank'
+    a.rel = 'noopener noreferrer'
+    return a
+  }
+  cards.push(
+    card(
+      'Terms and privacy',
+      note('The rules for using Nook, how to report abuse, and what data Nook can see.'),
+      h('div', { class: 'row wrap' }, [legal('Terms of use', TERMS), legal('Privacy policy', PRIVACY)]),
     ),
   )
   cards.push(

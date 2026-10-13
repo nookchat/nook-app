@@ -22,6 +22,9 @@
     "android": "cap sync android && cap open android",
     "android:dev": "NOOK_URL=http://localhost:5173 cap sync android && adb reverse tcp:5173 tcp:5173 && adb reverse tcp:8787 tcp:8787 && cap run android",
     "android:release": "cap sync android && cd android && ./gradlew bundleRelease",
+    "ios": "cap sync ios && cap open ios",
+    "ios:release": "scripts/ios-release.sh",
+    "ios:upload": "scripts/ios-release.sh --upload",
     "android:apk": "cap sync android && cd android && ./gradlew assembleSideload"
   },
   "dependencies": {
@@ -41,6 +44,7 @@
   "devDependencies": {
     "@capacitor/android": "^8.5.2",
     "@capacitor/cli": "^8.5.2",
+    "@capacitor/ios": "^8.5.3",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "playwright-core": "^1.62.1",

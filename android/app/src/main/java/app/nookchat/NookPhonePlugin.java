@@ -1,4 +1,4 @@
-package app.nook;
+package app.nookchat;
 
 import android.Manifest;
 import android.app.NotificationChannel;
@@ -55,7 +55,7 @@ import java.util.Set;
 public class NookPhonePlugin extends Plugin {
 
     static final String CHANNEL_MESSAGES = "messages";
-    private static final String EXTRA_NOTE = "app.nook.note";
+    private static final String EXTRA_NOTE = "app.nookchat.note";
     /** The voice notification has id 1; message notifications count up from here. */
     private static final int FIRST_NOTE = 1000;
     private static final int LARGEST_PICTURE_BYTES = 8 * 1024 * 1024;
@@ -208,7 +208,7 @@ public class NookPhonePlugin extends Plugin {
         int number = ++counted;
 
         Intent open = new Intent(context, MainActivity.class)
-            .setAction("app.nook.NOTE." + number)
+            .setAction("app.nookchat.NOTE." + number)
             .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
             .putExtra(EXTRA_NOTE, id);
         PendingIntent tap = PendingIntent.getActivity(

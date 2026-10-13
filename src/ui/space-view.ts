@@ -267,6 +267,8 @@ function gifCell(g: Gif): HTMLVideoElement | HTMLImageElement {
 const NO_VOICE = '*'
 /** A share heard of this soon after it started has just started, and plays its sound. */
 const SHARE_NEW_MS = 10_000
+/** An iPhone or an iPad cannot share a screen, in a browser or in the app, so it shows no way to. */
+const SHARES_SCREEN = !checkSupport().isIOS
 
 /** 16 hex digits: the id of a sound or a group on the board. */
 function randomId(): string {
@@ -648,7 +650,7 @@ export class SpaceView {
     if (action === 'search') this.openSearchBox()
     else if (action === 'mute') this.toggleMute()
     else if (action === 'deafen') this.toggleDeafen()
-    else if (action === 'share') void this.toggleShare()
+    else if (action === 'share' && SHARES_SCREEN) void this.toggleShare()
     else if (action === 'leave') this.leaveVoice()
     else {
       const names = this.chat?.channels() ?? []
@@ -3112,7 +3114,7 @@ export class SpaceView {
     }
     keyed(this.channelList, rows)
     // Share your screen comes with the channels, never before them.
-    if (chat && !this.railShareButton.isConnected) this.shareStart.append(this.railShareButton)
+    if (chat && SHARES_SCREEN && !this.railShareButton.isConnected) this.shareStart.append(this.railShareButton)
     this.mentions = mentions
   }
 
@@ -3694,7 +3696,7 @@ export class SpaceView {
         ),
         this.cameraButton,
         ...(call || !this.chat?.can('soundboard') ? [] : [this.boardButton]),
-        this.shareButton,
+        ...(SHARES_SCREEN ? [this.shareButton] : []),
       ]
       this.voiceBar.append(
         h('div', { class: 'voice-bar-top' }, [

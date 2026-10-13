@@ -8,7 +8,7 @@ import type { CapacitorConfig } from '@capacitor/cli'
 const home = process.env.NOOK_URL || 'https://www.nookchat.app'
 
 const config: CapacitorConfig = {
-  appId: 'app.nook',
+  appId: 'app.nookchat',
   appName: 'Nook',
   // Only the page shown with no network is kept in the app.
   webDir: 'mobile/www',

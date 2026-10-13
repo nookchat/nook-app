@@ -27,7 +27,7 @@ import { filesFor, type SpaceMaking, type SpaceRuntime } from './space/runtime'
 import { nameChosen, shortKey } from './store/identity'
 import { cleanChannel, cleanFiles, DEFAULT_CHANNEL, type Attachment, type LogEvent } from './store/log'
 import { channelMuted } from './store/mute'
-import { newSpaceServer } from './store/server-spaces'
+import { ACCOUNT_DELETED, newSpaceServer } from './store/server-spaces'
 import { ROOMS_CHANGED } from './store/notes'
 import { findSpace } from './store/spaces'
 import { lastScreen } from './store/screen'
@@ -36,7 +36,7 @@ import { watchUnread } from './ui/badge'
 import { lookingAtNook, watchLooking } from './ui/looking'
 import { bootDone, bootStep } from './ui/boot'
 import { installCalls } from './ui/call'
-import { loggingOut } from './ui/log-out'
+import { loggingOut, logOutHere } from './ui/log-out'
 import { clear } from './ui/dom'
 import { HomeView, type DirectRef } from './ui/home-view'
 import { noticePicture, notify, notifyText, notifyWhat, offerNotify } from './ui/notify'
@@ -182,6 +182,9 @@ async function showSettings(): Promise<void> {
     }),
   )
 }
+
+// The account was deleted on another device: this one logs out too.
+window.addEventListener(ACCOUNT_DELETED, () => void logOutHere('Your account was deleted'))
 
 // A log out in another tab cleared what this one runs on: it starts again, at the welcome.
 window.addEventListener('storage', (ev) => {

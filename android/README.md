@@ -77,7 +77,7 @@ before you install that one.
    npm run android:release   # android/app/build/outputs/bundle/release/app-release.aab
    ```
 
-4. In the Play Console, make the app with the package name `app.nook`, turn on
+4. In the Play Console, make the app with the package name `app.nookchat`, turn on
    Play App Signing, and upload the `.aab` to the internal testing track first.
 
 5. Let invite links open in the app: copy the SHA-256 fingerprint of the app
@@ -87,7 +87,7 @@ before you install that one.
    ```json
    [{
      "relation": ["delegate_permission/common.handle_all_urls"],
-     "target": { "namespace": "android_app", "package_name": "app.nook",
+     "target": { "namespace": "android_app", "package_name": "app.nookchat",
                  "sha256_cert_fingerprints": ["AA:BB:..."] }
    }]
    ```
