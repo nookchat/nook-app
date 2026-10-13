@@ -3984,7 +3984,6 @@ input[type="text"].space-search {
     border-radius: 0;
     box-shadow: var(--shadow);
     transition: transform 200ms var(--ease);
-    padding-top: env(safe-area-inset-top);
   }
 
   .rail-left {
