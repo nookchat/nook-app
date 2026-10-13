@@ -18,7 +18,8 @@ import { icon } from './icons'
 import { logOutHere } from './log-out'
 import { gameCard } from './game-card'
 import { songCard } from './song-card'
-import { enterLinkCode, lastBackup, showBackup, showLinkCode } from './link-device'
+import { lastBackup, showBackup, showLinkCode } from './link-device'
+import { enterLinkCode, signInCard } from './sign-in'
 import { paintFolders } from './recordings'
 import { askNotify, notifyState, notifyText, notifyWhat, setNotifyText, setNotifyWhat, stopNotify, testNotify } from './notify'
 import { setSounds, soundsOn } from './sounds'
@@ -417,6 +418,7 @@ export function settingsView(actions: SettingsActions): HTMLElement {
               h('button', { class: 'ghost', text: 'Enter a code', on: { click: () => enterLinkCode() } }),
             ]),
           ),
+          signInCard(),
           card(
             'Backup',
             backupNote,

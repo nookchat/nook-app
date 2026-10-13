@@ -117,6 +117,10 @@ Version 1, under `/api/v1`. A running server describes it at
 | `GET /api/v1/links/:id` | Takes it. It is gone after one read |
 | `POST /api/v1/links/:id/done` | The device that took it says whether it became the account, `{ "linked": true }` or `false` |
 | `GET /api/v1/links/:id/state?from=S` | What became of it: `waiting`, `opened`, `linked`, `declined` or `gone`. With `from`, waits up to 25 seconds for a change, so the device that made it says Linked at once |
+| `GET /api/v1/links/:id?wait=1` | Takes it, waiting up to 25 seconds for it to be left. A new device shows a code, and the signed in one types it and leaves the link. `{ "blob": null }` when none came |
+| `PUT /api/v1/vaults/:id` | Keeps an account sealed by a passkey or a recovery key, `{ "blob" }`. Needs `x-nook-write`. The first write claims it. Kept in the database, not replicated |
+| `GET /api/v1/vaults/:id` | That sealed string. The id cannot be guessed, and the key that opens it never leaves the device |
+| `DELETE /api/v1/vaults/:id` | Removes it. Needs the `x-nook-write` it was claimed with |
 | `GET /api/v1/people/:id` | One person's sealed record |
 | `PUT /api/v1/people/:id` | Replaces it. Needs `x-nook-write`. The first write claims it |
 | `GET /api/v1/preview?url=U` | The title, description and picture behind a public link |

@@ -17,6 +17,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    id: '2026-10-13',
+    title: 'Sign in on a new device with no camera',
+    items: [
+      'Make a passkey in Settings, and sign in on any new device with a fingerprint or a face.',
+      'Or make a recovery key, and keep it in your password manager.',
+      'A new device can show a code, and you type it on the device you already use.',
+      'Link a device now has a Send the link button, to send it by AirDrop or a message.',
+      'A code no longer asks for the server when it is your own.',
+    ],
+  },
+  {
     id: '2026-10-12',
     title: 'Instant pictures and channel emoji',
     items: [

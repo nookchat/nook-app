@@ -131,8 +131,8 @@ export const openapi = {
         responses: { 200: { description: 'Waiting' }, 409: { description: 'Already waiting' }, ...errors },
       },
       get: {
-        summary: 'Take a device link. It is gone after this',
-        parameters: [link],
+        summary: 'Take a device link. It is gone after this. With wait=1, a link that is not there yet is waited for, up to 25 seconds, and { "blob": null } comes back when none came',
+        parameters: [link, { name: 'wait', in: 'query', required: false, schema: { type: 'string' } }],
         responses: { 200: { description: 'The sealed link' }, 404: { description: 'Used, or run out' } },
       },
     },
@@ -149,6 +149,16 @@ export const openapi = {
         parameters: [link, { name: 'from', in: 'query', required: false, schema: { type: 'string' } }],
         responses: { 200: { description: 'The state' } },
       },
+    },
+    '/api/v1/vaults/{id}': {
+      get: { summary: 'An account sealed with a passkey or a recovery key', responses: { 200: { description: 'The sealed account' }, 404: { description: 'None under that id' } } },
+      put: {
+        summary: 'Keep an account sealed with a passkey or a recovery key. The first write claims the id with its write token',
+        parameters: [write],
+        requestBody: { content: { 'application/json': { schema: { type: 'object', properties: { blob: { type: 'string' } } } } } },
+        responses: { 200: { description: 'Kept' }, ...errors },
+      },
+      delete: { summary: 'Remove a vault, with its write token', parameters: [write], responses: { 200: { description: 'Removed' }, ...errors } },
     },
     '/api/v1/people/{id}': {
       get: { summary: "A person's sealed record of their spaces", parameters: [person], responses: { 200: { description: 'OK' }, ...errors } },

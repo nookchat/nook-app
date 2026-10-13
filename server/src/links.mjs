@@ -18,6 +18,8 @@ const STATE_WAIT_MS = 25_000
 const held = new Map()
 /** The questions waiting for a link's state to change, by its id. */
 const watchers = new Map()
+/** The questions waiting for a link that is not there yet, by its id. */
+const arrivals = new Map()
 
 function tell(id) {
   const waiting = watchers.get(id)
@@ -47,11 +49,37 @@ export function putLink(id, blob, address = '') {
   if (mine >= MAX_PER_ADDRESS) throw new ApiError(429, 'slow_down', 'Too many links are waiting from here. Try again in a few minutes.')
   const until = Date.now() + TTL_MS
   held.set(id, { blob, until, address, state: 'waiting' })
+  const coming = arrivals.get(id)
+  if (coming) {
+    arrivals.delete(id)
+    for (const done of coming) done()
+  }
   return { ok: true, until }
 }
 
-export function takeLink(id) {
+/**
+ * Takes a link. With `wait`, a link that is not there yet is waited for, up to 25 seconds: the
+ * new device shows a code, and the device that is signed in types it and leaves the link after.
+ */
+export async function takeLink(id, wait = false, res = null) {
   sweep()
+  if (wait && !held.has(id)) {
+    await new Promise((done) => {
+      let finish = () => undefined
+      const timer = setTimeout(() => finish(), STATE_WAIT_MS)
+      finish = () => {
+        clearTimeout(timer)
+        arrivals.get(id)?.delete(finish)
+        res?.off('close', finish)
+        done()
+      }
+      if (!arrivals.has(id)) arrivals.set(id, new Set())
+      arrivals.get(id).add(finish)
+      res?.on('close', finish)
+    })
+    sweep()
+    if (!held.has(id)) return { blob: null }
+  }
   const link = held.get(id)
   if (!link || link.state !== 'waiting') throw new ApiError(404, 'gone', 'That code has been used, or has run out.')
   const { blob } = link

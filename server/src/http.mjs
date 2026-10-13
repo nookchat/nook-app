@@ -9,7 +9,7 @@ const CORS = {
   vary: 'origin',
   'access-control-allow-headers': 'content-type,x-nook-write,authorization,range',
   'access-control-expose-headers': 'content-range,content-length,accept-ranges',
-  'access-control-allow-methods': 'GET,POST,PUT,OPTIONS',
+  'access-control-allow-methods': 'GET,POST,PUT,DELETE,OPTIONS',
   'access-control-max-age': '86400',
 }
 const OPEN_CORS = { 'access-control-allow-origin': '*', ...CORS }

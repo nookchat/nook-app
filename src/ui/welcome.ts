@@ -7,6 +7,8 @@ import { lockup } from './ghost'
 import { icon, type IconName } from './icons'
 import { landing, wantsLanding } from './landing'
 import { backupTaker, linkTaker } from './link-device'
+import { passkeyButton, receiveCode, recoveryTaker } from './sign-in'
+import { passkeysAvailable } from '../net/passkey'
 import { toast } from './toast'
 import { tour } from './tour'
 
@@ -92,23 +94,37 @@ export function welcome(mount: HTMLElement, invited: boolean): Promise<void> {
       ]),
     ])
   const fromDevice = option('device', 'Use my other device', 'A phone or computer where you use Nook now')
+  const fromKey = option('shield', 'Use a recovery key', 'The key you kept in your password manager')
   const fromFile = option('file', 'Use a backup file', 'The file you saved from Settings')
   const account = h('div', { class: 'welcome-step hidden' }, [
     h('h1', { class: 'welcome-title', text: 'Welcome back' }),
     h('p', { class: 'welcome-text', text: 'Your spaces and messages come back with you. How do you want to get in?' }),
+    ...(passkeysAvailable() ? [passkeyButton()] : []),
     fromDevice,
+    fromKey,
     fromFile,
   ])
 
+  // The easy way first: this device shows a code, and the other one, which has a keyboard, types it.
+  const receive = receiveCode()
   const link = linkTaker()
   const device = h('div', { class: 'welcome-step hidden' }, [
     h('h1', { class: 'welcome-title', text: 'Use my other device' }),
+    receive.el,
+    h('div', { class: 'link-or tiny faint', text: 'or, with the camera or the code from the other device' }),
     h('ol', { class: 'welcome-steps' }, [
       h('li', { text: 'On your other device, open Nook.' }),
       h('li', { text: 'Go to Settings, then Link a device.' }),
-      h('li', { text: 'Scan the QR code it shows, or type its code and server here.' }),
+      h('li', { text: 'Scan the QR code it shows, or type its code here.' }),
     ]),
     link.el,
+  ])
+
+  const recovery = recoveryTaker()
+  const key = h('div', { class: 'welcome-step hidden' }, [
+    h('h1', { class: 'welcome-title', text: 'Use a recovery key' }),
+    h('p', { class: 'welcome-text', text: 'You made it in Settings, Devices & backup. It could be in your password manager.' }),
+    recovery.el,
   ])
 
   const backup = backupTaker()
@@ -124,11 +140,12 @@ export function welcome(mount: HTMLElement, invited: boolean): Promise<void> {
     back: () => show(choose),
   })
 
-  const steps = [choose, intro.el, naming, account, device, file]
+  const steps = [choose, intro.el, naming, account, device, key, file]
   const before = new Map<HTMLElement, HTMLElement>([
     [naming, intro.el],
     [account, choose],
     [device, account],
+    [key, account],
     [file, account],
   ])
   let shownBefore: HTMLElement = choose
@@ -138,6 +155,7 @@ export function welcome(mount: HTMLElement, invited: boolean): Promise<void> {
     if (step === intro.el) intro.show(shownBefore === naming ? 'last' : 'first')
     shownBefore = step
     link.stop()
+    receive.stop()
     const shown = (el: HTMLElement): boolean => el.offsetParent !== null
     const field = [...step.querySelectorAll<HTMLElement>('input:not([type="file"])')].find(shown)
     // On the tour that is Next, not Skip.
@@ -151,7 +169,11 @@ export function welcome(mount: HTMLElement, invited: boolean): Promise<void> {
   }
   fresh.addEventListener('click', () => show(intro.el))
   known.addEventListener('click', () => show(account))
-  fromDevice.addEventListener('click', () => show(device))
+  fromDevice.addEventListener('click', () => {
+    show(device)
+    receive.start()
+  })
+  fromKey.addEventListener('click', () => show(key))
   fromFile.addEventListener('click', () => show(file))
 
   const page = h('main', { class: 'welcome' }, [h('div', { class: 'welcome-card' }, steps)])

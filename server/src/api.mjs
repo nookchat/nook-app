@@ -22,6 +22,7 @@ import {
   since,
 } from './store.mjs'
 import { iceServers } from './turn.mjs'
+import { deleteVault, MAX_VAULT, putVault, VAULT_ID, vault } from './vaults.mjs'
 import { handleWebhook } from './webhooks.mjs'
 
 const int = (value) => {
@@ -171,7 +172,7 @@ export async function handle(req, res) {
         if (!LINK_ID.test(b)) throw new ApiError(400, 'bad_link', 'That is not a link id.')
         limited(req)
         if (method === 'PUT') return reply(res, 200, putLink(b, (await readJson(req, MAX_LINK + 1024))?.blob, addressOf(req)))
-        if (method === 'GET') return reply(res, 200, takeLink(b))
+        if (method === 'GET') return reply(res, 200, await takeLink(b, url.searchParams.get('wait') === '1', res))
       }
       if (a === 'links' && b && (c === 'state' || c === 'done') && !parts[5]) {
         if (!LINK_ID.test(b)) throw new ApiError(400, 'bad_link', 'That is not a link id.')
@@ -181,6 +182,14 @@ export async function handle(req, res) {
           return reply(res, 200, await linkState(b, /^[a-z]{1,10}$/.test(from) ? from : '', res))
         }
         if (c === 'done' && method === 'POST') return reply(res, 200, endLink(b, (await readJson(req, 1024))?.linked === true))
+      }
+      if (a === 'vaults' && b && !c) {
+        if (!VAULT_ID.test(b)) throw new ApiError(400, 'bad_vault', 'That is not a vault id.')
+        limited(req)
+        const token = req.headers['x-nook-write']
+        if (method === 'GET') return reply(res, 200, await vault(b))
+        if (method === 'PUT') return reply(res, 200, await putVault(b, token, (await readJson(req, MAX_VAULT + 1024))?.blob))
+        if (method === 'DELETE') return reply(res, 200, await deleteVault(b, token))
       }
       if (a === 'people' && b && !c) {
         const id = personOf(b)

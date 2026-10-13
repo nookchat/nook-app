@@ -74,6 +74,14 @@ const MIGRATIONS = [
     d   text not null
   );
   `,
+  `
+  create table vaults (
+    id          text primary key,
+    token_hash  bytea not null,
+    blob        text not null,
+    updated     bigint not null default 0
+  );
+  `,
 ]
 
 export async function migrate() {
