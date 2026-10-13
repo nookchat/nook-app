@@ -85,7 +85,7 @@ try {
   await two.fill('input[aria-label="The link or code"]', first.code.toLowerCase().replace(/-/g, ''))
   const shaped = await two.inputValue('input[aria-label="The link or code"]')
   check('a code is shaped as it is typed', shaped === first.code, shaped)
-  await two.fill('input[aria-label="The server"]', first.server)
+  check('the server is not asked for when the code waits on this device’s own', !(await two.isVisible('input[aria-label="The server"]')))
   await two.click('button:text-is("Link this device")')
   await two.waitForURL((url) => !url.hash, { timeout: 15_000 }).catch(() => undefined)
   await wait(1500)

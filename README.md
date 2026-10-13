@@ -332,6 +332,28 @@ shows the code hears how it went: "Your other device has the code" while the
 other one asks, then Linked, or Not linked when it kept its own account. A
 server from before this says nothing, and the code stays on screen.
 
+**A new device with no camera.** Three more ways in, all in Settings, Devices
+& backup, and on "I have an account":
+
+- *A passkey.* Settings, Sign in without another device, Make a passkey. The
+  passkey's own secret (the WebAuthn PRF extension) seals your account on your
+  server. On a new device, "Sign in with a passkey" is one tap and a
+  fingerprint or a face: no camera, no typing, and no other device open. A
+  passkey kept by iCloud Keychain, Google Password Manager or a password
+  manager is on every device you own. A passkey works on the address it was
+  made on. The server it uses is in the passkey, so nothing is asked.
+- *A recovery key.* Make a recovery key shows 100 random bits, once, as four
+  groups of five. Keep it in a password manager. It works from any browser,
+  and a new one stops the old one.
+- *A code on the new device.* "Use my other device" shows a code on the new
+  device at once. On the device you use now, Settings, Link a device has a box
+  for it. Typing on a computer is easier than on a phone, and the code is
+  sealed the same way as a link. The code is not asked for with a server when
+  it waits on this device's own.
+
+Link a device also has Send the link, which opens the share sheet where there is
+one, to send the link by AirDrop or a message.
+
 Everything is sealed with AES-GCM under a key made from the space code (and its
 password, if it has one) before it leaves the browser, or under a newer key
 after somebody was removed. Every event is signed
@@ -570,6 +592,8 @@ src/
     server-api.ts     sealing a line, link cards, GIF search, health
     files.ts          files: sealed with a key each, uploaded, fetched and opened
     link.ts           linking a device, and backups: what travels, and how it is sealed
+    vault.ts          the account sealed on a server, and recovery keys
+    passkey.ts        a passkey that opens a vault
     mesh.ts           who is here, from what the server passes on
     voice.ts          voice channels, mic.ts denoise.ts talking.ts around them
     uplink.ts         how much upload Nook may use, guessed then measured

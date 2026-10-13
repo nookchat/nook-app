@@ -1,4 +1,4 @@
-import { serverTag, serverUrl } from '../backend'
+import { defaultServer, serverTag, serverUrl } from '../backend'
 import { fromBase64, toBase64 } from '../bytes'
 import { formatSecret, newSecret, parseSecret, shareBase } from '../room'
 import { loadIdentity, saveDisplayName, secretForLinking, takeIdentity } from '../store/identity'
@@ -56,7 +56,7 @@ export interface Offer {
   id: string
 }
 
-function bundleOfThisDevice(): Bundle {
+export function bundleOfThisDevice(): Bundle {
   const secret = secretForLinking()
   if (!secret) throw new Error('This browser will not let your key be read back, so it cannot be copied from here.')
   return {
@@ -85,11 +85,16 @@ function adopt(bundle: Bundle): string {
   return bundle.n || ''
 }
 
-export async function offerLink(): Promise<Offer> {
-  const server = newSpaceServer() || knownServers()[0] || ''
+/**
+ * Leaves this account for another device to take. Without `asked` the code is new, and the other
+ * device is given it. With `asked`, the other device made the code and shows it: this one seals
+ * the account under that code and leaves it where that device is waiting.
+ */
+export async function offerLink(asked?: { code: string; server: string }): Promise<Offer> {
+  const server = asked?.server || newSpaceServer() || knownServers()[0] || ''
   if (!server) throw new Error('Add a server first: the link waits there for the other device.')
   const bundle = bundleOfThisDevice()
-  const code = newSecret()
+  const code = asked?.code ?? newSecret()
   const { id, key } = await derive(code)
   const iv = crypto.getRandomValues(new Uint8Array(12))
   const box = new Uint8Array(
@@ -101,6 +106,7 @@ export async function offerLink(): Promise<Offer> {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ blob: `${toBase64(iv)}.${toBase64(box)}` }),
   })
+  if (res.status === 409) throw new Error('That code is already in use. Ask the other device for a new one.')
   if (!res.ok) throw new Error('Your server would not keep the link. Try again in a moment.')
   const { until } = (await res.json()) as { until?: number }
   return {
@@ -191,13 +197,18 @@ export async function takeOffer(offer: { code: string; server: string }): Promis
 
 /** What a link carries, fetched and opened, so it can be shown before this device takes it. */
 export async function openOffer(offer: { code: string; server: string }): Promise<Bundle> {
-  const { id, key } = await derive(offer.code)
+  const { id } = await derive(offer.code)
   const res = await fetch(`${offer.server}/api/v1/links/${id}`, { mode: 'cors' }).catch(() => null)
   if (!res) throw new Error(`${serverTag(offer.server)} could not be reached. Check the server under the code.`)
   if (res.status === 404) throw new Error('That code has been used, or has run out. Make a new one on the other device.')
   if (!res.ok) throw new Error(`${serverTag(offer.server)} said no (${res.status}).`)
   const { blob } = (await res.json()) as { blob?: string }
-  const [iv, box] = (blob ?? '').split('.')
+  return openBlob(offer.code, blob ?? '')
+}
+
+async function openBlob(code: string, blob: string): Promise<Bundle> {
+  const { key } = await derive(code)
+  const [iv, box] = blob.split('.')
   let bundle: Bundle
   try {
     const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: fromBase64(iv) }, key, fromBase64(box))
@@ -207,6 +218,57 @@ export async function openOffer(offer: { code: string; server: string }): Promis
   }
   if (typeof bundle?.k !== 'string') throw new Error('That link would not open. Make a new one on the other device.')
   return bundle
+}
+
+/** The server a new device shows beside its code: the one it knows, where the other device will look too. */
+export function receiveServer(): string {
+  return newSpaceServer() || knownServers()[0] || defaultServer()
+}
+
+export interface Waiting {
+  /** As it is shown: three groups of four. */
+  code: string
+  server: string
+  /** The code, bare: what the other device types back. */
+  bare: string
+}
+
+export function startWaiting(): Waiting {
+  const bare = newSecret()
+  return { code: formatSecret(bare), server: receiveServer(), bare }
+}
+
+/**
+ * A new device shows a code, and the one that is signed in types it. This waits at the server for
+ * the account to be left under the code, and opens it. It asks again each time the server has
+ * nothing yet, and stops when the account arrives, when `stop` is called, or after ten minutes.
+ */
+export function waitForLink(waiting: Waiting): { arrived: Promise<Bundle>; stop(): void } {
+  const stop = new AbortController()
+  const until = Date.now() + LINK_TTL_MS
+  const arrived = (async (): Promise<Bundle> => {
+    const { id } = await derive(waiting.bare)
+    while (!stop.signal.aborted && Date.now() < until) {
+      let res: Response
+      try {
+        res = await fetch(`${waiting.server}/api/v1/links/${id}?wait=1`, { mode: 'cors', signal: stop.signal })
+      } catch {
+        if (stop.signal.aborted) break
+        await new Promise((done) => window.setTimeout(done, 3000))
+        continue
+      }
+      // A server from before waiting answers 404 at once: ask again in a moment.
+      if (res.status === 404) {
+        await new Promise((done) => window.setTimeout(done, 2000))
+        continue
+      }
+      if (!res.ok) throw new Error(`${serverTag(waiting.server)} said no (${res.status}).`)
+      const { blob } = (await res.json()) as { blob?: string | null }
+      if (blob) return openBlob(waiting.bare, blob)
+    }
+    throw new Error(stop.signal.aborted ? 'Stopped.' : 'The code ran out. Make a new one.')
+  })()
+  return { arrived, stop: () => stop.abort() }
 }
 
 /** Makes this device the account a link carried. */

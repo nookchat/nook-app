@@ -19,13 +19,14 @@ import {
   watchLink,
   type Bundle,
   type LinkState,
+  type Offer,
 } from '../net/link'
 import { shareBase } from '../room'
 import { saveFile } from '../net/files'
 import { loadIdentity, nameChosen } from '../store/identity'
-import { newSpaceServer } from '../store/server-spaces'
+import { knownServers, newSpaceServer } from '../store/server-spaces'
 
-function dialog(title: string, body: HTMLElement[], onClose?: () => void): () => void {
+export function dialog(title: string, body: HTMLElement[], onClose?: () => void): () => void {
   const previous = document.activeElement as HTMLElement | null
   const close = (): void => {
     scrim.remove()
@@ -69,15 +70,15 @@ function dialog(title: string, body: HTMLElement[], onClose?: () => void): () =>
   return close
 }
 
-function restart(name: string): void {
+export function restart(name: string): void {
   toast(name ? `Linked. Starting again as ${name}.` : 'Linked. Starting again.', 'good', 3000)
   window.setTimeout(() => window.location.replace(`${window.location.origin}${window.location.pathname}`), 900)
 }
 
 /** The site to open on the other device: the home site, or this copy of Nook. */
-const here = (): string => new URL(shareBase()).host
+export const here = (): string => new URL(shareBase()).host
 
-function readout(label: string, value: string, extra: string): HTMLElement {
+export function readout(label: string, value: string, extra: string): HTMLElement {
   return h('div', { class: 'link-readout' }, [
     h('span', { class: 'eyebrow', text: label }),
     h('div', { class: `share-code ${extra}`, text: value }),
@@ -122,31 +123,104 @@ function linkNews(state: LinkState, again: () => void, close: () => void): HTMLE
   return null
 }
 
+/** The box on the device that is signed in: the new device shows a code, and this is where it is typed. */
+function typedCodeBox(sent: (offer: Offer) => void): HTMLElement {
+  const code = h('input', { type: 'text', ariaLabel: 'The code the new device shows', placeholder: 'XXXX-XXXX-XXXX' })
+  code.autocomplete = 'off'
+  code.spellcheck = false
+  code.setAttribute('autocapitalize', 'characters')
+  const server = h('input', { type: 'text', ariaLabel: 'The server the new device shows', placeholder: 'For example, nook.example.org' })
+  server.autocomplete = 'off'
+  server.spellcheck = false
+  server.value = serverTag(newSpaceServer() || knownServers()[0] || '')
+  const serverField = h('label', { class: 'welcome-field hidden' }, [h('span', { class: 'eyebrow', text: 'Server' }), server])
+  const other = h('button', { class: 'ghost small start', text: 'The new device shows another server' })
+  other.addEventListener('click', () => {
+    other.classList.add('hidden')
+    serverField.classList.remove('hidden')
+    server.focus()
+  })
+  const send = h('button', { class: 'primary', text: 'Link it' })
+  send.disabled = true
+  const shape = (): void => {
+    const typed = code.value
+    if (!/[#/=@.:]/.test(typed) && code.selectionStart === typed.length) {
+      const bare = typed.toUpperCase().replace(/[^0-9A-Z]/g, '').slice(0, 12)
+      const shaped = (bare.match(/.{1,4}/g) ?? []).join('-')
+      if (shaped !== typed) code.value = shaped
+    }
+    send.disabled = !readOffer(code.value, server.value)
+  }
+  const run = async (): Promise<void> => {
+    const asked = readOffer(code.value, server.value)
+    if (!asked || send.disabled) return
+    send.disabled = true
+    try {
+      sent(await offerLink(asked))
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'That did not work.', 'bad', 7000)
+      shape()
+    }
+  }
+  code.addEventListener('input', shape)
+  server.addEventListener('input', shape)
+  send.addEventListener('click', () => void run())
+  for (const field of [code, server]) {
+    field.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') void run()
+    })
+  }
+  return h('div', { class: 'stack tight' }, [
+    h('div', { class: 'link-or tiny faint', text: 'or, if the new device shows a code, type it here' }),
+    h('label', { class: 'welcome-field' }, [h('span', { class: 'eyebrow', text: 'Code on the new device' }), code]),
+    serverField,
+    other,
+    send,
+  ])
+}
+
 export function showLinkCode(): void {
   const body = h('div', { class: 'link-offer' }, [h('div', { class: 'tiny faint', text: 'Making a link…' })])
   const left = h('div', { class: 'tiny faint' })
   let timer = 0
   let open = true
+  let stopWatching = (): void => undefined
   const close = dialog('Link a device', [body, left], () => {
     open = false
+    stopWatching()
     window.clearInterval(timer)
   })
 
+  /** The other device says how it went, and this one shows it. Closed before then, a toast says. */
+  const watch = (offer: Offer): void => {
+    stopWatching()
+    stopWatching = watchLink(offer, (state) => {
+      if (!open) {
+        if (state === 'linked') toast('Linked. Your other device is you now.', 'good')
+        return
+      }
+      const news = linkNews(state, showLinkCode, close)
+      if (!news) return
+      // The code is used: no time is left to count.
+      window.clearInterval(timer)
+      body.replaceChildren(news)
+      left.textContent = ''
+    })
+  }
+  const count = (offer: Offer): void => {
+    window.clearInterval(timer)
+    const tick = (): void => {
+      const seconds = Math.max(0, Math.round((offer.until - Date.now()) / 1000))
+      left.textContent = `It works once, for ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')} more.`
+      if (seconds <= 0) close()
+    }
+    tick()
+    timer = window.setInterval(tick, 1000)
+  }
+
   void offerLink().then(
     (offer) => {
-      // The other device says how it went, and this one shows it. Closed before then, a toast says.
-      watchLink(offer, (state) => {
-        if (!open) {
-          if (state === 'linked') toast('Linked. Your other device is you now.', 'good')
-          return
-        }
-        const news = linkNews(state, showLinkCode, close)
-        if (!news) return
-        // The code is used: no time is left to count.
-        window.clearInterval(timer)
-        body.replaceChildren(news)
-        left.textContent = ''
-      })
+      watch(offer)
       const frame = h('div', { class: 'qr-frame' })
       try {
         frame.append(qrSvg(offer.link, { pixels: 200 }))
@@ -158,27 +232,38 @@ export function showLinkCode(): void {
         const ok = await copyText(offer.link)
         toast(ok ? 'Link copied. Open it on the other device.' : 'Could not copy it.', ok ? 'info' : 'warn')
       })
+      // On a phone or a Mac the link goes to the other device by AirDrop or a message, with no camera.
+      const share = h('button', { class: 'primary' }, [icon('share', 15), 'Send the link'])
+      share.addEventListener('click', () => {
+        navigator.share({ title: 'Link my Nook account', text: 'Open this on the device to link. It works once.', url: offer.link }).catch(() => undefined)
+      })
+      const actions = [...(typeof navigator.share === 'function' ? [share] : []), copy]
       const code = readout('Code', offer.code, 'link-code')
       code.lastElementChild?.setAttribute('data-link', offer.link)
       code.lastElementChild?.setAttribute('data-server', offer.server)
       body.replaceChildren(
         h('p', { class: 'link-lead', text: 'Point the camera of the new device at this code.' }),
         frame,
+        h('div', { class: 'row wrap center' }, actions),
         h('div', { class: 'link-or tiny faint', text: `or open ${here()} on it, choose “I have an account”, and type these` }),
         h('div', { class: 'link-pair' }, [code, readout('Server', serverTag(offer.server), 'link-server')]),
-        copy,
+        typedCodeBox((sentOffer) => {
+          watch(sentOffer)
+          count(sentOffer)
+          body.replaceChildren(
+            h('div', { class: 'link-news', role: 'status' }, [
+              h('span', { class: 'link-news-ghost' }, [ghost({ mood: 'typing', size: 64 })]),
+              h('h2', { class: 'link-news-title', text: 'Sent to the new device' }),
+              h('p', { class: 'small faint', text: 'It asks for the account in a moment. Nothing more to do here.' }),
+            ]),
+          )
+        }),
         h('div', { class: 'link-warn tiny' }, [
           icon('shield', 14),
           h('span', { text: 'Only use this on your own device. Whoever uses it becomes you.' }),
         ]),
       )
-      const tick = (): void => {
-        const seconds = Math.max(0, Math.round((offer.until - Date.now()) / 1000))
-        left.textContent = `It works once, for ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')} more.`
-        if (seconds <= 0) close()
-      }
-      tick()
-      timer = window.setInterval(tick, 1000)
+      count(offer)
     },
     (err: unknown) => {
       body.replaceChildren(h('div', { class: 'small', text: err instanceof Error ? err.message : 'The link could not be made.' }))
@@ -254,7 +339,7 @@ interface Taker {
   stop(): void
 }
 
-async function mayReplace(who: string): Promise<boolean> {
+export async function mayReplace(who: string): Promise<boolean> {
   return !nameChosen() || confirmDanger('Replace this account?', `This device stops being ${loadIdentity().name} and becomes ${who}.`, 'Go on')
 }
 
@@ -347,6 +432,14 @@ export function linkTaker(done?: () => void): Taker {
   server.setAttribute('autocapitalize', 'off')
   server.value = serverTag(newSpaceServer())
   const serverField = h('label', { class: 'welcome-field' }, [h('span', { class: 'eyebrow', text: 'Server' }), server])
+  // This device's own server is almost always the one the code waits on: it is asked about only when it is not.
+  let askServer = !server.value
+  const otherServer = h('button', { class: 'ghost small start', text: 'The code is on another server' })
+  otherServer.addEventListener('click', () => {
+    askServer = true
+    shapeCode()
+    server.focus()
+  })
   const go = h('button', { class: 'primary big', text: 'Link this device' })
   const scan = h('button', { class: 'big' }, [icon('qr', 16), 'Scan the QR code'])
   const video = h('video', { class: 'scan-video hidden' })
@@ -357,6 +450,7 @@ export function linkTaker(done?: () => void): Taker {
     video,
     h('label', { class: 'welcome-field' }, [h('span', { class: 'eyebrow', text: 'Code' }), code]),
     serverField,
+    otherServer,
     go,
   ])
 
@@ -369,7 +463,9 @@ export function linkTaker(done?: () => void): Taker {
       const shaped = (bare.match(/.{1,4}/g) ?? []).join('-')
       if (shaped !== typed) code.value = shaped
     }
-    serverField.classList.toggle('hidden', isLink(code.value) || code.value.includes('@'))
+    const named = isLink(code.value) || code.value.includes('@')
+    serverField.classList.toggle('hidden', named || !askServer)
+    otherServer.classList.toggle('hidden', named || askServer)
     go.disabled = !readOffer(code.value, server.value)
   }
 
@@ -392,6 +488,9 @@ export function linkTaker(done?: () => void): Taker {
       restart(name)
     } catch (err) {
       toast(err instanceof Error ? err.message : 'That did not work.', 'bad', 7000)
+      // The code may wait on another server: ask for it now.
+      askServer = true
+      shapeCode()
       busy = false
       go.disabled = false
       go.textContent = 'Link this device'
@@ -457,22 +556,6 @@ export function linkTaker(done?: () => void): Taker {
     void look()
   })
   return { el, stop }
-}
-
-export function enterLinkCode(): void {
-  const backup = backupTaker()
-  const link = linkTaker(() => close())
-  const close = dialog(
-    'Enter a code',
-    [
-      h('p', { class: 'small faint', text: 'On the other device: Settings, Link a device.' }),
-      link.el,
-      h('div', { class: 'link-or tiny faint', text: 'or' }),
-      backup.el,
-    ],
-    () => link.stop(),
-  )
-  link.el.querySelector<HTMLInputElement>('input[aria-label="The link or code"]')?.focus()
 }
 
 /** Shows who a link from the address would make this device, and waits for a choice. */

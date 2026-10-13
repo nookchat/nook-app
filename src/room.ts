@@ -4,7 +4,7 @@ import { confirmedEndpoints, hint } from './net/cluster'
 
 const enc = new TextEncoder()
 
-const CROCKFORD_BASE32 = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
+export const CROCKFORD_BASE32 = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
 const CODE_LENGTH = 12
 const GROUP_SIZE = 4
 // A 60-bit code is too weak alone against offline grinding, so it is stretched.

@@ -1613,6 +1613,10 @@ hr {
   flex-wrap: wrap;
 }
 
+.row.center {
+  justify-content: center;
+}
+
 .spread {
   justify-content: space-between;
 }
@@ -1747,6 +1751,11 @@ main.settings {
   .settings-back,
   .settings-nav-title .settings-close {
     display: inline-flex;
+  }
+
+  /* A page has Back; Close is on the list. */
+  .settings-head .settings-close {
+    display: none;
   }
 }
 
