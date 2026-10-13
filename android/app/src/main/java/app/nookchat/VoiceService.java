@@ -1,4 +1,4 @@
-package app.nook;
+package app.nookchat;
 
 import android.app.Notification;
 import android.app.PendingIntent;
@@ -24,9 +24,9 @@ public class VoiceService extends Service {
 
     static final String CHANNEL = "voice";
     private static final int NOTE_ID = 1;
-    private static final String SHOW = "app.nook.voice.SHOW";
-    private static final String MUTE = "app.nook.voice.MUTE";
-    private static final String LEAVE = "app.nook.voice.LEAVE";
+    private static final String SHOW = "app.nookchat.voice.SHOW";
+    private static final String MUTE = "app.nookchat.voice.MUTE";
+    private static final String LEAVE = "app.nookchat.voice.LEAVE";
 
     private static boolean running;
     /** False after a leave, so a start still on its way stops as soon as it lands. */

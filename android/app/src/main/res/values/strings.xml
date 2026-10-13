@@ -2,6 +2,6 @@
 <resources>
     <string name="app_name">Nook</string>
     <string name="title_activity_main">Nook</string>
-    <string name="package_name">app.nook</string>
-    <string name="custom_url_scheme">app.nook</string>
+    <string name="package_name">app.nookchat</string>
+    <string name="custom_url_scheme">app.nookchat</string>
 </resources>

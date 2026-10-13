@@ -316,6 +316,8 @@ function footer(): HTMLElement {
         outLink('How Nook works', HOW_IT_WORKS),
         outLink('Run a server', SELF_HOSTING),
         outLink('Releases', RELEASES),
+        outLink('Terms', './terms.html'),
+        outLink('Privacy', './privacy.html'),
       ]),
     ]),
   ])

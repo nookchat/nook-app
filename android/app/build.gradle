@@ -12,10 +12,10 @@ def keysFile = rootProject.file('keystore.properties')
 if (keysFile.exists()) keysFile.withInputStream { keys.load(it) }
 
 android {
-    namespace = "app.nook"
+    namespace = "app.nookchat"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "app.nook"
+        applicationId "app.nookchat"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode major * 10000 + minor * 100 + patch

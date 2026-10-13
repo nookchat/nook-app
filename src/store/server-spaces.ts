@@ -16,6 +16,8 @@ const REFRESH_EVERY_MS = 20_000
 
 /** A space's read marks moved on, from another device: `detail` is { room, read, readDm }. */
 export const READ_CHANGED = 'nook:read-changed'
+/** The account was deleted, on this device or another: every device that hears it logs out. */
+export const ACCOUNT_DELETED = 'nook:account-deleted'
 
 type Marks = Record<string, number> | undefined
 
@@ -116,6 +118,7 @@ export class ServerBook {
   private timer = 0
   private due = 0
   private saving: Promise<void> = Promise.resolve()
+  private erased = false
 
   constructor(server: string) {
     this.server = server
@@ -245,6 +248,31 @@ export class ServerBook {
     }
   }
 
+  /**
+   * Empties this person's record on the server. An empty record is what a deleted account leaves:
+   * no device can read it, so none writes over it, and each one that asks for it logs out.
+   */
+  async erase(): Promise<void> {
+    window.clearTimeout(this.timer)
+    this.timer = 0
+    this.erased = true
+    try {
+      await this.saving
+      const { id, token } = await personal()
+      const res = await ask(this.server, `/api/v1/people/${id}`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json', 'x-nook-write': token },
+        body: JSON.stringify({ blob: '' }),
+      })
+      if (!res?.ok) throw new Error(`${this.server} did not empty your record (${res?.status ?? 'no answer'}).`)
+      void writePeople(this.server, '')
+    } catch (err) {
+      // Not emptied: the account stays, and this device keeps saving to it.
+      this.erased = false
+      throw err
+    }
+  }
+
   private queuePush(): void {
     this.saving = this.saving.then(() => this.push())
   }
@@ -271,6 +299,10 @@ export class ServerBook {
       const body = (await res.json()) as { blob?: unknown }
       if (body.blob === null || body.blob === undefined) return []
       if (typeof body.blob !== 'string') return null
+      if (body.blob === '') {
+        if (!this.erased) window.dispatchEvent(new Event(ACCOUNT_DELETED))
+        return null
+      }
       const record = (await unseal(key, body.blob)) as { notes?: unknown; prefs?: unknown } | null
       if (!record) return null
       void writePeople(this.server, body.blob)
@@ -284,6 +316,7 @@ export class ServerBook {
   }
 
   private async push(): Promise<void> {
+    if (this.erased) return
     try {
       const theirs = await this.pull()
       if (theirs === null) {

@@ -272,6 +272,15 @@ main {
   color: var(--fg-dim);
   line-height: 1.5;
 }
+.welcome-agree {
+  margin: 0;
+  text-align: center;
+  line-height: 1.5;
+}
+.welcome-agree a {
+  color: inherit;
+  text-decoration: underline;
+}
 
 .welcome-picture {
   display: flex;

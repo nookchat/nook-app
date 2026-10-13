@@ -16,6 +16,7 @@ import { openEmojiPicker, quickReactions, setQuickReactions } from './emoji'
 import { confirmDanger } from './ask'
 import { icon } from './icons'
 import { logOutHere } from './log-out'
+import { deleteAccount } from './delete-account'
 import { gameCard } from './game-card'
 import { songCard } from './song-card'
 import { lastBackup, showBackup, showLinkCode } from './link-device'
@@ -72,6 +73,26 @@ export function settingsView(actions: SettingsActions): HTMLElement {
       : 'Nook forgets you in this browser: your key, your spaces and your settings. You have not saved a backup here. If no other device is linked to you, you lose this account and its spaces for good.'
     if (await confirmDanger('Log out of Nook?', about, 'Log out')) await logOutHere()
   }
+
+  const deleteButton = h('button', { class: 'danger' }, [icon('trash', 15), 'Delete account'])
+  const removeAccount = async (): Promise<void> => {
+    const sure = await confirmDanger(
+      'Delete your account?',
+      'Your account goes from this device, your other devices and your servers: your list of spaces, your settings, your passkeys and your recovery key. Your name in every space becomes Deleted user. Messages you sent stay where people can read them. It cannot be undone, and a backup file of it stops working.',
+      'Delete account',
+    )
+    if (!sure) return
+    deleteButton.disabled = true
+    deleteButton.replaceChildren('Deleting…')
+    try {
+      await deleteAccount()
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Your account could not be deleted. Try again.', 'warn', 7000)
+      deleteButton.disabled = false
+      deleteButton.replaceChildren(icon('trash', 15), 'Delete account')
+    }
+  }
+  deleteButton.addEventListener('click', () => void removeAccount())
 
   const picture = h('button', { class: 'welcome-face profile-face', ariaLabel: 'Change your picture', title: 'Change your picture' })
   const removePicture = h('button', { class: 'ghost tiny-btn hidden', text: 'Remove' })
@@ -400,6 +421,11 @@ export function settingsView(actions: SettingsActions): HTMLElement {
             cover,
             h('div', { class: 'row' }, [removeCover]),
             pickCover,
+          ),
+          card(
+            'Delete account',
+            note('Delete your account from Nook for good, on every device and server.'),
+            h('div', { class: 'row wrap' }, [deleteButton]),
           ),
         ]),
     },

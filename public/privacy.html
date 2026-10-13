@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#FDF6F3">
+<meta name="description" content="What data Nook can see, what it cannot see, and how to delete your account.">
+<title>Nook privacy policy</title>
+<link rel="icon" href="./favicon.ico">
+<script src="./boot-theme.js"></script>
+<style>
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+  --surface-0: #FDF6F3;
+  --surface-1: #FFFEFD;
+  --surface-2: #F6EBE7;
+  --border: #ECDFDA;
+  --border-strong: #8F837E;
+  --text-primary: #191412;
+  --text-secondary: #5F5551;
+  --text-muted: #6F6561;
+  --brand: #191412;
+  --on-brand: #FDF6F3;
+  --accent: #FF8A5B;
+  --on-accent: #191412;
+  --accent-soft: #FFE1D3;
+  --accent-text: #B83E10;
+  --focus-ring: #B83E10;
+  --warning: #9A6412;
+}
+[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-0: #100C0B;
+  --surface-1: #1A1513;
+  --surface-2: #26201D;
+  --border: #312A27;
+  --border-strong: #736965;
+  --text-primary: #F8EDE9;
+  --text-secondary: #B6ADA9;
+  --text-muted: #938A87;
+  --brand: #FDF6F3;
+  --on-brand: #191412;
+  --accent: #FF8A5B;
+  --on-accent: #191412;
+  --accent-soft: #4A2C24;
+  --accent-text: #FF9E78;
+  --focus-ring: #FF9E78;
+  --warning: #F2C14E;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --surface-0: #100C0B;
+    --surface-1: #1A1513;
+    --surface-2: #26201D;
+    --border: #312A27;
+    --border-strong: #736965;
+    --text-primary: #F8EDE9;
+    --text-secondary: #B6ADA9;
+    --text-muted: #938A87;
+    --brand: #FDF6F3;
+    --on-brand: #191412;
+    --accent: #FF8A5B;
+    --on-accent: #191412;
+    --accent-soft: #4A2C24;
+    --accent-text: #FF9E78;
+    --focus-ring: #FF9E78;
+    --warning: #F2C14E;
+  }
+}
+:root {
+  --font-display: "Bricolage Grotesque", "DM Sans", system-ui, sans-serif;
+  --font-sans: "DM Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--surface-0);
+  color: var(--text-primary);
+  font: 400 16px/24px var(--font-sans);
+}
+main { max-width: 760px; margin: 0 auto; padding: 24px 16px 64px; }
+a { color: var(--accent-text); }
+a:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: 6px; }
+.back {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px; border: 1px solid var(--border-strong); border-radius: 999px;
+  color: var(--text-primary); text-decoration: none; font-size: 14px; font-weight: 500;
+}
+.back:hover { background: var(--surface-2); }
+h1 {
+  font: 800 40px/44px var(--font-display); letter-spacing: -0.025em;
+  margin: 32px 0 12px;
+}
+h2 {
+  font: 700 24px/30px var(--font-display); letter-spacing: -0.015em;
+  margin: 40px 0 12px;
+}
+.lead { font-size: 17px; line-height: 26px; color: var(--text-secondary); margin: 0 0 8px; }
+p, ul, ol { margin: 0 0 12px; }
+li { margin: 4px 0; }
+code {
+  font: 400 13px/20px var(--font-mono);
+  background: var(--surface-2); border-radius: 6px; padding: 1px 6px;
+  overflow-wrap: anywhere;
+}
+.table { overflow-x: auto; margin: 0 0 16px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface-1); }
+table { width: 100%; border-collapse: collapse; font-size: 15px; line-height: 22px; }
+th, td { text-align: left; vertical-align: top; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+tr:last-child td { border-bottom: 0; }
+th { font-weight: 600; color: var(--text-secondary); font-size: 13px; line-height: 16px; letter-spacing: 0.01em; background: var(--surface-2); }
+td:first-child { font-weight: 500; }
+.note {
+  border: 1px solid var(--border); border-left: 3px solid var(--accent);
+  background: var(--surface-1); border-radius: 14px; padding: 12px 16px; margin: 0 0 16px;
+}
+.note strong { color: var(--text-primary); }
+.caution { border-left-color: var(--warning); }
+footer { margin-top: 48px; color: var(--text-muted); font-size: 14px; }
+@media (max-width: 560px) {
+  h1 { font-size: 32px; line-height: 36px; }
+  th, td { padding: 8px 10px; }
+  table { font-size: 14px; line-height: 20px; }
+}
+</style>
+</head>
+<body>
+<main>
+  <a class="back" href="./">&larr; Open Nook</a>
+
+  <h1>Privacy policy</h1>
+  <p class="lead">Nook encrypts your messages, files, names and settings on your device before it sends them. Our servers keep data that they cannot read. This page tells you what data we can see, and why.</p>
+  <p>Last changed: 13 October 2026.</p>
+
+  <h2>What we cannot see</h2>
+  <ul>
+    <li>Your messages, direct messages, files, pictures and notes.</li>
+    <li>Your name, your picture, and the names of your spaces and channels.</li>
+    <li>Your list of spaces and your settings.</li>
+    <li>Your voice, camera and screen. These go between devices, encrypted. Nook does not record calls.</li>
+  </ul>
+
+  <h2>What our servers can see</h2>
+  <div class="table"><table>
+    <thead><tr><th>Data</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td>Your IP address, and when you connect</td><td>To send data to your device, and to stop abuse.</td></tr>
+      <tr><td>How much data each space and each file has</td><td>To store it, and to set limits.</td></tr>
+      <tr><td>A push address for your device, if you turn on notifications</td><td>To send you a notification. The notification is encrypted, so we cannot read it.</td></tr>
+      <tr><td>Links that you share, if link previews are on</td><td>To show a preview card.</td></tr>
+      <tr><td>Words that you search for in GIF search</td><td>To get GIFs from the GIF service.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2>What we do not do</h2>
+  <ul>
+    <li>We do not sell your data.</li>
+    <li>We do not show ads.</li>
+    <li>We do not track you across other apps or websites.</li>
+  </ul>
+
+  <h2>Other services</h2>
+  <ul>
+    <li><strong>Push notifications:</strong> Apple, Google, or your browser maker delivers notifications. They see when a notification goes to your device, but not what it says.</li>
+    <li><strong>GIF search:</strong> the GIF service gets your search words from our server, not from your device.</li>
+    <li><strong>Hosting:</strong> our servers and website run on hosting providers. They store the encrypted data.</li>
+  </ul>
+
+  <h2>Servers that other people run</h2>
+  <p>If you use a space on a server that another person runs, that person sees the data in the table above for that server. This policy does not apply to their server.</p>
+
+  <h2>Your choices</h2>
+  <ul>
+    <li><strong>Delete your account:</strong> Settings, Profile, Delete account. The <a href="./terms.html#delete">terms of use</a> tell you what a delete removes.</li>
+    <li><strong>Leave a space:</strong> the space menu, Leave space.</li>
+    <li><strong>Delete a message:</strong> the message menu, Delete.</li>
+    <li><strong>Turn off notifications:</strong> Settings, Notifications.</li>
+  </ul>
+
+  <h2>Children</h2>
+  <p>Nook is not for children under 13. If you think a child under 13 uses Nook, tell us and we remove their data.</p>
+
+  <h2>Contact</h2>
+  <p>Send questions about your privacy to <a href="mailto:support@getforeverafter.com">support@getforeverafter.com</a>.</p>
+
+  <footer>Read the <a href="./terms.html">terms of use</a> and <a href="./how-it-works.html">how Nook works</a>.</footer>
+</main>
+</body>
+</html>

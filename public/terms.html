@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#FDF6F3">
+<meta name="description" content="The rules for using Nook: who can use it, what you must not share, how to report abuse, and how to delete your account.">
+<title>Nook terms of use</title>
+<link rel="icon" href="./favicon.ico">
+<script src="./boot-theme.js"></script>
+<style>
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+  --surface-0: #FDF6F3;
+  --surface-1: #FFFEFD;
+  --surface-2: #F6EBE7;
+  --border: #ECDFDA;
+  --border-strong: #8F837E;
+  --text-primary: #191412;
+  --text-secondary: #5F5551;
+  --text-muted: #6F6561;
+  --brand: #191412;
+  --on-brand: #FDF6F3;
+  --accent: #FF8A5B;
+  --on-accent: #191412;
+  --accent-soft: #FFE1D3;
+  --accent-text: #B83E10;
+  --focus-ring: #B83E10;
+  --warning: #9A6412;
+}
+[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-0: #100C0B;
+  --surface-1: #1A1513;
+  --surface-2: #26201D;
+  --border: #312A27;
+  --border-strong: #736965;
+  --text-primary: #F8EDE9;
+  --text-secondary: #B6ADA9;
+  --text-muted: #938A87;
+  --brand: #FDF6F3;
+  --on-brand: #191412;
+  --accent: #FF8A5B;
+  --on-accent: #191412;
+  --accent-soft: #4A2C24;
+  --accent-text: #FF9E78;
+  --focus-ring: #FF9E78;
+  --warning: #F2C14E;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --surface-0: #100C0B;
+    --surface-1: #1A1513;
+    --surface-2: #26201D;
+    --border: #312A27;
+    --border-strong: #736965;
+    --text-primary: #F8EDE9;
+    --text-secondary: #B6ADA9;
+    --text-muted: #938A87;
+    --brand: #FDF6F3;
+    --on-brand: #191412;
+    --accent: #FF8A5B;
+    --on-accent: #191412;
+    --accent-soft: #4A2C24;
+    --accent-text: #FF9E78;
+    --focus-ring: #FF9E78;
+    --warning: #F2C14E;
+  }
+}
+:root {
+  --font-display: "Bricolage Grotesque", "DM Sans", system-ui, sans-serif;
+  --font-sans: "DM Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--surface-0);
+  color: var(--text-primary);
+  font: 400 16px/24px var(--font-sans);
+}
+main { max-width: 760px; margin: 0 auto; padding: 24px 16px 64px; }
+a { color: var(--accent-text); }
+a:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: 6px; }
+.back {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px; border: 1px solid var(--border-strong); border-radius: 999px;
+  color: var(--text-primary); text-decoration: none; font-size: 14px; font-weight: 500;
+}
+.back:hover { background: var(--surface-2); }
+h1 {
+  font: 800 40px/44px var(--font-display); letter-spacing: -0.025em;
+  margin: 32px 0 12px;
+}
+h2 {
+  font: 700 24px/30px var(--font-display); letter-spacing: -0.015em;
+  margin: 40px 0 12px;
+}
+.lead { font-size: 17px; line-height: 26px; color: var(--text-secondary); margin: 0 0 8px; }
+p, ul, ol { margin: 0 0 12px; }
+li { margin: 4px 0; }
+code {
+  font: 400 13px/20px var(--font-mono);
+  background: var(--surface-2); border-radius: 6px; padding: 1px 6px;
+  overflow-wrap: anywhere;
+}
+.table { overflow-x: auto; margin: 0 0 16px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface-1); }
+table { width: 100%; border-collapse: collapse; font-size: 15px; line-height: 22px; }
+th, td { text-align: left; vertical-align: top; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+tr:last-child td { border-bottom: 0; }
+th { font-weight: 600; color: var(--text-secondary); font-size: 13px; line-height: 16px; letter-spacing: 0.01em; background: var(--surface-2); }
+td:first-child { font-weight: 500; }
+.note {
+  border: 1px solid var(--border); border-left: 3px solid var(--accent);
+  background: var(--surface-1); border-radius: 14px; padding: 12px 16px; margin: 0 0 16px;
+}
+.note strong { color: var(--text-primary); }
+.caution { border-left-color: var(--warning); }
+footer { margin-top: 48px; color: var(--text-muted); font-size: 14px; }
+@media (max-width: 560px) {
+  h1 { font-size: 32px; line-height: 36px; }
+  th, td { padding: 8px 10px; }
+  table { font-size: 14px; line-height: 20px; }
+}
+</style>
+</head>
+<body>
+<main>
+  <a class="back" href="./">&larr; Open Nook</a>
+
+  <h1>Terms of use</h1>
+  <p class="lead">These terms apply when you use the Nook app, nookchat.app, and the Nook servers that we run. Read them before you use Nook. When you use Nook, you agree to them.</p>
+  <p>Last changed: 13 October 2026.</p>
+
+  <h2>Who can use Nook</h2>
+  <ul>
+    <li>You must be 13 years old or older. If your country sets a higher age for apps like Nook, you must be that age.</li>
+    <li>You must be allowed to use Nook under the law of your country.</li>
+    <li>If we removed you from Nook before, do not make a new account.</li>
+  </ul>
+
+  <h2>Your account</h2>
+  <p>Your account is a secret key on your devices. You keep it safe. Anybody with your device, your backup file, your recovery key or your passkey can use your account. We cannot get your account back for you if you lose it.</p>
+  <p>You can delete your account at any time in Settings, Profile, Delete account. <a href="#delete">What a delete removes</a> is below.</p>
+
+  <h2>No abuse and no objectionable content</h2>
+  <div class="note"><strong>Important:</strong> Nook has no tolerance for objectionable content or abusive users. If you break these rules, we can remove your content and stop your account, with no warning.</div>
+  <p>Do not use Nook to share, send or do any of these:</p>
+  <ul>
+    <li>Content that sexually exploits or abuses children. We report it to the authorities.</li>
+    <li>Threats, harassment, bullying, or content that tells people to hurt themselves or others.</li>
+    <li>Hate speech, or attacks on people because of race, ethnicity, religion, disability, sex, gender, sexual orientation or age.</li>
+    <li>Sexual content of a person without their consent.</li>
+    <li>Content that shows or praises terrorism or violent extremism.</li>
+    <li>Spam, scams, phishing, or malware.</li>
+    <li>Content that breaks the law, or the rights of other people, such as copyright.</li>
+    <li>Private information of another person, without their consent.</li>
+    <li>Pretending to be another person.</li>
+  </ul>
+  <p>Do not attack Nook or its servers. Do not try to get into an account or a space that is not yours.</p>
+
+  <h2>Report abuse</h2>
+  <p>If you see content or a user that breaks these terms, tell us:</p>
+  <ul>
+    <li>Send an email to <a href="mailto:support@getforeverafter.com">support@getforeverafter.com</a>.</li>
+    <li>Give the invite link of the space, the name of the person, and what they did. A screenshot helps.</li>
+  </ul>
+  <p>We look at each report within 24 hours. If the content breaks these terms, we remove it and stop the account that sent it.</p>
+  <p>In a space, the owner, admins and moderators can also delete messages, and remove or ban people.</p>
+
+  <h2>Your content</h2>
+  <p>Your messages, files and other content stay yours. You give us permission to keep them and send them to the people in your spaces, so that Nook works. Each device encrypts your content before it leaves the device, so our servers cannot read it. <a href="./how-it-works.html">How Nook works</a> tells you more.</p>
+  <p>You are responsible for what you share. Only share content that you have the right to share.</p>
+
+  <h2>Servers that other people run</h2>
+  <p>Anybody can run a Nook server. If you use a space on a server that another person runs, that person controls the server. We do not control it and we are not responsible for it.</p>
+
+  <h2 id="delete">Delete your account</h2>
+  <p>When you delete your account, Nook does these things:</p>
+  <ol>
+    <li>It removes your passkeys and your recovery key from the servers.</li>
+    <li>It empties your record on each server that you use. This record holds your list of spaces and your settings.</li>
+    <li>It changes your name to Deleted user in each space, and removes your picture and cover.</li>
+    <li>It logs out every device that has your account.</li>
+  </ol>
+  <p>The messages that you sent stay in the spaces, under the name Deleted user, so the conversations of other people stay complete. Delete a message before you delete your account if you do not want it to stay.</p>
+
+  <h2>No warranty</h2>
+  <p>We give Nook "as is". We try to keep it working, but we do not promise that it always works, that it has no errors, or that it never loses data. Keep a backup of your account.</p>
+
+  <h2>Limit of liability</h2>
+  <p>As far as the law permits, we are not responsible for loss that comes from your use of Nook. This includes lost data, lost profit, and content that other users share. Nothing in these terms removes a right that the law gives you and that a contract cannot remove.</p>
+
+  <h2>Changes to Nook and to these terms</h2>
+  <p>We can change Nook, and we can change these terms. If a change is important, we tell you in the app before it starts. If you use Nook after a change, you agree to the new terms.</p>
+
+  <h2>Apple</h2>
+  <p>If you got Nook from the App Store, these terms are between you and us, not Apple. Apple is not responsible for Nook or its content, and has no duty to give support for it. Apple and its subsidiaries can enforce these terms. The <a href="https://www.apple.com/legal/internet-services/itunes/dev/stdeula/" rel="noopener noreferrer">Apple Standard EULA</a> also applies, where it does not conflict with these terms.</p>
+
+  <h2>Contact</h2>
+  <p>Send questions about these terms to <a href="mailto:support@getforeverafter.com">support@getforeverafter.com</a>.</p>
+
+  <footer>Read the <a href="./privacy.html">privacy policy</a> and <a href="./how-it-works.html">how Nook works</a>.</footer>
+</main>
+</body>
+</html>

@@ -18,9 +18,10 @@ export const loggingOut = (): boolean => going
  * Out of every call, no more notifications on this device, and this browser forgets you:
  * the reload lands on the welcome, as on a first start.
  */
-export async function logOutHere(): Promise<void> {
+export async function logOutHere(words = 'Logging out'): Promise<void> {
+  if (going) return
   going = true
-  showBoot('Logging out')
+  showBoot(words)
   for (const space of spaces.all()) space.leaveVoice()
   await Promise.race([
     forgetPush(spaces.all()).catch(() => undefined),
