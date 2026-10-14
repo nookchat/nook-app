@@ -2221,9 +2221,21 @@ details.adv[open] > summary {
   .space-grid {
     grid-template-columns: var(--rail-left) minmax(0, 1fr);
   }
+}
 
-  .rail-right {
+/* Too narrow for the people beside the chat all the time: they stay put away, and the people
+   button brings them back as a third column. A phone has them as a drawer instead. */
+@media (min-width: 781px) and (max-width: 1100px) {
+  .space-grid .rail-right {
     display: none;
+  }
+
+  .space-grid.members-shown {
+    grid-template-columns: var(--rail-left) minmax(0, 1fr) 248px;
+  }
+
+  .space-grid.members-shown .rail-right {
+    display: flex;
   }
 }
 

@@ -7,6 +7,9 @@
 /** Narrow enough that the side bars are drawers and a popup is a sheet from the bottom. */
 export const PHONE = '(max-width: 780px)'
 
+/** Wider than a phone, but too narrow to keep the people beside the chat: they come when asked. */
+export const MIDDLE = '(min-width: 781px) and (max-width: 1100px)'
+
 export const phone = (): boolean => window.matchMedia(PHONE).matches
 
 /** How far a finger goes before it is a drag and not a tap. */

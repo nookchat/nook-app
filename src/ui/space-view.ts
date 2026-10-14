@@ -94,7 +94,7 @@ import { WHITEBOARDS, WhiteboardView } from './whiteboard-view'
 import { LOOKING_CHANGED, nookInView } from './looking'
 import { placeNear } from './emoji'
 import { playWhileSeen } from './clips'
-import { asSheet, closeOnBack, onDrag, phone, PHONE, scrollsThatWay } from './gestures'
+import { asSheet, closeOnBack, MIDDLE, onDrag, phone, PHONE, scrollsThatWay } from './gestures'
 import { loadAvatar, squareThumb } from './avatar'
 import { setTitleFace, type WindowChrome } from './shell'
 import { toast } from './toast'
@@ -2203,8 +2203,13 @@ export class SpaceView {
     this.paintPeopleButton()
     const narrow = window.matchMedia(PHONE)
     const repaint = (): void => this.paintPeopleButton()
+    const middle = window.matchMedia(MIDDLE)
     narrow.addEventListener('change', repaint)
-    this.unlisten.push(() => narrow.removeEventListener('change', repaint))
+    middle.addEventListener('change', repaint)
+    this.unlisten.push(() => {
+      narrow.removeEventListener('change', repaint)
+      middle.removeEventListener('change', repaint)
+    })
 
     this.shell = h('div', { class: 'space-grid loading' }, [
       h('div', { class: 'space-opening' }, [spinner('Opening the space', 'big')]),
@@ -2559,6 +2564,11 @@ export class SpaceView {
       this.showRail(this.railOpen === 'right' ? null : 'right')
       return
     }
+    if (window.matchMedia(MIDDLE).matches) {
+      this.slidePeople(this.shell.classList.contains('members-shown'))
+      this.paintPeopleButton()
+      return
+    }
     this.membersHidden = !this.membersHidden
     this.slidePeople(this.membersHidden)
     this.paintPeopleButton()
@@ -2572,15 +2582,22 @@ export class SpaceView {
     const grid = this.shell
     const pane = grid.querySelector<HTMLElement>(':scope > .rail-right')
     const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    // Between a phone and a wide screen the pane is shut unless asked for, so it has its own class.
+    const middle = window.matchMedia(MIDDLE).matches
+    const settle = (): void => {
+      if (middle) grid.classList.toggle('members-shown', !hide)
+      else grid.classList.toggle('members-hidden', hide)
+    }
     this.peopleSlide?.cancel()
     if (!pane || still) {
-      grid.classList.toggle('members-hidden', hide)
+      settle()
       return
     }
-    grid.classList.remove('members-hidden')
+    if (middle) grid.classList.add('members-shown')
+    else grid.classList.remove('members-hidden')
     // Too narrow for the pane at all: there is nothing to slide.
     if (getComputedStyle(pane).display === 'none') {
-      grid.classList.toggle('members-hidden', hide)
+      settle()
       return
     }
     const style = getComputedStyle(grid)
@@ -2603,7 +2620,7 @@ export class SpaceView {
       this.peopleSlide = null
       grid.style.overflow = ''
       pane.style.minWidth = ''
-      grid.classList.toggle('members-hidden', hide)
+      settle()
     }
     slide.onfinish = done
     slide.oncancel = done
@@ -2612,7 +2629,12 @@ export class SpaceView {
   /** Whether the people are on screen, for a screen reader: the button itself looks the same. */
   private paintPeopleButton(): void {
     const narrow = window.matchMedia(PHONE).matches
-    const open = narrow ? this.railOpen === 'right' : !this.membersHidden
+    const middle = window.matchMedia(MIDDLE).matches
+    const open = narrow
+      ? this.railOpen === 'right'
+      : middle
+        ? Boolean(this.shell?.classList.contains('members-shown'))
+        : !this.membersHidden
     this.peopleButton.setAttribute('aria-pressed', String(open))
   }
 
