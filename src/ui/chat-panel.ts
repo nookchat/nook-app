@@ -231,7 +231,9 @@ function pickOnPress(pick: () => void): { mousedown: (ev: Event) => void } {
 }
 
 interface ChatActions {
-  say(text: string, replyTo: string | null, inThread?: boolean, files?: Attachment[]): void
+  say(text: string, replyTo: string | null, inThread?: boolean, files?: Attachment[], channel?: string): void
+  /** The channel a message sent now goes to, kept by a message that waits for its files. */
+  where?(): string
   sayDirect?(to: string, text: string, files?: Attachment[]): void
   edit(id: string, text: string): void
   react(id: string, emoji: string, on: boolean): void
@@ -322,7 +324,8 @@ export class ChatPanel {
   private readonly toBottom: HTMLButtonElement
   private enabled = false
   private files: SpaceFiles | null = null
-  private sendWaiting = false
+  /** Messages sent while their files were still compressing or going up: each goes once they are. */
+  private readonly outbox = h('div', { class: 'outbox stack tight hidden' })
   private name: string
   private me = ''
   private replyTo: Message | null = null
@@ -446,7 +449,6 @@ export class ChatPanel {
 
     this.tray = new AttachTray(() => this.files)
     this.tray.onChange = () => {
-      this.sendButton.classList.toggle('waiting', this.sendWaiting && this.tray.busy)
       this.showSend()
     }
     this.fileInput = h('input', { type: 'file', class: 'hidden', ariaLabel: 'Choose files' })
@@ -652,6 +654,7 @@ export class ChatPanel {
         this.typingLine,
         this.replyBar,
         this.nameRow,
+        this.outbox,
         this.tray.root,
         this.voiceBar,
         h('div', { class: 'row compose-box' }, [
@@ -1045,7 +1048,6 @@ export class ChatPanel {
     if (key === this.draftKey) return
     this.keepDraft()
     this.tray.clear()
-    this.sendWaiting = false
     this.draftKey = key
     this.textInput.value = this.drafts.get(key) ?? ''
     this.grow()
@@ -2504,6 +2506,76 @@ export class ChatPanel {
     line?.parentElement?.classList.add('pending')
   }
 
+  /**
+   * Sends the message once its files are compressed and up, to where it was written, and frees the
+   * box at once: the person can write on, or go to another channel, while it waits.
+   */
+  private queue(text: string): void {
+    const channel = this.actions?.where?.()
+    // The files are in it, so a media only channel takes it.
+    const send = this.sendTo(text, channel)
+    const files = this.tray.handOver()
+    const cancel = h('button', { class: 'ghost small', text: 'Cancel', ariaLabel: 'Cancel this message' })
+    const where = this.directWith ? 'this conversation' : this.threadRoot ? 'the thread' : channel ? `#${channel}` : 'the channel'
+    const row = h('div', { class: 'outbox-item stack tight' }, [
+      h('div', { class: 'row spread' }, [
+        h('span', { class: 'tiny faint truncate', text: `Sends to ${where} when the files are ready${text ? `: ${text}` : ''}` }),
+        cancel,
+      ]),
+      h('div', { class: 'attach-tray' }, files.chips),
+    ])
+    let cancelled = false
+    const done = (): void => {
+      row.remove()
+      this.outbox.classList.toggle('hidden', this.outbox.childElementCount === 0)
+    }
+    cancel.addEventListener('click', () => {
+      cancelled = true
+      files.stop()
+      done()
+      // The words are not lost: they go back in the box when it is empty.
+      if (text && !this.textInput.value) {
+        this.textInput.value = text
+        this.grow()
+      }
+    })
+    this.outbox.append(row)
+    this.outbox.classList.remove('hidden')
+    this.textInput.value = ''
+    this.grow()
+    this.closeSuggestions()
+    this.drafts.delete(this.draftKey)
+    this.cancelPending()
+    void files.settled.then(() => {
+      if (cancelled) return
+      done()
+      if (files.failed()) {
+        files.stop()
+        toast('A file did not upload, so the message was not sent. Attach it again.', 'warn', 8000)
+        if (text && !this.textInput.value) {
+          this.textInput.value = text
+          this.grow()
+        }
+        return
+      }
+      send(files.ready())
+      files.stop()
+    })
+  }
+
+  /** Sends to where the box points now, whenever it is called. */
+  private sendTo(text: string, channel?: string): (files: Attachment[]) => void {
+    const directWith = this.directWith
+    const threadRoot = this.threadRoot
+    const replyTo = this.replyTo?.id ?? null
+    return (files) => {
+      if (directWith) this.actions?.sayDirect?.(directWith, text, files)
+      else if (text.startsWith('//')) this.actions?.say(text.slice(1), replyTo, false, files, channel)
+      else if (threadRoot) this.actions?.say(text, threadRoot, true, files, channel)
+      else this.actions?.say(text, replyTo, false, files, channel)
+    }
+  }
+
   private cancelPending(): void {
     this.replyTo = null
     if (this.editing) this.textInput.value = ''
@@ -2567,14 +2639,7 @@ export class ChatPanel {
         return
       }
       if (this.tray.busy) {
-        this.sendWaiting = true
-        this.sendButton.classList.add('waiting')
-        void this.tray.whenSettled().then(() => {
-          if (!this.sendWaiting) return
-          this.sendWaiting = false
-          this.sendButton.classList.remove('waiting')
-          this.submit()
-        })
+        this.queue(text)
         return
       }
     }

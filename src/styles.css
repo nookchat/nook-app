@@ -4737,6 +4737,17 @@ input[type="text"].space-search {
   padding: 2px 0 4px;
 }
 
+/* A message sent before its files were ready: it waits here, and goes when they are. */
+.outbox-item {
+  padding: 6px 8px 2px 12px;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+
+.outbox-item .attach-chip {
+  opacity: 0.85;
+}
+
 .attach-chip {
   position: relative;
   flex: 0 0 auto;

@@ -2387,8 +2387,9 @@ export class SpaceView {
     panel.onGif = () => void this.openGifPicker('')
     panel.commands = COMMANDS
     panel.actions = {
-      say: (text, replyTo, inThread, files) =>
-        void this.publish((c) => c.say(text, this.channel, replyTo, inThread, false, files)),
+      say: (text, replyTo, inThread, files, channel) =>
+        void this.publish((c) => c.say(text, channel ?? this.channel, replyTo, inThread, false, files)),
+      where: () => this.channel,
       sayDirect: (to, text, files) => void this.publish((c) => c.sayDirect(to, text, files)),
       edit: (id, text) => void this.publish((c) => c.edit(id, text)),
       react: (id, emoji, on) => void this.publish((c) => c.react(id, emoji, on)),
