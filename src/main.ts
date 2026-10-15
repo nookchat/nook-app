@@ -37,6 +37,7 @@ import { lookingAtNook, watchLooking } from './ui/looking'
 import { bootDone, bootStep } from './ui/boot'
 import { installCalls } from './ui/call'
 import { loggingOut, logOutHere } from './ui/log-out'
+import { working } from './ui/keep-awake'
 import { clear } from './ui/dom'
 import { HomeView, type DirectRef } from './ui/home-view'
 import { noticePicture, notify, notifyText, notifyWhat, offerNotify } from './ui/notify'
@@ -474,7 +475,8 @@ window.addEventListener('hashchange', () => {
 })
 
 window.addEventListener('beforeunload', (ev) => {
-  if (active?.isLive && !loggingOut()) {
+  // A call, or a file still being made smaller or sent, holds the page: leaving would stop it.
+  if ((active?.isLive || working()) && !loggingOut()) {
     ev.preventDefault()
     ev.returnValue = ''
   }
