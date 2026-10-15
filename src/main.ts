@@ -458,6 +458,11 @@ window.addEventListener('hashchange', () => {
     if (active instanceof SpaceView) void showHome()
     return
   }
+  // An invite typed over the landing page or the welcome: start again, so the name comes first.
+  if (!nameChosen()) {
+    window.location.reload()
+    return
+  }
   if (
     active?.secret === next.secret &&
     active.locked === next.locked &&

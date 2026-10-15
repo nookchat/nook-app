@@ -181,8 +181,9 @@ export function readLink(): LinkInfo | null {
   return frag ? parseLink(frag) : null
 }
 
-export function setLinkSecret(secret: string, locked = false, server = ''): void {
-  history.replaceState(null, '', `#${linkTail(secret, locked, server)}`)
+export function setLinkSecret(secret: string, locked = false, server = '', pass = ''): void {
+  const hash = `#${linkTail(secret, locked, server, pass)}`
+  if (window.location.hash !== hash) history.replaceState(null, '', hash)
 }
 
 export function clearLink(): void {
