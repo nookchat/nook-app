@@ -21,4 +21,26 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
         SceneDelegateProxy.shared.scene(scene, continue: userActivity)
     }
+
+    /// The time iOS gives to finish work after the app is put away, or none.
+    private var finishing: UIBackgroundTaskIdentifier = .invalid
+
+    /// A video still being made smaller, or a file going up, keeps going for the time iOS gives,
+    /// not stopped the moment the app is put away.
+    func sceneDidEnterBackground(_ scene: UIScene) {
+        guard finishing == .invalid else { return }
+        finishing = UIApplication.shared.beginBackgroundTask(withName: "Finish sending") { [weak self] in
+            self?.stopFinishing()
+        }
+    }
+
+    func sceneWillEnterForeground(_ scene: UIScene) {
+        stopFinishing()
+    }
+
+    private func stopFinishing() {
+        guard finishing != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(finishing)
+        finishing = .invalid
+    }
 }

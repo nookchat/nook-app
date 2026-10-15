@@ -123,13 +123,8 @@ async function openBytes(keyText: string, sealed: ArrayBuffer): Promise<ArrayBuf
 
 export type Progress = (done: number, total: number) => void
 
-/** What a file is going through before it goes up, and why, for a hover. */
-export type Stage = (words: string, why?: string, part?: number) => void
-
-const WHY_CONVERT =
-  'Files are encrypted on your device, so the server cannot see them to convert them. Your device converts this video so everyone can play it.'
-const WHY_SHRINK =
-  'Files are encrypted on your device, so the server cannot see them to compress them. Your device makes this video smaller, so it goes up and plays sooner.'
+/** What a file is going through before it goes up, and how far along. */
+export type Stage = (words: string, part?: number) => void
 
 interface Look {
   w?: number
@@ -203,10 +198,17 @@ async function lookAtVideo(file: File): Promise<Look> {
   video.preload = 'auto'
   try {
     video.src = url
-    await new Promise<void>((ok, fail) => {
+    const loaded = new Promise<void>((ok, fail) => {
       video.onloadeddata = () => ok()
       video.onerror = () => fail(new Error('not a video this browser plays'))
     })
+    // iOS loads no frame of a video until it plays: a muted one may play with no tap, so it is
+    // played and stopped at once. Without a frame the message would show no picture of it.
+    void video.play().then(
+      () => video.pause(),
+      () => undefined,
+    )
+    await loaded
     const dur = Number.isFinite(video.duration) ? video.duration : undefined
     // A frame a little way in: the first is often black.
     const at = dur ? Math.min(1, dur / 4) : 0
@@ -390,7 +392,7 @@ export class SpaceFiles {
       // Every video is made again. HEVC must be, for the browsers that cannot show it.
       const hevc = await isHevc(file)
       const say = (part: number): void =>
-        onStage?.(`${hevc ? 'Converting' : 'Compressing'} · ${Math.floor(part * 100)}%`, hevc ? WHY_CONVERT : WHY_SHRINK, part)
+        onStage?.(`${hevc ? 'Converting' : 'Compressing'} · ${Math.floor(part * 100)}%`, part)
       say(0)
       // The browser's own encoder first, which is quick; playing it through and recording it if that cannot.
       const quick = await convertQuickly(file, say, signal).catch((err: unknown) => {
