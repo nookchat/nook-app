@@ -122,7 +122,11 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
         h('div', { class: 'empty home-empty' }, [
           ghost({ mood: 'idle', size: 96 }),
           h('div', { class: 'empty-title', text: 'No spaces yet' }),
-          h('div', { class: 'small faint', text: 'Make one for your friends, or paste an invite.' }),
+          h('div', {
+            class: 'small faint',
+            // No server yet: a space has nowhere to live until one is added.
+            text: servers.length ? 'Make one for your friends, or paste an invite.' : 'Add a server to make one, or paste an invite from a friend.',
+          }),
           servers.length ? h('button', { class: 'secondary', on: { click: () => void makeSpace() } }, [icon('plus', 16), 'Make a space']) : null,
         ]),
       )

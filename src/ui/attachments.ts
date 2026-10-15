@@ -831,6 +831,17 @@ function touchViewer(
   return { reset, touchedLately: () => Date.now() - lastTouch < 800 }
 }
 
+/** Files taken out of the tray for a message that is sent once they are all up. */
+export interface Outgoing {
+  /** Their chips, still showing how far along each one is. */
+  chips: HTMLElement[]
+  settled: Promise<void>
+  ready(): Attachment[]
+  failed(): boolean
+  /** Stops any still going, and lets go of their previews. */
+  stop(): void
+}
+
 interface Pending {
   chip: HTMLElement
   state: 'sending' | 'done' | 'failed'
@@ -976,6 +987,27 @@ export class AttachTray {
 
   clear(): void {
     for (const item of [...this.items]) this.remove(item)
+  }
+
+  /** Empties the tray without stopping anything: the files go on, for a message that waits for them. */
+  handOver(): Outgoing {
+    const items = this.items
+    this.items = []
+    this.paint()
+    // A file is taken off before Send, not after: the whole message is cancelled instead.
+    for (const item of items) item.chip.querySelector('.attach-remove')?.remove()
+    return {
+      chips: items.map((i) => i.chip),
+      settled: Promise.all(items.map((i) => i.settled)).then(() => undefined),
+      ready: () => items.flatMap((i) => (i.attachment ? [i.attachment] : [])),
+      failed: () => items.some((i) => i.state === 'failed'),
+      stop: () => {
+        for (const item of items) {
+          item.stop.abort()
+          if (item.preview) URL.revokeObjectURL(item.preview)
+        }
+      },
+    }
   }
 
   private paint(): void {

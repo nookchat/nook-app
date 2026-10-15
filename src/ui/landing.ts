@@ -251,7 +251,7 @@ function servers(): HTMLElement {
   return section('lp-servers', 'lp-servers', [
     h('div', { class: 'lp-servers-grid' }, [
       h('div', {}, [
-        heading('Yours to run', 'Start on ours. Move to yours.', 'Your spaces work on the Nook server from the start. When you want your own, one command sets one up on a small Linux machine.'),
+        heading('Yours to run', 'Run it yourself, or with friends.', 'Spaces live on a Nook server that you or a friend runs. One command sets one up on a small Linux machine.'),
         h('ul', { class: 'lp-points' }, [
           point('server', 'One command', 'It makes the secrets, gets a certificate, and starts the server and a relay for calls.'),
           point('people', 'A cluster with friends', 'Several servers keep a copy of each space. When one stops, the app moves to the next.'),

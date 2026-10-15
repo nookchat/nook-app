@@ -131,6 +131,8 @@ const WATCHING_MAX = 12
 const SERVER_SILENCE_MS = 10_000
 /** How long a newcomer waits for the space's key before they are told why it may not come. */
 const KEY_WAIT_MS = 20_000
+/** How long a ban waits for its new key, to put a link that still works in the address bar. */
+const BAN_LINK_WAIT_MS = 30_000
 /** A volume this close to 100% is 100%. */
 const SNAP_PERCENT = 4
 
@@ -341,6 +343,7 @@ export class SpaceView {
   private readonly sharers = new Map<string, string>()
   private streamBar!: HTMLDivElement
   private offline: HTMLDivElement | null = null
+  private removed: HTMLDivElement | null = null
 
   private readonly newestMoveBy = new Map<string, number>()
   private readonly watchingBy = new Map<string, string[]>()
@@ -552,7 +555,7 @@ export class SpaceView {
     )
     for (const env of space.presence.values()) void this.onSignal(env)
 
-    setLinkSecret(this.secret, this.locked, this.server)
+    this.showOwnLink()
     // Wanted only to share a screen: asked once the space is open, not while it opens.
     const probe = (): void => void probeHardwareEncoders(availableCodecs()).then((found) => (this.gpu = found))
     if ('requestIdleCallback' in window) requestIdleCallback(probe, { timeout: 3000 })
@@ -1724,6 +1727,8 @@ export class SpaceView {
       this.shell.classList.remove('loading')
     }
     this.shell.classList.toggle('syncing', this.space.syncing)
+    this.showRemoved(chat)
+    this.showOwnLink()
     this.chatPanel.canPin = chat.can('pin')
     this.chatPanel.canDelete = chat.can('delete')
     this.chatPanel.canRelocate = chat.can('relocate')
@@ -2104,6 +2109,25 @@ export class SpaceView {
     }, SERVER_SILENCE_MS)
   }
 
+  private showRemoved(chat: RoomChat): void {
+    if (!this.removed) return
+    const auth = chat.authority()
+    const out = auth.isKicked(chat.me)
+    if (out) {
+      this.removed.lastElementChild!.textContent = auth.isBanned(chat.me)
+        ? 'You were banned from this space. Nobody else sees what you write here now.'
+        : 'You were removed from this space. Nobody else sees what you write here now.'
+    }
+    this.removed.classList.toggle('hidden', !out)
+  }
+
+  /** The address bar holds a link that still lets people in: after a ban, with this person's pass. */
+  private showOwnLink(): void {
+    const chat = this.chat
+    const pass = chat?.log.invitesClosed() ? chat.log.passOf(chat.me) : ''
+    setLinkSecret(this.secret, this.locked, this.server, pass)
+  }
+
   private showOffline(): void {
     if (!this.offline) return
     const words = this.offline.lastElementChild
@@ -2153,6 +2177,11 @@ export class SpaceView {
     offline.setAttribute('aria-live', 'polite')
     this.offline = offline
     this.showOffline()
+    // Removed or banned: what they write now goes nowhere, so they are told, not left to wonder.
+    this.removed = h('div', { class: 'offline-bar hidden', role: 'status' }, [
+      ghost({ mood: 'idle', size: 24 }),
+      h('span', { class: 'grow' }),
+    ])
     this.channelTitle = h('div', { class: 'row channel-head' }, [
       h('span', { class: 'channel-name' }, [icon('hash', 18), h('span', { class: 'truncate', text: this.channel })]),
     ])
@@ -2227,6 +2256,7 @@ export class SpaceView {
           this.peopleButton,
         ]),
         offline,
+        this.removed,
         this.searchResults,
         this.streamBar,
         this.cameras,
@@ -2357,8 +2387,9 @@ export class SpaceView {
     panel.onGif = () => void this.openGifPicker('')
     panel.commands = COMMANDS
     panel.actions = {
-      say: (text, replyTo, inThread, files) =>
-        void this.publish((c) => c.say(text, this.channel, replyTo, inThread, false, files)),
+      say: (text, replyTo, inThread, files, channel) =>
+        void this.publish((c) => c.say(text, channel ?? this.channel, replyTo, inThread, false, files)),
+      where: () => this.channel,
       sayDirect: (to, text, files) => void this.publish((c) => c.sayDirect(to, text, files)),
       edit: (id, text) => void this.publish((c) => c.edit(id, text)),
       react: (id, emoji, on) => void this.publish((c) => c.react(id, emoji, on)),
@@ -2972,10 +3003,19 @@ export class SpaceView {
     const name = this.chat?.nameOf(key) || shortKey(key)
     const sure = await confirmDanger(
       `Ban ${name} from this space?`,
-      `They are removed, and the old invite links stop letting anybody new in. Send new people a new link from Invite people. ${this.hooksStopNote()}`.trim(),
+      `They are removed, and the old invite links stop letting anybody new in. Send new people a new link from Invite people. Somebody who already has an old link can still read what was written before the ban. ${this.hooksStopNote()}`.trim(),
       'Ban',
     )
-    if (sure) await this.setRole(key, 'kicked', true)
+    if (!sure) return
+    await this.setRole(key, 'kicked', true)
+    // The old link in the address bar lets nobody in once the ban's new key is made: put a new one there.
+    const until = Date.now() + BAN_LINK_WAIT_MS
+    while (!this.stopped && !this.chat?.log.invitesClosed() && Date.now() < until) {
+      await new Promise((done) => window.setTimeout(done, 250))
+    }
+    if (this.stopped || !this.chat?.log.invitesClosed()) return
+    await this.inviteLink()
+    this.showOwnLink()
   }
 
   private async setRole(subject: string, role: string, ban = false): Promise<void> {
