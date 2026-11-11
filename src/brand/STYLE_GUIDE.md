@@ -43,7 +43,8 @@ Two themes, same token names. Everything is semantic: build with `surface-*`, `t
 - **Neutrals carry ember's hue.** Every surface, border, text and ink token sits at ember's OKLCH hue (42°) with a low chroma (0.002–0.016), so greys, lines and shadows all read as one warm family. A new neutral takes the same hue; never add a cool or pure grey.
 - **Ember** (`accent` #FF8A5B) is the one hot spot: the ghost's cheeks, the send button, unread badges, a message that names you. One accent element per region. Ember is a fill: text on it is always `on-accent` (ink, 7:1). When ember must be text or a link, use `accent-text`.
 - **Messages** sit straight on `surface-0` in `text-primary`, yours and theirs alike. A hovered message takes a 6% `text-primary` wash. A message that names you takes a 70% `accent-soft` wash and a 2px `accent` bar on its left edge.
-- **Panes:** the channel rail and the member list are `surface-1` with a `border` line, on the `surface-0` page. The conversation is the page itself.
+- **Panes:** the channel rail and the member list run from top to bottom, flush to the window's edges, in `surface-1` with a `border` line between them and the conversation. The conversation is the page itself, on `surface-0`.
+- **Faces:** a person or a space with no picture gets a tint of its own: a hue from a hash of its id (`--hue`), mixed into `surface-1` for the fill and into `text-primary` for the letters, so it works in both themes.
 - **Status:** `online`, `danger`, `warning` are always paired with an icon or label. The presence dot also has a surface-coloured ring so it reads as a shape.
 - **Contrast:** text must be 4.5:1+ on `surface-0`, `surface-1` and `surface-2` in both themes; `border-strong`, `focus-ring` and icons are 3:1+. `border` is decorative only. In light, `online` and `warning` fall just short on `surface-2`, so as text they take a little `text-primary` (88% and 94% of the token). A level colour picked by a space takes 45% of its colour and 55% `text-primary` as text in light, and stays as it is in dark.
 
@@ -60,9 +61,9 @@ All three are Google Fonts. In Next.js load them with `next/font/google` and map
 
 ## Space, shape, depth
 
-- 4px grid: `space-1` 4 through `space-8` 64. Mobile gutter `space-4`, desktop `space-6`. Messages from the same sender stack with 4px between them; a new sender or a 5-minute gap starts a new group (`space-4` above). Panes sit `space-2` apart.
-- Shapes are soft and round, echoing the ghost: panes and cards `radius-lg` 20. Buttons, composer, avatars and badges are pills. Sheets and dialogs `radius-xl` 28. Inline code and mention chips `radius-xs` 6.
-- **Nested corners:** a shape inside a rounded one takes the parent's radius less the gap between them, so the two curves run side by side. A row 8px inside a 20px pane is 12px; a menu item 6px inside a 14px menu is 8px. Only when the gap is as big as the parent's radius can the inner shape be anything, such as a pill button in a padded card.
+- 4px grid: `space-1` 4 through `space-8` 64. Mobile gutter `space-4`, desktop `space-6`. Messages from the same sender stack with 4px between them; a new sender or a 5-minute gap starts a new group (`space-4` above).
+- Corners are small and even: cards `radius-lg` 8, sheets and dialogs `radius-xl` 10, fields and the composer `radius-md` 6, buttons and rows `radius-sm` 5, inline code and mention chips `radius-xs` 3. Panes have no corners: they meet the window's edges. Avatars and presence dots stay circles.
+- **Nested corners:** with corners this small, a row or a menu item inside a pane or a menu takes `radius-sm` or `radius-xs`, whatever the gap.
 - Depth is quiet: `shadow-1` for the composer, `shadow-2` for sheets, menus and the message actions bar. No other shadows, no glassmorphism, no gradients.
 
 ## Iconography
@@ -97,7 +98,7 @@ The ghost is Nook's only character and carries almost all of the app's personali
 - **Typing indicator:** 32px typing ghost + "Maya is typing" in `text-secondary`, above the composer, where the next message will appear. `role="status"`, `aria-live="polite"`.
 - **Composer:** pill on `surface-1` with `shadow-1`; attach and emoji as quiet icon buttons; send is an ember circle with an ink icon, shown only when there's text (mic otherwise).
 - **Pinned messages:** a short card per message: face, name, day and time, then up to 3 lines of the words and a line for what came with it ("a video", "2 pictures", a file name). Nothing plays in the card; a click goes to the message.
-- **Chat list row:** 44px avatar (initial on `accent-soft`, presence dot), name in `text-heading`, preview in `text-body-sm` / `text-secondary`, time in `text-caption`, unread count as an ember badge.
+- **Chat list row:** 44px avatar (initial on its own tint, presence dot), name in `text-heading`, preview in `text-body-sm` / `text-secondary`, time in `text-caption`, unread count as an ember badge.
 - **Buttons:** 44px tall pills. Primary = `brand`, accent = ember (one per screen, usually the main CTA on onboarding), secondary = `border-strong` outline, quiet = text only, danger = `danger` outline. Focus: 2px `focus-ring`, 2px offset.
 
 ## Accessibility

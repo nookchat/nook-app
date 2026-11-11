@@ -27,6 +27,7 @@ import { closeMenu, onContextMenu, type MenuEntry } from './menu'
 import { playWhileSeen } from './clips'
 import { asSheet, phone } from './gestures'
 import { fitInView, fitNear, fitOver } from './place'
+import { spaceHue } from './space-switcher'
 import { spoilerReveal } from './spoiler-reveal'
 import { toast } from './toast'
 import { emojiField, type FieldMark, REDRAW_FIELD } from './twemoji'
@@ -93,6 +94,8 @@ function popChip(chip: HTMLElement, then: () => void): void {
 
 export function avatarOf(key: string, name: string, picture: string, size = 20): HTMLElement {
   const box = h('span', { class: 'avatar', title: name || shortKey(key) })
+  // A colour of its own, from the key, so the same person looks the same everywhere.
+  box.style.setProperty('--hue', String(spaceHue(key)))
   box.style.width = `${size}px`
   box.style.height = `${size}px`
   if (picture) {

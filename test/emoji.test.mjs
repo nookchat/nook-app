@@ -136,11 +136,22 @@ try {
   await page.click('button[aria-label="Emoji"]')
   await page.waitForSelector('.emoji-pop')
   const picker = await page.$eval('.emoji-pop', (el) => ({
-    heads: el.querySelectorAll('.emoji-head, .emoji-tabs').length,
+    tabs: el.querySelectorAll('.emoji-tab:not([hidden])').length,
+    labels: [...el.querySelectorAll('.emoji-label')].slice(0, 2).map((e) => e.textContent),
     first: el.querySelector('.emoji-cell')?.textContent,
     cells: el.querySelectorAll('.emoji-cell').length,
   }))
-  check('the full picker is one big list, with no tabs, headings or Recent row', picker.heads === 0 && picker.first === '😀' && picker.cells > 500, JSON.stringify(picker))
+  check(
+    'the full picker has a tab per group, and the emoji you used come first, under Recent',
+    picker.tabs > 5 && picker.labels[0] === 'Recent' && picker.labels[1] === 'Smileys' && picker.first === '👍' && picker.cells > 500,
+    JSON.stringify(picker),
+  )
+  await page.click('.emoji-tab[aria-label="Food"]')
+  const food = await page.$eval('.emoji-pop .emoji-grid', (grid) => {
+    const section = grid.querySelector('.emoji-section[data-group="food"]')
+    return Math.abs(section.offsetTop - grid.offsetTop - grid.scrollTop) < 4
+  })
+  check('a tab goes to its group', food)
   await page.keyboard.press('Escape')
 
   const link = page.url()

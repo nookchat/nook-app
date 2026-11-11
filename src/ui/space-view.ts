@@ -76,7 +76,6 @@ import { cleanPresence, cleanStatusText, loadStatus, presenceLook, STATUS_CHANGE
 import { avatarOf, ChatPanel } from './chat-panel'
 import { imageLinks } from '../pictures'
 import { clear, copyText, fmtKbps, h, keyed, onPress, roleInk, type KeyedRow } from './dom'
-import { desktopOffer } from './desktop-offer'
 import { forHowLong } from './game-card'
 import { profileCard } from './profile-card'
 import { marquee } from './marquee'
@@ -2198,7 +2197,6 @@ export class SpaceView {
     const left = this.leftRail()
     const right = h('div', { class: 'rail rail-right', role: 'complementary', ariaLabel: 'Who is here' }, [
       h('div', { class: 'rail-scroll' }, [this.peopleList]),
-      desktopOffer(),
     ])
 
     this.pinsButton = h('button', {
@@ -3346,10 +3344,8 @@ export class SpaceView {
         'button',
         {
           class: 'voice-join',
-          title:
-            here === name
-              ? 'You are in here. Click to leave.'
-              : 'Join this voice channel. Everybody in it hears everybody else.',
+          // In it, no tip: it covered the head above, and the red button in the panel leaves.
+          title: here === name ? '' : 'Join this voice channel. Everybody in it hears everybody else.',
           on: { click: () => this.clickVoice(name) },
         },
         [

@@ -106,15 +106,15 @@
   --pill-radius: var(--tag-radius);
   /* A button with only an icon is a rounded square, never a circle. Smaller for the small ones. */
   --icon-btn-radius: var(--radius-sm);
-  --icon-btn-radius-small: 8px;
+  --icon-btn-radius-small: var(--radius-xs);
   /* A chip you press, such as a reaction or a tab, and a small badge, such as Live. */
-  --chip-radius: 8px;
+  --chip-radius: var(--radius-xs);
   --tag-radius: var(--radius-xs);
   --panel-radius: var(--radius-lg);
   --pane-radius: var(--radius-lg);
-  /* A shape inside a rounded one takes its radius less the gap between them, so the curves run side by side. */
-  --in-pane-radius: calc(var(--pane-radius) - var(--space-2));
-  --in-menu-radius: calc(var(--radius-md) - 6px);
+  /* Rows inside a pane or a menu: a small round, the same everywhere now that panes run to the edges. */
+  --in-pane-radius: var(--radius-sm);
+  --in-menu-radius: var(--radius-xs);
   --gap: var(--space-2);
   --shadow: var(--shadow-2);
   --shadow-small: var(--shadow-2);
@@ -441,9 +441,43 @@ main {
   gap: 10px;
 }
 
+/* Templates are white tiles with a line; starting from scratch is the wide, filled first row. */
 .template-grid .welcome-option {
   align-items: flex-start;
   min-height: 84px;
+  background: var(--surface-1);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.template-grid .welcome-option:hover:not(:disabled) {
+  background: var(--surface-1);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+
+.template-grid .welcome-option:first-child {
+  grid-column: 1 / -1;
+  align-items: center;
+  min-height: 68px;
+  background: var(--surface-2);
+  box-shadow: none;
+}
+
+/* Copying a Discord server is another way in, not one more template: plain words under the tiles. */
+.welcome-option.from-discord {
+  min-height: 0;
+  padding: 6px 8px;
+  background: transparent;
+  box-shadow: none;
+}
+
+.welcome-option.from-discord:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.welcome-option.from-discord .welcome-option-icon {
+  width: 32px;
+  height: 32px;
+  background: transparent;
 }
 
 .template-or {
@@ -1230,14 +1264,22 @@ main {
   place-items: center;
   width: var(--size);
   height: var(--size);
-  border-radius: calc(var(--size) * 0.3);
-  background: var(--surface-2);
-  color: var(--text-primary);
-  box-shadow: inset 0 0 0 1px var(--border);
+  border-radius: calc(var(--size) * 0.2);
+  background: var(--tint-bg);
+  color: var(--tint-fg);
+  font-family: var(--font-display);
   font-size: calc(var(--size) * 0.4);
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.01em;
   line-height: 1;
+}
+
+/* A colour of its own for each person and each space, from a hue its id picks (--hue), in either theme. */
+.avatar,
+.space-face,
+.space-tile {
+  --tint-bg: color-mix(in oklch, oklch(0.7 0.13 var(--hue, 40)) 28%, var(--surface-1));
+  --tint-fg: color-mix(in oklch, oklch(0.5 0.14 var(--hue, 40)) 55%, var(--text-primary));
 }
 
 .space-face.home {
@@ -1736,7 +1778,6 @@ hr {
 }
 
 main.settings {
-  padding: var(--gap);
   background: var(--bg);
 }
 
@@ -1794,9 +1835,7 @@ button.pop-close {
 }
 
 main.home {
-  margin: var(--gap) var(--gap) var(--gap) 0;
   background: var(--face);
-  border-radius: var(--pane-radius);
 }
 
 .home-page {
@@ -1824,14 +1863,19 @@ main.home {
   display: block;
 }
 
+/* Make or join on top, side by side; your spaces under them at full width. */
 .home-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   align-items: start;
 }
 
-.home-side {
+.home-grid > .home-side {
+  order: -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
   gap: 16px;
 }
 
@@ -1848,8 +1892,8 @@ main.home {
     min-height: 0;
   }
 
-  .home-grid:has(.home-empty) .home-side {
-    order: -1;
+  .home-grid > .home-side {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -1883,11 +1927,11 @@ main.home {
   width: 42px;
   height: 42px;
   border-radius: var(--radius-md);
-  background: var(--surface-2);
-  color: var(--text-primary);
-  box-shadow: inset 0 0 0 1px var(--border);
-  font-size: 14px;
-  font-weight: 600;
+  background: var(--tint-bg);
+  color: var(--tint-fg);
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
 }
 
 .space-row-text {
@@ -2204,8 +2248,6 @@ details.adv[open] > summary {
   min-height: 0;
   display: grid;
   grid-template-columns: var(--rail-left) minmax(0, 1fr) 248px;
-  gap: var(--gap);
-  padding: var(--gap);
   background: var(--bg);
 }
 
@@ -2239,14 +2281,21 @@ details.adv[open] > summary {
   }
 }
 
+/* The panes run from top to bottom, flush to the edges, with a line between them and the chat. */
 .rail {
   min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   background: var(--pane);
-  border: 1px solid var(--border);
-  border-radius: var(--pane-radius);
+}
+
+.rail-left {
+  border-right: 1px solid var(--border);
+}
+
+.rail-right {
+  border-left: 1px solid var(--border);
 }
 
 .rail-scroll {
@@ -2259,64 +2308,19 @@ details.adv[open] > summary {
   padding: 6px 8px 12px;
 }
 
-/* In a browser, the foot of the list of people: the desktop app, and its download. */
-.desktop-offer {
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 8px;
-  padding: 10px 10px 12px 12px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-}
-
-.desktop-offer-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.desktop-offer-title {
-  flex: 1 1 auto;
-  font-weight: 600;
-  color: var(--heading);
-}
-
-button.desktop-offer-close {
-  width: 24px;
-  min-width: 24px;
-  min-height: 24px;
-  height: 24px;
-  color: var(--fg-dim);
-}
-
-.desktop-offer-words {
-  margin: 0;
-  font-size: 12.5px;
-  line-height: 1.45;
-  color: var(--fg-dim);
-}
-
-button.desktop-offer-download {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-}
-
 .rail-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 4px;
-  padding: 14px 6px 4px 8px;
-  min-height: 34px;
+  padding: 20px 6px 4px 8px;
+  min-height: 40px;
 }
 
 .rail-head .eyebrow {
-  font-size: 13px;
+  font-size: 12px;
+  color: var(--fg-faint);
+  letter-spacing: 0.02em;
 }
 
 button.rail-add {
@@ -2380,7 +2384,7 @@ button.rail-add {
   padding: 4px 8px;
   min-height: 36px;
   border-radius: var(--in-pane-radius);
-  font-size: 14.5px;
+  font-size: 15px;
   font-weight: 500;
 }
 
@@ -2429,6 +2433,19 @@ button.rail-add {
   color: var(--fg-faint);
 }
 
+/* With a mouse, the time shows on hover, so the row is only the name and the count. A touch screen keeps it. */
+@media (hover: hover) {
+  .voice-head .voice-timer {
+    opacity: 0;
+    transition: opacity var(--dur-fast) linear;
+  }
+
+  .voice-head:hover .voice-timer,
+  .voice-head:focus-within .voice-timer {
+    opacity: 1;
+  }
+}
+
 .voice-head > button.voice-board {
   width: 26px;
   min-width: 26px;
@@ -2442,7 +2459,7 @@ button.rail-add {
 }
 
 .rail-item.on {
-  background: var(--select);
+  background: var(--select-strong);
   color: var(--select-fg);
   font-weight: 600;
 }
@@ -2898,31 +2915,41 @@ button.voice-bar-state:hover:not(:disabled) {
   color: var(--bad);
 }
 
-/* Leave is round like the tools under it, and red, as a hang up is. */
+/* Leave is a filled red button, as a hang up is: the one thing in the panel that ends the call. */
 .voice-bar-top > button.voice-leave {
   flex: 0 0 auto;
-  background: color-mix(in srgb, var(--danger) 16%, var(--surface-1));
-  color: var(--bad);
+  background: var(--danger);
+  color: var(--on-live);
 }
 
 .voice-bar-top > button.voice-leave:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--danger) 24%, var(--surface-1));
-  color: var(--bad);
+  background: color-mix(in srgb, var(--danger) 88%, var(--text-primary));
+  color: var(--on-live);
 }
 
+/* Mute and deafen come first and are wide: they are the two you reach for. The rest stay small. */
 .voice-tools {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) repeat(2, 40px);
   gap: 6px;
 }
 
 .voice-tools.three {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 40px;
 }
 
 .voice-tools.five {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 4px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) repeat(3, 40px);
+}
+
+.voice-tools > button.voice-tool:nth-child(-n + 2) {
+  justify-self: stretch;
+  width: 100%;
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+
+.voice-tools > button.voice-tool.danger.on:nth-child(-n + 2) {
+  box-shadow: none;
 }
 
 /* Circles, not the width of their column: an icon button is round. */
@@ -3375,7 +3402,7 @@ select.board-row-group {
 
 .server-row {
   padding: 8px 10px;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--bg);
 }
 
@@ -3467,7 +3494,7 @@ select.board-row-group {
   align-self: center;
   margin-top: 6px;
   padding: 12px;
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
 }
 
 .invite-modal .qr-frame svg {
@@ -3774,7 +3801,6 @@ button.sound-source-file {
   display: flex;
   flex-direction: column;
   background: var(--face);
-  border-radius: var(--pane-radius);
   overflow: hidden;
 }
 
@@ -3790,6 +3816,15 @@ button.sound-source-file {
   min-width: 36px;
   min-height: 36px;
   border-radius: var(--icon-btn-radius);
+}
+
+/* A thumb needs 44px. */
+@media (max-width: 780px) {
+  .space-head button.icon-only {
+    width: 44px;
+    min-width: 44px;
+    min-height: 44px;
+  }
 }
 
 
@@ -4120,8 +4155,8 @@ input[type="text"].space-search {
 
 .chat-intro-title {
   font-family: var(--font-display);
-  font-size: 28px;
-  line-height: 32px;
+  font-size: 20px;
+  line-height: 26px;
   font-weight: 800;
   letter-spacing: -0.025em;
   color: var(--fg);
@@ -4758,7 +4793,7 @@ input[type="text"].space-search {
   min-width: 220px;
   max-width: min(420px, 100%);
   padding: 8px 6px 8px 8px;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--surface);
   border: 1px solid var(--line-soft);
   overflow: hidden;
@@ -4884,7 +4919,7 @@ button.attach-remove {
   min-height: 0;
   padding: 0;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   overflow: hidden;
   background: var(--surface);
   box-shadow: inset 0 0 0 1px var(--line-soft);
@@ -5045,7 +5080,7 @@ button.attach-remove {
   align-items: flex-start;
   gap: 6px;
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--media-note);
   color: var(--on-media);
   font-size: 13px;
@@ -5898,8 +5933,8 @@ input[type="range"].vp-volume {
   justify-content: center;
   border-radius: 50%;
   overflow: hidden;
-  background: var(--accent-soft);
-  color: var(--avatar-fg);
+  background: var(--tint-bg);
+  color: var(--tint-fg);
   font-weight: 600;
   line-height: 1;
   user-select: none;
@@ -6895,6 +6930,51 @@ input[type="text"].emoji-search {
   margin-bottom: 2px;
 }
 
+/* A quiet ring, not the full ember one: the search is focused every time the picker opens. */
+input[type="text"].emoji-search:focus,
+input[type="text"].emoji-search:focus-visible {
+  outline: none;
+  border-color: var(--border-strong);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--focus-ring) 30%, transparent);
+}
+
+.emoji-tabs {
+  display: flex;
+  gap: 2px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.emoji-tab {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: 17px;
+  line-height: 1;
+  border-radius: var(--radius-xs);
+  opacity: 0.55;
+  filter: grayscale(1);
+}
+
+.emoji-tab:hover:not(:disabled),
+.emoji-tab.on {
+  background: var(--surface-2);
+  opacity: 1;
+  filter: none;
+}
+
+.emoji-label {
+  padding: 8px 6px 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-faint);
+}
+
 .emoji-grid {
   height: 300px;
   overflow-y: auto;
@@ -7484,10 +7564,11 @@ input[type="text"].gif-search {
   gap: 8px 14px;
   max-width: 440px;
   margin-top: 6px;
-  padding: 10px 14px 12px 12px;
-  border-left: 4px solid var(--site);
+  padding: 10px 14px 12px;
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface);
+  box-shadow: var(--shadow-1);
   color: var(--fg);
 }
 
@@ -7575,7 +7656,7 @@ input[type="text"].gif-search {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  color: var(--accent-text);
+  color: var(--fg);
   font-weight: 600;
   font-size: 15px;
   line-height: 1.3;
@@ -8469,7 +8550,6 @@ main.settings {
   min-height: 0;
   display: grid;
   grid-template-columns: var(--rail-left) minmax(0, 1fr);
-  gap: var(--gap);
 }
 
 .settings-nav {
@@ -8481,8 +8561,7 @@ main.settings {
   overflow-y: auto;
   padding: 24px 12px;
   background: var(--pane);
-  border: 1px solid var(--border);
-  border-radius: var(--pane-radius);
+  border-right: 1px solid var(--border);
 }
 
 .settings-nav-title {
@@ -8532,7 +8611,7 @@ button.settings-tab {
   min-height: 40px;
   padding: 0 12px;
   border: 0;
-  border-radius: calc(var(--pane-radius) - 12px);
+  border-radius: var(--in-pane-radius);
   background: transparent;
   box-shadow: none;
   color: var(--fg-dim);
@@ -8540,14 +8619,17 @@ button.settings-tab {
   text-align: left;
 }
 
+/* Hover only darkens the words, so it never looks like the tab that is open. */
 button.settings-tab:hover:not(:disabled) {
-  background: var(--hover);
+  background: transparent;
   color: var(--fg);
 }
 
-button.settings-tab.on {
-  background: var(--select);
+button.settings-tab.on,
+button.settings-tab.on:hover:not(:disabled) {
+  background: var(--select-strong);
   color: var(--select-fg);
+  font-weight: 600;
 }
 
 .settings-nav-foot {
@@ -9486,7 +9568,7 @@ input.invalid:focus {
     padding: 0 10px calc(10px + env(safe-area-inset-bottom));
     border: 0;
     border-top: 1px solid var(--line);
-    border-radius: 18px 18px 0 0;
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
     transform: none;
     /* The dim page behind: a shadow as big as the screen, so no other element has to come and go. */
     box-shadow: 0 0 0 100vmax var(--scrim), var(--shadow);
@@ -9716,20 +9798,13 @@ input.invalid:focus {
   font-weight: 600;
 }
 
-.voice-choice.on {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--on-accent);
-}
-
+/* The chosen one has an ember outline on white: marked, without being the loudest thing on the page. */
+.voice-choice.on,
 .voice-choice.on:hover:not(:disabled) {
-  background: var(--accent);
-  filter: brightness(1.05);
-}
-
-.voice-choice.on .voice-choice-about {
-  color: inherit;
-  opacity: 0.85;
+  background: var(--surface-1);
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  color: var(--fg);
 }
 
 .voice-preview {

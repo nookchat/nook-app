@@ -93,6 +93,7 @@ export function newSpaceFlow(servers: string[], server: string, discordLink = ''
     return button
   })
   const fromDiscord = option('link', 'Copy a Discord server', 'Its channels, roles and who can see what. No messages and no people.')
+  fromDiscord.classList.add('from-discord')
   const pick = h('div', { class: 'welcome-step' }, [
     h('h1', { class: 'welcome-title', text: 'Make a space' }),
     h('p', { class: 'welcome-text', text: 'Pick a starting point. You can change every channel later.' }),

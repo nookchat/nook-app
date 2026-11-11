@@ -30,9 +30,9 @@
 [data-theme="dark"] {
   color-scheme: dark;
   --surface-0: #100C0B;
-  --surface-1: #1A1513;
-  --surface-2: #26201D;
-  --border: #312A27;
+  --surface-1: #1F1917;
+  --surface-2: #2E2623;
+  --border: #3D3430;
   --border-strong: #736965;
   --text-primary: #F8EDE9;
   --text-secondary: #B6ADA9;
@@ -56,9 +56,9 @@
   :root:not([data-theme="light"]) {
     color-scheme: dark;
     --surface-0: #100C0B;
-    --surface-1: #1A1513;
-    --surface-2: #26201D;
-    --border: #312A27;
+    --surface-1: #1F1917;
+    --surface-2: #2E2623;
+    --border: #3D3430;
     --border-strong: #736965;
     --text-primary: #F8EDE9;
     --text-secondary: #B6ADA9;
@@ -88,11 +88,11 @@
   --space-6: 32px;
   --space-7: 48px;
   --space-8: 64px;
-  --radius-xs: 6px;
-  --radius-sm: 10px;
-  --radius-md: 14px;
-  --radius-lg: 20px;
-  --radius-xl: 28px;
+  --radius-xs: 3px;
+  --radius-sm: 5px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 10px;
   --radius-pill: 999px;
   --font-display: "Bricolage Grotesque", "DM Sans", system-ui, sans-serif;
   --font-sans: "DM Sans", system-ui, -apple-system, "Segoe UI", sans-serif;

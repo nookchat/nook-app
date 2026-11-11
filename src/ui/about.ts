@@ -1,5 +1,6 @@
 import { CHANGELOG } from '../changelog'
 import { checkForUpdate } from '../net/updates'
+import { desktopDownload } from './desktop-offer'
 import { h } from './dom'
 import { icon } from './icons'
 import { actionRow, card, note, toggle } from './settings-shell'
@@ -110,6 +111,8 @@ export function aboutSettings(): HTMLElement {
         : null
     cards.push(card('Desktop app', row, shellSaid, trayRow))
   }
+  const offer = shell ? null : desktopDownload()
+  if (offer) cards.push(card('Desktop app', note(offer.words), h('div', { class: 'row wrap' }, [offer.button])))
 
   const changes = h('button', { text: 'See what’s new' })
   changes.addEventListener('click', () => void import('./whats-new').then(({ showAllChanges }) => showAllChanges()))

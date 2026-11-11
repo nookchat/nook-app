@@ -17,6 +17,18 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    id: '2026-11-11',
+    title: 'A fresh, cleaner look',
+    items: [
+      'Everybody and every space now has a colour of their own, so you can see who said what at a glance.',
+      'The channels and the people now run the full height of the window, with crisper corners everywhere.',
+      'The emoji picker has a tab for each group, and the emoji you used last come first.',
+      'Mute, deafen and hang up are bigger and easier to find when you are in voice.',
+      'Home puts New space and Join side by side at the top.',
+      'Dark mode has a little more contrast between its parts.',
+    ],
+  },
+  {
     id: '2026-10-13',
     title: 'Sign in on a new device with no camera',
     items: [

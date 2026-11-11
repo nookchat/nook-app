@@ -1,10 +1,7 @@
 import { h } from './dom'
-import { ghost } from './ghost'
 import { icon } from './icons'
 
 const RELEASES = 'https://github.com/nookchat/nook-app/releases/latest'
-/** Set once somebody closes the offer: it does not come back. */
-const CLOSED_KEY = 'nook.desktop-upsell.v1'
 
 /** The computer this browser is on, for the button, or null on a phone or tablet, which has no desktop app. */
 export function desktopOs(): string | null {
@@ -17,54 +14,20 @@ export function desktopOs(): string | null {
   return ''
 }
 
-function closed(): boolean {
-  try {
-    return localStorage.getItem(CLOSED_KEY) === '1'
-  } catch {
-    return false
-  }
-}
-
 /**
- * The foot of the list of people, in a browser: what the desktop app does that a tab cannot,
- * and its download. Nothing in the desktop app, on a phone, or after somebody closes it.
+ * The desktop app's download, for Settings › About in a browser: what it does that a tab cannot,
+ * and a button for this computer. Nothing in the desktop app, or on a phone or tablet.
  */
-export function desktopOffer(): HTMLElement | null {
+export function desktopDownload(): { words: string; button: HTMLElement } | null {
   if ((window as Window & { nookDesktop?: unknown }).nookDesktop) return null
   const os = desktopOs()
-  if (os === null || closed()) return null
-
-  const box = h('div', { class: 'desktop-offer', role: 'note' })
-  const close = h('button', {
-    class: 'ghost icon-only desktop-offer-close',
-    ariaLabel: 'Close',
-    title: 'Do not show this again',
-    on: {
-      click: () => {
-        try {
-          localStorage.setItem(CLOSED_KEY, '1')
-        } catch {
-          /* storage blocked: gone until the next visit */
-        }
-        box.remove()
-      },
-    },
-  }, [icon('close', 14)])
-  const download = h('button', {
-    class: 'primary desktop-offer-download',
+  if (os === null) return null
+  const button = h('button', {
+    class: 'primary',
     on: { click: () => window.open(RELEASES, '_blank', 'noopener') },
   }, [icon('download', 16), os ? `Download for ${os}` : 'Download'])
-  box.append(
-    h('div', { class: 'desktop-offer-head' }, [
-      ghost({ mood: 'idle', size: 28 }),
-      h('span', { class: 'desktop-offer-title', text: 'Nook for desktop' }),
-      close,
-    ]),
-    h('p', {
-      class: 'desktop-offer-words',
-      text: 'Shows the game you play, makes clips from your recordings, and puts a count on the Dock or taskbar.',
-    }),
-    download,
-  )
-  return box
+  return {
+    words: 'Shows the game you play, makes clips from your recordings, and puts a count on the Dock or taskbar.',
+    button,
+  }
 }

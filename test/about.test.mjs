@@ -33,7 +33,7 @@ try {
   check('the page shows its version', text.includes(VERSION), text.slice(0, 80))
   const link = await web.getAttribute('a:has-text("Releases on GitHub")', 'href')
   check('and links to the releases', link === 'https://github.com/nookchat/nook-app/releases', link)
-  check('with no desktop card in a browser', !text.includes('Desktop app\n'))
+  check('a browser offers the desktop app to download, with none of its own settings', text.includes('Download for') && !text.includes('Close to the tray'), text)
   await web.click('.settings-page button:text-is("Check for updates")')
   const said = await web
     .waitForFunction(() => {

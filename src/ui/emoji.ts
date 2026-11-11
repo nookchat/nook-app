@@ -404,18 +404,24 @@ function emojiCell(ch: string): HTMLElement {
   return h('button', { class: 'emoji-cell', text: ch, title: label, ariaLabel: label })
 }
 
-function emojiSection(list: string[]): HTMLElement {
+function emojiSection(list: string[], label = '', id = ''): HTMLElement {
   const row = h('div', { class: 'emoji-row' })
   for (const ch of list) row.append(emojiCell(ch))
-  return h('div', { class: 'emoji-section' }, [row])
+  const section = h('div', { class: 'emoji-section' }, [label ? h('div', { class: 'emoji-label', text: label }) : null, row])
+  if (id) section.dataset.group = id
+  return section
 }
 
 /** Every group, built once and moved into whichever picker is open. */
 let groupSections: HTMLElement[] | null = null
 
 function sections(): HTMLElement[] {
-  groupSections ??= ALL.map(({ list }) => {
-    const section = emojiSection(list.map((e) => e.ch))
+  groupSections ??= ALL.map(({ group, list }) => {
+    const section = emojiSection(
+      list.map((e) => e.ch),
+      group.label,
+      group.id,
+    )
     // Its pictures wait until a picker shows the group.
     drawLater(section)
     return section
@@ -458,10 +464,41 @@ export function openEmojiPicker(options: PickerOptions): void {
     placeholder: 'Search',
   })
   const grid = h('div', { class: 'emoji-grid' })
+  // One button per group, as Discord's picker has: a press goes to that group.
+  const tabs = h('div', { class: 'emoji-tabs', role: 'toolbar', ariaLabel: 'Emoji groups' })
+  const tabFor = new Map<string, HTMLElement>()
+  const goTo = (id: string): void => {
+    const section = grid.querySelector<HTMLElement>(`.emoji-section[data-group="${id}"]`)
+    if (!section) return
+    grid.scrollTop = section.offsetTop - grid.offsetTop
+    markTab(id)
+  }
+  const markTab = (id: string): void => {
+    for (const [key, tab] of tabFor) tab.classList.toggle('on', key === id)
+  }
+  const tabRows: [string, string, string][] = [['recent', '🕘', 'Recent'], ...ALL.map(({ group }): [string, string, string] => [group.id, group.tab, group.label])]
+  for (const [id, mark, label] of tabRows) {
+    const tab = h('button', { class: 'emoji-tab', type: 'button', text: mark, title: label, ariaLabel: label, on: { click: () => goTo(id) } })
+    tabFor.set(id, tab)
+    tabs.append(tab)
+  }
+  grid.addEventListener(
+    'scroll',
+    () => {
+      const top = grid.scrollTop + grid.offsetTop + 8
+      let at = ''
+      for (const section of grid.querySelectorAll<HTMLElement>('.emoji-section[data-group]')) {
+        if (section.offsetTop <= top) at = section.dataset.group ?? at
+      }
+      if (at) markTab(at)
+    },
+    { passive: true },
+  )
 
   const pop = h('div', { class: 'emoji-pop', role: 'dialog', ariaLabel: 'Emoji' }, [
     options.title ? h('div', { class: 'emoji-title tiny faint', text: options.title }) : null,
     search,
+    tabs,
     grid,
   ])
 
@@ -495,10 +532,16 @@ export function openEmojiPicker(options: PickerOptions): void {
         if (hits.length >= 120) break
       }
       grid.append(hits.length ? emojiSection(hits) : h('div', { class: 'emoji-none tiny faint', text: 'Nothing matches that' }))
+      tabs.hidden = true
       return
     }
+    tabs.hidden = false
+    const recent = recentEmoji()
+    tabFor.get('recent')!.hidden = recent.length === 0
+    if (recent.length) grid.append(emojiSection(recent.slice(0, 16), 'Recent', 'recent'))
     const groups = sections()
     grid.append(...groups)
+    markTab(recent.length ? 'recent' : (ALL[0]?.group.id ?? ''))
     // The first group at once, so it never shows the device's own emoji; the rest as they near.
     if (groups[0]) drawLaterNow(groups[0])
     for (const group of groups.slice(1)) if ('emojiLater' in group.dataset) near.observe(group)

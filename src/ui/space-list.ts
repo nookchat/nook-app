@@ -13,7 +13,7 @@ import { h } from './dom'
 import { ghost, lockup } from './ghost'
 import { icon } from './icons'
 import { spinner } from './spinner'
-import { hideShadows, initials } from './space-switcher'
+import { hideShadows, initials, spaceHue } from './space-switcher'
 import { toast } from './toast'
 
 interface SpaceListActions {
@@ -79,6 +79,7 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
     const rooms = hideShadows((await listSpaces()).filter((r) => !r.closed))
     const rows = rooms.slice(0, 24).map((room) => {
       const face = h('span', { class: 'space-tile', text: room.picture ? '' : initials(room.title || 'Unnamed space') })
+      face.style.setProperty('--hue', String(spaceHue(room.room)))
       if (room.picture) {
         const img = h('img', { class: 'space-face-img' })
         img.alt = ''
@@ -127,7 +128,6 @@ export async function spaceList(actions: SpaceListActions): Promise<HTMLElement>
             // No server yet: a space has nowhere to live until one is added.
             text: servers.length ? 'Make one for your friends, or paste an invite.' : 'Add a server to make one, or paste an invite from a friend.',
           }),
-          servers.length ? h('button', { class: 'secondary', on: { click: () => void makeSpace() } }, [icon('plus', 16), 'Make a space']) : null,
         ]),
       )
     }
